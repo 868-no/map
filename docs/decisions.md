@@ -318,3 +318,7 @@ Operator decision, after the engine matched the server views field by field (sna
 - **Removed:** `/snapshot`, `/traffic`, `/nodes/{id}`, `/edges`, the query code behind them, the Go link-graph and estimator packages (the estimator's settings types stay for configuration), the Redis result cache and its flush on start, the retention revision, `?derive=server`, and the summary fields of live events. Live events are now `{id, t, row}`. The stream no longer filters; browsers filter.
 - **Server tests** check the server's half of time isolation on `/observations`: exact `[start, end)` rows, millisecond boundaries, rolling eviction, fixed windows unaffected by later data, deletions by retention, and responses independent of Redis. The engine's isolation test covers derived fields.
 - `meshmap bench` now times full-window `/observations` fetches.
+
+## D-042 Lighter pings, animated links (2026-10-31)
+
+Operator request. Ring outlines are drawn at 60 % opacity and the signal-strength fill at 18 % (was 30 %). Each direct receiver's link is animated: a line grows from the transmitter toward the receiver with a bright head. The head's fraction of the way equals the ring's radius over the receiver's distance, both in screen pixels (the same test that marks the receiver reached, and interpolated in Web Mercator space so the head sits exactly on the ring's edge). Ring and line therefore arrive on the same frame. The line then stays, fainter, while the ring lingers and fades.

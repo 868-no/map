@@ -147,6 +147,12 @@ export function ringProfile(radiusPx: number, receivers: { px: number; strength?
   return out
 }
 export interface Blip { center: LngLat; scale: number; alpha: number; rebroadcast: boolean }
+/**
+ * The link from a transmitter to one direct receiver, drawn as far as the
+ * ring's edge: `tip` is that point, `progress` its fraction of the way
+ * (1 once the ring has reached the receiver).
+ */
+export interface Trail { from: LngLat; to: LngLat; tip: LngLat; progress: number; alpha: number; rebroadcast: boolean }
 export interface Flash { pos: LngLat; alpha: number; scale: number; rebroadcast: boolean }
 
 /** Ground metres per screen pixel at a latitude and MapLibre zoom (512 px tiles). */
@@ -155,8 +161,18 @@ export function metresPerPixel(lat: number, zoom: number): number {
 }
 
 /** Current rings and blips (pixels at this zoom) and receiver flashes. */
-export function activePings(now: number, zoom: number): { rings: Ring[]; blips: Blip[]; flashes: Flash[] } {
-  const rings: Ring[] = [], blips: Blip[] = [], flashes: Flash[] = []
+// Web Mercator y for a latitude: the ring is a circle on screen, so a point
+// a given fraction along a link must be interpolated in projected space.
+const mercY = (lat: number) => Math.log(Math.tan(Math.PI / 4 + (lat * Math.PI) / 360))
+const latOf = (y: number) => (360 / Math.PI) * Math.atan(Math.exp(y)) - 90
+
+/** The point `f` of the way from a to b on screen (Web Mercator). */
+export function along(a: LngLat, b: LngLat, f: number): LngLat {
+  return [a[0] + (b[0] - a[0]) * f, latOf(mercY(a[1]) + (mercY(b[1]) - mercY(a[1])) * f)]
+}
+
+export function activePings(now: number, zoom: number): { rings: Ring[]; blips: Blip[]; flashes: Flash[]; trails: Trail[] } {
+  const rings: Ring[] = [], blips: Blip[] = [], flashes: Flash[] = [], trails: Trail[] = []
   for (const [k, p] of pings) {
     if (p.waitFor) {
       const parent = pings.get(p.waitFor.key)
@@ -187,6 +203,11 @@ export function activePings(now: number, zoom: number): { rings: Ring[]; blips: 
       rings.push({ center: p.center, radiusPx: px, alpha, rebroadcast: p.rebroadcast, profile })
       for (const rx of p.receivers.values()) {
         if (rx.reachedAt === undefined && px >= rx.dist / mpp) rx.reachedAt = now
+        // The link grows with the ring: its head is on the ring's edge until the ring reaches the receiver.
+        if (rx.dist > 0) {
+          const progress = Math.min(px / (rx.dist / mpp), 1)
+          trails.push({ from: p.center, to: rx.pos, tip: along(p.center, rx.pos, progress), progress, alpha, rebroadcast: p.rebroadcast })
+        }
         const since = rx.reachedAt === undefined ? -1 : now - rx.reachedAt
         if (since >= 0 && since < FLASH) flashes.push({ pos: rx.pos, alpha: Math.round(255 * (1 - since / FLASH)), scale: since / FLASH, rebroadcast: p.rebroadcast })
       }
@@ -196,7 +217,7 @@ export function activePings(now: number, zoom: number): { rings: Ring[]; blips: 
     }
   }
   for (const [k, s] of seen) if (now - s > SEEN_TTL) seen.delete(k)
-  return { rings, blips, flashes }
+  return { rings, blips, flashes, trails }
 }
 
 export function clearPings(): void {

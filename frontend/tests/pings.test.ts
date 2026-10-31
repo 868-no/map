@@ -39,6 +39,24 @@ describe('ping animation', () => {
     expect(mid).toBeGreaterThan(settled)
     expect(activePings(2 * PING_GROW + 1000).rings[0].radiusM).toBeGreaterThan(AB)
   })
+  it('the link to each receiver grows with the ring edge and arrives with it', () => {
+    addTransmission(tx(GW), pos, 0)
+    addTransmission(tx(B), pos, 0)
+    for (const t of [PING_GROW / 4, PING_GROW / 2]) {
+      const { rings, trails } = activePings(t)
+      const toB = trails.find((x) => x.to === pos.get(B))!
+      // The head sits on the ring's edge: as far from the transmitter as the ring's radius.
+      expect(distanceM(toB.from, toB.tip)).toBeCloseTo(rings[0].radiusM, -1)
+      expect(toB.progress).toBeLessThan(1)
+    }
+    // Same frame: once the ring reaches GW, so has its link (and the receiver flashes).
+    let t = 0
+    while (activePings(t).flashes.length === 0) t += 10
+    const { trails } = activePings(t)
+    expect(trails.find((x) => x.to === pos.get(GW))!.progress).toBe(1)
+    expect(trails.find((x) => x.to === pos.get(B))!.progress).toBeLessThan(1)
+    expect(activePings(PING_GROW).trails.every((x) => x.progress === 1)).toBe(true)
+  })
   it('a new receiver revives a fading ring', () => {
     addTransmission(tx(GW), pos, 0)
     const fading = PING_GROW + PING_LINGER + PING_FADE / 2

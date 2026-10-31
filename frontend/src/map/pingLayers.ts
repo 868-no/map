@@ -1,31 +1,50 @@
 // Per-frame layers for the radar-ping animation (state lives in pings.ts).
-import { ScatterplotLayer } from '@deck.gl/layers'
+import { LineLayer, ScatterplotLayer } from '@deck.gl/layers'
 import type { Layer } from '@deck.gl/core'
-import { activePings, RING_BANDS, type Blip, type Flash, type Ring } from './pings'
+import { activePings, RING_BANDS, type Blip, type Flash, type Ring, type Trail } from './pings'
 import { UNDER_LABELS, type RGBA } from './deckShared'
 
 // Ping colours: first broadcast by the originator, rebroadcast by a relay.
 export const PING_ORIGIN: [number, number, number] = [125, 224, 255]
 export const PING_RELAY: [number, number, number] = [255, 196, 110]
 const rgb = (r: { rebroadcast: boolean }) => (r.rebroadcast ? PING_RELAY : PING_ORIGIN)
+// Rings are kept light so the map stays readable under busy traffic.
+const RING_ALPHA = 0.6
+const FILL_ALPHA = 0.18
 
 export function buildPingLayers(now: number, zoom: number): Layer[] {
-  const { rings, blips, flashes } = activePings(now, zoom)
+  const { rings, blips, flashes, trails } = activePings(now, zoom)
+  const moving = trails.filter((t) => t.progress < 1)
   return [
+    // The links the transmission travels: each grows from the transmitter
+    // with the ring's edge, reaching its receiver as the ring does, then
+    // stays (fainter) while the ring lingers and fades.
+    new LineLayer<Trail>({
+      id: 'ping-trails', ...UNDER_LABELS, data: trails, getSourcePosition: (t) => t.from, getTargetPosition: (t) => t.tip,
+      widthUnits: 'pixels', getWidth: (t) => (t.progress < 1 ? 2.5 : 1.5),
+      getColor: (t) => [...rgb(t), Math.round(t.alpha * (t.progress < 1 ? 0.85 : 0.45))] as RGBA,
+      updateTriggers: { getTargetPosition: now, getWidth: now, getColor: now },
+    }),
+    // The travelling head, on the ring's edge.
+    new ScatterplotLayer<Trail>({
+      id: 'ping-trail-heads', ...UNDER_LABELS, data: moving, getPosition: (t) => t.tip, getRadius: 3.5, radiusUnits: 'pixels',
+      filled: true, stroked: false, getFillColor: (t) => [...rgb(t), t.alpha] as RGBA,
+      updateTriggers: { getPosition: now, getFillColor: now },
+    }),
     // Radial fill: concentric bands whose opacity follows the signal
     // measured at each receiver, fading to transparent at the edge.
     new ScatterplotLayer<{ r: Ring; i: number }>({
       id: 'ping-fill', ...UNDER_LABELS, data: rings.flatMap((r) => r.profile.map((_, i) => ({ r, i }))),
       getPosition: (b) => b.r.center, getRadius: (b) => ((b.i + 0.5) / RING_BANDS) * b.r.radiusPx, radiusUnits: 'pixels',
       filled: false, stroked: true, lineWidthUnits: 'pixels', getLineWidth: (b) => b.r.radiusPx / RING_BANDS,
-      getLineColor: (b) => [...rgb(b.r), Math.round(b.r.alpha * 0.3 * b.r.profile[b.i])] as RGBA,
+      getLineColor: (b) => [...rgb(b.r), Math.round(b.r.alpha * FILL_ALPHA * b.r.profile[b.i])] as RGBA,
       updateTriggers: { getRadius: now, getLineWidth: now, getLineColor: now },
     }),
     // Expanding ring around the transmitter, out to its farthest direct receiver.
     new ScatterplotLayer<Ring>({
       id: 'ping-rings', ...UNDER_LABELS, data: rings, getPosition: (r) => r.center, getRadius: (r) => r.radiusPx, radiusUnits: 'pixels',
       filled: false, stroked: true, lineWidthUnits: 'pixels', getLineWidth: 2,
-      getLineColor: (r) => [...rgb(r), r.alpha] as RGBA,
+      getLineColor: (r) => [...rgb(r), Math.round(r.alpha * RING_ALPHA)] as RGBA,
       updateTriggers: { getRadius: now, getLineColor: now },
     }),
     // No placeable direct receiver: a brief soft glow, deliberately unlike a ring.
