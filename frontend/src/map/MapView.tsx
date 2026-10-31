@@ -7,7 +7,7 @@ import type { Capabilities, Edge, SnapshotBody } from '../api/types'
 import { useStore } from '../state/store'
 import { loadStyle, registerPMTiles } from './style'
 import { filterEdges, linkGeometry, placeNodes, visibleLinks, type LinkGeom, type PlacedNode } from './model'
-import { pingCount } from './pings'
+import { frameArrived, pingCount } from './pings'
 import { BASEMAP_GROUPS } from './layers'
 import { buildMeshLayers, type RouteGeom } from './meshLayers'
 import { buildPingLayers } from './pingLayers'
@@ -166,6 +166,7 @@ export default function MapView({ caps, snapshot, onPositions }: Props) {
     let raf = 0, last = 0, animating = false
     const render = (now: number) => {
       raf = requestAnimationFrame(render)
+      frameArrived(now)
       if (document.hidden || now - last < 33) return
       last = now
       if (pingCount() === 0) {

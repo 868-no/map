@@ -366,3 +366,9 @@ Measured on 190k synthetic rows over 3 days (16 CPUs, idle):
 ## D-047 Link animations only for unicast; links off by default (2026-10-31)
 
 Operator request. Both link layers (infrastructure and other links) now start switched off. The stored-toggles key was bumped to v5, so earlier saved choices reset once. A ping's link animation (D-042) now runs only for packets addressed to one node. Broadcasts show only the radar ring. The engine marks each transmission `unicast` when the row's destination is set and is neither 0 nor broadcast (0xffffffff).
+
+## D-048 No pings while the page isn't painted (2026-10-31)
+
+Reported by the operator: animations still piled up while the tab was unfocused. A covered or minimised window can stop getting animation frames while `document.hidden` stays false (Linux compositors, for example). So the hidden-tab gate (D-034) let pings in, but no frames ran to play or expire them. Rebroadcast pings waiting for their upstream ring then all started at once on the first frame back, because "upstream gone" meant "start now".
+- The animation loop records each frame. Live rows get pings only when a frame arrived within the last second (`painting()`), as well as the tab being visible and the packet at most 10 s old.
+- A waiting rebroadcast starts no later than its own collection timeout, so after a pause it keeps its original timing and mostly expires instead of starting late.

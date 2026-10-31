@@ -157,6 +157,22 @@ describe('rebroadcast ordering', () => {
     const end = PING_GROW + PING_LINGER + PING_FADE
     expect(ring(end + 10, [10.2, 63])).toBeDefined()
   })
+  it('after a pause without frames, waiting relays do not all start at once', () => {
+    addTransmission({ key: `p|${A}`, tx: A, rx: C, rebroadcast: false, unicast: true }, pos, 0)
+    addTransmission({ key: `p|${C}`, tx: C, rx: GW, rebroadcast: true, unicast: true }, pos, 0)
+    expect(rawPings(3 * PING_COLLECT, Z).rings).toHaveLength(0)
+  })
+})
+
+describe('painting', () => {
+  beforeEach(() => clearPings())
+  it('is true only while animation frames arrive', async () => {
+    const { frameArrived, painting } = await import('../src/map/pings')
+    expect(painting(0)).toBe(false)
+    frameArrived(5000)
+    expect(painting(5500)).toBe(true)
+    expect(painting(7000)).toBe(false)
+  })
 })
 
 describe('pingWanted', () => {

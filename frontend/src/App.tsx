@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { subscribeLive } from './api/client'
 import MapView from './map/MapView'
-import { addTransmission, clearPings, pingWanted, setPingPositions } from './map/pings'
+import { addTransmission, clearPings, painting, pingWanted, setPingPositions } from './map/pings'
 import Timeline from './timeline/Timeline'
 import { usePwa } from './pwa'
 import { EdgePanel, NodeList, NodePanel } from './features/panels'
@@ -103,8 +103,9 @@ export default function App() {
         const f = filtersRef.current
         const now = Date.now() + clockOffset
         // Pings: radio traffic only (not a node's own map report), passing the
-        // filters, recent, and only while someone is watching (D-034).
-        const ping = rows.flatMap((r, k) => (r.y !== 'mapreport' && passes(r, f) && pingWanted(r.t, now, document.hidden) ? [k] : []))
+        // filters, recent, and only while someone is watching: the tab is
+        // visible and actually being painted (D-034, D-048).
+        const ping = rows.flatMap((r, k) => (r.y !== 'mapreport' && passes(r, f) && pingWanted(r.t, now, document.hidden || !painting()) ? [k] : []))
         sendLiveRows(rows, ping)
       },
       onStatus: (ok, reason) => {

@@ -58,6 +58,22 @@ export const PING_MAX_AGE_MS = 10_000
 export function pingWanted(observedMs: number, serverNowMs: number, hidden: boolean): boolean {
   return !hidden && serverNowMs - observedMs <= PING_MAX_AGE_MS
 }
+
+// A window that is covered or minimised can stop getting animation frames
+// while document.hidden stays false (e.g. on Linux compositors). Pings are
+// only wanted while frames arrive, or they pile up unseen.
+const FRAME_GAP_MS = 1000
+let lastFrame = -Infinity
+
+/** The animation loop calls this on every frame it gets. */
+export function frameArrived(now: number): void {
+  lastFrame = now
+}
+
+/** Whether the page is being painted (a frame arrived recently). */
+export function painting(now = performance.now()): boolean {
+  return now - lastFrame < FRAME_GAP_MS
+}
 const FLASH = 900 // ms
 const MAX_PINGS = 80
 const SEEN_TTL = 20_000 // after a ping ends, late copies of that transmission never ping again
@@ -218,9 +234,11 @@ export function activePings(now: number, zoom: number): { rings: Ring[]; blips: 
       const parent = pings.get(p.waitFor.key)
       const reached = parent?.receivers.get(p.waitFor.rx)?.reachedAt
       // Start when the upstream ring got here; if it is gone or never gets
-      // here within the collection time, start now rather than never.
+      // here within the collection time, start then rather than never. Never
+      // later: after a pause without frames, waiting relays keep their own
+      // timing (and mostly expire) instead of all starting at once.
       if (reached === undefined && parent && now - p.waitFor.since < PING_COLLECT) continue
-      const start = Math.min(reached ?? now, now)
+      const start = Math.min(reached ?? now, now, p.waitFor.since + PING_COLLECT)
       p.born = p.growStart = start
       p.from = 0
       if (p.heard) p.heardAt = start
@@ -267,6 +285,7 @@ export function activePings(now: number, zoom: number): { rings: Ring[]; blips: 
 export function clearPings(): void {
   pings.clear()
   seen.clear()
+  lastFrame = -Infinity
 }
 
 export function pingCount(): number {
