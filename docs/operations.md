@@ -12,6 +12,10 @@ docker compose up -d --build
 
 The map is at `http://<host>:${WEB_PORT:-8080}`. Only the `web` service publishes a port.
 
+### Continuous integration
+
+`.github/workflows/tests.yml` runs on every pull request and push: Go vet, gofmt and unit tests; the integration tests (throwaway Postgres, Redis and Mosquitto); the engine's Rust tests (including the golden fixture); and the frontend's type check, lint, unit tests and production build. It uses the same Docker-wrapped toolchains as local development (`scripts/*.sh`). End-to-end tests need a running stack with a built basemap and live traffic, so they run against a deployment.
+
 ### Published images
 
 GitHub Actions (`.github/workflows/images.yml`) builds both images for every pull request and publishes them to GitHub Container Registry from `main` and from version tags, for `linux/amd64` and `linux/arm64`, with provenance and SBOM attestations:

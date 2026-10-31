@@ -1,0 +1,55 @@
+# Tests on every pull request and push, with the same Docker-wrapped
+# toolchains as local development (scripts/*.sh), so CI and laptops agree.
+# End-to-end tests (frontend/e2e) need a running stack with a built basemap
+# and live mesh traffic; they run against a deployment, not here.
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  backend:
+    name: backend (vet, format, unit)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: scripts/go.sh go vet ./...
+      - name: gofmt
+        run: |
+          unformatted="$(scripts/go.sh gofmt -l ./cmd ./internal ./test)"
+          if [ -n "$unformatted" ]; then echo "gofmt needed:"; echo "$unformatted"; exit 1; fi
+      - run: scripts/go.sh go test ./...
+
+  integration:
+    name: backend integration (Postgres, Redis, Mosquitto)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: scripts/integration.sh
+
+  engine:
+    name: engine (Rust tests, golden fixture)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: scripts/wasm.sh test
+
+  frontend:
+    name: frontend (types, lint, unit, build)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: build the WebAssembly engine
+        run: scripts/wasm.sh
+      - run: scripts/node.sh npm ci --no-audit --no-fund
+      - run: scripts/node.sh sh -c 'npm run typecheck && npm run lint && npx vitest run && npm run build'

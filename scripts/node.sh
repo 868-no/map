@@ -6,6 +6,8 @@ repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 image="${NODE_IMAGE:-node:22.21.1-bookworm}"
 tty_flag=()
 [ -t 1 ] && tty_flag=(-t)
+# A fresh named volume is root-owned: hand it to the calling user first.
+docker run --rm -v meshmap-node-cache:/cache "$image" sh -c "chown $(id -u):$(id -g) /cache"
 exec docker run --rm "${tty_flag[@]}" \
   -u "$(id -u):$(id -g)" \
   -e HOME=/tmp/home -e npm_config_cache=/cache/npm \
