@@ -3,6 +3,7 @@
 // the app works the same, only without the head start.
 import type { ObsRow } from '../api/types'
 import type { Coverage, StoreSink } from './rowStore'
+import { debounce } from './debounce'
 
 const DB = 'meshmap-derive'
 const VERSION = 1
@@ -54,15 +55,30 @@ export async function openPersistence(): Promise<{ restored: Persisted; sink: St
   const run = (fn: () => IDBTransaction) => {
     chain = chain.then(() => done(fn())).catch(() => {})
   }
+  // Added rows are batched: live rows arrive several times a second, and one
+  // transaction per batch would keep the database busy for nothing.
+  let pending: ObsRow[] = []
+  const flush = () => {
+    if (!pending.length) return
+    const rows = pending
+    pending = []
+    run(() => {
+      const tx = db.transaction('rows', 'readwrite')
+      const s = tx.objectStore('rows')
+      for (const r of rows) s.put(r)
+      return tx
+    })
+  }
+  const flushSoon = debounce(flush, 2000, 5000)
   const sink: StoreSink = {
-    added: (rows) =>
-      run(() => {
-        const tx = db.transaction('rows', 'readwrite')
-        const s = tx.objectStore('rows')
-        for (const r of rows) s.put(r)
-        return tx
-      }),
-    removedBefore: (t) =>
+    added: (rows) => {
+      pending = pending.concat(rows)
+      // A large batch is a fetch, not the live stream: write it right away.
+      if (pending.length > 1000) flush()
+      else flushSoon()
+    },
+    removedBefore: (t) => {
+      flush()
       run(() => {
         const tx = db.transaction('rows', 'readwrite')
         const cur = tx.objectStore('rows').index('t').openCursor(IDBKeyRange.upperBound(t, true))
@@ -72,20 +88,25 @@ export async function openPersistence(): Promise<{ restored: Persisted; sink: St
           cur.result.continue()
         }
         return tx
-      }),
-    reset: () =>
+      })
+    },
+    reset: () => {
+      pending = []
       run(() => {
         const tx = db.transaction(['rows', 'meta'], 'readwrite')
         tx.objectStore('rows').clear()
         tx.objectStore('meta').delete('state')
         return tx
-      }),
-    meta: (cov, generation) =>
+      })
+    },
+    meta: (cov, generation) => {
+      flush() // rows before the coverage mark that describes them
       run(() => {
         const tx = db.transaction('meta', 'readwrite')
         tx.objectStore('meta').put({ cov, generation }, 'state')
         return tx
-      }),
+      })
+    },
   }
   return { restored, sink }
 }

@@ -18,10 +18,10 @@ class HttpError extends Error {
 }
 
 async function fetchRange(params: URLSearchParams): Promise<Fetched> {
-  let after = 0
+  let cursor = ''
   let out: Fetched | null = null
   for (;;) {
-    params.set('after', String(after))
+    if (cursor) params.set('cursor', cursor)
     const res = await fetch(`/api/v1/observations?${params}`, { headers: { Accept: 'application/json' } })
     if (!res.ok) {
       let detail = res.statusText
@@ -34,17 +34,13 @@ async function fetchRange(params: URLSearchParams): Promise<Fetched> {
       throw new HttpError(res.status, detail)
     }
     const b = (await res.json()) as ObservationsBody
-    clockOffsetMs = Date.parse(b.now) - Date.now()
     if (!out) out = { window: b.window, generation: b.generation, rows: [] }
     out.rows = out.rows.concat(b.rows ?? [])
     if (!b.more) return out
-    after = b.next_after
+    cursor = b.next_cursor ?? ''
   }
 }
 
-// Server time minus local time, from the latest fetch: a rolling window ends
-// at the server's "now", so streamed rows count as soon as they arrive.
-let clockOffsetMs = 0
 let geo: GeoOptions = { enabled: false, minPrecisionBits: 15, exclude: new Set(), params: defaultGeoParams }
 let quantumMs = 10_000
 // Views wait for the operator's geolocation settings from the page.
@@ -91,10 +87,15 @@ function synced(win: WindowReq, epoch: string): Promise<{ synced: Synced; offlin
   return result
 }
 
-/** The window to build: a rolling one follows the server clock between syncs. */
+/**
+ * The window to build. A rolling one ends just after the newest row held (or
+ * at the last sync, which runs at least once a minute): it follows the data,
+ * so every view requested for one rebuild gets the same window and shares one
+ * memoised snapshot, and a streamed row counts as soon as it is merged.
+ */
 function bounds(win: WindowReq, s: Synced, offline: boolean): { start: number; end: number } {
   if (!win.live || offline) return { start: s.start, end: s.end }
-  const end = Math.max(s.end, Date.now() + clockOffsetMs)
+  const end = Math.max(s.end, store.newestT() + 1)
   return { start: end - win.durationH * 3_600_000, end }
 }
 

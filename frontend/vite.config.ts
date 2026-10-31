@@ -52,6 +52,21 @@ export default defineConfig({
       '/styles': 'http://host.docker.internal:8080',
     },
   },
-  build: { sourcemap: true, chunkSizeWarningLimit: 2500 },
+  build: {
+    sourcemap: true,
+    chunkSizeWarningLimit: 1500,
+    rolldownOptions: {
+      output: {
+        // Large libraries change rarely: separate chunks stay cached across deploys of app code.
+        advancedChunks: {
+          groups: [
+            { name: 'maplibre', test: /node_modules[\\/](maplibre-gl|pmtiles)/ },
+            { name: 'deckgl', test: /node_modules[\\/](@deck\.gl|@luma\.gl|@loaders\.gl|@math\.gl|@probe\.gl)/ },
+            { name: 'react', test: /node_modules[\\/](react|react-dom|scheduler|@tanstack|zustand)[\\/]/ },
+          ],
+        },
+      },
+    },
+  },
   test: { environment: 'jsdom', include: ['tests/**/*.test.ts', 'tests/**/*.test.tsx'] },
 })

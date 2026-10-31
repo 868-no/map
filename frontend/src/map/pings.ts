@@ -1,3 +1,5 @@
+import { nodeId, resolveRelay as resolve, ZERO_COST_ROLES, type RelayContext } from '../derive/graph'
+
 // Radar-ping traffic animation. Each RF transmission we can attribute to a
 // node becomes one expanding ring centred on the transmitter, growing until
 // it encloses every node known to have heard that transmission directly.
@@ -34,39 +36,21 @@ export function signalStrength(snr?: number, rssi?: number): number | undefined 
 }
 
 export interface MeshContext {
-  nodes: string[] // every node id in the window (positioned or not)
-  confirmed: (a: string, b: string) => boolean // NeighborInfo, traceroute or direct-RF evidence (never relay hints)
+  relay: RelayContext // the same context the links use (window nodes, reported positions, confirmed pairs, range)
   role: (id: string) => string | undefined // device role from in-window NodeInfo
-  pos: (id: string) => [number, number] | undefined // reported in-window position (never an estimate)
-  maxRangeM: number // radio range bound for relay candidates
 }
 
-// Same bound as the backend (graph.NewRelayContext): longest confirmed link plus margin.
-export const MIN_RELAY_RANGE_M = 50_000
-export const RELAY_RANGE_SLACK = 1.25
+export { ZERO_COST_ROLES }
 
-/** Roles that may relay without spending a hop (Meshtastic's favourite-router "0-cost" rule). */
-export const ZERO_COST_ROLES = new Set(['ROUTER', 'ROUTER_LATE', 'CLIENT_BASE'])
-
-const lastByte = (id: string) => parseInt(id.slice(-2), 16)
+const num = (id: string) => parseInt(id.slice(1), 16)
 
 /**
- * Resolve a relay byte to one node, or nothing (never a guess). Mirrors the
- * backend's graph.ResolveRelay: candidates beyond radio range of the gateway
- * are excluded (unpositioned ones stay), then a single candidate with
- * confirmed link evidence to the gateway wins.
+ * Resolve a relay byte to one node, or nothing (never a guess): the shared
+ * resolver the links use (derive/graph.ts, a port of the backend's).
  */
 export function resolveRelay(byte: number, origin: string, gw: string, ctx: MeshContext): string | undefined {
-  if (byte === lastByte(gw)) return undefined // the gateway itself, not a relay before it
-  const gp = ctx.pos(gw)
-  const cands = ctx.nodes.filter((id) => {
-    if (id === origin || id === gw || lastByte(id) !== byte) return false
-    const p = ctx.pos(id)
-    return !(p && gp && distanceM(p, gp) > ctx.maxRangeM)
-  })
-  if (cands.length === 1) return cands[0]
-  const linked = cands.filter((id) => ctx.confirmed(id, gw))
-  return linked.length === 1 ? linked[0] : undefined
+  const [n, res] = resolve(byte, num(origin), num(gw), ctx.relay)
+  return res === 'resolved' ? nodeId(n) : undefined
 }
 
 /**

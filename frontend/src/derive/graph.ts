@@ -156,6 +156,9 @@ export function distanceM(a: LatLon, b: LatLon): number {
   return 2 * 6_371_000 * Math.asin(Math.sqrt(h))
 }
 
+/** Roles that may relay without spending a hop (Meshtastic's favourite-router "0-cost" rule). */
+export const ZERO_COST_ROLES = new Set(['ROUTER', 'ROUTER_LATE', 'CLIENT_BASE'])
+
 /** Relay candidates lie within the longest confirmed link plus margin, never below 50 km. */
 export const MIN_RELAY_RANGE_M = 50_000
 export const RELAY_RANGE_SLACK = 1.25

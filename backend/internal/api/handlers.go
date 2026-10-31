@@ -390,7 +390,7 @@ type ObservationsInput struct {
 	WindowParams
 	Since string `query:"since" doc:"Narrow the lower bound to this instant (RFC 3339); clamped to the window, never widening it"`
 	Until string `query:"until" doc:"Narrow the upper bound to this instant (RFC 3339); clamped to the window"`
-	After int64  `query:"after" minimum:"0" doc:"Page cursor: only rows with a larger id"`
+	Cursor string `query:"cursor" doc:"Page cursor: next_cursor from the previous page"`
 	Limit int    `query:"limit" minimum:"0" maximum:"20000" doc:"Page size (default and maximum 20000)"`
 }
 
@@ -401,8 +401,8 @@ type ObservationsBody struct {
 	Generation string         `json:"generation" doc:"Decoder and configuration generation; rows from another generation must be discarded"`
 	Now        time.Time      `json:"now" doc:"Server time when the rows were read; lets clients follow the server clock between fetches"`
 	Rows       []query.ObsRow `json:"rows"`
-	More       bool           `json:"more" doc:"More rows remain; request again with after = next_after"`
-	NextAfter  int64          `json:"next_after"`
+	More       bool           `json:"more" doc:"More rows remain; request again with cursor = next_cursor"`
+	NextCursor string         `json:"next_cursor,omitempty" doc:"Opaque position after the last row returned (rows come in observed_at order)"`
 }
 
 type ObservationsOutput struct {
@@ -434,7 +434,7 @@ func (s *Server) observations(ctx context.Context, in *ObservationsInput) (*Obse
 			n.End = t
 		}
 	}
-	out := ObservationsBody{Now: s.now(), Window: echo(w), Generation: fmt.Sprintf("d%d.c%s", ingest.DecodeVersion, s.ConfigRev), Rows: []query.ObsRow{}, NextAfter: in.After}
+	out := ObservationsBody{Now: s.now(), Window: echo(w), Generation: fmt.Sprintf("d%d.c%s", ingest.DecodeVersion, s.ConfigRev), Rows: []query.ObsRow{}}
 	if n.End.Before(n.Start) {
 		n.End = n.Start
 	}
@@ -445,11 +445,21 @@ func (s *Server) observations(ctx context.Context, in *ObservationsInput) (*Obse
 			return nil, err
 		}
 		defer release()
-		if out.Rows, out.More, err = query.ListObservations(ctx, s.Pool, n, in.After, in.Limit); err != nil {
+		var after *query.Cursor
+		if in.Cursor != "" {
+			c, ok := query.ParseCursor(in.Cursor)
+			if !ok {
+				return nil, huma.Error400BadRequest("cursor: invalid")
+			}
+			after = &c
+		}
+		rows, next, more, err := query.ListObservations(ctx, s.Pool, n, after, in.Limit)
+		if err != nil {
 			return nil, err
 		}
-		if len(out.Rows) > 0 {
-			out.NextAfter = out.Rows[len(out.Rows)-1].ID
+		out.Rows, out.More = rows, more
+		if next != nil {
+			out.NextCursor = next.String()
 		}
 	}
 	// Rows are immutable, but the window may still be filling; the browser

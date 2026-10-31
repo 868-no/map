@@ -3,8 +3,7 @@
 // receiver. A segment is solid when both nodes are known to have been
 // adjacent, dashed when one or more nodes between them are unknown.
 import type { MeshNode, ObsRow } from '../api/types'
-import { nodeId, resolveRelay, type RelayContext } from './graph'
-import { ZERO_COST_ROLES } from '../map/pings'
+import { nodeId, resolveRelay, ZERO_COST_ROLES, type RelayContext } from './graph'
 
 export interface RouteSegment {
   a: string // transmitter

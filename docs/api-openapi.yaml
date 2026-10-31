@@ -1108,11 +1108,11 @@ components:
           description: Decoder and configuration generation; rows from another generation must be discarded
           type: string
         more:
-          description: More rows remain; request again with after = next_after
+          description: More rows remain; request again with cursor = next_cursor
           type: boolean
-        next_after:
-          format: int64
-          type: integer
+        next_cursor:
+          description: Opaque position after the last row returned (rows come in observed_at order)
+          type: string
         now:
           description: Server time when the rows were read; lets clients follow the server clock between fetches
           format: date-time
@@ -1142,7 +1142,6 @@ components:
         - now
         - rows
         - more
-        - next_after
       type: object
     PacketSummary:
       additionalProperties: false
@@ -1817,15 +1816,13 @@ paths:
           schema:
             description: Narrow the upper bound to this instant (RFC 3339); clamped to the window
             type: string
-        - description: "Page cursor: only rows with a larger id"
+        - description: "Page cursor: next_cursor from the previous page"
           explode: false
           in: query
-          name: after
+          name: cursor
           schema:
-            description: "Page cursor: only rows with a larger id"
-            format: int64
-            minimum: 0
-            type: integer
+            description: "Page cursor: next_cursor from the previous page"
+            type: string
         - description: Page size (default and maximum 20000)
           explode: false
           in: query

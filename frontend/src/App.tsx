@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { subscribeLive } from './api/client'
 import MapView from './map/MapView'
-import { addTransmission, clearPings, distanceM, MIN_RELAY_RANGE_M, RELAY_RANGE_SLACK, transmissions, pingWanted, type MeshContext, type Reception } from './map/pings'
+import { addTransmission, clearPings, transmissions, pingWanted, type MeshContext, type Reception } from './map/pings'
+import { contextFromSnapshot } from './derive/packetlog'
 import Timeline from './timeline/Timeline'
 import { usePwa } from './pwa'
 import { EdgePanel, NodeList, NodePanel } from './features/panels'
@@ -32,24 +33,13 @@ export default function App() {
   const onPositions = useCallback((pos: Map<string, [number, number]>) => {
     geo.current = pos
   }, [])
-  // Everything the ping animation needs to attribute rebroadcasts to relays.
-  const mesh = useRef<MeshContext>({ nodes: [], confirmed: () => false, role: () => undefined, pos: () => undefined, maxRangeM: MIN_RELAY_RANGE_M })
+  // Everything the ping animation needs to attribute rebroadcasts to relays:
+  // the same relay context the links were built with.
+  const mesh = useRef<MeshContext>({ relay: contextFromSnapshot([], []), role: () => undefined })
   useEffect(() => {
     const nodes = snap.data?.nodes ?? []
     const roles = new Map(nodes.map((n) => [n.id, n.identity?.role || undefined]))
-    const reported = new Map<string, [number, number]>(nodes.flatMap((n) => (n.position ? [[n.id, [n.position.lon, n.position.lat]] as [string, [number, number]]] : [])))
-    // Only evidence that does not itself come from relay bytes.
-    const confirmed = (snap.data?.edges ?? []).filter((e) => e.evidence.neighbor + e.evidence.traceroute + e.evidence.direct_rf > 0)
-    const pairs = new Set(confirmed.flatMap((e) => [`${e.src}|${e.dst}`, `${e.dst}|${e.src}`]))
-    let longest = 0
-    for (const e of confirmed) {
-      const a = reported.get(e.src), b = reported.get(e.dst)
-      if (a && b) longest = Math.max(longest, distanceM(a, b))
-    }
-    mesh.current = {
-      nodes: nodes.map((n) => n.id), confirmed: (a, b) => pairs.has(`${a}|${b}`), role: (id) => roles.get(id),
-      pos: (id) => reported.get(id), maxRangeM: Math.max(MIN_RELAY_RANGE_M, longest * RELAY_RANGE_SLACK),
-    }
+    mesh.current = { relay: contextFromSnapshot(nodes, snap.data?.edges ?? []), role: (id) => roles.get(id) }
   }, [snap.data])
 
   // The derivation worker applies the operator's geolocation settings.

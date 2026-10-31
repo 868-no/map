@@ -6,7 +6,6 @@ import (
 	"context"
 	"crypto/ed25519"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -430,8 +429,8 @@ func TestObservationsEndpoint(t *testing.T) {
 				Lat float64 `json:"lat"`
 			} `json:"po"`
 		}
-		More      bool
-		NextAfter int64 `json:"next_after"`
+		More       bool
+		NextCursor string `json:"next_cursor"`
 	}
 	types := func(o obs) (out []string) {
 		for _, r := range o.Rows {
@@ -462,17 +461,21 @@ func TestObservationsEndpoint(t *testing.T) {
 	if got := types(o); len(got) != 1 || got[0] != "telemetry" || !o.Until.Equal(base.Add(10*time.Hour)) {
 		t.Fatalf("narrowed: %v until %v", got, o.Until)
 	}
-	// Paging by id.
+	// Paging in (observed_at, id) order with an opaque cursor.
 	q = win(base, base.Add(12*time.Hour))
 	q.Set("limit", "2")
 	c.get("/api/v1/observations", q, &o)
-	if len(o.Rows) != 2 || !o.More {
-		t.Fatalf("page 1: %d more=%v", len(o.Rows), o.More)
+	if got := types(o); len(got) != 2 || got[0] != "nodeinfo" || !o.More || o.NextCursor == "" {
+		t.Fatalf("page 1: %v more=%v cursor=%q", got, o.More, o.NextCursor)
 	}
-	q.Set("after", fmt.Sprint(o.NextAfter))
+	q.Set("cursor", o.NextCursor)
 	c.get("/api/v1/observations", q, &o)
 	if got := types(o); len(got) != 1 || got[0] != "telemetry" || o.More {
 		t.Fatalf("page 2: %v more=%v", got, o.More)
+	}
+	q.Set("cursor", "not-a-cursor")
+	if c.get("/api/v1/observations", q, nil) != 400 {
+		t.Fatal("invalid cursor accepted")
 	}
 	// Window validation is the same as every other view.
 	if c.get("/api/v1/observations", win(base.Add(-30*24*time.Hour*7), base), nil) != 400 {

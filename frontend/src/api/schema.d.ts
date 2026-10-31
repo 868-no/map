@@ -674,10 +674,10 @@ export interface components {
             readonly $schema?: string;
             /** @description Decoder and configuration generation; rows from another generation must be discarded */
             generation: string;
-            /** @description More rows remain; request again with after = next_after */
+            /** @description More rows remain; request again with cursor = next_cursor */
             more: boolean;
-            /** Format: int64 */
-            next_after: number;
+            /** @description Opaque position after the last row returned (rows come in observed_at order) */
+            next_cursor?: string;
             /**
              * Format: date-time
              * @description Server time when the rows were read; lets clients follow the server clock between fetches
@@ -1095,8 +1095,8 @@ export interface operations {
                 since?: string;
                 /** @description Narrow the upper bound to this instant (RFC 3339); clamped to the window */
                 until?: string;
-                /** @description Page cursor: only rows with a larger id */
-                after?: number;
+                /** @description Page cursor: next_cursor from the previous page */
+                cursor?: string;
                 /** @description Page size (default and maximum 20000) */
                 limit?: number;
             };

@@ -73,8 +73,14 @@ export class RowStore {
     const fresh = rows.filter((r) => !this.ids.has(r.i))
     if (fresh.length === 0) return
     for (const r of fresh) this.ids.add(r.i)
-    // Mostly appends of already ordered rows: cheap for the engine's merge sort.
-    this.rows = this.rows.concat(fresh).sort(byTime)
+    fresh.sort(byTime)
+    const tail = this.rows[this.rows.length - 1]
+    if (!tail || byTime(fresh[0], tail) >= 0) {
+      // Live rows nearly always land at the end: append in place, no copy or re-sort.
+      for (const r of fresh) this.rows.push(r)
+    } else {
+      this.rows = this.rows.concat(fresh).sort(byTime)
+    }
     this.sink?.added(fresh)
   }
 
@@ -95,6 +101,11 @@ export class RowStore {
       else hi = mid
     }
     return lo
+  }
+
+  /** observed_at of the newest row held (0 when empty). */
+  newestT(): number {
+    return this.rows.length ? this.rows[this.rows.length - 1].t : 0
   }
 
   /** Rows with observed_at in [start, end). */

@@ -38,11 +38,11 @@ describe.skipIf(!BASE)('client derivation matches the server', () => {
     const win = `start=${start.toISOString()}&end=${end.toISOString()}`
 
     let rows: ObsRow[] = []
-    for (let after = 0; ; ) {
-      const b = await json<ObservationsBody>(`/api/v1/observations?${win}&after=${after}`)
+    for (let cursor = ''; ; ) {
+      const b = await json<ObservationsBody>(`/api/v1/observations?${win}${cursor ? `&cursor=${cursor}` : ''}`)
       rows = rows.concat(b.rows ?? [])
       if (!b.more) break
-      after = b.next_after
+      cursor = b.next_cursor ?? ''
     }
     rows.sort((a, b) => a.t - b.t || a.i - b.i)
     expect(rows.length).toBeGreaterThan(0)

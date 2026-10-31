@@ -1,10 +1,14 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { activePings as rawPings, addTransmission, BLIP_LIFE, RING_BANDS, ringProfile, signalStrength, clearPings, distanceM, metresPerPixel, MIN_RING_PX, PING_COLLECT, PING_FADE, PING_GROW, PING_LINGER, resolveRelay, transmissions, type MeshContext } from '../src/map/pings'
+import { relayContext } from '../src/derive/graph'
 
 const A = '!000000aa', B = '!000000bb', C = '!000000cc', GW = '!000000dd', C2 = '!111111cc'
+const n = (id: string) => parseInt(id.slice(1), 16)
 const ctx = (nodes: string[], links: [string, string][] = [], roles: Record<string, string> = {}, pos: Record<string, [number, number]> = {}, maxRangeM = 50_000): MeshContext => {
-  const s = new Set(links.flatMap(([a, b]) => [`${a}|${b}`, `${b}|${a}`]))
-  return { nodes, confirmed: (a, b) => s.has(`${a}|${b}`), role: (id) => roles[id], pos: (id) => pos[id], maxRangeM }
+  const p = new Map(Object.entries(pos).map(([id, [lon, lat]]) => [n(id), { lat, lon }]))
+  const relay = relayContext(nodes.map(n), p, links.map(([a, b]) => ({ src: n(a), dst: n(b), ev: 'neighbor' as const, t: 0, key: '' })))
+  relay.maxRangeM = maxRangeM
+  return { relay, role: (id) => roles[id] }
 }
 
 describe('attributing transmissions', () => {
@@ -223,9 +227,9 @@ describe('pingWanted', () => {
 describe('relay byte equal to the gateway', () => {
   it('is the gateway itself, never another node with that byte', async () => {
     const { resolveRelay } = await import('../src/map/pings')
-    const ctx = { nodes: ['!aaaa0011', '!bbbb0011', '!cccc0022'], confirmed: () => false, role: () => undefined, pos: () => undefined, maxRangeM: 50_000 }
-    expect(resolveRelay(0x11, '!cccc0022', '!aaaa0011', ctx)).toBeUndefined()
-    expect(resolveRelay(0x11, '!cccc0022', '!dddd0033', ctx)).toBeUndefined() // still ambiguous between the two
-    expect(resolveRelay(0x22, '!aaaa0011', '!dddd0033', { ...ctx, nodes: ['!aaaa0011', '!cccc0022'] })).toBe('!cccc0022')
+    const c = ctx(['!aaaa0011', '!bbbb0011', '!cccc0022'])
+    expect(resolveRelay(0x11, '!cccc0022', '!aaaa0011', c)).toBeUndefined()
+    expect(resolveRelay(0x11, '!cccc0022', '!dddd0033', c)).toBeUndefined() // still ambiguous between the two
+    expect(resolveRelay(0x22, '!aaaa0011', '!dddd0033', ctx(['!aaaa0011', '!cccc0022']))).toBe('!cccc0022')
   })
 })

@@ -248,7 +248,7 @@ Operator decisions.
 
 Operator decision. Each `delta` event's live event now also carries `row`: the same compact row `/observations` returns. Both paths build it with `ingest.NewObsRow`, and an integration test checks a streamed row equals the stored one. The summary fields stay for `?derive=server`.
 - The page forwards streamed rows to the derivation worker, which merges them at once. Views are rebuilt debounced: once the stream has been quiet for 2 s, and at least every 5 s while it keeps flowing. Pings never wait for a rebuild. Views then rebuild without any request.
-- A rolling window built in the browser ends at the server's current time (`now` in each `/observations` response gives the clock offset), so a streamed row counts immediately instead of at the next 10 s window step.
+- A rolling window built in the browser ends just after the newest row held, or at the last sync if later (D-039). A streamed row counts as soon as it is merged, instead of at the next 10 s window step.
 - The stream is opened without filters when views are built in the browser (the store needs every row); filters apply locally, to views and pings alike. Pings are built from the rows.
 - Fetching `/observations` is now only a gap filler: once a minute on a heartbeat, and immediately when the stream reconnects after an interruption. Streamed rows do not advance the store's coverage mark, so anything the stream missed is fetched then. Rows that arrive before the first sync are held and merged after it.
 
@@ -287,3 +287,15 @@ Operator request. Selecting a packet in the log draws its routing graph and hide
   - Packets the sender uplinked itself, and MQTT or non-radio transports, add nothing.
 - **Solid** when both nodes of a hop are known to be adjacent. **Dashed** when nodes between them are missing: an unrecorded traceroute hop, an unknown relay, or the unknown path from the sender to a relay. A solid segment wins over a dashed one for the same hop. Hovering a segment says which case it is.
 - A segment whose end has no position (reported or estimated) cannot be drawn; the panel counts those. Routes need views built in the browser.
+
+## D-038 Time-ordered paging for /observations (2026-10-31)
+
+`/observations` paged by row id (`id > after ORDER BY id`). At scale PostgreSQL served that by walking the primary key from the oldest row: on 500 000 seeded rows over 30 days, the first page of a 168 h window discarded 390 000 out-of-window rows (84 ms), and with 6 months of retention almost the whole table would be scanned per first page. Pages are now ordered by `(observed_at, id)` with an opaque `cursor` (`next_cursor`, Unix microseconds plus id), which the existing `observed_at` index serves directly: 24 ms for the same first page and 9 ms for later ones, independent of how much older data is retained. The cursor only positions within the window; `window.Predicate` still bounds every query.
+
+## D-039 Browser performance and structure (2026-10-31)
+
+- **One relay resolver.** The ping animation used its own copy of relay-byte resolution, separate from the worker's, and the two had drifted. It now uses `derive/graph.ts` with the same context the links were built from (`contextFromSnapshot`). `ZERO_COST_ROLES` moved there too, so `derive/` no longer imports from `map/`.
+- **One snapshot per rebuild.** A rolling window ended at the clock, so every view requested in one rebuild (snapshot, traffic, packet log, route) had a slightly different window and rebuilt the snapshot itself. The window now ends just after the newest row held (or at the last sync, at least once a minute), so the requests share one memoised snapshot.
+- **Live merges append.** Each streamed batch copied and re-sorted the whole row store. Rows that belong at the end, nearly all of them, are now appended in place.
+- **Batched IndexedDB writes.** Live rows were written in one transaction per batch, several a second. They are now batched (2 s quiet, 5 s at most); large fetched batches, trims, resets and coverage updates flush immediately, in order.
+- **Vendor chunks.** The bundle was one 2.1 MB file, so every deploy invalidated all of it. MapLibre (1.0 MB), deck.gl (0.9 MB) and React (0.2 MB) are now separate chunks that stay cached across app deploys; the app's own code is 139 kB (46 kB compressed).
