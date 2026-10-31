@@ -330,3 +330,12 @@ Reported by the operator: a link animation ran to a place with no node. A live c
 - Each frame, a ping looks up its transmitter and receivers there. A moved receiver is followed, and the ring regrows if needed; one no longer drawn is dropped; a ping whose transmitter is gone ends.
 
 After the fix, the same check found every link ending at a marker (14 link ends, 3 of them estimated nodes).
+
+## D-044 Region and LoRa preset per node (2026-10-31)
+
+Operator request. Node details show where a node's own packets were heard, as every (MQTT topic root, channel name) combination with reception counts. One node can be heard several ways because each gateway uplinks with its own configuration.
+- **Region from the topic:** the segment after `msh`. Norway uses `msh/EU_868/NO/...` for both EU_868 and EU_N_868, so that root allows either; other roots name one region. The summary keeps only regions that every topic allows, since a node has one region and everything on a radio link shares frequency settings. If the topics contradict each other, the summary says so.
+- **Preset from the channel name:** a preset is shown when the name is that preset's default channel name (LongFast, NarrowFast, LongMod, VLongSlow, …, case-insensitive). Otherwise it is unknown, with the channel named.
+- **Map reports:** a node's own map report states region and preset exactly; when present it is shown first and marked as reported by the node.
+- **Data:** API rows carry the topic root (`tp`, already stored per row) and map reports' region and preset (`mr`). `ObsRowVersion` (2) is now part of the generation `/observations` reports, so browsers holding rows in the old format refetch.
+- On 2026-10-31, 12 busy nodes resolved to EU_N_868 (heard also on `msh/EU_N_868`, or from their map report), EU_868 or EU_N_868 (Norwegian topics only), or EU_868 / Long Fast (one node's map report).

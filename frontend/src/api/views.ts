@@ -153,6 +153,21 @@ export interface Hearing {
   last_at: string
 }
 
+/** One way a node was heard: an MQTT topic root and channel name. */
+export interface HeardAs {
+  topic: string
+  regions: string[] // LoRa regions the topic allows (empty: unknown)
+  channel?: string
+  preset?: string // e.g. NARROW_FAST; absent when the channel name is not a preset's default name
+  receptions: number
+  last_at: string
+}
+
+export interface Radio {
+  heard_as: HeardAs[]
+  reported?: { region?: string; modem_preset?: string; at: string } // the node's own map report
+}
+
 export interface NodeBody extends MeshNode {
   meta: Meta
   positions: { at: string; lat: number; lon: number; precision_bits: number; precision_known: boolean; signature: string }[]
@@ -161,6 +176,7 @@ export interface NodeBody extends MeshNode {
   heard: Hearing[]
   recent_packets: { at: string; type: string; packet_id: number; to?: string; channel?: string; signature: string; crypto: string; receptions: number; bytes: number }[]
   truncated: boolean
+  radio: Radio
 }
 
 export interface OwnPacket {

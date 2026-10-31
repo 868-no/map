@@ -102,9 +102,17 @@ pub struct Traceroute {
     pub snr_back: Vec<Option<f64>>,
 }
 
+/// What a node's own map report says about its radio (interned strings).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct MapReport {
+    pub region: u32,
+    pub preset: u32,
+}
+
 /// Port-specific decoded fields (most rows have none).
 #[derive(Clone, Debug, PartialEq)]
 pub enum Detail {
+    MapReport(MapReport),
     NodeInfo(NodeInfo),
     Telemetry(Telemetry),
     Neighbors(Vec<(u32, Option<f64>)>),
@@ -136,6 +144,7 @@ pub struct Row {
     pub crypto: u32, // 0 = none
     pub bytes: i32,
     pub nk: bool, // sent without OK-to-MQTT, uplinked by another gateway
+    pub topic: u32, // MQTT topic root, 0 = unknown
     pub pos: Option<Position>,
     pub detail: Option<Box<Detail>>,
 }
@@ -159,6 +168,12 @@ impl Row {
     pub fn telemetry(&self) -> Option<&Telemetry> {
         match self.detail.as_deref() {
             Some(Detail::Telemetry(t)) => Some(t),
+            _ => None,
+        }
+    }
+    pub fn map_report(&self) -> Option<MapReport> {
+        match self.detail.as_deref() {
+            Some(Detail::MapReport(m)) => Some(*m),
             _ => None,
         }
     }
@@ -230,6 +245,14 @@ struct JNbs {
 }
 
 #[derive(Deserialize, Serialize)]
+struct JMr<'a> {
+    #[serde(borrow, default, skip_serializing_if = "is_empty")]
+    region: Cow<'a, str>,
+    #[serde(borrow, default, skip_serializing_if = "is_empty")]
+    modem_preset: Cow<'a, str>,
+}
+
+#[derive(Deserialize, Serialize)]
 struct JHop {
     id: u32,
     #[serde(default, skip_serializing_if = "is_false")]
@@ -297,6 +320,8 @@ pub struct JRow<'a> {
     #[serde(default, skip_serializing_if = "is_false")]
     nk: bool,
     #[serde(borrow, default, skip_serializing_if = "Option::is_none")]
+    tp: Option<Cow<'a, str>>,
+    #[serde(borrow, default, skip_serializing_if = "Option::is_none")]
     ni: Option<JNi<'a>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     po: Option<JPo>,
@@ -306,6 +331,8 @@ pub struct JRow<'a> {
     nb: Option<JNbs>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     tr: Option<JTr>,
+    #[serde(borrow, default, skip_serializing_if = "Option::is_none")]
+    mr: Option<JMr<'a>>,
 }
 
 fn is_false(b: &bool) -> bool {
@@ -324,7 +351,9 @@ fn hops(v: Option<Vec<JHop>>) -> Vec<Hop> {
 
 impl JRow<'_> {
     pub fn into_row(self, i: &mut Interner) -> Row {
-        let detail = if let Some(n) = self.ni {
+        let detail = if let Some(m) = self.mr {
+            Some(Detail::MapReport(MapReport { region: i.id(&m.region), preset: i.id(&m.modem_preset) }))
+        } else if let Some(n) = self.ni {
             Some(Detail::NodeInfo(NodeInfo {
                 long_name: i.id(&n.long_name),
                 short_name: i.id(&n.short_name),
@@ -372,6 +401,7 @@ impl JRow<'_> {
             crypto: self.cr.map_or(0, |c| i.id(&c)),
             bytes: self.by,
             nk: self.nk,
+            topic: self.tp.map_or(0, |t| i.id(&t)),
             pos: self.po.map(|p| Position { lat: p.lat, lon: p.lon, alt: p.alt, bits: p.precision_bits, known: p.precision_known }),
             detail: detail.map(Box::new),
         }
@@ -386,11 +416,12 @@ pub fn to_json<'a>(r: &Row, i: &'a Interner) -> JRow<'a> {
     let mut j = JRow {
         i: r.id, t: r.t, b: s(r.broker), g: r.gw, s: r.src, d: r.dst, p: r.pid, c: opt(r.channel), y: s(r.ty),
         l: Cow::Owned(key_hex(r.lp)), o: Cow::Owned(key_hex(r.ok)), sn: r.snr, rs: r.rssi, hs: r.hs, hl: r.hl, r: r.relay,
-        sg: s(r.sig), dr: r.dr, rr: opt(r.rr), cr: opt(r.crypto), by: r.bytes, nk: r.nk,
+        sg: s(r.sig), dr: r.dr, rr: opt(r.rr), cr: opt(r.crypto), by: r.bytes, nk: r.nk, tp: opt(r.topic),
         ni: None, po: r.pos.map(|p| JPo { lat: p.lat, lon: p.lon, alt: p.alt, precision_bits: p.bits, precision_known: p.known }),
-        te: None, nb: None, tr: None,
+        te: None, nb: None, tr: None, mr: None,
     };
     match r.detail.as_deref() {
+        Some(Detail::MapReport(m)) => j.mr = Some(JMr { region: s(m.region), modem_preset: s(m.preset) }),
         Some(Detail::NodeInfo(n)) => {
             j.ni = Some(JNi { long_name: s(n.long_name), short_name: s(n.short_name), hw_model: s(n.hw_model), role: s(n.role), has_public_key: n.has_public_key, identity_untrusted: n.untrusted })
         }

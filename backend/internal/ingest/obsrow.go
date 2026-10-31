@@ -33,12 +33,20 @@ type ObsRow struct {
 	Crypto    string   `json:"cr,omitempty"`
 	Bytes     int      `json:"by,omitempty"`
 	NotOK     bool     `json:"nk,omitempty" doc:"sent without OK-to-MQTT and uplinked by another gateway"`
+	Topic     string   `json:"tp,omitempty" doc:"MQTT topic root the reception arrived on (before /2/e/...), e.g. msh/EU_868/NO/Trøndelag"`
 	// Port-specific decoded fields; omitted for types that have none.
 	NodeInfo     *ObsNodeInfo     `json:"ni,omitempty"`
 	Position     *ObsPosition     `json:"po,omitempty"`
 	Telemetry    *ObsTelemetry    `json:"te,omitempty"`
 	NeighborInfo *ObsNeighborInfo `json:"nb,omitempty"`
 	Traceroute   *ObsTraceroute   `json:"tr,omitempty"`
+	MapReport    *ObsMapReport    `json:"mr,omitempty"`
+}
+
+// ObsMapReport is what a node's own map report says about its radio.
+type ObsMapReport struct {
+	Region      string `json:"region,omitempty"`
+	ModemPreset string `json:"modem_preset,omitempty"`
 }
 
 type ObsNodeInfo struct {
@@ -95,6 +103,7 @@ type storedMeta struct {
 	Crypto string `json:"crypto"`
 	Bytes  int    `json:"bytes"`
 	NotOK  bool   `json:"not_ok_to_mqtt"`
+	Topic  string `json:"topic_root"`
 	Rx     struct {
 		DirectRF bool   `json:"direct_rf"`
 		Reason   string `json:"reason"`
@@ -111,7 +120,13 @@ type storedMeta struct {
 	Telemetry    *ObsTelemetry    `json:"telemetry"`
 	NeighborInfo *ObsNeighborInfo `json:"neighborinfo"`
 	Traceroute   *ObsTraceroute   `json:"traceroute"`
+	MapReport    *ObsMapReport    `json:"mapreport"`
 }
+
+// ObsRowVersion is bumped whenever ObsRow gains or changes fields. It is part
+// of the generation /observations reports, so browsers holding rows in the
+// old format start over (2: tp, mr).
+const ObsRowVersion = 2
 
 // RowFields are the packet_log columns an ObsRow carries.
 type RowFields struct {
@@ -139,15 +154,20 @@ func NewObsRow(f RowFields, meta []byte) ObsRow {
 	}
 	var m storedMeta
 	_ = json.Unmarshal(meta, &m)
-	r.Crypto, r.Bytes, r.DirectRF, r.RxReason, r.NotOK = m.Crypto, m.Bytes, m.Rx.DirectRF, m.Rx.Reason, m.NotOK
+	r.Crypto, r.Bytes, r.DirectRF, r.RxReason, r.NotOK, r.Topic = m.Crypto, m.Bytes, m.Rx.DirectRF, m.Rx.Reason, m.NotOK, m.Topic
 	switch r.Type {
 	case "nodeinfo":
 		if n := m.NodeInfo; n != nil {
 			r.NodeInfo = &ObsNodeInfo{LongName: n.LongName, ShortName: n.ShortName, HwModel: n.HwModel, Role: n.Role,
 				HasPublicKey: n.PublicKey != "", Untrusted: n.Untrusted}
 		}
-	case "position", "mapreport":
+	case "position":
 		r.Position = m.Position
+	case "mapreport":
+		r.Position = m.Position
+		if mr := m.MapReport; mr != nil && (mr.Region != "" || mr.ModemPreset != "") {
+			r.MapReport = &ObsMapReport{Region: mr.Region, ModemPreset: mr.ModemPreset}
+		}
 	case "telemetry":
 		if t := m.Telemetry; t != nil {
 			r.Telemetry = t

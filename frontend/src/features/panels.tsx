@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import type { Edge, MeshNode, SnapshotBody } from '../api/types'
+import type { Radio } from '../api/views'
 import { useNodeDetail, usePacketLog, usePacketRoute } from '../state/data'
 import { useStore } from '../state/store'
 import { formatLocal, formatLogTime, relativeAge } from '../lib/time'
@@ -64,6 +65,35 @@ export function NodeList({ snapshot }: { snapshot: SnapshotBody | undefined }) {
   )
 }
 
+/** "NARROW_FAST" -> "Narrow Fast" */
+const presetName = (p: string) => p.toLowerCase().split('_').map((w) => w[0].toUpperCase() + w.slice(1)).join(' ')
+
+/** Region and LoRa preset: the node's own map report if any, else what the topics and channel names allow. */
+function radioSummary(r: Radio | undefined): { region: string; preset: string } {
+  const heard = r?.heard_as ?? []
+  let region = 'unknown'
+  if (r?.reported?.region) region = `${r.reported.region} (its own map report)`
+  else {
+    // One node has one region: keep only regions every topic it was heard on allows.
+    const sets = heard.filter((h) => h.regions.length).map((h) => h.regions)
+    if (sets.length) {
+      const common = sets.reduce((acc, r) => acc.filter((x) => r.includes(x)))
+      region = common.length
+        ? `${common.join(' or ')} (from the MQTT topic${sets.length > 1 ? 's' : ''})`
+        : `conflicting topics: ${[...new Set(sets.map((r) => r.join(' or ')))].join(' / ')}`
+    }
+  }
+  let preset = 'unknown'
+  if (r?.reported?.modem_preset) preset = `${presetName(r.reported.modem_preset)} (its own map report)`
+  else if (heard.length) {
+    const named = [...new Set(heard.flatMap((h) => (h.preset ? [presetName(h.preset)] : [])))]
+    const custom = [...new Set(heard.flatMap((h) => (!h.preset && h.channel ? [`"${h.channel}"`] : [])))]
+    const parts = [...named, ...(custom.length ? [`unknown (channel ${custom.join(', ')})`] : [])]
+    if (parts.length) preset = parts.join(', ')
+  }
+  return { region, preset }
+}
+
 export function NodePanel({ id, snapshot }: { id: string; snapshot: SnapshotBody | undefined }) {
   const { data, isLoading, error } = useNodeDetail(id)
   const select = useStore((s) => s.select)
@@ -118,6 +148,8 @@ export function NodePanel({ id, snapshot }: { id: string; snapshot: SnapshotBody
             </>
           )}
         </dd>
+        <dt>Region</dt><dd>{radioSummary(d.radio).region}</dd>
+        <dt title="From the channel name it was heard on, when that is a preset's default name">LoRa preset</dt><dd>{radioSummary(d.radio).preset}</dd>
         <dt>Seen in window</dt><dd>{d.first_seen ? `${formatLocal(d.first_seen)} → ${formatLocal(d.last_seen)} (${relativeAge(d.last_seen, now)})` : NR}</dd>
         <dt>Traffic</dt><dd>{d.packets} unique packets · {d.receptions} receptions · uplinked {d.gateway_receptions} as gateway</dd>
         <dt>Signatures</dt>
@@ -153,6 +185,22 @@ export function NodePanel({ id, snapshot }: { id: string; snapshot: SnapshotBody
           ))}
         </tbody>
       </table>
+      {(d.radio?.heard_as ?? []).length > 1 && (
+        <>
+          <h3 title="Each gateway uplinks with its own topic and channel name, so one node can be heard several ways">Heard on ({d.radio.heard_as.length})</h3>
+          <table className="hear pkt-log" aria-label="Heard on">
+            <colgroup><col /><col style={{ width: 90 }} /><col style={{ width: 88 }} /><col style={{ width: 34 }} /></colgroup>
+            <thead><tr><th>MQTT topic</th><th>Channel</th><th>Preset</th><th>Rx</th></tr></thead>
+            <tbody>
+              {d.radio.heard_as.map((h) => (
+                <tr key={h.topic + h.channel} title={`Regions: ${h.regions.join(' or ') || 'unknown'} · last ${formatLocal(h.last_at)}`}>
+                  <td>{h.topic}</td><td>{h.channel ?? ''}</td><td>{h.preset ? presetName(h.preset) : 'unknown'}</td><td>{h.receptions}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
       <PacketLogs id={id} names={names} positioned={positioned} />
       <p className="muted">Message contents are never stored or shown.</p>
     </div>

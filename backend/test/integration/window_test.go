@@ -140,6 +140,10 @@ type obsRow struct {
 		Lat           float64 `json:"lat"`
 		PrecisionBits uint32  `json:"precision_bits"`
 	} `json:"po"`
+	MR *struct {
+		Region      string `json:"region"`
+		ModemPreset string `json:"modem_preset"`
+	} `json:"mr"`
 }
 
 // rows fetches every page of a window from /observations.
@@ -349,6 +353,7 @@ func TestObservationsEndpoint(t *testing.T) {
 		Since, Until time.Time
 		Generation   string
 		Rows         []struct {
+			Tp string           `json:"tp"`
 			ID int64            `json:"i"`
 			T  int64            `json:"t"`
 			Y  string           `json:"y"`
@@ -375,6 +380,9 @@ func TestObservationsEndpoint(t *testing.T) {
 	}
 	if o.Rows[0].NI == nil || o.Rows[1].PO == nil || o.Rows[1].PO.Lat != 63.0 {
 		t.Fatal("decoded fields missing")
+	}
+	if o.Rows[0].Tp != "msh/EU_868" {
+		t.Fatalf("topic root %q", o.Rows[0].Tp)
 	}
 	// since narrows; a since before the window start is clamped (never widens).
 	q := win(base.Add(2*time.Hour), base.Add(10*time.Hour))
@@ -428,7 +436,8 @@ func TestMapReportsAndMQTTOptOut(t *testing.T) {
 	f := newFixture(t, pool)
 	T1, T2 := base.Add(1*time.Hour), base.Add(2*time.Hour)
 	f.position(T1, nodeA, gw1, 63.0)
-	report, _ := proto.Marshal(&pb.MapReport{LongName: "A", LatitudeI: 640000000, LongitudeI: 104000000, PositionPrecision: 16})
+	report, _ := proto.Marshal(&pb.MapReport{LongName: "A", LatitudeI: 640000000, LongitudeI: 104000000, PositionPrecision: 16,
+		Region: pb.Config_LoRaConfig_EU_N_868, ModemPreset: pb.Config_LoRaConfig_NARROW_FAST})
 	env, _ := proto.Marshal(&pb.ServiceEnvelope{ChannelId: "LongFast", GatewayId: protocol.NodeID(nodeA), Packet: &pb.MeshPacket{From: nodeA, To: protocol.Broadcast,
 		PayloadVariant: &pb.MeshPacket_Decoded{Decoded: &pb.Data{Portnum: pb.PortNum_MAP_REPORT_APP, Payload: report}}}})
 	if err := f.insert(ingest.RawMessage{BrokerID: "it", Topic: "msh/EU_868/2/map/", Payload: env, ObservedAt: T2}); err != nil {
@@ -462,6 +471,9 @@ func TestMapReportsAndMQTTOptOut(t *testing.T) {
 			reports++
 			if r.PO == nil || r.PO.Lat != 64.0 || r.PO.PrecisionBits != 16 {
 				t.Fatalf("map report position: %+v", r.PO)
+			}
+			if r.MR == nil || r.MR.Region != "EU_N_868" || r.MR.ModemPreset != "NARROW_FAST" {
+				t.Fatalf("map report radio: %+v", r.MR)
 			}
 		case r.S == nodeB && r.Y == "position":
 			bPos++

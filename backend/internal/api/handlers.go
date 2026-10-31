@@ -171,7 +171,7 @@ func (s *Server) observations(ctx context.Context, in *ObservationsInput) (*Obse
 			n.End = t
 		}
 	}
-	out := ObservationsBody{Now: s.now(), Window: echo(w), Generation: fmt.Sprintf("d%d.c%s", ingest.DecodeVersion, s.ConfigRev), Rows: []query.ObsRow{}}
+	out := ObservationsBody{Now: s.now(), Window: echo(w), Generation: fmt.Sprintf("d%d.r%d.c%s", ingest.DecodeVersion, ingest.ObsRowVersion, s.ConfigRev), Rows: []query.ObsRow{}}
 	if n.End.Before(n.Start) {
 		n.End = n.Start
 	}

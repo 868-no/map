@@ -773,6 +773,8 @@ pub struct NodeDetail {
     pub heard: Vec<Hearing>,
     pub recent_packets: Vec<PacketSummary>,
     pub truncated: bool,
+    /// Region and LoRa preset as heard (topics, channel names) and as reported.
+    pub radio: crate::radio::Radio,
 }
 
 pub fn dest(d: Option<u32>) -> Option<String> {
@@ -819,7 +821,8 @@ pub fn build_node_detail(rows: &[&Row], num: u32, i: &Interner) -> Option<NodeDe
     if let Some(r) = latest_by(&own, is_device_telemetry, |r| r.src).get(&num) {
         n.telemetry = Some(telemetry_of(r));
     }
-    let mut d = NodeDetail { node: n, positions: vec![], telemetry_series: vec![], heard_by: vec![], heard: vec![], recent_packets: vec![], truncated: false };
+    let radio = crate::radio::radio(&own, i);
+    let mut d = NodeDetail { node: n, positions: vec![], telemetry_series: vec![], heard_by: vec![], heard: vec![], recent_packets: vec![], truncated: false, radio };
     if first == i64::MAX {
         if !referenced(rows).contains(&num) {
             return None;
@@ -928,7 +931,7 @@ mod tests {
     fn pos(id: i64, ty: u32, lat: f64, bits: u32, t: i64) -> Row {
         Row {
             id, t, broker: 0, gw: None, src: 1, dst: None, pid: None, channel: 0, ty, lp: id as u64, ok: id as u64, snr: None, rssi: None, hs: None, hl: None,
-            relay: None, sig: 0, dr: false, rr: 0, crypto: 0, bytes: 0, nk: false, pos: Some(P { lat, lon: 10.7, alt: None, bits, known: bits > 0 }), detail: None,
+            relay: None, sig: 0, dr: false, rr: 0, crypto: 0, bytes: 0, nk: false, topic: 0, pos: Some(P { lat, lon: 10.7, alt: None, bits, known: bits > 0 }), detail: None,
         }
     }
 

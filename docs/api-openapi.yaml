@@ -282,6 +282,14 @@ components:
       required:
         - id
       type: object
+    ObsMapReport:
+      additionalProperties: false
+      properties:
+        modem_preset:
+          type: string
+        region:
+          type: string
+      type: object
     ObsNeighbor:
       additionalProperties: false
       properties:
@@ -385,6 +393,8 @@ components:
         l:
           description: logical packet key, first 8 bytes as hex
           type: string
+        mr:
+          $ref: "#/components/schemas/ObsMapReport"
         nb:
           $ref: "#/components/schemas/ObsNeighborInfo"
         ni:
@@ -424,6 +434,9 @@ components:
           type: integer
         te:
           $ref: "#/components/schemas/ObsTelemetry"
+        tp:
+          description: MQTT topic root the reception arrived on (before /2/e/...), e.g. msh/EU_868/NO/Trøndelag
+          type: string
         tr:
           $ref: "#/components/schemas/ObsTraceroute"
         "y":

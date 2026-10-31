@@ -309,7 +309,7 @@ mod tests {
     fn row(src: u32, gw: u32) -> Row {
         Row {
             id: 1, t: 0, broker: 0, gw: Some(gw), src, dst: None, pid: None, channel: 0, ty: 0, lp: 0xabc, ok: 1, snr: None, rssi: None,
-            hs: None, hl: None, relay: None, sig: 0, dr: false, rr: 0, crypto: 0, bytes: 0, nk: false, pos: None, detail: None,
+            hs: None, hl: None, relay: None, sig: 0, dr: false, rr: 0, crypto: 0, bytes: 0, nk: false, topic: 0, pos: None, detail: None,
         }
     }
     fn hops(r: Row, n: i16) -> Row {

@@ -9,14 +9,14 @@ const ROWS: &str = include_str!("fixtures/mesh-12h/observations.json");
 const EXPECTED: &str = include_str!("fixtures/mesh-12h/expected.json");
 
 /// Times to whole milliseconds (the server kept microseconds), numbers to
-/// 1e-4 as f64, heard lists by node, and the engine-only `source` dropped.
+/// 1e-4 as f64, heard lists by node, and engine-only fields (`source`, `radio`) dropped.
 fn normalize(v: &Value) -> Value {
     match v {
         Value::Array(a) => Value::Array(a.iter().map(normalize).collect()),
         Value::Object(o) => {
             let mut out = serde_json::Map::new();
             for (k, x) in o {
-                if k == "source" {
+                if k == "source" || k == "radio" {
                     continue;
                 }
                 let mut x = normalize(x);

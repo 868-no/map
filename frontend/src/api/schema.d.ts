@@ -221,6 +221,10 @@ export interface components {
             id: number;
             unknown?: boolean;
         };
+        ObsMapReport: {
+            modem_preset?: string;
+            region?: string;
+        };
         ObsNeighbor: {
             /** Format: int32 */
             id: number;
@@ -268,6 +272,7 @@ export interface components {
             i: number;
             /** @description logical packet key, first 8 bytes as hex */
             l: string;
+            mr?: components["schemas"]["ObsMapReport"];
             nb?: components["schemas"]["ObsNeighborInfo"];
             ni?: components["schemas"]["ObsNodeInfo"];
             /** @description sent without OK-to-MQTT and uplinked by another gateway */
@@ -293,6 +298,8 @@ export interface components {
              */
             t: number;
             te?: components["schemas"]["ObsTelemetry"];
+            /** @description MQTT topic root the reception arrived on (before /2/e/...), e.g. msh/EU_868/NO/Trøndelag */
+            tp?: string;
             tr?: components["schemas"]["ObsTraceroute"];
             y: string;
         };
