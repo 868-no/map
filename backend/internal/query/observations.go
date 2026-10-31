@@ -2,6 +2,7 @@ package query
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -10,6 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/868-no/map/internal/ingest"
+	"github.com/868-no/map/internal/storage"
 	"github.com/868-no/map/internal/window"
 )
 
@@ -47,7 +49,8 @@ func ParseCursor(s string) (Cursor, bool) {
 // remain. Time order lets the observed_at index serve every page; id order
 // made PostgreSQL walk the primary key through all older rows (D-038).
 // Callers narrow w (never widen it) to fetch only what they do not hold.
-func ListObservations(ctx context.Context, pool *pgxpool.Pool, w window.Window, after *Cursor, limit int) ([]ObsRow, *Cursor, bool, error) {
+// Rows come encoded, mostly straight from obs_row (D-046).
+func ListObservations(ctx context.Context, pool *pgxpool.Pool, w window.Window, after *Cursor, limit int) ([]json.RawMessage, *Cursor, bool, error) {
 	if limit <= 0 || limit > MaxObservationPage {
 		limit = MaxObservationPage
 	}
@@ -56,43 +59,34 @@ func ListObservations(ctx context.Context, pool *pgxpool.Pool, w window.Window, 
 		// A cursor inside the window, never a bound on it.
 		b.and("(observed_at, id) > (?, ?)", after.At, after.ID)
 	}
+	ver := b.arg(int16(ingest.ObsRowVersion))
 	lim := b.arg(limit + 1)
-	rows, err := pool.Query(ctx, `
-		SELECT id, observed_at, broker_id, gateway_node_id, source_node_id, destination_node_id, packet_id,
-		       COALESCE(channel_name, ''), packet_type, logical_packet_key, observation_key,
-		       rx_snr, rx_rssi, hop_start, hop_limit, relay_hint, signature_status, decoded_metadata
+	rows, err := pool.Query(ctx, `SELECT `+storage.ObsColumns(ver)+`
 		FROM packet_log WHERE `+b.String()+` ORDER BY observed_at, id LIMIT `+lim, b.args...)
 	if err != nil {
 		return nil, nil, false, err
 	}
 	defer rows.Close()
-	out := make([]ObsRow, 0, min(limit, 4096))
+	out := make([]json.RawMessage, 0, min(limit, 4096))
 	var last Cursor
 	for rows.Next() {
-		var (
-			id                 int64
-			at                 time.Time
-			broker, ch, typ    string
-			sig                string
-			gw, dst, pid       *int64
-			src                int64
-			lp, ok, raw        []byte
-			snr                *float32
-			rssi, relay        *int32
-			hopStart, hopLimit *int16
-		)
-		if err := rows.Scan(&id, &at, &broker, &gw, &src, &dst, &pid, &ch, &typ, &lp, &ok,
-			&snr, &rssi, &hopStart, &hopLimit, &relay, &sig, &raw); err != nil {
+		f, tail, meta, err := storage.ScanObs(rows)
+		if err != nil {
 			return nil, nil, false, err
 		}
 		if len(out) < limit {
-			last = Cursor{At: at, ID: id}
+			last = Cursor{At: f.At, ID: f.ID}
 		}
-		out = append(out, ingest.NewObsRow(ingest.RowFields{
-			ID: id, At: at, Broker: broker, Gateway: u32(gw), Source: uint32(src), Dest: u32(dst), PacketID: u32(pid),
-			Channel: ch, Type: typ, Logical: lp, Reception: ok, SNR: snr, RSSI: rssi, HopStart: hopStart, HopLimit: hopLimit,
-			Relay: relay, Sig: sig,
-		}, raw))
+		if tail != nil {
+			out = append(out, ingest.WithID(f.ID, tail))
+			continue
+		}
+		// Not yet re-encoded for this version (BackfillObsRows).
+		b, err := json.Marshal(ingest.NewObsRow(f, meta))
+		if err != nil {
+			return nil, nil, false, err
+		}
+		out = append(out, b)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, nil, false, err
@@ -105,12 +99,4 @@ func ListObservations(ctx context.Context, pool *pgxpool.Pool, w window.Window, 
 		return out, after, false, nil
 	}
 	return out, &last, more, nil
-}
-
-func u32(p *int64) *uint32 {
-	if p == nil {
-		return nil
-	}
-	v := uint32(*p)
-	return &v
 }

@@ -230,6 +230,11 @@ func serveCmd() *cobra.Command {
 				return err
 			}
 			rc := openCache(c.Env, log)
+			go func() {
+				if _, err := storage.BackfillObsRows(ctx, pool, log); err != nil && ctx.Err() == nil {
+					log.Error("rebuilding stored row encodings failed; rows are built per request", "err", err)
+				}
+			}()
 
 			var sup *supervisor
 			var wg sync.WaitGroup

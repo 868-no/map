@@ -1,8 +1,11 @@
 package ingest
 
 import (
+	"bytes"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"strconv"
 	"time"
 )
 
@@ -123,9 +126,11 @@ type storedMeta struct {
 	MapReport    *ObsMapReport    `json:"mapreport"`
 }
 
-// ObsRowVersion is bumped whenever ObsRow gains or changes fields. It is part
-// of the generation /observations reports, so browsers holding rows in the
-// old format start over (2: tp, mr).
+// ObsRowVersion is bumped whenever ObsRow gains or changes fields, or
+// NewObsRow builds them differently. It is part of the generation
+// /observations reports, so browsers holding rows in the old format start
+// over, and stored encodings of an older version are rebuilt (D-046)
+// (2: tp, mr).
 const ObsRowVersion = 2
 
 // RowFields are the packet_log columns an ObsRow carries.
@@ -183,17 +188,49 @@ func NewObsRow(f RowFields, meta []byte) ObsRow {
 	return r
 }
 
+// RowOf is the ObsRow of an observation stored as row id with the
+// decoded_metadata meta.
+func RowOf(o *Observation, id int64, meta []byte) ObsRow {
+	pid := o.PacketID
+	return NewObsRow(RowFields{
+		ID: id, At: o.ObservedAt, Broker: o.BrokerID, Gateway: o.Gateway, Source: o.Source, Dest: o.Destination, PacketID: &pid,
+		Channel: o.Channel, Type: o.PacketType, Sig: string(o.SignatureStatus), Logical: o.LogicalKey[:], Reception: o.ObservationKey[:],
+		SNR: o.RxSNR, RSSI: o.RxRSSI, Relay: o.RelayHint, HopStart: o.HopStart, HopLimit: o.HopLimit,
+	}, meta)
+}
+
 // LiveRow is the ObsRow for an observation just committed as row id.
 func LiveRow(o *Observation, id int64) *ObsRow {
 	meta, err := json.Marshal(o.Meta)
 	if err != nil {
 		return nil
 	}
-	pid := o.PacketID
-	r := NewObsRow(RowFields{
-		ID: id, At: o.ObservedAt, Broker: o.BrokerID, Gateway: o.Gateway, Source: o.Source, Dest: o.Destination, PacketID: &pid,
-		Channel: o.Channel, Type: o.PacketType, Sig: string(o.SignatureStatus), Logical: o.LogicalKey[:], Reception: o.ObservationKey[:],
-		SNR: o.RxSNR, RSSI: o.RxRSSI, Relay: o.RelayHint, HopStart: o.HopStart, HopLimit: o.HopLimit,
-	}, meta)
+	r := RowOf(o, id, meta)
 	return &r
+}
+
+const tailHead = `{"i":0,`
+
+// EncodeTail is r's JSON without the leading id: the form stored with each
+// packet_log row (obs_row), written before the row has an id (D-046).
+func EncodeTail(r ObsRow) ([]byte, error) {
+	r.ID = 0
+	b, err := json.Marshal(r)
+	if err != nil {
+		return nil, err
+	}
+	if !bytes.HasPrefix(b, []byte(tailHead)) {
+		return nil, errors.New("obsrow: id is not the first field")
+	}
+	return b[len(tailHead):], nil
+}
+
+// WithID completes a tail from EncodeTail into the row's JSON, byte for byte
+// what json.Marshal gives for the row with that id.
+func WithID(id int64, tail []byte) []byte {
+	b := make([]byte, 0, len(tail)+24)
+	b = append(b, `{"i":`...)
+	b = strconv.AppendInt(b, id, 10)
+	b = append(b, ',')
+	return append(b, tail...)
 }

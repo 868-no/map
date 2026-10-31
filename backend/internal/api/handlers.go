@@ -2,12 +2,13 @@ package api
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"reflect"
 	"slices"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
-
-	"fmt"
 
 	"github.com/868-no/map/internal/geo"
 	"github.com/868-no/map/internal/ingest"
@@ -137,9 +138,17 @@ type ObservationsBody struct {
 	Until      time.Time      `json:"until" doc:"Effective upper bound (exclusive)"`
 	Generation string         `json:"generation" doc:"Decoder and configuration generation; rows from another generation must be discarded"`
 	Now        time.Time      `json:"now" doc:"Server time when the rows were read; lets clients follow the server clock between fetches"`
-	Rows       []query.ObsRow `json:"rows"`
+	Rows       RowList        `json:"rows"`
 	More       bool           `json:"more" doc:"More rows remain; request again with cursor = next_cursor"`
 	NextCursor string         `json:"next_cursor,omitempty" doc:"Opaque position after the last row returned (rows come in observed_at order)"`
+}
+
+// RowList is a page of rows already encoded (D-046), documented as the
+// ObsRow list it is.
+type RowList []json.RawMessage
+
+func (RowList) Schema(r huma.Registry) *huma.Schema {
+	return huma.SchemaFromType(r, reflect.TypeOf([]query.ObsRow{}))
 }
 
 type ObservationsOutput struct {
@@ -171,7 +180,7 @@ func (s *Server) observations(ctx context.Context, in *ObservationsInput) (*Obse
 			n.End = t
 		}
 	}
-	out := ObservationsBody{Now: s.now(), Window: echo(w), Generation: fmt.Sprintf("d%d.r%d.c%s", ingest.DecodeVersion, ingest.ObsRowVersion, s.ConfigRev), Rows: []query.ObsRow{}}
+	out := ObservationsBody{Now: s.now(), Window: echo(w), Generation: fmt.Sprintf("d%d.r%d.c%s", ingest.DecodeVersion, ingest.ObsRowVersion, s.ConfigRev), Rows: RowList{}}
 	if n.End.Before(n.Start) {
 		n.End = n.Start
 	}

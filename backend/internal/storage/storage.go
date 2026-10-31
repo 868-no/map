@@ -91,7 +91,7 @@ var columns = []string{
 	"observed_at", "broker_id", "mqtt_topic", "gateway_node_id", "source_node_id", "destination_node_id",
 	"packet_id", "channel_name", "portnum", "packet_type", "logical_packet_key", "observation_key",
 	"rx_time", "rx_snr", "rx_rssi", "hop_start", "hop_limit", "relay_hint", "transport_kind",
-	"signature_status", "decode_version", "envelope_bytes", "decoded_metadata",
+	"signature_status", "decode_version", "envelope_bytes", "decoded_metadata", "obs_row", "obs_row_version",
 }
 
 func optU32(p *uint32) any {
@@ -114,11 +114,15 @@ func Row(o *ingest.Observation) ([]any, error) {
 	if err != nil {
 		return nil, err
 	}
+	tail, err := ingest.EncodeTail(ingest.RowOf(o, 0, meta))
+	if err != nil {
+		return nil, err
+	}
 	return []any{
 		o.ObservedAt, o.BrokerID, o.Topic, optU32(o.Gateway), int64(o.Source), optU32(o.Destination),
 		int64(o.PacketID), nullStr(o.Channel), o.Portnum, o.PacketType, o.LogicalKey[:], o.ObservationKey[:],
 		o.RxTime, o.RxSNR, o.RxRSSI, o.HopStart, o.HopLimit, o.RelayHint, nullStr(o.Transport),
-		string(o.SignatureStatus), ingest.DecodeVersion, o.EnvelopeBytes, meta,
+		string(o.SignatureStatus), ingest.DecodeVersion, o.EnvelopeBytes, meta, string(tail), int16(ingest.ObsRowVersion),
 	}, nil
 }
 
@@ -196,6 +200,7 @@ func RecentObservation(ctx context.Context, pool *pgxpool.Pool, key [16]byte, si
 // (the row's broker_id or an existing also_via entry) are not added again,
 // and rows needing no change are not rewritten. Only decoded_metadata
 // changes, so with fillfactor 90 most updates are HOT (no index writes).
+// also_via is not part of ObsRow, so obs_row stays valid.
 func AddAlsoVia(ctx context.Context, pool *pgxpool.Pool, byRow map[int64][]string) (int64, error) {
 	if len(byRow) == 0 {
 		return 0, nil

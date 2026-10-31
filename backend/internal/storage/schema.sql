@@ -35,6 +35,13 @@ CREATE TABLE IF NOT EXISTS packet_log (
                AND (destination_node_id IS NULL OR destination_node_id BETWEEN 0 AND 4294967295))
 ) WITH (fillfactor = 90);
 
+-- The row as /observations serves it, minus its id (ingest.EncodeTail), so
+-- reads need not decode decoded_metadata (D-046). Derived data only: rows of
+-- another obs_row_version (or none) are served from the columns above and
+-- rebuilt in the background, so a logic change never leaves stale copies.
+ALTER TABLE packet_log ADD COLUMN IF NOT EXISTS obs_row TEXT;
+ALTER TABLE packet_log ADD COLUMN IF NOT EXISTS obs_row_version SMALLINT;
+
 -- Leave room on each page so late broker-provenance updates (also_via) are
 -- HOT updates without index writes. Applies to pages written from now on.
 ALTER TABLE packet_log SET (fillfactor = 90);

@@ -349,3 +349,16 @@ Fixed:
 - **Worker view cache bounded.** It kept 24 views as JSON text; under live traffic every rebuild is a new revision, so it filled with stale multi-MB snapshots (about 180 MB at reference density). Entries of older revisions are now dropped, and the total is capped at 24 M characters.
 
 Measured, left to the operator: serving a full 72 h window at reference density costs about 3–4 s of server time when busy (1.6 s idle). A CPU profile attributes about 44 % to decoding each row's stored metadata with `encoding/json`, 16 % to encoding the response, and 15 % to garbage collection.
+
+## D-046 Stored row encodings (2026-10-31)
+
+Operator decision on the D-045 item: extra data may be stored next to the original packet data, but no tables of derived data that go stale when logic changes. `packet_log` gains two columns:
+- `obs_row`: the row exactly as `/observations` serves it, minus its id, which COPY assigns (`ingest.EncodeTail`; `WithID` adds the id back). Written on insert.
+- `obs_row_version`: the `ObsRowVersion` it was built with.
+
+Pages select `obs_row` only when its version is current, and `decoded_metadata` only when it is not. Rows without a current encoding are built per request as before. At startup, `serve` rebuilds missing or outdated encodings in the background, newest first, 2000 rows per transaction (`FOR UPDATE SKIP LOCKED`, so replicas don't collide). A logic change only needs the `ObsRowVersion` bump it already required. `also_via` updates don't touch it, since `also_via` is not in the row.
+
+Measured on 190k synthetic rows over 3 days (16 CPUs, idle):
+- 72 h window, 170k rows in 9 sequential pages: p50 4.6 s → 2.5 s; first page 445 → 198 ms.
+- Postgres spends about 0.1 s per page; the rest is scanning, transfer and HTTP.
+- Encodings add 68 MB to a 285 MB table; rebuilding all of them took 20 s.

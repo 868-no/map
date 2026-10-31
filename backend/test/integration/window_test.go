@@ -7,6 +7,7 @@ import (
 	"crypto/ed25519"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -544,5 +545,49 @@ func TestLiveRowMatchesStoredRow(t *testing.T) {
 		if !reflect.DeepEqual(a, b) {
 			t.Errorf("row %d differs:\nstored %s\nlive   %s", r.ID, raw, live[r.ID])
 		}
+	}
+}
+
+// D-046: rows whose stored encoding is missing or of another version are
+// served the same from their columns, and the backfill restores them.
+func TestStoredRowEncodings(t *testing.T) {
+	pool := freshDB(t)
+	rc := redisClient(t)
+	f := newFixture(t, pool)
+	T1 := base.Add(time.Hour)
+	f.nodeInfo(T1, nodeA, gw1, "Alpha")
+	f.position(T1.Add(time.Minute), nodeA, gw1, 63.25)
+	f.telemetry(T1.Add(2*time.Minute), nodeA, gw1, 77)
+	ctx := context.Background()
+	if n := count(t, pool, `SELECT count(*) FROM packet_log WHERE obs_row IS NOT NULL AND obs_row_version = $1`, int16(ingest.ObsRowVersion)); n != 3 {
+		t.Fatalf("rows stored with their encoding: %d of 3", n)
+	}
+	c := newAPI(t, pool, rc, testNow)
+	page := func() string {
+		var o struct {
+			Rows json.RawMessage `json:"rows"`
+		}
+		c.get("/api/v1/observations", win(base, base.Add(6*time.Hour)), &o)
+		return string(o.Rows)
+	}
+	want := page()
+	if _, err := pool.Exec(ctx, `UPDATE packet_log SET obs_row = NULL, obs_row_version = NULL WHERE packet_type = 'nodeinfo'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE packet_log SET obs_row = '"stale"}', obs_row_version = $1 WHERE packet_type = 'position'`, int16(ingest.ObsRowVersion-1)); err != nil {
+		t.Fatal(err)
+	}
+	if got := page(); got != want {
+		t.Fatalf("rows without a current encoding differ:\ngot  %s\nwant %s", got, want)
+	}
+	n, err := storage.BackfillObsRows(ctx, pool, slog.Default())
+	if err != nil || n != 2 {
+		t.Fatalf("backfill: %d rows, %v (want 2)", n, err)
+	}
+	if n := count(t, pool, `SELECT count(*) FROM packet_log WHERE obs_row_version = $1`, int16(ingest.ObsRowVersion)); n != 3 {
+		t.Fatalf("current encodings after backfill: %d of 3", n)
+	}
+	if got := page(); got != want {
+		t.Fatalf("rows after backfill differ:\ngot  %s\nwant %s", got, want)
 	}
 }
