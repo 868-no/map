@@ -58,8 +58,8 @@ export function neighborRow(reporter: number, neighbors: number[], t = Date.now(
   return { i: seq, t, b: 'e2e', s: reporter, y: 'neighborinfo', l: hex(seq * 7919), o: hex(seq * 104729), sg: 'unsigned', nb: { neighbors: neighbors.map((id) => ({ id, snr: 5 })) } }
 }
 
-/** A live reception: `gw` heard `src` directly (zero hops), just now. */
-export function directReception(src: number, gw: number): ObsRow {
+/** A live reception: `gw` heard `src` directly (zero hops), just now; broadcast unless `dest` is given. */
+export function directReception(src: number, gw: number, dest?: number): ObsRow {
   ++seq
-  return { i: 1e9 + seq, t: Date.now(), b: 'e2e', g: gw, s: src, y: 'text', l: hex(seq * 7919), o: hex(seq * 104729), sg: 'unsigned', sn: 6, rs: -95, hs: 3, hl: 3, dr: true, rr: 'zero_hop_rf' }
+  return { i: 1e9 + seq, t: Date.now(), b: 'e2e', g: gw, s: src, ...(dest === undefined ? {} : { d: dest }), y: 'text', l: hex(seq * 7919), o: hex(seq * 104729), sg: 'unsigned', sn: 6, rs: -95, hs: 3, hl: 3, dr: true, rr: 'zero_hop_rf' }
 }

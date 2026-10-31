@@ -6,6 +6,11 @@ type Labels = { counts: Record<string, number>; names: Record<string, string[]> 
 type HookLayer = { id: string; data: unknown[] }
 type Hook = { layers: () => HookLayer[] }
 
+/** Turn both link layers on (off by default, D-047) before the page loads. */
+async function withLinks(page: Page) {
+  await page.addInitScript(() => localStorage.setItem('meshmap:toggles:v5', JSON.stringify({ infraLinks: true, otherLinks: true })))
+}
+
 async function ready(page: Page) {
   await page.goto('/')
   await page.waitForFunction(() => !!(window as unknown as { __meshmap?: unknown }).__meshmap, null, { timeout: 30_000 })
@@ -166,6 +171,7 @@ test('legend explains role sizes and a last-heard scale that follows the window'
 })
 
 test('selecting a node shows only its links, and accuracy circles only for it', async ({ page }) => {
+  await withLinks(page)
   await ready(page)
   const layerData = () =>
     page.evaluate(() => {
@@ -289,6 +295,7 @@ test('live rows from the stream update the views without fetching', async ({ pag
 
 test('the packet log combines own and relayed packets, and draws a packet route instead of links', async ({ page }) => {
   test.setTimeout(120_000)
+  await withLinks(page)
   await ready(page)
   await openPanel(page)
   const log = page.getByRole('table', { name: 'Packet log' })

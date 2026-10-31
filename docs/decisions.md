@@ -362,3 +362,7 @@ Measured on 190k synthetic rows over 3 days (16 CPUs, idle):
 - 72 h window, 170k rows in 9 sequential pages: p50 4.6 s → 2.5 s; first page 445 → 198 ms.
 - Postgres spends about 0.1 s per page; the rest is scanning, transfer and HTTP.
 - Encodings add 68 MB to a 285 MB table; rebuilding all of them took 20 s.
+
+## D-047 Link animations only for unicast; links off by default (2026-10-31)
+
+Operator request. Both link layers (infrastructure and other links) now start switched off. The stored-toggles key was bumped to v5, so earlier saved choices reset once. A ping's link animation (D-042) now runs only for packets addressed to one node. Broadcasts show only the radar ring. The engine marks each transmission `unicast` when the row's destination is set and is neither 0 nor broadcast (0xffffffff).
