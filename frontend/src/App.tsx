@@ -107,10 +107,11 @@ export default function App() {
         const ping = rows.flatMap((r, k) => (r.y !== 'mapreport' && passes(r, f) && pingWanted(r.t, now, document.hidden) ? [k] : []))
         sendLiveRows(rows, ping)
       },
-      onStatus: (ok) => {
+      onStatus: (ok, reason) => {
         setLiveOK(ok)
-        // Back after an interruption: fetch whatever the stream missed.
-        if (ok && !wasLive) {
+        // Back after an interruption, or the server dropped events for us
+        // (too slow): fetch whatever the stream missed.
+        if (ok && (!wasLive || reason === 'lagged')) {
           lastRefresh = Date.now()
           bump(`reconnect:${Date.now()}`)
         }

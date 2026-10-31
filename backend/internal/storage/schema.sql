@@ -39,14 +39,18 @@ CREATE TABLE IF NOT EXISTS packet_log (
 -- HOT updates without index writes. Applies to pages written from now on.
 ALTER TABLE packet_log SET (fillfactor = 90);
 
+-- Serves every /observations page ((observed_at, id) keyset order, D-038).
 CREATE INDEX IF NOT EXISTS packet_log_time_idx        ON packet_log (observed_at DESC, id DESC);
+-- Identity rebuild at startup (latest verified NodeInfo per node).
 CREATE INDEX IF NOT EXISTS packet_log_source_time_idx ON packet_log (source_node_id, observed_at DESC);
-CREATE INDEX IF NOT EXISTS packet_log_gateway_time_idx ON packet_log (gateway_node_id, observed_at DESC);
-CREATE INDEX IF NOT EXISTS packet_log_logical_idx     ON packet_log (logical_packet_key, observed_at DESC);
+-- Ingest dedupe: id lookup by observation key.
 CREATE INDEX IF NOT EXISTS packet_log_observation_idx ON packet_log (observation_key, observed_at DESC);
--- Snapshot queries select by type within a window (latest NodeInfo/Position, edge evidence).
+-- Identity rebuild at startup (verified NodeInfo rows).
 CREATE INDEX IF NOT EXISTS packet_log_type_time_idx   ON packet_log (packet_type, observed_at DESC);
--- Cheap range pruning for retention deletes and very long scans; keep/drop decided by M5 benchmark.
+-- Cheap range pruning for retention deletes.
 CREATE INDEX IF NOT EXISTS packet_log_brin            ON packet_log USING BRIN (observed_at);
+-- Served only the retired server views (D-041); every insert paid for them.
+DROP INDEX IF EXISTS packet_log_gateway_time_idx;
+DROP INDEX IF EXISTS packet_log_logical_idx;
 
 COMMENT ON TABLE packet_log IS 'meshmap-schema:1';

@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"time"
 
@@ -36,9 +37,24 @@ func (in *StreamInput) Resolve(huma.Context) []error {
 	return nil
 }
 
+// LaggedReason in a status event: the server dropped events for this client
+// (it was too slow); the client should fetch what it missed.
+const LaggedReason = "lagged"
+
 // LiveDelta carries newly accepted receptions.
 type LiveDelta struct {
 	Events []ingest.LiveEvent `json:"events"`
+	raw    json.RawMessage    // already encoded by the hub: written as-is
+}
+
+// MarshalJSON writes the hub's encoding when there is one, so a delta is
+// encoded once for all subscribers rather than once per connection.
+func (d LiveDelta) MarshalJSON() ([]byte, error) {
+	if d.raw != nil {
+		return d.raw, nil
+	}
+	type plain LiveDelta
+	return json.Marshal(plain(d))
 }
 
 // Heartbeat carries server time and the current rolling window; clients
@@ -85,7 +101,7 @@ func (s *Server) stream(ctx context.Context, in *StreamInput, send sse.Sender) {
 		_ = send.Data(LiveStatus{Live: false, Reason: "live updates not available in this deployment"})
 		return
 	}
-	ch, unsub := s.Hub.subscribe()
+	ch, sub, unsub := s.Hub.subscribe()
 	defer unsub()
 	_ = send.Data(LiveStatus{Live: s.Hub.Available()})
 	t := time.NewTicker(HeartbeatEvery)
@@ -105,8 +121,14 @@ func (s *Server) stream(ctx context.Context, in *StreamInput, send sse.Sender) {
 				err = send.Data(LiveStatus{Live: m.status == "live-available"})
 			case m.retention != nil:
 				err = send.Data(*m.retention)
-			case len(m.events) > 0:
-				err = send.Data(LiveDelta{Events: m.events})
+			case len(m.delta) > 0:
+				if sub.dropped.Swap(false) {
+					// Events were lost while this client was slow: it syncs.
+					if err = send.Data(LiveStatus{Live: true, Reason: LaggedReason}); err != nil {
+						return
+					}
+				}
+				err = send.Data(LiveDelta{raw: m.delta})
 			}
 			if err != nil {
 				return

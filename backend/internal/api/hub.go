@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/868-no/map/internal/cache"
@@ -14,35 +15,54 @@ import (
 
 // Hub fans live events out to SSE subscribers. In serve mode the ingest
 // pipeline publishes into it directly; in API-only mode it is fed from
-// Redis pub/sub. Slow subscribers lose events (and are told so) rather than
-// blocking ingestion.
+// Redis pub/sub. Slow subscribers lose events rather than blocking
+// ingestion, and are told so on their next delivery (they then sync).
 type Hub struct {
 	mu        sync.Mutex
-	subs      map[chan hubMsg]struct{}
+	subs      map[chan hubMsg]*subscriber
 	available bool
 }
 
+type subscriber struct {
+	dropped atomic.Bool // events were dropped since the last delivery
+}
+
 type hubMsg struct {
-	events    []ingest.LiveEvent
+	delta     json.RawMessage // a LiveDelta, encoded once for every subscriber
 	retention *maintenance.Status
 	status    string // "live-available" / "live-unavailable"
 }
 
 // NewHub creates a hub; available reports whether live data flows.
-func NewHub(available bool) *Hub { return &Hub{subs: map[chan hubMsg]struct{}{}, available: available} }
+func NewHub(available bool) *Hub {
+	return &Hub{subs: map[chan hubMsg]*subscriber{}, available: available}
+}
 
 // PublishLive implements ingest.Publisher.
 func (h *Hub) PublishLive(_ context.Context, events []ingest.LiveEvent) {
-	h.broadcast(hubMsg{events: events})
+	h.publishEvents(events)
+}
+
+// publishEvents encodes a delta once; each subscriber only writes the bytes.
+func (h *Hub) publishEvents(events []ingest.LiveEvent) {
+	if len(events) == 0 {
+		return
+	}
+	b, err := json.Marshal(LiveDelta{Events: events})
+	if err != nil {
+		return
+	}
+	h.broadcast(hubMsg{delta: b})
 }
 
 func (h *Hub) broadcast(m hubMsg) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	for ch := range h.subs {
+	for ch, s := range h.subs {
 		select {
 		case ch <- m:
-		default: // subscriber too slow: drop
+		default: // subscriber too slow: drop, and tell it next time
+			s.dropped.Store(true)
 		}
 	}
 }
@@ -68,12 +88,13 @@ func (h *Hub) Available() bool {
 	return h.available
 }
 
-func (h *Hub) subscribe() (chan hubMsg, func()) {
+func (h *Hub) subscribe() (chan hubMsg, *subscriber, func()) {
 	ch := make(chan hubMsg, 256)
+	s := &subscriber{}
 	h.mu.Lock()
-	h.subs[ch] = struct{}{}
+	h.subs[ch] = s
 	h.mu.Unlock()
-	return ch, func() {
+	return ch, s, func() {
 		h.mu.Lock()
 		delete(h.subs, ch)
 		h.mu.Unlock()
@@ -109,7 +130,7 @@ func (h *Hub) FeedFromRedis(ctx context.Context, c *cache.Client, live bool, log
 			case cache.LiveChannel:
 				var evs []ingest.LiveEvent
 				if json.Unmarshal([]byte(m.Payload), &evs) == nil {
-					h.broadcast(hubMsg{events: evs})
+					h.publishEvents(evs)
 				}
 			case maintenance.RetentionChannel:
 				var st maintenance.Status

@@ -339,3 +339,13 @@ Operator request. Node details show where a node's own packets were heard, as ev
 - **Map reports:** a node's own map report states region and preset exactly; when present it is shown first and marked as reported by the node.
 - **Data:** API rows carry the topic root (`tp`, already stored per row) and map reports' region and preset (`mr`). `ObsRowVersion` (2) is now part of the generation `/observations` reports, so browsers holding rows in the old format refetch.
 - On 2026-10-31, 12 busy nodes resolved to EU_N_868 (heard also on `msh/EU_N_868`, or from their map report), EU_868 or EU_N_868 (Norwegian topics only), or EU_868 / Long Fast (one node's map report).
+
+## D-045 Second architecture and performance review (2026-10-31)
+
+Fixed:
+- **Unused indexes dropped.** `packet_log_gateway_time_idx` and `packet_log_logical_idx` served only the retired server views; every insert still maintained them. `schema.sql` drops them (idempotently) at startup. The remaining indexes each serve a named query (comments in the schema).
+- **Live deltas encoded once.** Each SSE connection re-encoded every delta, so CPU grew with the number of viewers. The hub now encodes a delta once and every connection writes the same bytes (`LiveDelta` carries the pre-encoded form; its schema is unchanged).
+- **Lagging clients are told.** A subscriber too slow for its 256-message buffer lost events silently, despite the comment saying otherwise. The hub now flags it, the stream sends `status {live: true, reason: "lagged"}` before the next delta, and the browser syncs immediately instead of at the next one-minute gap fill.
+- **Worker view cache bounded.** It kept 24 views as JSON text; under live traffic every rebuild is a new revision, so it filled with stale multi-MB snapshots (about 180 MB at reference density). Entries of older revisions are now dropped, and the total is capped at 24 M characters.
+
+Measured, left to the operator: serving a full 72 h window at reference density costs about 3–4 s of server time when busy (1.6 s idle). A CPU profile attributes about 44 % to decoding each row's stored metadata with `encoding/json`, 16 % to encoding the response, and 15 % to garbage collection.

@@ -198,14 +198,25 @@ function liveRows(rows: unknown[], ping: number[]) {
   if (store.addLive(text)) changed()
 }
 
-// Views are memoised (as JSON text) by data revision, kind, window and filters.
+// Views are memoised (as JSON text) by data revision, kind, window and
+// filters. A snapshot at reference density is several MB and every live
+// rebuild is a new revision, so entries of older revisions are dropped and
+// the total is capped.
+const MEMO_MAX_CHARS = 24_000_000
 const memo = new Map<string, string>()
-function remember(key: string, make: () => string): string {
+let memoChars = 0
+function remember(key: string, revision: string, make: () => string): string {
   const hit = memo.get(key)
   if (hit !== undefined) return hit
   const v = make()
+  for (const [k, x] of memo) {
+    if (!k.startsWith(revision + '|') || memoChars + v.length > MEMO_MAX_CHARS) {
+      memo.delete(k)
+      memoChars -= x.length
+    }
+  }
   memo.set(key, v)
-  if (memo.size > 24) memo.delete(memo.keys().next().value!)
+  memoChars += v.length
   return v
 }
 
@@ -225,7 +236,7 @@ async function view(req: ViewRequest): Promise<{ body: string; offline: boolean 
   const key = `${revision}|${start}|${end}|${fj}|${req.kind}|${req.node ?? ''}`
   let body: string
   try {
-    body = remember(key, () => engine.view(req.kind, start, end, fj, req.node ?? ''))
+    body = remember(key, revision, () => engine.view(req.kind, start, end, fj, req.node ?? ''))
   } catch (e) {
     throw new HttpError(400, e instanceof Error ? e.message : String(e))
   }
@@ -246,6 +257,7 @@ self.onmessage = async (e: MessageEvent<Request>) => {
     engine.set_options(JSON.stringify({ geo: msg.geo }))
     quantumMs = msg.liveQuantumMs
     memo.clear()
+    memoChars = 0
     initDone()
     return
   }
