@@ -1,19 +1,19 @@
 import { expect, test, type Page } from '@playwright/test'
 import { docShot } from './shots'
+import { mockObservations, nodeRows } from './mock'
 
 // Names of nodes close together collapse into one ("NAME +N") and fan out
 // on hover or while one of them is selected; markers never move.
 type HookLayer = { id: string; data: { text?: string }[] }
 type Hook = { layers: () => HookLayer[]; map: { jumpTo: (o: object) => void; project: (p: [number, number]) => { x: number; y: number }; getCanvas: () => HTMLCanvasElement; isMoving: () => boolean } }
 
-const now = new Date().toISOString()
-const mk = (i: number, name: string, lat: number, lon: number, role?: string) => ({
-  id: '!' + (0x20000000 + i).toString(16), num: 0x20000000 + i, status: 'observed', packets: 5, receptions: 5, gateway_receptions: 0, is_gateway: false,
-  signatures: { verified: 0, unsigned: 5, unverifiable: 0, not_applicable: 0 }, first_seen: now, last_seen: now,
-  identity: { long_name: `${name} long`, short_name: name, role, has_public_key: false, signature: 'unsigned', observed_at: now },
-  position: { lat, lon, precision_bits: 32, precision_known: true, signature: 'unsigned', observed_at: now },
-})
-const nodes = [mk(1, 'ALFA', 59.91, 10.75), mk(2, 'BRAV', 59.9102, 10.7502, 'ROUTER'), mk(3, 'CHAR', 59.9101, 10.7505), mk(4, 'FARX', 60.3, 11.2)]
+// Three nodes about 30 m apart (their names overlap) and one far away.
+const rows = [
+  ...nodeRows(0x20000001, 'ALFA', { lat: 59.91, lon: 10.75 }),
+  ...nodeRows(0x20000002, 'BRAV', { lat: 59.9102, lon: 10.7502, role: 'ROUTER' }),
+  ...nodeRows(0x20000003, 'CHAR', { lat: 59.9101, lon: 10.7505 }),
+  ...nodeRows(0x20000004, 'FARX', { lat: 60.3, lon: 11.2 }),
+]
 
 const labels = (page: Page) =>
   page.evaluate(() => {
@@ -22,17 +22,10 @@ const labels = (page: Page) =>
   })
 
 test('close-together names collapse, and fan out on hover and selection', async ({ page }) => {
-  await page.route('**/api/v1/snapshot*', (route) => {
-    const end = new Date()
-    route.fulfill({ json: {
-      meta: { window: { start: new Date(end.getTime() - 72 * 3600e3).toISOString(), end: end.toISOString(), rolling: true }, revision: 'labels', filters: {}, generated_at: now },
-      nodes, edges: [], edges_truncated: false, diagnostics: { relay_ambiguous: 0, relay_unmatched: 0 },
-      counts: { packets: 20, receptions: 20, nodes: 4, referenced: 0, positioned: 4, estimated: 0, edges: 0, by_type: {}, nodes_truncated: false },
-    } })
-  })
-  await page.goto('/?derive=server')
+  await mockObservations(page, rows)
+  await page.goto('/')
   await page.waitForFunction(() => !!(window as unknown as { __meshmap?: Hook }).__meshmap)
-  await expect(page.locator('.counters')).toContainText('4 nodes')
+  await expect(page.locator('.counters')).toContainText('4 positioned')
   await page.waitForTimeout(1500) // initial fit-to-data
   await page.evaluate(() => (window as unknown as { __meshmap: Hook }).__meshmap.map.jumpTo({ center: [10.7502, 59.9101], zoom: 13 }))
   // Every placed node is labelled (off-screen ones too); the three nearby collapse.

@@ -1,17 +1,12 @@
 import { keepPreviousData, useQuery, type Query } from '@tanstack/react-query'
 import { useMemo } from 'react'
 import { getJSON, matchesRequest } from '../api/client'
-import type { Capabilities, NodeBody, Retention, SnapshotBody, TrafficBody } from '../api/types'
+import type { Capabilities, NodeBody, PacketLog, PacketRoute, Retention, SnapshotBody, TrafficBody } from '../api/types'
 import { apiParams, useStore } from './store'
 import { create } from 'zustand'
-import { deriveMode, deriveView, onDerivedChange } from '../derive/client'
+import { deriveView, onDerivedChange } from '../derive/client'
 import type { ViewKind } from '../derive/protocol'
-import type { PacketLog } from '../derive/packetlog'
-import type { PacketRoute } from '../derive/route'
 import { usePwa } from '../pwa'
-
-/** Where views are built: in the browser (default) or by the server. Fixed for the page's lifetime. */
-export const DERIVE = deriveMode()
 
 /**
  * epoch: bumped by live heartbeats to refresh rolling-window views (a sync
@@ -23,7 +18,7 @@ export const useLiveEpoch = create<{ epoch: string; rev: number; bump: (e: strin
   rev: 0,
   bump: (epoch) => set({ epoch }),
 }))
-if (DERIVE === 'client') onDerivedChange(() => useLiveEpoch.setState((s) => ({ rev: s.rev + 1 })))
+onDerivedChange(() => useLiveEpoch.setState((s) => ({ rev: s.rev + 1 })))
 
 export function useCapabilities() {
   return useQuery({ queryKey: ['capabilities'], queryFn: ({ signal }) => getJSON<Capabilities>('/api/v1/capabilities', undefined, signal), staleTime: 300_000 })
@@ -60,26 +55,24 @@ function safePlaceholder<T>(prev: T | undefined, prevQuery: Query<T, Error, T, K
   return undefined
 }
 
-function useWindowQuery<T extends { meta: SnapshotBody['meta'] }>(kind: ViewKind, path: string, node?: string, enabled = true) {
+/** A view built by the derivation worker for the current window and filters. */
+function useWindowQuery<T extends { meta: SnapshotBody['meta'] }>(kind: ViewKind, node?: string, enabled = true) {
   const { params, identity, epoch } = useWindowParams()
   const win = useStore((s) => s.win)
   const filters = useStore((s) => s.filters)
   const rev = useLiveEpoch((s) => s.rev)
-  const key: Key = [kind + (node ? ':' + node : ''), params.toString(), identity, win.live && DERIVE === 'client' ? `${epoch}#${rev}` : epoch]
+  const key: Key = [kind + (node ? ':' + node : ''), params.toString(), identity, win.live ? `${epoch}#${rev}` : epoch]
   return useQuery<T, Error, T, Key>({
     queryKey: key,
     enabled,
     queryFn: async ({ signal }) => {
-      let body: T
-      if (DERIVE === 'client') {
-        const r = await deriveView({
-          kind, node, epoch,
-          win: win.live ? { live: true, durationH: win.durationH } : { live: false, start: win.start!, end: win.end! },
-          filters: { channels: filters.channels, brokers: filters.brokers, types: filters.types },
-        }, signal)
-        if (usePwa.getState().servedOffline !== r.offline) usePwa.setState({ servedOffline: r.offline })
-        body = r.body as T
-      } else body = await getJSON<T>(path, params, signal)
+      const r = await deriveView({
+        kind, node, epoch,
+        win: win.live ? { live: true, durationH: win.durationH } : { live: false, start: win.start!, end: win.end! },
+        filters: { channels: filters.channels, brokers: filters.brokers, types: filters.types },
+      }, signal)
+      if (usePwa.getState().servedOffline !== r.offline) usePwa.setState({ servedOffline: r.offline })
+      const body = r.body as T
       if (!matchesRequest(body.meta, params)) throw new Error('stale response for a different window')
       return body
     },
@@ -90,18 +83,10 @@ function useWindowQuery<T extends { meta: SnapshotBody['meta'] }>(kind: ViewKind
   })
 }
 
-export const useSnapshot = () => useWindowQuery<SnapshotBody>('snapshot', '/api/v1/snapshot')
-export const useTraffic = () => useWindowQuery<TrafficBody>('traffic', '/api/v1/traffic')
-/** The node's own and relayed packets; built in the browser only (D-036). */
-export function usePacketLog(id: string | null) {
-  return useWindowQuery<PacketLog & { meta: SnapshotBody['meta'] }>('packetlog', '', id ?? undefined, !!id && DERIVE === 'client')
-}
-
-/** One packet's routing graph (browser-built views only). */
-export function usePacketRoute(lp: string | null) {
-  return useWindowQuery<PacketRoute & { meta: SnapshotBody['meta'] }>('route', '', lp ?? undefined, !!lp && DERIVE === 'client')
-}
-
-export function useNodeDetail(id: string | null) {
-  return useWindowQuery<NodeBody>('node', `/api/v1/nodes/${encodeURIComponent(id ?? '')}`, id ?? undefined, !!id)
-}
+export const useSnapshot = () => useWindowQuery<SnapshotBody>('snapshot')
+export const useTraffic = () => useWindowQuery<TrafficBody>('traffic')
+/** The node's own and relayed packets (D-036). */
+export const usePacketLog = (id: string | null) => useWindowQuery<PacketLog>('packetlog', id ?? undefined, !!id)
+/** One packet's routing graph (D-037). */
+export const usePacketRoute = (lp: string | null) => useWindowQuery<PacketRoute>('route', lp ?? undefined, !!lp)
+export const useNodeDetail = (id: string | null) => useWindowQuery<NodeBody>('node', id ?? undefined, !!id)

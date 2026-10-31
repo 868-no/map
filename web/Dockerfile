@@ -1,11 +1,26 @@
 # syntax=docker/dockerfile:1.7
 # Build context: repository root.
 # Build stages run natively on the build machine; their output is platform independent.
+
+# The WebAssembly engine (frontend/engine): every view is derived in the browser.
+FROM --platform=$BUILDPLATFORM rust:1.99.1-slim-bookworm AS engine
+# Must equal the wasm-bindgen crate version in frontend/engine/Cargo.toml.
+ARG WASM_BINDGEN=0.2.129
+RUN rustup target add wasm32-unknown-unknown \
+ && cargo install --locked wasm-bindgen-cli --version "$WASM_BINDGEN"
+WORKDIR /src/engine
+COPY frontend/engine/Cargo.toml frontend/engine/Cargo.lock ./
+COPY frontend/engine/src ./src
+RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,target=/src/engine/target \
+    cargo build --release --locked --target wasm32-unknown-unknown \
+ && wasm-bindgen --target web --out-dir /out --out-name engine target/wasm32-unknown-unknown/release/meshmap_engine.wasm
+
 FROM --platform=$BUILDPLATFORM node:22.21.1-bookworm AS app
 WORKDIR /src/frontend
 COPY frontend/package.json frontend/package-lock.json ./
 RUN --mount=type=cache,target=/root/.npm npm ci --no-audit --no-fund
 COPY frontend/ ./
+COPY --from=engine /out ./src/engine/pkg
 COPY docs/api-openapi.yaml /src/docs/api-openapi.yaml
 # true only for end-to-end test stacks: compiles in the window.__meshmap hook.
 ARG E2E_HOOKS=false

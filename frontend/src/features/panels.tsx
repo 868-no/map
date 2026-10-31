@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
-import type { Edge, MeshNode, NodeBody, SnapshotBody } from '../api/types'
-import { DERIVE, useNodeDetail, usePacketLog, usePacketRoute } from '../state/data'
+import type { Edge, MeshNode, SnapshotBody } from '../api/types'
+import { useNodeDetail, usePacketLog, usePacketRoute } from '../state/data'
 import { useStore } from '../state/store'
 import { formatLocal, formatLogTime, relativeAge } from '../lib/time'
 import { Sparkline } from '../components/Sparkline'
@@ -153,14 +153,14 @@ export function NodePanel({ id, snapshot }: { id: string; snapshot: SnapshotBody
           ))}
         </tbody>
       </table>
-      <PacketLogs id={id} recent={d.recent_packets ?? []} names={names} positioned={positioned} />
+      <PacketLogs id={id} names={names} positioned={positioned} />
       <p className="muted">Message contents are never stored or shown.</p>
     </div>
   )
 }
 
 /** The selected node's packets in the window: its own, and others' it relayed. */
-function PacketLogs({ id, recent, names, positioned }: { id: string; recent: NonNullable<NodeBody['recent_packets']>; names: Map<string, string>; positioned: Set<string> }) {
+function PacketLogs({ id, names, positioned }: { id: string; names: Map<string, string>; positioned: Set<string> }) {
   const select = useStore((s) => s.select)
   const route = useStore((s) => s.route)
   const showRoute = useStore((s) => s.showRoute)
@@ -169,24 +169,6 @@ function PacketLogs({ id, recent, names, positioned }: { id: string; recent: Non
   const [shown, setShown] = useState({ own: 50, relayed: 50 })
   const more = (k: 'own' | 'relayed', total: number) =>
     total > shown[k] && <button className="more" onClick={() => setShown((s) => ({ ...s, [k]: s[k] + 100 }))}>Show more ({total - shown[k]} hidden)</button>
-  if (DERIVE !== 'client') {
-    // Server-built views have no relay log; own packets come from the node detail.
-    return (
-      <>
-        <h3>Own packets ({recent.length})</h3>
-        <table className="hear pkt-log">
-          <thead><tr><th>Time</th><th>Type</th><th>To</th><th>Rx</th><th>Sig</th></tr></thead>
-          <tbody>
-            {recent.slice(0, shown.own).map((p) => (
-              <tr key={p.packet_id + p.at}><td>{formatLocal(p.at)}</td><td>{p.type}</td><td>{p.to ?? ''}</td><td>{p.receptions}</td><td><SigBadge s={p.signature} compact /></td></tr>
-            ))}
-          </tbody>
-        </table>
-        {more('own', recent.length)}
-        <p className="muted">The relayed-packets log needs views built in the browser (open without ?derive=server).</p>
-      </>
-    )
-  }
   const own = log.data?.own ?? []
   const relayed = log.data?.relayed ?? []
   const nm = (n: string) => names.get(n) ?? n

@@ -1,36 +1,25 @@
 import { expect, test } from '@playwright/test'
+import { mockObservations, neighborRow, nodeRows } from './mock'
 
 // Spec §11/§17 test 32 (client side): reference density of 2 000 nodes and
-// 20 000 edges served as a snapshot; measure JS heap and frame rate while
-// panning. Results are printed for docs/benchmarks.md.
+// 20 000 links, derived in the browser from synthetic observations; measure
+// JS heap and frame rate while panning. Printed for docs/benchmarks.md.
 for (const [N, E] of [[0, 0], [2000, 20000]] as const) test(`rendering ${N} nodes / ${E} edges: heap and frame rate`, async ({ page }) => {
   test.setTimeout(180_000)
-  const nodes = Array.from({ length: N }, (_, i) => {
-    const id = '!' + (0x10000000 + i).toString(16)
-    const positioned = i % 4 !== 0
+  // Synthetic observations the browser derives the mesh from: positions for
+  // three in four nodes, and NeighborInfo reports of ten neighbours each
+  // (2 000 x 10 = 20 000 directed links).
+  const num = (i: number) => 0x10000000 + i
+  const rows = Array.from({ length: N }, (_, i) => {
     const lat = 58.5 + ((i * 7919) % 1000) / 1000 * 5.5, lon = 5.5 + ((i * 104729) % 1000) / 1000 * 6.5
-    return {
-      id, num: 0x10000000 + i, status: 'observed', packets: 10, receptions: 20, gateway_receptions: i % 12 === 0 ? 50 : 0, is_gateway: i % 12 === 0,
-      signatures: { verified: 5, unsigned: 5, unverifiable: 0, not_applicable: 0 }, last_seen: new Date().toISOString(), first_seen: new Date(Date.now() - 3600e3).toISOString(),
-      identity: { long_name: `Node ${i}`, short_name: `N${i % 1000}`, has_public_key: true, signature: 'verified', observed_at: new Date().toISOString() },
-      ...(positioned ? { position: { lat, lon, precision_bits: 32, precision_known: true, signature: 'verified', observed_at: new Date().toISOString() } }
-        : i % 8 === 0 ? { estimate: { lat, lon, uncertainty_radius_m: 3000, method: 'weighted_centroid', quality: 'very_low', anchor_count: 3, sample_count: 9, anchors: [], evidence_from: '', evidence_to: '', reasons: [] } } : {}),
-    }
-  })
-  const edges = Array.from({ length: E }, (_, k) => {
-    const a = k % N, b = (a + 1 + (k % 17)) % N
-    return { src: nodes[a].id, dst: nodes[b].id, src_num: nodes[a].num, dst_num: nodes[b].num, samples: 1 + (k % 9), confidence: ['high', 'medium', 'low'][k % 3], inferred: k % 3 === 2,
-      reason: '', evidence: { neighbor: k % 3 === 0 ? 1 : 0, traceroute: 0, direct_rf: k % 3 === 1 ? 1 : 0, relay_hint: k % 3 === 2 ? 1 : 0 },
-      snr: { n: 1, median: 5 }, rssi: { n: 0 }, first_at: new Date().toISOString(), last_at: new Date().toISOString() }
-  })
-  await page.route('**/api/v1/snapshot*', async (route) => {
-    const now = new Date()
-    const body = { meta: { window: { start: new Date(now.getTime() - 72 * 3600e3).toISOString(), end: now.toISOString(), rolling: true }, revision: 'perf', filters: {}, generated_at: now.toISOString() },
-      nodes, edges, edges_truncated: false, diagnostics: { relay_ambiguous: 0, relay_unmatched: 0 },
-      counts: { packets: 1, receptions: 1, nodes: N, referenced: 0, positioned: N, estimated: 0, edges: E, by_type: {}, nodes_truncated: false } }
-    await route.fulfill({ json: body })
-  })
-  await page.goto('/?derive=server') // a synthetic snapshot: measures rendering, not derivation
+    const positioned = i % 4 !== 0
+    return [
+      ...nodeRows(num(i), `N${i % 1000}`, positioned ? { lat, lon } : {}),
+      ...(N > 0 && E > 0 ? [neighborRow(num(i), Array.from({ length: E / N }, (_, k) => num((i + 1 + k) % N)))] : []),
+    ]
+  }).flat()
+  await mockObservations(page, rows)
+  await page.goto('/')
   await page.waitForFunction(() => !!(window as unknown as { __meshmap?: unknown }).__meshmap)
   await expect(page.locator('.counters')).toContainText(`${E} links`)
   if (N > 0) {

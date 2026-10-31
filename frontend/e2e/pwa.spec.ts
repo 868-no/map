@@ -32,10 +32,20 @@ test('works offline with the last data received, and never stores tiles in the w
   const names = await page.locator('.node-row .nm').allTextContents()
   // The worker saves its rows to IndexedDB in the background; go offline once saved.
   await expect.poll(() => page.evaluate(() => new Promise<boolean>((resolve) => {
+    // Never create or hold the database here: that would block the worker's schema upgrade.
     const req = indexedDB.open('meshmap-derive')
+    req.onupgradeneeded = () => req.transaction?.abort()
     req.onsuccess = () => {
-      const g = req.result.transaction('meta').objectStore('meta').get('state')
-      g.onsuccess = () => resolve(!!g.result?.cov)
+      const db = req.result
+      if (!db.objectStoreNames.contains('meta')) {
+        db.close()
+        return resolve(false)
+      }
+      const g = db.transaction('meta').objectStore('meta').get('state')
+      g.onsuccess = () => {
+        db.close()
+        resolve(!!g.result?.cov)
+      }
     }
     req.onerror = () => resolve(false)
   })), { timeout: 15_000 }).toBe(true)
@@ -60,8 +70,12 @@ test('works offline with the last data received, and never stores tiles in the w
   const held = await page.evaluate(() => new Promise<number>((resolve) => {
     const req = indexedDB.open('meshmap-derive')
     req.onsuccess = () => {
-      const c = req.result.transaction('rows').objectStore('rows').count()
-      c.onsuccess = () => resolve(c.result)
+      const db = req.result
+      const c = db.transaction('chunks').objectStore('chunks').count()
+      c.onsuccess = () => {
+        db.close()
+        resolve(c.result)
+      }
     }
     req.onerror = () => resolve(0)
   }))

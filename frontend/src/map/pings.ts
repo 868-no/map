@@ -1,109 +1,11 @@
-import { nodeId, resolveRelay as resolve, ZERO_COST_ROLES, type RelayContext } from '../derive/graph'
+// Radar-ping traffic animation. Each RF transmission attributed to a node
+// (by the WebAssembly engine, from live rows) becomes one expanding ring
+// centred on the transmitter, growing until it encloses every node known to
+// have heard that transmission directly. State lives outside React: the map
+// animation loop reads it each frame.
+import type { Transmission } from '../derive/protocol'
 
-// Radar-ping traffic animation. Each RF transmission we can attribute to a
-// node becomes one expanding ring centred on the transmitter, growing until
-// it encloses every node known to have heard that transmission directly.
-// State lives outside React: the map animation loop reads it each frame.
-
-/** The subset of a live reception event the animation needs. */
-export interface Reception {
-  node: string // originator
-  gw?: string // gateway that uplinked this reception
-  lp: string // logical packet key (same for every copy of one packet)
-  direct_rf?: boolean // the gateway heard the originator's own transmission
-  relay?: number // last byte of the node that transmitted what the gateway heard
-  hops?: number // hop_start - hop_limit
-  path?: string[] | null // traceroutes: relays after the originator, in order ("" = unrecorded hop)
-  snr?: number // measured by the gateway (dB)
-  rssi?: number // measured by the gateway (dBm)
-}
-
-/** Who transmitted, and (if known) who heard that transmission directly. */
-export interface Transmission {
-  key: string // packet + transmitter: one ping per RF transmission
-  tx: string
-  rx?: string
-  rebroadcast: boolean
-  strength?: number // 0..1 signal measured at rx, when rx is the reporting gateway
-}
-
-/** Map measured signal to 0..1: SNR -20..+10 dB, else RSSI -130..-70 dBm. */
-export function signalStrength(snr?: number, rssi?: number): number | undefined {
-  const clamp = (v: number) => Math.min(Math.max(v, 0), 1)
-  if (snr !== undefined && snr !== null) return clamp((snr + 20) / 30)
-  if (rssi !== undefined && rssi !== null) return clamp((rssi + 130) / 60)
-  return undefined
-}
-
-export interface MeshContext {
-  relay: RelayContext // the same context the links use (window nodes, reported positions, confirmed pairs, range)
-  role: (id: string) => string | undefined // device role from in-window NodeInfo
-}
-
-export { ZERO_COST_ROLES }
-
-const num = (id: string) => parseInt(id.slice(1), 16)
-
-/**
- * Resolve a relay byte to one node, or nothing (never a guess): the shared
- * resolver the links use (derive/graph.ts, a port of the backend's).
- */
-export function resolveRelay(byte: number, origin: string, gw: string, ctx: MeshContext): string | undefined {
-  const [n, res] = resolve(byte, num(origin), num(gw), ctx.relay)
-  return res === 'resolved' ? nodeId(n) : undefined
-}
-
-/**
- * Turn one gateway reception into the transmissions it proves.
- * - The originator always transmitted the first broadcast.
- * - A gateway hearing the originator directly is a receiver of that broadcast.
- * - Otherwise the gateway heard a rebroadcast by the last-hop relay; when the
- *   relay byte resolves uniquely, that is a transmission by the relay heard
- *   by the gateway.
- * - Hop count 1 with a resolved relay whose role is known and NOT one of
- *   ZERO_COST_ROLES: the first hop always spends a hop, and only those roles
- *   can receive at zero cost, so this relay was the single hop-spending first
- *   hop and heard the originator directly. With a zero-cost-capable or
- *   unknown role nothing is inferred (on mqtt.868.no traceroutes, 41 of 178
- *   count-1 copies had 2-5 relays, every one ending at such a role).
- */
-export function transmissions(ev: Reception, ctx: MeshContext): Transmission[] {
-  // Signal measurements belong to the gateway's own reception only.
-  const strength = signalStrength(ev.snr, ev.rssi)
-  return attribute(ev, ctx).map((t) => (t.rx && t.rx === ev.gw && strength !== undefined ? { ...t, strength } : t))
-}
-
-function attribute(ev: Reception, ctx: MeshContext): Transmission[] {
-  if (ev.path) return traceroutePath(ev, ev.path)
-  const origin = (rx?: string): Transmission => ({ key: `${ev.lp}|${ev.node}`, tx: ev.node, rx, rebroadcast: false })
-  if (!ev.gw || ev.gw === ev.node) return [origin()]
-  if (ev.direct_rf || ev.hops === 0) return [origin(ev.gw)]
-  if (ev.relay === undefined || ev.relay === null) return [origin()]
-  const relay = resolveRelay(ev.relay, ev.node, ev.gw, ctx)
-  if (!relay) return [origin()]
-  const role = ctx.role(relay)
-  const firstHop = ev.hops === 1 && role !== undefined && !ZERO_COST_ROLES.has(role)
-  return [origin(firstHop ? relay : undefined), { key: `${ev.lp}|${relay}`, tx: relay, rx: ev.gw, rebroadcast: true }]
-}
-
-/**
- * Traceroutes record every relay in order, and each node that received the
- * copy (including the uplinking gateway) adds itself; adjacent entries heard
- * each other directly. This is exact, so it replaces the hop-count and
- * relay-byte heuristics, which disagree with the route on real traffic.
- */
-function traceroutePath(ev: Reception, path: string[]): Transmission[] {
-  const chain = [ev.node, ...path]
-  if (ev.gw && chain[chain.length - 1] !== ev.gw) chain.push(ev.gw)
-  const out: Transmission[] = []
-  for (let i = 0; i < chain.length; i++) {
-    const tx = chain[i], rx = chain[i + 1]
-    if (!tx) continue // an unrecorded hop transmitted, but we cannot place it
-    if (i > 0 && i === chain.length - 1) break // the last node only received
-    out.push({ key: `${ev.lp}|${tx}`, tx, rx: rx || undefined, rebroadcast: i > 0 })
-  }
-  return out
-}
+export type { Transmission }
 
 // ---- animation state ----
 //

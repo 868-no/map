@@ -2,17 +2,20 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { subscribeLive } from './api/client'
 import MapView from './map/MapView'
-import { addTransmission, clearPings, transmissions, pingWanted, type MeshContext, type Reception } from './map/pings'
-import { contextFromSnapshot } from './derive/packetlog'
+import { addTransmission, clearPings, pingWanted } from './map/pings'
 import Timeline from './timeline/Timeline'
 import { usePwa } from './pwa'
 import { EdgePanel, NodeList, NodePanel } from './features/panels'
 import { FilterPanel, Legend } from './features/controls'
-import { DERIVE, useCapabilities, useLiveEpoch, useRetention, useSnapshot, useTraffic } from './state/data'
-import { initDerive, sendLiveRows } from './derive/client'
-import { receptionFromRow } from './derive/live'
-import { applyFilters } from './derive/views'
-import { apiParams, defaultFilters, fromQuery, toQuery, useStore } from './state/store'
+import { useCapabilities, useLiveEpoch, useRetention, useSnapshot, useTraffic } from './state/data'
+import { initDerive, onTransmissions, sendLiveRows } from './derive/client'
+import { apiParams, defaultFilters, fromQuery, toQuery, useStore, type Filters } from './state/store'
+import type { ObsRow } from './api/types'
+
+/** A live row passes the view filters (the stream itself is unfiltered). */
+function passes(r: ObsRow, f: Filters): boolean {
+  return (!f.channels.length || (r.c != null && f.channels.includes(r.c))) && (!f.brokers.length || f.brokers.includes(r.b)) && (!f.types.length || f.types.includes(r.y))
+}
 
 type Tab = 'nodes' | 'details' | 'filters' | 'legend'
 
@@ -33,18 +36,12 @@ export default function App() {
   const onPositions = useCallback((pos: Map<string, [number, number]>) => {
     geo.current = pos
   }, [])
-  // Everything the ping animation needs to attribute rebroadcasts to relays:
-  // the same relay context the links were built with.
-  const mesh = useRef<MeshContext>({ relay: contextFromSnapshot([], []), role: () => undefined })
-  useEffect(() => {
-    const nodes = snap.data?.nodes ?? []
-    const roles = new Map(nodes.map((n) => [n.id, n.identity?.role || undefined]))
-    mesh.current = { relay: contextFromSnapshot(nodes, snap.data?.edges ?? []), role: (id) => roles.get(id) }
-  }, [snap.data])
+  // The worker attributes live rows to transmissions; the animation places them.
+  useEffect(() => onTransmissions((ts) => ts.forEach((t) => addTransmission(t, geo.current))), [])
 
   // The derivation worker applies the operator's geolocation settings.
   useEffect(() => {
-    if (DERIVE === 'client' && caps.data) initDerive(caps.data)
+    if (caps.data) initDerive(caps.data)
   }, [caps.data])
 
   // URL <-> state (shareable links; back/forward).
@@ -79,52 +76,40 @@ export default function App() {
     setPanelOpen((o) => !o)
   }
 
-  // Live updates for the rolling window only.
+  // Live updates for the rolling window only. The stream carries every new
+  // row (unfiltered: the browser's copy needs them all); filters apply here.
   const bump = useLiveEpoch((s) => s.bump)
   const filtersRef = useRef(filters)
   filtersRef.current = filters
-  const liveFilters = DERIVE === 'client' ? null : filters // built in the browser: the stream carries every row
   useEffect(() => {
     if (!win.live) return
-    const client = DERIVE === 'client'
-    const params = apiParams({ win, filters: client ? defaultFilters : liveFilters! })
+    const params = apiParams({ win, filters: defaultFilters })
     let lastRefresh = Date.now() // the views were just loaded
     let wasLive = true
     let clockOffset = 0 // server time minus local time, from heartbeats
-    const ping = (ev: Reception, observedMs: number) => {
-      if (!pingWanted(observedMs, Date.now() + clockOffset, document.hidden)) return
-      for (const t of transmissions(ev, mesh.current)) addTransmission(t, geo.current)
-    }
     const unsub = subscribeLive(params, {
       onHeartbeat: (h) => {
         clockOffset = Date.parse(h.now) - Date.now()
-        // Server views: refresh so new and aged-out evidence shows (~30 s).
-        // Browser views get every row from the stream; this sync only fills
-        // gaps the stream might have left, so once a minute is enough.
-        if (Date.now() - lastRefresh > (client ? 60_000 : 30_000)) {
+        // Every row arrives over the stream; this sync only fills gaps the
+        // stream might have left (and slides an idle window), once a minute.
+        if (Date.now() - lastRefresh > 60_000) {
           lastRefresh = Date.now()
           bump(h.window.end)
         }
       },
       onDelta: (events) => {
-        if (client) {
-          const rows = events.flatMap((e) => (e.row ? [e.row] : []))
-          sendLiveRows(rows)
-          const f = filtersRef.current
-          for (const r of applyFilters(rows, { channels: f.channels, brokers: f.brokers, types: f.types })) {
-            if (r.y !== 'mapreport') ping(receptionFromRow(r), r.t) // a node's own MQTT report, not a radio transmission
-          }
-          return
-        }
-        for (const ev of events) {
-          if (ev.type === 'mapreport') continue
-          ping({ ...ev, relay: ev.relay ?? undefined, hops: ev.hops ?? undefined, path: ev.path ?? null, snr: ev.snr ?? undefined, rssi: ev.rssi ?? undefined }, Date.parse(ev.t))
-        }
+        const rows = events.flatMap((e) => (e.row ? [e.row] : []))
+        const f = filtersRef.current
+        const now = Date.now() + clockOffset
+        // Pings: radio traffic only (not a node's own map report), passing the
+        // filters, recent, and only while someone is watching (D-034).
+        const ping = rows.flatMap((r, k) => (r.y !== 'mapreport' && passes(r, f) && pingWanted(r.t, now, document.hidden) ? [k] : []))
+        sendLiveRows(rows, ping)
       },
       onStatus: (ok) => {
         setLiveOK(ok)
         // Back after an interruption: fetch whatever the stream missed.
-        if (ok && !wasLive && client) {
+        if (ok && !wasLive) {
           lastRefresh = Date.now()
           bump(`reconnect:${Date.now()}`)
         }
@@ -139,7 +124,7 @@ export default function App() {
       unsub()
       clearPings()
     }
-  }, [win, liveFilters, bump, qc])
+  }, [win, bump, qc])
 
   // Fixed windows that fall out of retention while open: notify and clamp.
   useEffect(() => {

@@ -1,8 +1,9 @@
-// The browser's copy of the packet log: decoded observations covering one
-// contiguous time range, fetched incrementally from /api/v1/observations.
-// Rows are immutable, so a range fetched once never needs fetching again;
-// a rolling window only asks for what arrived since the last sync.
-import type { ObsRow, ObservationsBody } from '../api/types'
+// The browser's copy of the packet log covers one contiguous time range,
+// fetched incrementally from /api/v1/observations. Rows are immutable, so a
+// range fetched once never needs fetching again; a rolling window only asks
+// for what arrived since the last sync. This class decides what to fetch and
+// what is covered; the rows themselves live in a Backend (the WebAssembly
+// engine in the worker, a plain array in tests).
 
 /** Re-fetch this much before the end of what we hold: rows may commit slightly after their observed_at. */
 export const OVERLAP_MS = 2 * 60_000
@@ -13,14 +14,33 @@ export const MAX_ROWS = 750_000
 
 export type WindowReq = { live: true; durationH: number } | { live: false; start: string; end: string }
 
-export interface Fetched {
-  window: ObservationsBody['window']
-  generation: string
-  rows: ObsRow[]
+export interface WindowEcho {
+  start: string
+  end: string
+  rolling: boolean
 }
 
-/** Fetches every page for the given parameters. */
-export type FetchRange = (params: URLSearchParams) => Promise<Fetched>
+/** A fetched range: the window it belongs to and a batch of rows not yet merged. */
+export interface Fetched<B> {
+  window: WindowEcho
+  generation: string
+  batch: B
+}
+
+/** Fetches every page for the given parameters into one batch. */
+export type FetchRange<B> = (params: URLSearchParams) => Promise<Fetched<B>>
+
+/** Where rows live. B is a fetched batch, L a set of live rows. */
+export interface Backend<B, L> {
+  commit(batch: B): number // rows added (new ids only)
+  discard(batch: B): void
+  addLive(rows: L, lo: number): number // rows at or after lo, new ids only
+  reset(): void
+  trimBefore(t: number): void
+  keepOnly(lo: number, hi: number): void
+  newestT(): number // 0 when empty
+  count(): number
+}
 
 export interface Coverage {
   lo: number
@@ -29,7 +49,7 @@ export interface Coverage {
 
 /** Persistence hooks (IndexedDB in the worker; absent in tests). */
 export interface StoreSink {
-  added(rows: ObsRow[]): void
+  changed(): void // rows were added: persist what is new
   removedBefore(t: number): void
   reset(): void
   meta(cov: Coverage | null, generation: string | null): void
@@ -39,114 +59,74 @@ export interface Synced {
   start: number
   end: number
   rolling: boolean
-  rows: ObsRow[] // in [start, end), ordered by (t, id)
 }
 
-const byTime = (a: ObsRow, b: ObsRow) => a.t - b.t || a.i - b.i
+const iso = (ms: number) => new Date(ms).toISOString()
 
-export class RowStore {
-  rows: ObsRow[] = []
-  ids = new Set<number>()
+export class RowStore<B, L> {
   cov: Coverage | null = null
   generation: string | null = null
 
-  constructor(private fetchRange: FetchRange, public sink?: StoreSink) {}
+  constructor(public rows: Backend<B, L>, private fetchRange: FetchRange<B>, public sink?: StoreSink) {}
 
-  /** Restore persisted state. */
-  load(rows: ObsRow[], cov: Coverage | null, generation: string | null) {
-    this.rows = rows.sort(byTime)
-    this.ids = new Set(rows.map((r) => r.i))
-    this.cov = rows.length || cov ? cov : null
+  /** Restore persisted state (rows already loaded into the backend). */
+  load(cov: Coverage | null, generation: string | null) {
+    this.cov = this.rows.count() || cov ? cov : null
     this.generation = generation
   }
 
-  private reset(f: Fetched, cov: Coverage) {
-    this.rows = []
-    this.ids.clear()
+  private reset(f: Fetched<B>, cov: Coverage) {
+    this.rows.reset()
     this.sink?.reset()
     this.generation = f.generation
-    this.merge(f.rows)
+    this.commit(f.batch)
     this.cov = cov
   }
 
-  private merge(rows: ObsRow[]) {
-    const fresh = rows.filter((r) => !this.ids.has(r.i))
-    if (fresh.length === 0) return
-    for (const r of fresh) this.ids.add(r.i)
-    fresh.sort(byTime)
-    const tail = this.rows[this.rows.length - 1]
-    if (!tail || byTime(fresh[0], tail) >= 0) {
-      // Live rows nearly always land at the end: append in place, no copy or re-sort.
-      for (const r of fresh) this.rows.push(r)
-    } else {
-      this.rows = this.rows.concat(fresh).sort(byTime)
-    }
-    this.sink?.added(fresh)
+  private commit(batch: B) {
+    if (this.rows.commit(batch) > 0) this.sink?.changed()
   }
 
   private trim(before: number) {
     if (!this.cov || this.cov.lo >= before) return
-    const i = this.lowerBound(before)
-    for (const r of this.rows.slice(0, i)) this.ids.delete(r.i)
-    this.rows = this.rows.slice(i)
+    this.rows.trimBefore(before)
     this.cov.lo = before
     this.sink?.removedBefore(before)
-  }
-
-  private lowerBound(t: number): number {
-    let lo = 0, hi = this.rows.length
-    while (lo < hi) {
-      const mid = (lo + hi) >> 1
-      if (this.rows[mid].t < t) lo = mid + 1
-      else hi = mid
-    }
-    return lo
-  }
-
-  /** observed_at of the newest row held (0 when empty). */
-  newestT(): number {
-    return this.rows.length ? this.rows[this.rows.length - 1].t : 0
-  }
-
-  /** Rows with observed_at in [start, end). */
-  slice(start: number, end: number): ObsRow[] {
-    return this.rows.slice(this.lowerBound(start), this.lowerBound(end))
   }
 
   private base(req: WindowReq): URLSearchParams {
     return req.live ? new URLSearchParams({ duration: `${req.durationH}h` }) : new URLSearchParams({ start: req.start, end: req.end })
   }
 
-  private async get(params: URLSearchParams, extra: Record<string, string> = {}): Promise<Fetched> {
+  private get(params: URLSearchParams, extra: Record<string, string> = {}): Promise<Fetched<B>> {
     const p = new URLSearchParams(params)
     for (const [k, v] of Object.entries(extra)) p.set(k, v)
     return this.fetchRange(p)
   }
 
-  /** Bring the store up to date for req and return the window's rows. */
+  /** Bring the store up to date for req; returns the window's bounds. */
   async sync(req: WindowReq): Promise<Synced> {
     const base = this.base(req)
     const cov = this.cov
-    let S: number, E: number, rolling: boolean
+    let S: number, E: number
+    const rolling = req.live
     if (!req.live) {
       S = Date.parse(req.start)
       E = Date.parse(req.end)
-      rolling = false
       if (cov && this.generation && S < cov.hi && E > cov.lo) {
         if (E > cov.hi) await this.extend(await this.get(base, { since: iso(cov.hi - OVERLAP_MS) }), base)
         if (S < cov.lo) await this.extend(await this.get(base, { until: iso(cov.lo) }), base)
         if (this.cov) this.cov = { lo: Math.min(this.cov.lo, S), hi: Math.max(this.cov.hi, E) }
       } else {
-        const f = await this.get(base)
-        this.reset(f, { lo: S, hi: E })
+        this.reset(await this.get(base), { lo: S, hi: E })
       }
     } else {
-      rolling = true
       const narrowed = !!(cov && this.generation)
       let f = await this.get(base, narrowed ? { since: iso(cov!.hi - OVERLAP_MS) } : {})
       S = Date.parse(f.window.start)
       E = Date.parse(f.window.end)
       if (narrowed && (f.generation !== this.generation || cov!.lo >= E)) {
+        this.rows.discard(f.batch)
         f = await this.get(base) // nothing held is usable
         S = Date.parse(f.window.start)
         E = Date.parse(f.window.end)
@@ -155,7 +135,7 @@ export class RowStore {
         // The server clamped `since` to the window start: f is the whole window.
         this.reset(f, { lo: S, hi: E })
       } else {
-        this.merge(f.rows)
+        this.commit(f.batch)
         this.cov = { lo: cov!.lo, hi: Math.max(cov!.hi, E) }
         if (S < cov!.lo) {
           // Also fetch the older part, as a fixed window equal to the rolling one.
@@ -166,27 +146,25 @@ export class RowStore {
       }
     }
     this.trim(E - KEEP_MS)
-    if (this.rows.length > MAX_ROWS) {
-      const keep = this.slice(S, E)
-      this.rows = []
-      this.ids.clear()
+    if (this.rows.count() > MAX_ROWS) {
+      this.rows.keepOnly(S, E)
       this.sink?.reset()
-      this.merge(keep)
+      this.sink?.changed()
       this.cov = { lo: S, hi: E }
     }
     this.sink?.meta(this.cov, this.generation)
-    return { start: S, end: E, rolling, rows: this.slice(S, E) }
+    return { start: S, end: E, rolling }
   }
 
   /** Merge a partial fetch; a new generation (decoder or configuration change) restarts from scratch. */
-  private async extend(f: Fetched, base: URLSearchParams) {
+  private async extend(f: Fetched<B>, base: URLSearchParams) {
     if (f.generation !== this.generation) {
+      this.rows.discard(f.batch)
       const full = await this.get(base)
-      const w = full.window
-      this.reset(full, { lo: Date.parse(w.start), hi: Date.parse(w.end) })
+      this.reset(full, { lo: Date.parse(full.window.start), hi: Date.parse(full.window.end) })
       return
     }
-    this.merge(f.rows)
+    this.commit(f.batch)
   }
 
   /**
@@ -194,21 +172,19 @@ export class RowStore {
    * coverage mark: the next sync (gap filler) confirms the range. Returns
    * whether anything was added.
    */
-  addLive(rows: ObsRow[]): boolean {
+  addLive(rows: L): boolean {
     if (!this.cov) return false
-    const n = this.rows.length
-    this.merge(rows.filter((r) => r.t >= this.cov!.lo))
-    return this.rows.length > n
+    const added = this.rows.addLive(rows, this.cov.lo) > 0
+    if (added) this.sink?.changed()
+    return added
   }
 
-  /** Window rows from what is held, without the network (offline). */
+  /** The window's bounds from what is held, without the network (offline). */
   offline(req: WindowReq, now = Date.now(), quantumMs = 10_000): Synced | null {
     if (!this.cov) return null
     const E = req.live ? Math.floor(now / quantumMs) * quantumMs : Date.parse(req.end)
     const S = req.live ? E - req.durationH * 3_600_000 : Date.parse(req.start)
     if (S >= this.cov.hi || E <= this.cov.lo) return null
-    return { start: S, end: E, rolling: req.live, rows: this.slice(S, E) }
+    return { start: S, end: E, rolling: req.live }
   }
 }
-
-const iso = (ms: number) => new Date(ms).toISOString()

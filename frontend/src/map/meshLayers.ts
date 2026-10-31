@@ -7,7 +7,7 @@ import type { Selection, Toggles } from '../state/store'
 import { ageColor, CONFIDENCE_ALPHA, LINK_COLOR, LINK_WIDTH, OPT_OUT_RING, ROUTE_COLOR, precisionErrorM, roleRadius, type LinkGeom, type PlacedNode } from './model'
 import { dashExt, UNDER_LABELS, type RGBA } from './deckShared'
 import { labelData, type Cluster, type LabelDatum } from './labels'
-import type { RouteSegment } from '../derive/route'
+import type { RouteSegment } from '../api/views'
 
 export interface MeshLayerInput {
   placed: PlacedNode[]

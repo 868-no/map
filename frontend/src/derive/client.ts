@@ -1,27 +1,15 @@
-// Page side of the derivation worker. Views are built in the browser by
-// default; ?derive=server (remembered) switches back to the server's views
-// for comparison, and ?derive=client returns to the default.
+// Page side of the derivation worker: every view is built there, in the
+// WebAssembly engine (D-031, D-040).
 import type { Capabilities, ObsRow } from '../api/types'
 import { ApiError } from '../api/client'
-import type { Request, Response, ViewRequest } from './protocol'
-
-export type DeriveMode = 'client' | 'server'
-const KEY = 'meshmap:derive'
-
-export function deriveMode(): DeriveMode {
-  if (typeof window === 'undefined' || typeof Worker === 'undefined') return 'server'
-  try {
-    const q = new URLSearchParams(window.location.search).get('derive')
-    if (q === 'client' || q === 'server') window.localStorage.setItem(KEY, q)
-    return window.localStorage.getItem(KEY) === 'server' ? 'server' : 'client'
-  } catch {
-    return 'client'
-  }
-}
+import type { Request, Response, Transmission, ViewRequest } from './protocol'
 
 let worker: Worker | null = null
 let nextId = 1
 const waiting = new Map<number, { resolve: (r: { body: unknown; offline: boolean }) => void; reject: (e: Error) => void }>()
+let onChanged: (() => void) | undefined
+let onPings: ((t: Transmission[]) => void) | undefined
+const decoder = new TextDecoder()
 
 function get(): Worker {
   if (worker) return worker
@@ -29,28 +17,33 @@ function get(): Worker {
   worker.onmessage = (e: MessageEvent<Response>) => {
     const r = e.data
     if ('type' in r) {
-      onChanged?.()
+      if (r.type === 'changed') onChanged?.()
+      else onPings?.(r.transmissions)
       return
     }
     const w = waiting.get(r.id)
     if (!w) return
     waiting.delete(r.id)
-    if (r.ok) w.resolve({ body: r.body, offline: r.offline })
+    // Views arrive as transferred UTF-8 JSON: no structured clone of a large object graph.
+    if (r.ok) w.resolve({ body: JSON.parse(decoder.decode(r.body)), offline: r.offline })
     else w.reject(new ApiError(r.status, r.message))
   }
   return worker
 }
-
-let onChanged: (() => void) | undefined
 
 /** Called (batched) when streamed rows changed what the views would show. */
 export function onDerivedChange(fn: () => void): void {
   onChanged = fn
 }
 
-/** Hand rows from the live stream to the worker. */
-export function sendLiveRows(rows: ObsRow[]): void {
-  if (rows.length) get().postMessage({ type: 'rows', rows } satisfies Request)
+/** Called with the transmissions of live rows sent with sendLiveRows(…, ping). */
+export function onTransmissions(fn: (t: Transmission[]) => void): void {
+  onPings = fn
+}
+
+/** Hand rows from the live stream to the worker; ping lists the indexes to animate. */
+export function sendLiveRows(rows: ObsRow[], ping: number[]): void {
+  if (rows.length) get().postMessage({ type: 'rows', rows, ping } satisfies Request)
 }
 
 export function initDerive(caps: Capabilities): void {
@@ -58,7 +51,7 @@ export function initDerive(caps: Capabilities): void {
   get().postMessage(msg)
 }
 
-/** Ask the worker for a view; resolves with the API-shaped body. Aborts only stop waiting. */
+/** Ask the worker for a view; resolves with the view body (with meta). Aborts only stop waiting. */
 export function deriveView(req: Omit<ViewRequest, 'type' | 'id'>, signal?: AbortSignal): Promise<{ body: unknown; offline: boolean }> {
   const id = nextId++
   return new Promise((resolve, reject) => {

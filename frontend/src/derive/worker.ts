@@ -1,15 +1,13 @@
 /// <reference lib="webworker" />
-// Derivation worker: holds the browser's copy of the packet log and builds
-// every view from it off the main thread (D-031).
-import type { ObsRow, ObservationsBody } from '../api/types'
-import { openPersistence } from './persist'
-import { RowStore, type Fetched, type Synced, type WindowReq } from './rowStore'
-import { bucketFor, buildNodeDetail, buildSnapshot, buildTraffic, applyFilters, type GeoOptions } from './views'
-import { defaultGeoParams } from './geo'
+// Derivation worker: holds the browser's copy of the packet log in the
+// WebAssembly engine and builds every view from it, off the main thread
+// (D-031, D-040). Rows travel as JSON text straight into the engine; views
+// come back as JSON text and are handed to the page as transferable bytes.
+import init, { Engine } from '../engine/pkg/engine.js'
+import { openPersistence, HOUR_MS, type Persistence } from './persist'
+import { RowStore, type Backend, type Fetched, type Synced, type WindowReq } from './rowStore'
 import { debounce } from './debounce'
-import { buildPacketLog, contextFromSnapshot } from './packetlog'
-import { buildRoute } from './route'
-import type { Request, Response, ViewRequest } from './protocol'
+import type { Request, Response, Transmission, ViewRequest } from './protocol'
 
 class HttpError extends Error {
   constructor(public status: number, message: string) {
@@ -17,12 +15,53 @@ class HttpError extends Error {
   }
 }
 
-async function fetchRange(params: URLSearchParams): Promise<Fetched> {
-  let cursor = ''
-  let out: Fetched | null = null
-  for (;;) {
-    if (cursor) params.set('cursor', cursor)
-    const res = await fetch(`/api/v1/observations?${params}`, { headers: { Accept: 'application/json' } })
+const ready = init()
+let engine: Engine
+let store: RowStore<number, string>
+let persist: Persistence | null = null
+
+/** The engine as the row store's backend: batches are staged page ids, live rows JSON text. */
+class EngineRows implements Backend<number, string> {
+  commit(batch: number) {
+    return engine.commit(batch)
+  }
+  discard(batch: number) {
+    engine.discard(batch)
+  }
+  addLive(rows: string, lo: number) {
+    return engine.add_rows(rows, lo)
+  }
+  reset() {
+    engine.reset()
+  }
+  trimBefore(t: number) {
+    engine.trim_before(t)
+  }
+  keepOnly(lo: number, hi: number) {
+    engine.keep_only(lo, hi)
+  }
+  newestT() {
+    return engine.newest_t()
+  }
+  count() {
+    return engine.count()
+  }
+}
+
+/** Parallel requests for the rest of a range after its first page. */
+const SLICES = 4
+
+/**
+ * Fetches every row of a range into one staged batch. The first page tells
+ * the window and where the rest begins; the rest is split into time slices
+ * fetched in parallel (each paged, all into the same batch; the engine drops
+ * duplicates on commit).
+ */
+async function fetchRange(params: URLSearchParams): Promise<Fetched<number>> {
+  const page = async (extra: Record<string, string>) => {
+    const p = new URLSearchParams(params)
+    for (const [k, v] of Object.entries(extra)) p.set(k, v)
+    const res = await fetch(`/api/v1/observations?${p}`, { headers: { Accept: 'application/json' } })
     if (!res.ok) {
       let detail = res.statusText
       try {
@@ -33,44 +72,83 @@ async function fetchRange(params: URLSearchParams): Promise<Fetched> {
       }
       throw new HttpError(res.status, detail)
     }
-    const b = (await res.json()) as ObservationsBody
-    if (!out) out = { window: b.window, generation: b.generation, rows: [] }
-    out.rows = out.rows.concat(b.rows ?? [])
-    if (!b.more) return out
-    cursor = b.next_cursor ?? ''
+    return res.text()
   }
+  type Meta = { window: Fetched<number>['window']; generation: string; more: boolean; next_cursor?: string; batch: number }
+  const first = JSON.parse(engine.stage(await page({}), 0)) as Meta
+  const batch = first.batch
+  const drain = async (meta: Meta, extra: Record<string, string>) => {
+    while (meta.more) meta = JSON.parse(engine.stage(await page({ ...extra, cursor: meta.next_cursor ?? '' }), batch)) as Meta
+  }
+  if (first.more) {
+    // The cursor is "<unix µs>.<id>": the rest starts at that instant.
+    const lo = Math.floor(Number((first.next_cursor ?? '0').split('.')[0]) / 1000)
+    const until = params.get('until')
+    const hi = Math.min(Date.parse(first.window.end), until ? Date.parse(until) : Infinity)
+    const step = Math.max(Math.ceil((hi - lo) / SLICES), 1)
+    const bounds = Array.from({ length: SLICES + 1 }, (_, k) => Math.min(lo + k * step, hi))
+    const iso = (ms: number) => new Date(ms).toISOString()
+    await Promise.all(
+      bounds.slice(0, -1).map(async (b, k) => {
+        const range = { until: iso(bounds[k + 1]) }
+        if (k === 0) return drain(first, range) // continues after the first page
+        if (b >= bounds[k + 1]) return
+        const m = JSON.parse(engine.stage(await page({ since: iso(b), ...range }), batch)) as Meta
+        return drain(m, { since: iso(b), ...range })
+      }),
+    )
+  }
+  return { window: first.window, generation: first.generation, batch }
 }
 
-let geo: GeoOptions = { enabled: false, minPrecisionBits: 15, exclude: new Set(), params: defaultGeoParams }
+const source = { takeDirty: () => Array.from(engine.take_dirty()), exportHour: (h: number) => engine.export(h, h + HOUR_MS) }
+const flushSoon = debounce(() => void persist?.flush(source), 2000, 5000)
+
+const started = (async () => {
+  await ready
+  engine = new Engine()
+  store = new RowStore(new EngineRows(), fetchRange)
+  try {
+    persist = await openPersistence()
+  } catch {
+    persist = null
+  }
+  if (persist) {
+    for (const chunk of persist.restored.chunks) engine.add_rows(chunk, -Infinity)
+    engine.take_dirty() // restored rows are already stored
+    store.load(persist.restored.cov, persist.restored.generation)
+    const p = persist
+    store.sink = {
+      changed: flushSoon,
+      removedBefore: (t) => p.removedBefore(t, source),
+      reset: () => p.reset(),
+      // Rows first, then the coverage record that describes them.
+      meta: (cov, generation) => {
+        void p.flush(source)
+        p.meta(cov, generation)
+      },
+    }
+  }
+})()
+
 let quantumMs = 10_000
 // Views wait for the operator's geolocation settings from the page.
 let initDone: () => void
 const inited = new Promise<void>((resolve) => (initDone = resolve))
-const store = new RowStore(fetchRange)
-const ready = openPersistence()
-  .then((p) => {
-    if (!p) return
-    store.load(p.restored.rows, p.restored.cov, p.restored.generation)
-    store.sink = p.sink
-  })
-  .catch(() => {})
 
-// One sync at a time; repeated requests for the same window and epoch share
-// it. Between syncs the store grows from the live stream.
+// One sync at a time; repeated requests for the same window and epoch share it.
 let chain: Promise<unknown> = Promise.resolve()
 let last: { key: string; result: Promise<{ synced: Synced; offline: boolean }> } | null = null
-let pendingLive: ObsRow[] = [] // streamed before the first sync established coverage
+let pendingLive: string[] = [] // streamed before the first sync established coverage
 function synced(win: WindowReq, epoch: string): Promise<{ synced: Synced; offline: boolean }> {
   const key = JSON.stringify(win) + '|' + epoch
   if (last?.key === key) return last.result
   const result = chain.then(async () => {
-    await ready
+    await started
     try {
       const s = await store.sync(win)
-      if (pendingLive.length) {
-        store.addLive(pendingLive)
-        pendingLive = []
-      }
+      for (const rows of pendingLive) store.addLive(rows)
+      pendingLive = []
       return { synced: s, offline: false }
     } catch (e) {
       if (e instanceof HttpError) throw e
@@ -95,7 +173,7 @@ function synced(win: WindowReq, epoch: string): Promise<{ synced: Synced; offlin
  */
 function bounds(win: WindowReq, s: Synced, offline: boolean): { start: number; end: number } {
   if (!win.live || offline) return { start: s.start, end: s.end }
-  const end = Math.max(s.end, store.newestT() + 1)
+  const end = Math.max(s.end, engine.newest_t() + 1)
   return { start: end - win.durationH * 3_600_000, end }
 }
 
@@ -104,109 +182,82 @@ function bounds(win: WindowReq, s: Synced, offline: boolean): { start: number; e
 export const REBUILD_QUIET_MS = 2000
 export const REBUILD_MAX_MS = 5000
 const changed = debounce(() => self.postMessage({ type: 'changed' } satisfies Response), REBUILD_QUIET_MS, REBUILD_MAX_MS)
-function liveRows(rows: ObsRow[]) {
+
+/** Live rows from the stream: merged, plus ping attribution for those the page wants animated. */
+function liveRows(rows: unknown[], ping: number[]) {
+  if (!engine) return
+  const text = JSON.stringify(rows)
+  if (ping.length) {
+    const tx = JSON.parse(engine.transmissions(JSON.stringify(ping.map((k) => rows[k])))) as Transmission[][]
+    self.postMessage({ type: 'pings', transmissions: tx.flat() } satisfies Response)
+  }
   if (!store.cov) {
-    pendingLive = pendingLive.concat(rows)
+    pendingLive.push(text)
     return
   }
-  if (store.addLive(rows)) changed()
+  if (store.addLive(text)) changed()
 }
 
-// Derived views are memoised by data revision, kind and filters.
-const memo = new Map<string, unknown>()
-function remember(key: string, make: () => unknown): unknown {
-  if (memo.has(key)) return memo.get(key)
+// Views are memoised (as JSON text) by data revision, kind, window and filters.
+const memo = new Map<string, string>()
+function remember(key: string, make: () => string): string {
+  const hit = memo.get(key)
+  if (hit !== undefined) return hit
   const v = make()
   memo.set(key, v)
   if (memo.size > 24) memo.delete(memo.keys().next().value!)
   return v
 }
 
-function parseNode(id: string): number | null {
-  const m = /^!([0-9a-f]{8})$/i.exec(id)
-  if (m) return parseInt(m[1], 16)
-  return /^\d+$/.test(id) ? Number(id) : null
-}
-
-async function view(req: ViewRequest): Promise<{ body: unknown; offline: boolean }> {
+async function view(req: ViewRequest): Promise<{ body: string; offline: boolean }> {
   await inited
   const { synced: sy, offline } = await synced(req.win, req.epoch)
   const { start, end } = bounds(req.win, sy, offline)
-  const s = { start, end, rows: store.slice(start, end) }
   const f = { channels: req.filters.channels, brokers: req.filters.brokers, types: req.filters.types }
-  const maxId = s.rows.reduce((m, r) => Math.max(m, r.i), 0)
-  const revision = `${store.generation}.n${s.rows.length}.m${maxId}`
-  const meta = {
-    window: { start: new Date(s.start).toISOString(), end: new Date(s.end).toISOString(), rolling: sy.rolling },
+  const fj = JSON.stringify(f)
+  const revision = `${store.generation}.${engine.revision(start, end)}`
+  const meta = JSON.stringify({
+    window: { start: new Date(start).toISOString(), end: new Date(end).toISOString(), rolling: sy.rolling },
     revision,
     filters: Object.fromEntries(Object.entries(f).filter(([, v]) => v.length)),
     generated_at: new Date().toISOString(),
+  })
+  const key = `${revision}|${start}|${end}|${fj}|${req.kind}|${req.node ?? ''}`
+  let body: string
+  try {
+    body = remember(key, () => engine.view(req.kind, start, end, fj, req.node ?? ''))
+  } catch (e) {
+    throw new HttpError(400, e instanceof Error ? e.message : String(e))
   }
-  const keyOf = (kind: string, node = '') => `${revision}|${s.start}|${s.end}|${JSON.stringify(f)}|${kind}|${node}`
-  const key = keyOf(req.kind, req.node)
-  const rows = () => applyFilters(s.rows, f)
-  let body: unknown
-  switch (req.kind) {
-    case 'snapshot':
-      body = remember(key, () => buildSnapshot(rows(), geo))
-      break
-    case 'traffic':
-      body = remember(key, () => buildTraffic(rows(), s.start, bucketFor(s.end - s.start)))
-      break
-    case 'packetlog': {
-      const num = parseNode(req.node ?? '')
-      if (num == null) throw new HttpError(400, 'invalid node id')
-      // Relay bytes resolve against the same context the snapshot used.
-      const snap = remember(keyOf('snapshot'), () => buildSnapshot(rows(), geo)) as ReturnType<typeof buildSnapshot>
-      body = remember(key, () => buildPacketLog(rows(), num, contextFromSnapshot(snap.nodes ?? [], snap.edges ?? [])))
-      break
-    }
-    case 'route': {
-      const lp = req.node ?? ''
-      const snap = remember(keyOf('snapshot'), () => buildSnapshot(rows(), geo)) as ReturnType<typeof buildSnapshot>
-      body = remember(key, () => buildRoute(rows().filter((r) => r.l === lp), contextFromSnapshot(snap.nodes ?? [], snap.edges ?? []), snap.nodes ?? []) ?? { origin: '', type: '', segments: [], receptions: 0 })
-      break
-    }
-    case 'node': {
-      const num = parseNode(req.node ?? '')
-      if (num == null) throw new HttpError(400, 'invalid node id')
-      const d = remember(key, () => buildNodeDetail(rows(), num))
-      if (!d) throw new HttpError(404, 'node not observed or referenced in the selected window')
-      body = d
-      break
-    }
-  }
-  return { body: { meta, ...(body as object) }, offline }
+  if (body === 'null') throw new HttpError(404, 'node not observed or referenced in the selected window')
+  // Splice the meta in without parsing the (possibly large) body here.
+  return { body: body === '{}' ? `{"meta":${meta}}` : `{"meta":${meta},${body.slice(1)}`, offline }
 }
 
 self.onmessage = async (e: MessageEvent<Request>) => {
   const msg = e.data
   if (msg.type === 'rows') {
-    liveRows(msg.rows)
+    await started
+    liveRows(msg.rows, msg.ping)
     return
   }
   if (msg.type === 'init') {
-    const g = msg.geo
-    geo = {
-      enabled: g.enabled, minPrecisionBits: g.min_precision_bits,
-      exclude: new Set((g.exclude ?? []).flatMap((id) => (parseNode(id) != null ? [parseNode(id)!] : []))),
-      params: {
-        minAnchors: g.min_anchors, minSamples: g.min_samples, minAnchorSpacingM: g.min_anchor_spacing_m, minSpreadM: g.min_spread_m,
-        minShapeRatio: g.min_shape_ratio, maxAnchorDistanceM: g.max_anchor_distance_m, floorM: g.floor_m, uncalibratedFloorM: g.uncalibrated_floor_m,
-        ...(g.calibration ? { calibration: g.calibration } : {}),
-      },
-    }
+    await started
+    engine.set_options(JSON.stringify({ geo: msg.geo }))
     quantumMs = msg.liveQuantumMs
     memo.clear()
     initDone()
     return
   }
   let out: Response
+  const transfer: Transferable[] = []
   try {
     const { body, offline } = await view(msg)
-    out = { id: msg.id, ok: true, body, offline }
+    const bytes = new TextEncoder().encode(body)
+    transfer.push(bytes.buffer)
+    out = { id: msg.id, ok: true, body: bytes, offline }
   } catch (err) {
     out = { id: msg.id, ok: false, status: err instanceof HttpError ? err.status : 500, message: err instanceof Error ? err.message : String(err) }
   }
-  self.postMessage(out)
+  self.postMessage(out, transfer)
 }

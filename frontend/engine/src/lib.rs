@@ -1,0 +1,198 @@
+//! meshmap engine: the browser's mesh derivation, compiled to WebAssembly
+//! (D-040). The derivation worker hands it raw JSON text (API pages, live
+//! rows, persisted chunks) and asks for views as JSON text; rows never become
+//! JavaScript objects.
+
+pub mod geo;
+pub mod graph;
+pub mod packets;
+pub mod row;
+pub mod store;
+pub mod util;
+pub mod views;
+
+use serde::Deserialize;
+use wasm_bindgen::prelude::*;
+
+use crate::row::{Interner, JRow};
+use crate::store::Store;
+use crate::util::{key64, parse_node};
+use crate::views::{apply_filters, build_node_detail, build_snapshot, build_traffic, bucket_for, Built, Filters, GeoOptions};
+
+#[derive(Deserialize)]
+struct GeoSettings {
+    enabled: bool,
+    min_precision_bits: u32,
+    #[serde(default)]
+    exclude: Option<Vec<String>>,
+    #[serde(flatten)]
+    params: geo::Params,
+}
+
+#[derive(Deserialize)]
+struct Options {
+    #[serde(default)]
+    geo: Option<GeoSettings>,
+    /// Exclude nodes whose role never rebroadcasts (CLIENT_MUTE) from relay
+    /// candidates (default on; off only to compare with the old server views).
+    #[serde(default = "yes")]
+    silent_rule: bool,
+}
+
+fn yes() -> bool {
+    true
+}
+
+#[wasm_bindgen]
+pub struct Engine {
+    i: Interner,
+    store: Store,
+    geo: GeoOptions,
+    silent_rule: bool,
+    built: Option<((i64, i64, String, u64), Built)>,
+}
+
+impl Default for Engine {
+    fn default() -> Self {
+        Engine { i: Interner::default(), store: Store::default(), geo: GeoOptions::default(), silent_rule: true, built: None }
+    }
+}
+
+fn err(e: impl std::fmt::Display) -> JsError {
+    JsError::new(&e.to_string())
+}
+
+fn json<T: serde::Serialize>(v: &T) -> String {
+    serde_json::to_string(v).unwrap_or_else(|_| "null".into())
+}
+
+impl Engine {
+    /// The snapshot (and relay context) for a window and filters, memoised
+    /// until the store or the request changes.
+    fn built(&mut self, start: i64, end: i64, filters: &str) -> Result<&Built, JsError> {
+        let key = (start, end, filters.to_string(), self.store.version);
+        if self.built.as_ref().is_none_or(|(k, _)| *k != key) {
+            let f: Filters = serde_json::from_str(filters).map_err(err)?;
+            let rows = apply_filters(self.store.slice(start, end), &f, &self.i);
+            let b = build_snapshot(&rows, &self.i, &self.geo, self.silent_rule);
+            self.built = Some((key, b));
+        }
+        Ok(&self.built.as_ref().unwrap().1)
+    }
+}
+
+#[wasm_bindgen]
+impl Engine {
+    #[wasm_bindgen(constructor)]
+    pub fn new() -> Engine {
+        Engine::default()
+    }
+
+    /// {geo: capabilities.geolocation, silent_rule?: bool}
+    pub fn set_options(&mut self, options: &str) -> Result<(), JsError> {
+        let o: Options = serde_json::from_str(options).map_err(err)?;
+        if let Some(g) = o.geo {
+            self.geo = GeoOptions {
+                enabled: g.enabled,
+                min_precision_bits: g.min_precision_bits,
+                exclude: g.exclude.unwrap_or_default().iter().filter_map(|s| parse_node(s)).collect(),
+                params: g.params,
+            };
+        }
+        self.silent_rule = o.silent_rule;
+        self.built = None;
+        Ok(())
+    }
+
+    /// Stages one /observations page; returns its metadata as JSON.
+    pub fn stage(&mut self, page: &str, batch: u32) -> Result<String, JsError> {
+        self.store.stage(page, batch, &mut self.i).map(|m| json(&m)).map_err(err)
+    }
+    pub fn commit(&mut self, batch: u32) -> u32 {
+        self.store.commit(batch) as u32
+    }
+    pub fn discard(&mut self, batch: u32) {
+        self.store.discard(batch)
+    }
+    /// Merges a JSON array of rows at or after `lo` (live rows, restored chunks).
+    pub fn add_rows(&mut self, rows: &str, lo: f64) -> Result<u32, JsError> {
+        self.store.add_json(rows, lo as i64, &mut self.i).map(|n| n as u32).map_err(err)
+    }
+    pub fn reset(&mut self) {
+        self.store.reset()
+    }
+    pub fn trim_before(&mut self, t: f64) {
+        self.store.trim_before(t as i64)
+    }
+    pub fn keep_only(&mut self, lo: f64, hi: f64) {
+        self.store.keep_only(lo as i64, hi as i64)
+    }
+    pub fn newest_t(&self) -> f64 {
+        self.store.newest_t() as f64
+    }
+    pub fn count(&self) -> u32 {
+        self.store.rows.len() as u32
+    }
+    /// "<rows>.<newest id>" in [start, end): changes whenever the window's data does.
+    pub fn revision(&self, start: f64, end: f64) -> String {
+        let (n, m) = self.store.stats(start as i64, end as i64);
+        format!("n{n}.m{m}")
+    }
+    /// Hours (start ms) that gained rows since the last call.
+    pub fn take_dirty(&mut self) -> Vec<f64> {
+        self.store.take_dirty().into_iter().map(|h| h as f64).collect()
+    }
+    /// Rows in [lo, hi) as the API's JSON array (the persisted copy).
+    pub fn export(&self, lo: f64, hi: f64) -> String {
+        self.store.export(lo as i64, hi as i64, &self.i)
+    }
+
+    /// A view as JSON: kind is snapshot, traffic, node, packetlog or route;
+    /// arg is the node id (node, packetlog) or packet key (route). "null"
+    /// means the node is neither observed nor referenced in the window.
+    pub fn view(&mut self, kind: &str, start: f64, end: f64, filters: &str, arg: &str) -> Result<String, JsError> {
+        let (start, end) = (start as i64, end as i64);
+        match kind {
+            "snapshot" => Ok(json(&self.built(start, end, filters)?.snapshot)),
+            "traffic" => {
+                let f: Filters = serde_json::from_str(filters).map_err(err)?;
+                let rows = apply_filters(self.store.slice(start, end), &f, &self.i);
+                Ok(json(&build_traffic(&rows, start, bucket_for(end - start), &self.i)))
+            }
+            "node" => {
+                let num = parse_node(arg).ok_or_else(|| err("invalid node id"))?;
+                let f: Filters = serde_json::from_str(filters).map_err(err)?;
+                let rows = apply_filters(self.store.slice(start, end), &f, &self.i);
+                Ok(json(&build_node_detail(&rows, num, &self.i)))
+            }
+            "packetlog" => {
+                let num = parse_node(arg).ok_or_else(|| err("invalid node id"))?;
+                self.built(start, end, filters)?;
+                let f: Filters = serde_json::from_str(filters).map_err(err)?;
+                let rows = apply_filters(self.store.slice(start, end), &f, &self.i);
+                let b = &self.built.as_ref().unwrap().1;
+                Ok(json(&packets::packet_log(&rows, num, &b.ctx, &self.i)))
+            }
+            "route" => {
+                let lp = key64(arg);
+                self.built(start, end, filters)?;
+                let f: Filters = serde_json::from_str(filters).map_err(err)?;
+                let rows: Vec<&row::Row> = apply_filters(self.store.slice(start, end), &f, &self.i).into_iter().filter(|r| r.lp == lp).collect();
+                let b = &self.built.as_ref().unwrap().1;
+                Ok(json(&packets::packet_route(&rows, &b.ctx, &b.roles, &self.i)))
+            }
+            _ => Err(err(format!("unknown view {kind}"))),
+        }
+    }
+
+    /// Transmissions proven by live rows (JSON array), attributed with the
+    /// latest snapshot's relay context; JSON array of arrays, one per row.
+    pub fn transmissions(&mut self, rows: &str) -> Result<String, JsError> {
+        let parsed: Vec<JRow> = serde_json::from_str(rows).map_err(err)?;
+        let rows: Vec<row::Row> = parsed.into_iter().map(|r| r.into_row(&mut self.i)).collect();
+        let empty = Built { snapshot: views::Snapshot { nodes: vec![], edges: vec![], edges_truncated: false, counts: Default::default(), diagnostics: Default::default() }, ctx: Default::default(), roles: util::map() };
+        let b = self.built.as_ref().map_or(&empty, |(_, b)| b);
+        let out: Vec<Vec<packets::Transmission>> = rows.iter().map(|r| packets::transmissions(r, &b.ctx, &b.roles)).collect();
+        Ok(json(&out))
+    }
+}

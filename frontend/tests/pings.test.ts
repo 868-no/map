@@ -1,77 +1,9 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { activePings as rawPings, addTransmission, BLIP_LIFE, RING_BANDS, ringProfile, signalStrength, clearPings, distanceM, metresPerPixel, MIN_RING_PX, PING_COLLECT, PING_FADE, PING_GROW, PING_LINGER, resolveRelay, transmissions, type MeshContext } from '../src/map/pings'
-import { relayContext } from '../src/derive/graph'
+import { activePings as rawPings, addTransmission, BLIP_LIFE, RING_BANDS, ringProfile, clearPings, distanceM, metresPerPixel, MIN_RING_PX, PING_COLLECT, PING_FADE, PING_GROW, PING_LINGER } from '../src/map/pings'
 
-const A = '!000000aa', B = '!000000bb', C = '!000000cc', GW = '!000000dd', C2 = '!111111cc'
-const n = (id: string) => parseInt(id.slice(1), 16)
-const ctx = (nodes: string[], links: [string, string][] = [], roles: Record<string, string> = {}, pos: Record<string, [number, number]> = {}, maxRangeM = 50_000): MeshContext => {
-  const p = new Map(Object.entries(pos).map(([id, [lon, lat]]) => [n(id), { lat, lon }]))
-  const relay = relayContext(nodes.map(n), p, links.map(([a, b]) => ({ src: n(a), dst: n(b), ev: 'neighbor' as const, t: 0, key: '' })))
-  relay.maxRangeM = maxRangeM
-  return { relay, role: (id) => roles[id] }
-}
-
-describe('attributing transmissions', () => {
-  it('a direct reception is the originator heard by the gateway', () => {
-    expect(transmissions({ node: A, gw: GW, lp: 'p', direct_rf: true }, ctx([A, GW]))).toEqual([{ key: `p|${A}`, tx: A, rx: GW, rebroadcast: false }])
-    expect(transmissions({ node: A, gw: GW, lp: 'p', hops: 0 }, ctx([A, GW]))[0].rx).toBe(GW)
-  })
-  it('a gateway uplinking its own packet is a first broadcast with no known receiver', () => {
-    expect(transmissions({ node: GW, gw: GW, lp: 'p' }, ctx([GW]))).toEqual([{ key: `p|${GW}`, tx: GW, rx: undefined, rebroadcast: false }])
-  })
-  it('a relayed reception is a rebroadcast by the resolved last hop', () => {
-    const t = transmissions({ node: A, gw: GW, lp: 'p', relay: 0xcc, hops: 2 }, ctx([A, C, GW]))
-    expect(t).toEqual([
-      { key: `p|${A}`, tx: A, rx: undefined, rebroadcast: false },
-      { key: `p|${C}`, tx: C, rx: GW, rebroadcast: true },
-    ])
-  })
-  it('hop count 1 proves a direct first hop only when the relay cannot relay at zero cost', () => {
-    const ev = { node: A, gw: GW, lp: 'p', relay: 0xcc, hops: 1 }
-    // CLIENT cannot receive at zero cost, so it spent the only hop: it heard the originator.
-    expect(transmissions(ev, ctx([A, C, GW], [], { [C]: 'CLIENT' }))[0].rx).toBe(C)
-    // Zero-cost-capable or unknown role: earlier relays may be hidden.
-    for (const role of ['ROUTER', 'ROUTER_LATE', 'CLIENT_BASE']) expect(transmissions(ev, ctx([A, C, GW], [], { [C]: role }))[0].rx).toBeUndefined()
-    expect(transmissions(ev, ctx([A, C, GW]))[0].rx).toBeUndefined()
-    // Higher counts never imply it.
-    expect(transmissions({ ...ev, hops: 2 }, ctx([A, C, GW], [], { [C]: 'CLIENT' }))[0].rx).toBeUndefined()
-    // The relay's own rebroadcast to the gateway is known either way.
-    expect(transmissions(ev, ctx([A, C, GW]))[1]).toEqual({ key: `p|${C}`, tx: C, rx: GW, rebroadcast: true })
-  })
-  it('never guesses an ambiguous relay byte, but link evidence can disambiguate', () => {
-    expect(resolveRelay(0xcc, A, GW, ctx([A, C, C2, GW]))).toBeUndefined()
-    expect(resolveRelay(0xcc, A, GW, ctx([A, C, C2, GW], [[C2, GW]]))).toBe(C2)
-    expect(transmissions({ node: A, gw: GW, lp: 'p', relay: 0xcc, hops: 1 }, ctx([A, C, C2, GW]))).toHaveLength(1)
-  })
-  it('traceroutes use the recorded route, not the hop count or relay byte', () => {
-    // Real reply copy: hops = 1 and relay byte 0x73, but route_back shows two relays.
-    const R1 = '!997b0449', R2 = '!672f1873', G = '!3afab911', O = '!8a84e409'
-    const t = transmissions({ node: O, gw: G, lp: 'tr', relay: 0x73, hops: 1, path: [R1, R2, G] }, ctx([O, R1, R2, G]))
-    expect(t).toEqual([
-      { key: `tr|${O}`, tx: O, rx: R1, rebroadcast: false },
-      { key: `tr|${R1}`, tx: R1, rx: R2, rebroadcast: true },
-      { key: `tr|${R2}`, tx: R2, rx: G, rebroadcast: true },
-    ])
-  })
-  it('a traceroute gateway that did not append itself still heard the last relay', () => {
-    const t = transmissions({ node: A, gw: GW, lp: 'tr', path: [C] }, ctx([A, C, GW]))
-    expect(t.map((x) => [x.tx, x.rx])).toEqual([[A, C], [C, GW]])
-    expect(transmissions({ node: A, gw: GW, lp: 'tr', path: [] }, ctx([A, GW])).map((x) => [x.tx, x.rx])).toEqual([[A, GW]])
-  })
-  it('an unrecorded traceroute hop breaks the chain without inventing receivers', () => {
-    const t = transmissions({ node: A, gw: GW, lp: 'tr', path: ['', C] }, ctx([A, C, GW]))
-    expect(t.map((x) => [x.tx, x.rx])).toEqual([[A, undefined], [C, GW]])
-  })
-  it('excludes relay candidates beyond radio range of the gateway, but never unpositioned ones', () => {
-    const pos: Record<string, [number, number]> = { [GW]: [10.4, 63.43], [C]: [10.5, 63.5], [C2]: [10.75, 59.91] } // C2 in Oslo, ~390 km away
-    expect(resolveRelay(0xcc, A, GW, ctx([A, C, C2, GW], [], {}, pos))).toBe(C)
-    expect(resolveRelay(0xcc, A, GW, ctx([A, C, C2, GW], [], {}, { [GW]: pos[GW], [C2]: pos[C2] }))).toBe(C) // C unpositioned stays, C2 out of range
-    expect(resolveRelay(0xcc, A, GW, ctx([A, C, C2, GW], [], {}, pos, 500_000))).toBeUndefined() // a proven long link widens the bound
-  })
-  it('the relay byte never resolves to the originator or the gateway', () => {
-    expect(resolveRelay(0xaa, A, GW, ctx([A, GW]))).toBeUndefined()
-  })
-})
+// Attribution (which transmissions a reception proves) lives in the engine
+// and is tested there (frontend/engine/src/packets.rs); these are the animation's.
+const A = '!000000aa', B = '!000000bb', C = '!000000cc', GW = '!000000dd'
 
 const Z = 10
 const MPP = metresPerPixel(63, Z)
@@ -167,17 +99,6 @@ describe('ping animation', () => {
 })
 
 describe('signal gradient', () => {
-  it('maps SNR, else RSSI, to 0..1', () => {
-    expect(signalStrength(-20)).toBe(0)
-    expect(signalStrength(10)).toBe(1)
-    expect(signalStrength(undefined, -100)).toBeCloseTo(0.5)
-    expect(signalStrength()).toBeUndefined()
-  })
-  it('attaches the measurement only to the reporting gateway', () => {
-    const t = transmissions({ node: A, gw: GW, lp: 'p', relay: 0xcc, hops: 2, snr: 5 }, ctx([A, C, GW]))
-    expect(t.find((x) => x.rx === GW)?.strength).toBeCloseTo(25 / 30)
-    expect(t.find((x) => x.tx === A)?.strength).toBeUndefined()
-  })
   it('is opaque at the transmitter, follows receivers, fades out, and never rises outward', () => {
     const p = ringProfile(120, [{ px: 40, strength: 0.3 }, { px: 80, strength: 0.9 }])
     expect(p).toHaveLength(RING_BANDS)
@@ -221,15 +142,5 @@ describe('pingWanted', () => {
     expect(pingWanted(now - 800, now, false)).toBe(true)
     expect(pingWanted(now - PING_MAX_AGE_MS - 1, now, false)).toBe(false) // replayed after the tab woke up
     expect(pingWanted(now - 800, now, true)).toBe(false) // nobody is watching
-  })
-})
-
-describe('relay byte equal to the gateway', () => {
-  it('is the gateway itself, never another node with that byte', async () => {
-    const { resolveRelay } = await import('../src/map/pings')
-    const c = ctx(['!aaaa0011', '!bbbb0011', '!cccc0022'])
-    expect(resolveRelay(0x11, '!cccc0022', '!aaaa0011', c)).toBeUndefined()
-    expect(resolveRelay(0x11, '!cccc0022', '!dddd0033', c)).toBeUndefined() // still ambiguous between the two
-    expect(resolveRelay(0x22, '!aaaa0011', '!dddd0033', ctx(['!aaaa0011', '!cccc0022']))).toBe('!cccc0022')
   })
 })

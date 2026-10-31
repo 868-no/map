@@ -20,15 +20,26 @@ export interface InitRequest {
   liveQuantumMs: number
 }
 
-/** Rows from the live stream. */
+/** Rows from the live stream; ping lists the indexes the page wants animated. */
 export interface RowsRequest {
   type: 'rows'
   rows: ObsRow[]
+  ping: number[]
 }
 
 export type Request = ViewRequest | InitRequest | RowsRequest
 
+/** A transmission one live reception proves (from the engine). */
+export interface Transmission {
+  key: string // packet + transmitter: one ping per RF transmission
+  tx: string
+  rx?: string
+  rebroadcast: boolean
+  strength?: number // 0..1 signal measured at rx, when rx is the reporting gateway
+}
+
 export type Response =
-  | { id: number; ok: true; body: unknown; offline: boolean }
+  | { id: number; ok: true; body: Uint8Array; offline: boolean } // UTF-8 JSON, transferred
   | { id: number; ok: false; status: number; message: string }
   | { type: 'changed' } // live rows arrived: views are worth rebuilding
+  | { type: 'pings'; transmissions: Transmission[] }
