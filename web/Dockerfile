@@ -24,7 +24,10 @@ COPY --from=engine /out ./src/engine/pkg
 COPY docs/api-openapi.yaml /src/docs/api-openapi.yaml
 # true only for end-to-end test stacks: compiles in the window.__meshmap hook.
 ARG E2E_HOOKS=false
-RUN VITE_E2E_HOOKS=$E2E_HOOKS npm run build
+# The page links to its source code (GPL-3.0): set these when building a fork.
+ARG SOURCE_URL=https://github.com/868-no/map
+ARG SOURCE_REVISION=
+RUN VITE_E2E_HOOKS=$E2E_HOOKS VITE_SOURCE_URL=$SOURCE_URL VITE_SOURCE_REVISION=$SOURCE_REVISION npm run build
 
 # Map glyphs: OpenMapTiles fonts v2.0 (SIL OFL), pinned by checksum.
 FROM --platform=$BUILDPLATFORM alpine:3.20 AS fonts

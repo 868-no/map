@@ -106,6 +106,7 @@ services:
     environment:
       BASEMAP_AREA: ${BASEMAP_AREA:-norway}
       BASEMAP_MAX_AGE_DAYS: ${BASEMAP_MAX_AGE_DAYS:-30}
+      BASEMAP_LANGUAGES: ${BASEMAP_LANGUAGES:-no,nb,nn,se,en}
       PLANETILER_HEAP: ${PLANETILER_HEAP:-8g}
     volumes:
       - ./data/basemap:/data

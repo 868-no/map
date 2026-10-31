@@ -70,9 +70,9 @@ func (h *Health) ready(w http.ResponseWriter, r *http.Request) {
 		b.Checks["schema"] = check{OK: true, Detail: storage.SchemaVersion}
 	}
 	if h.Cache == nil {
-		fail("cache", "not configured; direct computation", false)
+		fail("cache", "not configured; dedupe uses the database", false)
 	} else if err := h.Cache.Ping(ctx); err != nil {
-		fail("cache", "unreachable; falling back to direct computation", false)
+		fail("cache", "unreachable; dedupe falls back to the database", false)
 	} else {
 		b.Checks["cache"] = check{OK: true}
 		if st, err := maintenance.LastStatus(ctx, h.Cache); err == nil {

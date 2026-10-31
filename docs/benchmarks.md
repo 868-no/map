@@ -25,7 +25,7 @@ Since D-041 the server only returns rows; a browser opening a window fetches eve
 | **72 h** | 188 799 | 10 | 72 MiB | 119 ms | **1.60 s** | 1.64 s |
 | 168 h | 440 968 | 23 | 169 MiB | 156 ms | 3.74 s | 3.84 s |
 
-Pages are served by the `observed_at` index (D-038), so the time per row does not grow with retained history. Rows compress to roughly 57 bytes each with gzip (zstd slightly smaller), so a first visit to a 72 h window at reference density transfers about 11 MB; later visits transfer only rows newer than what is held. The browser fetches the rest of a range in four parallel time slices after the first page, so wall time is shorter than these sequential figures. Spec target for a 3-day window: ≤ 10 s from empty. **Met** (1.6 s server time, before network).
+These figures predate stored row encodings (D-046), which roughly halved whole-window time in a separate measurement (190k rows over 72 h, 9 sequential pages: p50 4.6 s → 2.5 s). Pages are served by the `observed_at` index (D-038), so the time per row does not grow with retained history. Rows compress to roughly 57 bytes each with gzip (zstd slightly smaller), so a first visit to a 72 h window at reference density transfers about 11 MB; later visits transfer only rows newer than what is held. The browser fetches the rest of a range in four parallel time slices after the first page, so wall time is shorter than these sequential figures. Spec target for a 3-day window: ≤ 10 s from empty. **Met** (1.6 s server time, before network).
 
 ## Derivation (WebAssembly engine vs the TypeScript it replaced, Node 22 / V8, same rows)
 
@@ -53,5 +53,5 @@ The heap target (< 250 MiB) is met with a large margin; the browser never holds 
 ## Observations and follow-ups
 
 - The engine's row representation could shrink further (about 560 bytes per row held, including the id index and vector growth); not needed at reference density.
-- `packet_log_time_idx` serves every `/observations` page. The BRIN index costs little and speeds retention deletes; keep it. `packet_log_type_time_idx` only served the retired server views and could be dropped after measuring ingest without it.
+- `packet_log_time_idx` serves every `/observations` page. The BRIN index costs little and speeds retention deletes; keep it. The two indexes that only served the retired server views were dropped (D-045); every remaining index serves a named query (see the comments in `schema.sql`).
 - The JS heap figure excludes WebAssembly memory (see the derivation table).

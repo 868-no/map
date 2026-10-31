@@ -15,6 +15,8 @@ The `basemap` service (`ghcr.io/868-no/map-basemap`, `basemap/`) keeps the archi
 | `BASEMAP_LANGUAGES` | `no,nb,nn,se,en` | name languages kept |
 | `PLANETILER_HEAP` | `8g` | Java heap while building |
 
+`compose.yaml` passes these through from `.env`. Changing the area or languages does not rebuild an existing archive; delete `basemap.pmtiles` and restart the service. Progress is in `docker compose logs basemap`.
+
 Norway takes about 10 minutes and writes about 1.7 GB. A build needs about 6 GB of free disk for downloads and temporary files; the OSM extract and temporary files are removed afterwards, while water polygons and Natural Earth stay cached for the next build.
 
 To build by hand instead (e.g. on a development machine):
@@ -38,7 +40,7 @@ Noto Sans Regular and Bold glyph ranges from the OpenMapTiles fonts release v2.0
 
 ## Attribution and licences
 
-The map displays “© OpenMapTiles © OpenStreetMap contributors” (`sources.openmaptiles.attribution`). OSM data is ODbL, and tiles generated with the OpenMapTiles schema are CC-BY. Keep the attribution visible in any deployment.
+The map displays “© OpenMapTiles © OpenStreetMap contributors” (`sources.openmaptiles.attribution`). OSM data is ODbL, and tiles generated with the OpenMapTiles schema are CC-BY. Keep the attribution visible in any deployment. The fonts are SIL OFL 1.1; see [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md) for every component.
 
 ## Terrain
 

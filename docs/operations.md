@@ -42,13 +42,14 @@ docker compose pull backend web basemap
 docker compose up -d
 ```
 
-Pin a version tag or `sha-…` in production. The web image is built without the end-to-end test hook.
+Pin a version tag or `sha-…` in production (`compose.production.yaml` takes it from `MESHMAP_TAG`, default `latest`). The web image is built without the end-to-end test hook.
 
 ## Configuration files
 
 - `secrets/mqtt-brokers.yaml`: a list of brokers, each with `id`, `host`, `port`, `protocol` (v5/v311), `tls` (enabled, ca_file, server_name), `username`, `password` or `password_file`, `client_id` and `topics` (filter, qos 0/1). Set `accept_retained: false` (the default) so retained messages never fabricate current activity.
 - `secrets/channel-keys.yaml`: a list of channels, each with `name`, `broker_ids` (`*` for all), `mode` (`ctr`, or `ccm` for firmware 2.8.1+ AEAD channels), `psks` (current key first, then previous keys during rotation; base64, or `hex:`; `AQ==` is the public default key) and `accept_plaintext` (default true for configured channels).
-- Key rotation: add the new key first and keep the old one until no traffic uses it, then restart `backend`. The configuration hash is part of cache keys, so results recompute automatically.
+- Key rotation: add the new key first and keep the old one until no traffic uses it, then restart `backend`. The configuration hash is part of the `generation` that `/observations` reports, so browsers discard the rows they hold and refetch.
+- Optional: `GEOLOCATION_CALIBRATION` is the path to a YAML file with `default: {p0_dbm, path_loss_exponent}` for calibrated RF location estimates (D-016). All other settings are environment variables; see `.env.example` and `backend/internal/config/config.go`.
 
 ## HTTPS / reverse proxy
 
@@ -70,12 +71,12 @@ Serve the map over HTTPS: browsers only enable the service worker (offline use) 
 
 ## Access control
 
-Public by default. For basic auth, create `deploy/caddy-auth/basic.caddy` (see the README there) and restart `web`.
+Public by default. For basic auth, create `deploy/caddy-auth/basic.caddy` (see the README there) and restart `web`. `compose.production.yaml` does not mount that directory; add a volume for `/etc/caddy/auth` to `web` there if you need it.
 
 ## Health and metrics
 
 - `GET /health/live`: process up.
-- `GET /health/ready`: database, schema version, Redis (degraded when unreachable; caching and dedupe fall back), ingest writer and queue, broker connection states, and the last retention run (time, deleted rows, table size).
+- `GET /health/ready`: database, schema version, Redis (degraded when unreachable; dedupe falls back to a database lookup), ingest writer and queue, broker connection states, and the last retention run (time, deleted rows, table size).
 - Prometheus metrics at `backend:9100/metrics` (compose network only), or on `/metrics` with `PUBLIC_METRICS_ENABLED=true`. Key series:
   - `meshmap_mqtt_received_total`, `meshmap_mqtt_connected`
   - `meshmap_ingest_accepted_total{packet_type,signature_status}`, `meshmap_ingest_rejected_total{category}` (includes `not_ok_to_mqtt_nodeinfo`: NodeInfo withheld because the sender did not allow MQTT uplink, and `map_report_invalid`)
@@ -89,7 +90,7 @@ MQTT delivers Meshtastic traffic at QoS 0, so senders cannot be slowed. If Postg
 
 ## Retention
 
-The `maintenance` service deletes rows older than `RETENTION_MONTHS` (default 6 calendar months, clamped at month ends) daily at 03:00 UTC, and at startup if a run is overdue. It deletes in 5 000-row transactions under a PostgreSQL advisory lock, then runs `VACUUM (ANALYZE)`, bumps the retention revision (invalidating cached results) and notifies open browser sessions. Run it manually with `docker compose run --rm maintenance maintenance --once`.
+The `maintenance` service deletes rows older than `RETENTION_MONTHS` (default 6 calendar months, clamped at month ends) daily at 03:00 UTC, and at startup if a run is overdue. It deletes in 5 000-row transactions under a PostgreSQL advisory lock, then runs `VACUUM (ANALYZE)`, stores the run's status (shown in `/health/ready`) and notifies open browser sessions. Run it manually with `docker compose run --rm maintenance maintenance --once`.
 
 ## Backup and restore
 
@@ -100,17 +101,17 @@ docker compose exec -T postgres pg_dump -U meshmap -Fc meshmap > meshmap-$(date 
 docker compose exec -T postgres pg_restore -U meshmap -d meshmap --clean --if-exists < meshmap-YYYY-MM-DD.dump
 ```
 
-Only `packet_log` matters; Redis is ephemeral and rebuilds itself. After a restore, restart `backend` so the identity index rebuilds.
+Only `packet_log` matters; Redis is ephemeral and rebuilds itself. After a restore, restart `backend` so the identity index rebuilds; it also rebuilds any missing or outdated stored row encodings in the background (D-046).
 
 ## Troubleshooting
 
 | Symptom | Check |
 | --- | --- |
-| Map is grey/empty | `data/basemap/basemap.pmtiles` exists; `curl -r 0-99 localhost:8080/tiles/basemap.pmtiles` returns 206 |
+| Map is grey/empty | `docker compose logs basemap` (the first build takes a while); `data/basemap/basemap.pmtiles` (or the `basemap` volume with `compose.production.yaml`) exists; `curl -r 0-99 localhost:8080/tiles/basemap.pmtiles` returns 206 |
 | No nodes | `/health/ready` broker states; rejection metrics (`no_key` → missing channel key; `retained_ignored`; `topic_json`) |
 | Many `decrypt_failed` | Wrong PSK for that channel name, or a CCM channel configured as `ctr` |
 | `sig_invalid` rejections | Forged or corrupted signed packets; expected to be rare on real traffic |
-| Live badge “paused” | Redis down in API-only mode, or SSE blocked by a proxy (disable buffering) |
+| Live badge “paused” | Redis down in API-only mode (`serve --no-ingest`), or SSE blocked by a proxy (disable buffering) |
 | Inspect real traffic | `docker run --rm eclipse-mosquitto:2 mosquitto_sub -h HOST -u U -P P -t 'msh/#' -F '%U\|%r\|%t\|%x' -W 600 > cap.txt` then `scripts/go.sh go run ./cmd/meshmap inspect cap.txt` |
 
 ## Production security checklist

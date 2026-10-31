@@ -1,6 +1,6 @@
 // Package maintenance runs retention: chunked deletion of rows older than the
-// configured cutoff under an advisory lock, then VACUUM (ANALYZE) and cache
-// invalidation. Safe to run repeatedly and from several processes.
+// configured cutoff under an advisory lock, then VACUUM (ANALYZE) and a notice
+// to open browsers. Safe to run repeatedly and from several processes.
 package maintenance
 
 import (
@@ -108,7 +108,8 @@ func (r *Runner) RunOnce(ctx context.Context) (Status, error) {
 	return st, nil
 }
 
-// publish invalidates caches (retention revision) and shares the status.
+// publish stores the status (for /health/ready) and announces the run, so
+// open browsers drop and refetch what retention removed.
 func (r *Runner) publish(ctx context.Context, st Status) {
 	if r.Cache == nil {
 		return

@@ -17,6 +17,12 @@ import { usePacketRoute } from '../state/data'
 import { installTestHook } from './testHook'
 import { LayersPanel } from '../features/controls'
 
+// The map is GPL-3.0 (it builds on Meshtastic's GPL protobufs): every visitor
+// gets the compiled frontend, so the page links to its corresponding source,
+// at the commit the image was built from when known.
+const SOURCE_URL = import.meta.env.VITE_SOURCE_URL || 'https://github.com/868-no/map'
+const SOURCE_HREF = import.meta.env.VITE_SOURCE_REVISION ? `${SOURCE_URL}/tree/${import.meta.env.VITE_SOURCE_REVISION}` : SOURCE_URL
+
 interface Props {
   caps: Capabilities
   snapshot: SnapshotBody | undefined
@@ -247,6 +253,8 @@ export default function MapView({ caps, snapshot, onPositions }: Props) {
       <div className="attribution">
         <a href="https://openmaptiles.org/" target="_blank" rel="noreferrer">© OpenMapTiles</a>{' '}
         <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">© OpenStreetMap contributors</a>
+        {' · '}
+        <a href={SOURCE_HREF} target="_blank" rel="noreferrer" title="This map is free software under the GNU GPL v3; its source code">Source (GPL-3.0)</a>
       </div>
       {hover && (
         <div className="tooltip" style={{ left: hover.x + 12, top: hover.y + 12 }} role="tooltip">

@@ -380,3 +380,16 @@ Operator requirements for production:
 - **Configuration in the Compose stack:** the backend also reads broker and channel configuration from the `MQTT_BROKERS` and `CHANNEL_KEYS` env vars. They hold the same YAML as the files and replace them when set. Configuration errors name the variable. `check-config` redacts them like the files, and nothing logs the env. `deploy/compose.production.yaml` is a complete stack on published images, with secrets filled in from the stack's environment.
 - **Basemap built by an image:** a new `basemap` service, `ghcr.io/868-no/map-basemap`, is Planetiler plus `basemap/run.sh`. It builds `basemap.pmtiles` into a volume shared with `web` when the file is missing, and rebuilds it every 30 days. The new file replaces the old one with a single rename. A failed build is retried after an hour. It is a separate service rather than part of the `web` image because a build needs Java and about 8 GB of heap, which shouldn't sit in the web server. Tested end to end with the Monaco extract.
 - **Backups:** the operator won't run backups. The `pg_dump` and `pg_restore` commands stay documented, and the docs now say they are not automated.
+
+## D-050 License: GPL-3.0-only (2026-10-31)
+
+Operator request: publish an accurate license, compatible with Meshtastic's protobufs.
+- **Why GPL-3.0:** the protobufs are GPL-3.0, and the backend's committed Go code in `internal/protocol/pb` is generated from them, so the combined work must be GPL-3.0. Before this, the repository had no top-level license, and the engine's `Cargo.toml` claimed MIT.
+- **Files and metadata:** `LICENSE` is the unmodified FSF text (sha256 `3972dc97…`, identical to the copy in the submodule). `GPL-3.0-only` is declared in `Cargo.toml`, `package.json` and the images' `org.opencontainers.image.licenses` label.
+- **Dependencies:** every dependency was checked:
+  - Go modules: MIT, BSD and Apache-2.0. Paho is dual EPL-2.0/EDL-1.0 and is used under EDL, the BSD-style option.
+  - Shipped npm packages: MIT, ISC, BSD, Apache-2.0 and 0BSD.
+  - Rust crates: MIT, Apache-2.0, Unlicense and Unicode-3.0.
+
+  All are GPL-3.0-compatible. Fonts (OFL), map data (ODbL, CC-BY, public domain) and the container base images are listed in `THIRD_PARTY_NOTICES.md`, with a Meshtastic trademark disclaimer.
+- **Source link:** visitors' browsers receive the compiled frontend, which counts as distributing it, so the attribution bar links to the source. CI builds the web image with the commit hash (`SOURCE_REVISION`); a modified build can set `SOURCE_URL`. AGPL-3.0 would also have been compatible and would additionally cover the backend as a network service; GPL-3.0 matches upstream.

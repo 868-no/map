@@ -1,17 +1,18 @@
 # Meshtastic MQTT Mesh Observatory
 
-An interactive, permanently dark map for observing Meshtastic mesh networks using only traffic from one or more MQTT brokers. It decrypts channel traffic, verifies XEdDSA packet signatures and stores each accepted gateway reception in one PostgreSQL table (`packet_log`). From that table it reconstructs nodes, evidence-backed RF links, traffic and coarse location estimates for any time window in the retention period. Nothing from outside the selected window ever leaks into a view.
+An interactive, permanently dark map for observing Meshtastic mesh networks using only traffic from one or more MQTT brokers. It decrypts channel traffic, verifies XEdDSA packet signatures and stores each accepted gateway reception in one PostgreSQL table (`packet_log`). From that table the browser reconstructs nodes, evidence-backed RF links, traffic and coarse location estimates for any time window in the retention period. Nothing from outside the selected window ever leaks into a view.
 
 ![Live overview](docs/screenshots/live-overview.png)
 
 - **Time windows:** default rolling 3 days, presets from 1 h to 7 d, custom start/end, slide the window back through 6 months. Live updates arrive over SSE.
 - **Honest topology:** links come from NeighborInfo, traceroute segments, proven direct gateway receptions, and uniquely resolved relay bytes (low confidence, dashed). Every link shows provenance, per-direction SNR/RSSI statistics and a confidence reason.
+- **Live pings:** each transmission heard live animates as a ring at the transmitter; packets addressed to one node also animate a line to each direct receiver (D-047). The link layers start switched off.
 - **Honest positions:** reported positions only from in-window packets. Estimates need ≥ 3 well-spaced anchors and are drawn as hollow markers with an uncertainty circle; there are no guessed pins.
 - **Crypto:** AES-CTR and firmware 2.8.1+ AES-CCM channels, firmware-compatible XEdDSA verification with trust-on-first-use, and per-packet status (`verified`, `unsigned`, `unverifiable`, `not-applicable`). Verified against real firmware 2.8 traffic.
 - **Installable and offline-capable:** add it to a phone's home screen; without a connection it opens with the last data it received (map tiles are not stored offline).
-- **Self-hosted:** Docker Compose, a self-hosted PMTiles basemap with switchable layers (place, peak, road and border labels; most names hidden by default), no external services at runtime.
+- **Self-hosted:** Docker Compose, a self-hosted PMTiles basemap with switchable layers (place, peak, road and border labels; most names hidden by default), no external services at runtime apart from the basemap service's OpenStreetMap downloads when it builds.
 
-## Quick start (offline demo)
+## Quick start (demo)
 
 Requires Docker with Compose.
 
@@ -22,6 +23,8 @@ open http://localhost:8080
 ```
 
 The `demo` profile adds a local Mosquitto broker (compose network only) and a simulator for a 22-node mesh in Trøndelag. The simulator uses real encryption and signatures, flood relaying via several gateways, traceroutes, NeighborInfo, plaintext uplinks, unpositioned nodes, a relay-byte collision, and deliberately bad input (forged signatures, PKI DMs, malformed protobufs) that must be rejected. It refuses to publish to non-private hosts.
+
+The `basemap` service starts too and downloads several GB of OpenStreetMap data for its first build; the map works without tiles until it finishes. Add `--scale basemap=0` to skip it.
 
 ## Real brokers and keys
 
@@ -46,7 +49,7 @@ The host needs only Docker; Go and Node run in containers.
 
 ```sh
 scripts/go.sh go test ./...           # backend unit tests (incl. real-capture replay)
-scripts/integration.sh                # Postgres/Redis/Mosquitto integration tests (spec §17 tests 1-35)
+scripts/integration.sh                # Postgres/Redis/Mosquitto integration tests (time isolation, pipeline, retention)
 scripts/node.sh npx vitest run        # frontend unit tests
 scripts/wasm.sh test                  # engine (Rust) tests, incl. the golden 12 h fixture
 scripts/wasm.sh                       # build the engine to WebAssembly (needed before frontend tests/builds)
@@ -60,7 +63,7 @@ Every view is built in the browser, by a WebAssembly engine (`frontend/engine`, 
 
 ## Operations
 
-Health at `/health/ready`, metrics at `backend:9100/metrics`. Retention runs daily (6 calendar months by default). Backups use `pg_dump` of `packet_log`; Redis is disposable. See [docs/operations.md](docs/operations.md) for deployment behind HTTPS, access control, data-loss windows, troubleshooting and the production security checklist.
+Health at `/health/ready`, metrics at `backend:9100/metrics`. Retention runs daily (6 calendar months by default). Backups (not automated) use `pg_dump` of `packet_log`; Redis is disposable. See [docs/operations.md](docs/operations.md) for deployment behind HTTPS, access control, data-loss windows, troubleshooting and the production security checklist.
 
 ## Documentation
 
@@ -71,6 +74,7 @@ Health at `/health/ready`, metrics at `backend:9100/metrics`. Retention runs dai
 | [docs/decisions.md](docs/decisions.md) | Decisions and deviations from the spec and plan |
 | [docs/operations.md](docs/operations.md) | Deploy, configure, monitor, back up, troubleshoot |
 | [docs/basemap.md](docs/basemap.md) | Basemap build, style, glyphs, licences |
+| [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) | Licenses of dependencies, fonts and map data |
 | [docs/benchmarks.md](docs/benchmarks.md) | Reference-workload results |
 | [docs/api-openapi.yaml](docs/api-openapi.yaml) | OpenAPI 3.1, generated from the serving code (also at `/api/openapi.yaml`) |
 
@@ -83,4 +87,10 @@ Health at `/health/ready`, metrics at `backend:9100/metrics`. Retention runs dai
 - Relay hints are single bytes: ambiguous matches produce no link. RF-based location estimates are coarse; uncalibrated estimates only say "somewhere among these anchors".
 - Minimum supported firmware: 2.7.
 
+## License
+
+[GNU General Public License v3.0](LICENSE) (`GPL-3.0-only`). The backend's protocol code is generated from [Meshtastic's protobuf definitions](https://github.com/meshtastic/protobufs), which are GPL-3.0, so the whole project is too. Distributing it, including serving the frontend to visitors' browsers, means offering the corresponding source: the map links to the source it was built from (set `SOURCE_URL` when building the web image of a modified version). Third-party components, fonts and map data, and their licenses: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
 Map data © OpenStreetMap contributors, © OpenMapTiles.
+
+Meshtastic® is a registered trademark of Meshtastic LLC. This project is not affiliated with or endorsed by Meshtastic LLC.

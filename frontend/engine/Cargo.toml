@@ -3,7 +3,7 @@ name = "meshmap-engine"
 version = "0.1.0"
 edition = "2024"
 description = "Mesh view derivation for the browser (WebAssembly): row store, links, location estimates, traffic, node details, packet logs and routes"
-license = "MIT"
+license = "GPL-3.0-only"
 publish = false
 
 [lib]

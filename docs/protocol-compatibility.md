@@ -43,4 +43,4 @@ The decoder, decryption and signature verification were replayed against a read-
 
 ## Topics
 
-`{root}/2/{e|c}/{channel}/{gateway}` where `{root}` may have any depth (`msh/EU_868/NO/Østlandet`). `json`, `map` and `stat` topics are recognised and counted but not processed in v1. Retained messages are ignored by default.
+`{root}/2/{e|c}/{channel}/{gateway}` where `{root}` may have any depth (`msh/EU_868/NO/Østlandet`). `{root}/2/map/…` map reports are processed when the node published its own report (D-032). `json` and `stat` topics are recognised and counted but not processed. Retained messages are ignored by default.
