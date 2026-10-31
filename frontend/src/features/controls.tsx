@@ -35,7 +35,7 @@ export function LayersPanel({ id, onClose }: { id: string; onClose: () => void }
       {check('Node names (zoom ≥ 10)', t.labels, (v) => setT({ labels: v }),
         'Each node\'s short name from its latest NodeInfo in the selected window (or the last 4 hex digits of its ID if none).')}
       {check('Animated traffic', t.animation, (v) => setT({ animation: v }),
-        'Live radar pings: each ring is one radio transmission, growing to enclose the nodes known to have heard it directly. Blue: first broadcast by the originating node; amber: rebroadcast by a relay. Fill fades with measured signal strength. Live window only.')}
+        'Live radar pings: each soft ring is one radio transmission, growing to enclose the nodes known to have heard it directly, while a bright line travels along each link to those nodes, arriving with the ring. Blue: first broadcast by the originating node; amber: rebroadcast by a relay. The ring fades with measured signal strength. Live window only.')}
       <h3>Map</h3>
       {BASEMAP_GROUPS.map((g) => check(g.label, t.basemap[g.id], (v) => setT({ basemap: { [g.id]: v } }), g.info))}
     </div>
@@ -140,7 +140,7 @@ export function Legend({ snapshot }: { snapshot: SnapshotBody | undefined }) {
       <ul>
         <li><span className="ping origin" /> First broadcast, centred on the originating node</li>
         <li><span className="ping relay" /> Rebroadcast, centred on the relay (resolved from the last-hop byte)</li>
-        <li>The ring grows until it encloses every node known to have heard that transmission directly; each one flashes as the ring reaches it. A small blip means no direct receiver is known yet.</li>
+        <li>The ring grows until it encloses every node known to have heard that transmission directly, and a bright line travels along the link to each of them; each one flashes as the ring and its line reach it. A small blip means no direct receiver is known yet.</li>
       </ul>
       <h3>Signatures</h3>
       <ul>

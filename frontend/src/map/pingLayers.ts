@@ -10,8 +10,8 @@ export const PING_RELAY: [number, number, number] = [255, 196, 110]
 const rgb = (r: { rebroadcast: boolean }) => (r.rebroadcast ? PING_RELAY : PING_ORIGIN)
 /** The ping colour lifted 45 % toward white: the travelling link's core. */
 const bright = (r: { rebroadcast: boolean }) => rgb(r).map((c) => Math.round(c + (255 - c) * 0.45)) as [number, number, number]
-// Rings are kept light so the map stays readable under busy traffic.
-const RING_ALPHA = 0.6
+// Rings have no outline: a soft fill whose opacity follows the signal at each
+// receiver shows the reach, and the animated links' heads mark its edge.
 const FILL_ALPHA = 0.18
 
 export function buildPingLayers(now: number, zoom: number): Layer[] {
@@ -45,7 +45,7 @@ export function buildPingLayers(now: number, zoom: number): Layer[] {
       filled: true, stroked: false, getFillColor: (t) => [...bright(t), t.alpha] as RGBA,
       updateTriggers: { getPosition: now, getFillColor: now },
     }),
-    // Radial fill: concentric bands whose opacity follows the signal
+    // The ring itself: concentric bands whose opacity follows the signal
     // measured at each receiver, fading to transparent at the edge.
     new ScatterplotLayer<{ r: Ring; i: number }>({
       id: 'ping-fill', ...UNDER_LABELS, data: rings.flatMap((r) => r.profile.map((_, i) => ({ r, i }))),
@@ -53,13 +53,6 @@ export function buildPingLayers(now: number, zoom: number): Layer[] {
       filled: false, stroked: true, lineWidthUnits: 'pixels', getLineWidth: (b) => b.r.radiusPx / RING_BANDS,
       getLineColor: (b) => [...rgb(b.r), Math.round(b.r.alpha * FILL_ALPHA * b.r.profile[b.i])] as RGBA,
       updateTriggers: { getRadius: now, getLineWidth: now, getLineColor: now },
-    }),
-    // Expanding ring around the transmitter, out to its farthest direct receiver.
-    new ScatterplotLayer<Ring>({
-      id: 'ping-rings', ...UNDER_LABELS, data: rings, getPosition: (r) => r.center, getRadius: (r) => r.radiusPx, radiusUnits: 'pixels',
-      filled: false, stroked: true, lineWidthUnits: 'pixels', getLineWidth: 2,
-      getLineColor: (r) => [...rgb(r), Math.round(r.alpha * RING_ALPHA)] as RGBA,
-      updateTriggers: { getRadius: now, getLineColor: now },
     }),
     // No placeable direct receiver: a brief soft glow, deliberately unlike a ring.
     new ScatterplotLayer<Blip>({
