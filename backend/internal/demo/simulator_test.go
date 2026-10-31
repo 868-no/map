@@ -1,0 +1,71 @@
+package demo
+
+import (
+	"testing"
+	"time"
+
+	"github.com/868-no/map/internal/ingest"
+	"github.com/868-no/map/internal/security"
+)
+
+type ids map[uint32]security.Identity
+
+func (m ids) Lookup(n uint32) (security.Identity, bool) { id, ok := m[n]; return id, ok }
+
+// The demo must exercise the real verification paths and its adversarial
+// inputs must be rejected.
+func TestSimulatorThroughIngest(t *testing.T) {
+	s := DefaultScenario()
+	t.Log(s.Describe())
+	kr, err := security.NewKeyring(Channels())
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := ids{}
+	o := ingest.Options{Keyring: kr, Identities: store, KeyBudget: 4}
+	sim := NewSimulator(s, 1)
+	accepted := map[string]int{}
+	rejected := map[string]int{}
+	notes := map[string]map[string]int{}
+	for i := 0; i < 3000; i++ {
+		for _, m := range sim.Step() {
+			obs, err := ingest.Process(ingest.RawMessage{BrokerID: "demo", Topic: m.Topic, Payload: m.Payload, ObservedAt: time.Now()}, o)
+			if notes[m.Note] == nil {
+				notes[m.Note] = map[string]int{}
+			}
+			if err != nil {
+				rejected[ingest.Category(err)]++
+				notes[m.Note]["reject:"+ingest.Category(err)]++
+				continue
+			}
+			notes[m.Note]["ok"]++
+			accepted[obs.PacketType+"/"+string(obs.SignatureStatus)+"/"+string(obs.Meta.Crypto)]++
+			if obs.Promote != nil {
+				store[obs.Promote.Node] = *obs.Promote
+			}
+		}
+	}
+	t.Logf("accepted: %v", accepted)
+	t.Logf("rejected: %v", rejected)
+	for k, v := range notes {
+		t.Logf("note %q: %v", k, v)
+	}
+	for _, want := range []string{"nodeinfo/verified/ctr_unauthenticated", "position/verified/ctr_unauthenticated", "position/unsigned/ctr_unauthenticated",
+		"traceroute/not-applicable/ctr_unauthenticated", "neighborinfo/verified/ctr_unauthenticated", "text/verified/ccm_authenticated", "telemetry/verified/plaintext_uplink"} {
+		if accepted[want] == 0 {
+			t.Errorf("demo never produced %s", want)
+		}
+	}
+	if n := notes["forged signature (must be rejected)"]; n["ok"] > 0 && n["reject:sig_invalid"] == 0 {
+		t.Errorf("forged signatures accepted: %v", n)
+	}
+	if notes["forged signature (must be rejected)"]["reject:sig_invalid"] == 0 {
+		t.Error("forged signature case never rejected as sig_invalid")
+	}
+	if notes["PKI DM (must be discarded)"]["ok"] > 0 || notes["malformed protobuf"]["ok"] > 0 {
+		t.Error("PKI or malformed input accepted")
+	}
+	if len(store) == 0 {
+		t.Error("no identities learned")
+	}
+}

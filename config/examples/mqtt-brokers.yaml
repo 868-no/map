@@ -1,0 +1,21 @@
+# Copy to ./secrets/mqtt-brokers.yaml. Fake values only.
+brokers:
+  - id: no868
+    host: mqtt.example.org
+    port: 1883
+    protocol: v5            # v5 (default) or v311
+    tls: { enabled: false }
+    username: example-user
+    password: example-password   # or password_file: /run/secrets/no868-password
+    client_id: meshmap-ingest-1
+    topics:
+      - { filter: "msh/EU_868/#", qos: 0 }
+    accept_retained: false
+  - id: tls-example
+    host: mqtts.example.org
+    port: 8883
+    tls: { enabled: true, ca_file: /run/secrets/ca.pem, insecure_skip_verify: false }
+    username: example-user
+    password_file: /run/secrets/tls-example-password
+    topics:
+      - { filter: "msh/EU_868/NO/#", qos: 1 }

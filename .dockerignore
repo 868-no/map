@@ -1,0 +1,8 @@
+data
+secrets
+.env
+**/node_modules
+frontend/dist
+backend/.scratch
+backend/protobufs
+.git

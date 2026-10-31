@@ -1,0 +1,68 @@
+{
+	admin off
+	servers {
+		# Honour X-Forwarded-For only from private-range proxies (e.g. an
+		# upstream TLS terminator); otherwise the direct peer is the client.
+		trusted_proxies static private_ranges
+	}
+}
+
+:80 {
+	encode zstd gzip
+
+	header {
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		X-Frame-Options DENY
+		Permissions-Policy "geolocation=(), camera=(), microphone=()"
+		# MapLibre runs its workers from blob: URLs.
+		Content-Security-Policy "default-src 'self'; script-src 'self'; worker-src 'self' blob:; child-src blob:; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; connect-src 'self'; font-src 'self'; frame-ancestors 'none'; base-uri 'self'"
+		-Server
+	}
+
+	# Optional access control: mount files at /etc/caddy/auth/*.caddy
+	# (see docs/operations.md). Nothing is imported when none exist.
+	import /etc/caddy/auth/*.caddy
+
+	handle /api/* {
+		reverse_proxy backend:8000 {
+			flush_interval -1 # SSE
+		}
+	}
+	handle /health/* {
+		reverse_proxy backend:8000
+	}
+	# Tiles: cached by the browser's HTTP cache (range requests, ETag), never
+	# by the service worker. A rebuilt basemap changes the ETag.
+	handle /tiles/* {
+		root * /srv
+		header Cache-Control "public, max-age=86400, stale-while-revalidate=604800"
+		file_server
+	}
+	handle /fonts/* {
+		root * /srv
+		header Cache-Control "public, max-age=2592000, immutable"
+		file_server
+	}
+	handle /styles/* {
+		root * /srv
+		header Cache-Control "public, max-age=300, stale-while-revalidate=86400"
+		file_server
+	}
+	handle {
+		root * /srv/app
+		# Content-hashed build output: cache forever.
+		@assets path /assets/*
+		header @assets Cache-Control "public, max-age=31536000, immutable"
+		@icons path /icons/* /favicon.svg
+		header @icons Cache-Control "public, max-age=604800"
+		# Entry points must revalidate so a new deploy is picked up: the page,
+		# the service worker (which carries the precache list) and the manifest.
+		@entry path / /index.html /sw.js /manifest.webmanifest
+		header @entry Cache-Control "no-cache"
+		@manifest path /manifest.webmanifest
+		header @manifest Content-Type "application/manifest+json"
+		try_files {path} /index.html
+		file_server
+	}
+}

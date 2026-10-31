@@ -1,0 +1,289 @@
+# Decisions and deviations
+
+Each entry: context, decision, consequence. Spec = `MESHTASTIC_MESH_MAP_SPEC.md`, Plan = `IMPLEMENTATION_PLAN.md`.
+
+## D-001 Go backend (2026-10-31)
+
+Spec §13 recommends Python and permits Go "if XEdDSA and protocol support are demonstrably better". The operator chose Go. Protocol support is adequate: generated `google.golang.org/protobuf` bindings from the pinned upstream protos, stdlib AES-CTR, Pion's RFC 3610 CCM, stdlib Ed25519. XEdDSA: see D-002.
+
+## D-002 XEdDSA verification without a dedicated XEdDSA library (2026-10-31)
+
+Spec §3.3 forbids "generic Ed25519 verification" as a substitute and §13 forbids implementing XEdDSA from scratch. XEdDSA *verification* is, by definition, Ed25519 verification under the Edwards form (sign bit 0) of the Montgomery public key. Firmware does exactly this (`CryptoEngine::curve_to_ed_pub` + `ed25519Verify`). We do the same with vetted primitives: `filippo.io/edwards25519/field` for the birational map and stdlib `crypto/ed25519.Verify`. No new curve arithmetic is written.
+
+Acceptance gates (Plan §3.5):
+1. Conversion matches stdlib Ed25519 + `x/crypto/curve25519` for ≥ 1 000 random keys — **pass** (`TestConvertX25519MatchesIndependentDerivation`).
+2. Signature round trip and header/payload/signature mutations — **pass** (`TestXEdDSARoundTripAndMutations`, `TestXEdDSASignBitOneFails`).
+3. Real firmware 2.8 captures verify — see D-003.
+
+The cgo libxeddsa fallback is not needed.
+
+## D-003 Ground truth from mqtt.868.no (2026-10-31) — gate 3 passed
+
+Read-only captures of the Norwegian community broker, run through the production `ingest.Process` (`meshmap inspect`), with keys learned strictly in arrival order (production semantics):
+- 30-minute capture: 15 signed first-contact NodeInfo packets from real firmware 2.8 nodes verified with the CRC-32 key binding; signed Telemetry verified against learned keys.
+- ~2.5-hour capture (1 062 messages): 49 verified NodeInfo; **8 signed Position packets verified against keys learned from earlier NodeInfo** in strict arrival order (13 when keys from the whole capture are used, `--two-pass`), plus verified Telemetry and NeighborInfo; 29 identities.
+- **Zero** `sig_invalid`, `sig_malformed`, `first_contact_invalid` or `nodeinfo_key_mismatch` rejections on real traffic.
+
+Both captures are committed under `backend/test/fixtures/captured/` (the operator considers RF broadcasts public) and replayed by `internal/ingest/captured_test.go`, which fails on any signature rejection of real traffic.
+
+## D-004 CCM cross-check method (2026-10-31)
+
+The plan considered compiling firmware `aes-ccm.cpp` to emit reference vectors. Instead the CCM library is validated against RFC 3610 (the firmware file is the hostap RFC 3610 implementation with L = 2), and nonce/AAD construction is matched to firmware source line by line. Real AEAD traffic has not yet been observed on the test broker; when it is, add a captured fixture. Until then CCM is supported but marked "verified against spec vectors only" in this document.
+
+## D-005 Plan amendments after review (2026-10-31)
+
+Recorded in Plan §9: traceroute placeholders, traceroute logical key, public keys in `decoded_metadata`, plaintext uplink path, firmware ≥ 2.7 and precision-unknown positions, quantized live windows, dedupe-after-commit, shared cursor secret, trusted proxies, queue-full loss accounting, multi-level topic roots.
+
+## D-006 Strict policy scope (2026-10-31)
+
+`SIGNATURE_POLICY=strict` rejects unverifiable signatures only (spec §3.3), not unsigned packets as firmware Strict does. See `docs/protocol-compatibility.md`.
+
+## D-007 Additional index (2026-10-31)
+
+`packet_log_type_time_idx (packet_type, observed_at DESC)` added beyond spec §5: snapshot queries select NodeInfo/Position/evidence rows by type inside a window. To be confirmed or dropped by the M5 benchmark together with the BRIN index.
+
+## D-008 NeighborInfo node_id mismatch (2026-10-31)
+
+A NeighborInfo whose `node_id` is nonzero and differs from the packet sender is rejected as `payload_invalid`: it would otherwise let one node assert another node's neighbours.
+
+## D-009 Identity index in process memory (2026-10-31)
+
+Plan §3.5 put the authoritative-key index in a Redis hash. Ingest is a singleton (several ingest processes subscribed to the same brokers would only produce duplicates), so the index lives in the ingest process (`internal/identity`), rebuilt from verified NodeInfo rows in `packet_log` at startup, hourly and on every retention event. It remains ephemeral and fully reconstructible; no second durable store exists. Verified by `TestPipelineDemoStream` (rebuilt index equals live index).
+
+## D-010 Integration test harness (2026-10-31)
+
+Plan §7 named testcontainers-go. Integration tests instead run via `scripts/integration.sh`, which starts throwaway Postgres, Redis and Mosquitto containers on a private network and runs `go test -tags integration` in the Go container beside them. Same coverage, no Docker-socket access from inside the test container.
+
+## D-011 Observation dedupe: in-flight claim (2026-10-31)
+
+Plan amendment 7 marked keys only after commit and accepted a "narrow race". The integration test showed the race is not narrow: two brokers delivering the same upload milliseconds apart is the common case (202 duplicates in a burst). Workers now atomically claim the observation key in an in-process in-flight set before checking committed keys (in-process TTL set → Redis → database). This keeps amendment 7's guarantee — a claim is only held by observations already handed to the writer, which retries until commit, so a dropped message never suppresses a later copy — and removes the race.
+
+## D-012 Retention cutoff definition (2026-10-31)
+
+`window.RetentionCutoff` subtracts calendar months and clamps to the end of the target month (Aug 31 − 6 months = Feb 28/29), matching PostgreSQL interval semantics. Go's `AddDate` would normalise to Mar 3. The deleter and the API bound both use this one function; rows exactly at the cutoff are kept (`observed_at < cutoff` is deleted).
+
+## D-013 Broker provenance for duplicate deliveries (2026-10-31)
+
+The same gateway upload can reach us through several brokers (bridged brokers, or a gateway publishing to more than one broker). Such copies are byte-identical and carry no new RF information, so they remain one row per gateway reception (deduplicated by `observation_key`); `broker_id` is the first broker to deliver it. Every other broker that delivers it is recorded in `decoded_metadata.also_via` (debug aid):
+- copies arriving while the row is still in memory (claimed, not yet committed) are merged before the INSERT, re-checked on every insert retry;
+- copies arriving after commit are queued by primary key (row ids are remembered in the in-process recent set and in Redis for the 15-minute dedupe window, or found via the DB fallback) and applied by the writer as one batched `UPDATE … FROM unnest(…)` per flush. The SQL never adds a broker already present (first broker or existing entry) and skips rows needing no change; same-broker replays cause no update.
+- `meshmap_ingest_duplicate_deliveries_total{broker}` counts cross-broker copies; `meshmap_ingest_provenance_updates_total{result}` counts row updates.
+
+`packet_log` is therefore append-mostly: only `decoded_metadata.also_via` is ever updated. `fillfactor = 90` leaves room for HOT updates (no index writes). Measured (`TestBridgedBrokerLag`, bridge delay exponential with 150 ms mean): 92 % of rows needed a post-commit update (rows usually commit within ~100 ms, so the in-memory merge rarely wins), and 84 % of those updates were HOT. Worst case (every row updated in large batches long after insert): ~12 % HOT, because a page's free space fits only about one new row version per transaction. Revisit the fillfactor in the M5 benchmark against real broker topologies.
+
+Distinct receptions — different gateway, relay ("last hop"), hop count, RF metrics or partial traceroute route — are always separate rows. Brokers do not hear packets; gateways do.
+
+## D-014 API shape and window parameters (2026-10-31)
+
+- Omitting both `start` and `end` selects the rolling live window `[now − duration, now)` (`duration` default 72 h), with `now` floored to `LIVE_QUANTUM` so clients share boundaries and cache entries. Giving only one bound is an error. Every response echoes the effective window and a `revision`.
+- `revision` = `d{decode_version}.c{config_rev}.r{retention_rev}.m{max id in window}`. Any new row inside the window, any retention deletion, or a configuration change produces a new revision and therefore a new cache key; stale entries are never served. `config_rev` hashes channel/policy settings and reveals nothing about keys.
+- (Replay cursors and the replay endpoint were removed; see D-020.)
+- `/api/v1/stream` (SSE) accepts only the rolling window (fixed windows are rejected with 422 before the stream opens). Heartbeats every 15 s carry the current window bounds so clients evict aged-out evidence without new packets.
+- Whole-table bounds in `/api/v1/retention` (earliest/latest observation) are operational metadata, not mesh-derived state.
+- Protection: per-client token bucket (20 req/s, burst 60), max 4 concurrent streams per client, max 8 concurrent heavy computations (503 after 5 s), 20 s request deadline. Client IP from `X-Forwarded-For` only via `TRUSTED_PROXIES`.
+- The huma docs UI is disabled (it loads JavaScript from a CDN); the OpenAPI document is served at `/api/openapi.yaml`/`.json` and committed as `docs/api-openapi.yaml` (contract test).
+
+## D-015 Topology inference rules (2026-10-31)
+
+Implemented in `internal/graph` (pure) and `internal/query/edges.go` (in-window evidence loading):
+- **NeighborInfo** entry "A hears B" → `B → A`, reported float SNR unchanged; one sample per logical NeighborInfo packet regardless of how many gateways uplinked it. Reports whose `node_id` differs from the sender are rejected at ingest (D-008).
+- **Traceroute**: each receiver appends its SNR (and itself unless endpoint), so `snr[k]` is measured at the receiver of segment *k* of `[origin, route…]`; a trailing extra SNR adds the final segment to the endpoint. Requests: forward origin = `from`. Replies: forward path `to → route → from`, return path `from → route_back → to`. Placeholder hops break the path (no edge touches or bridges them). Each segment counts once per logical traceroute across partial-route copies. No origin–destination shortcut.
+- **Direct RF**: `rx.direct_rf` (decided at ingest: gateway present and not the sender, not via MQTT, LoRa transport, `hop_start == hop_limit > 0`, RSSI or SNR present) → `source → gateway`.
+- **Relay hint**: relayed RF reception with RSSI/SNR. The last-byte hint is resolved by `graph.ResolveRelay` against nodes observed or referenced *in the same window*, excluding gateway and source (see D-024). Exactly one candidate → low-confidence `relay → gateway`, else no edge (counted as ambiguous/unmatched in diagnostics).
+- **Confidence**: NeighborInfo/traceroute → high; direct RF → medium; relay-hint only → low and `inferred: true`. Statistics are per direction (median/min/max/last/n; RSSI only from gateway receptions).
+- Verified on the demo mesh: every derived edge corresponds to a real simulated RF link; colliding relay bytes never resolve.
+
+## D-016 Geolocation estimator (2026-10-31)
+
+`internal/geo`: targets are nodes without an in-window reported position (never refining coarse public positions). Anchors: in-window positions with known precision ≥ `GEOLOCATION_MIN_PRECISION_BITS` (default 15 since D-025; was 20), not in `GEOLOCATION_EXCLUDE_NODE_IDS` (excluded nodes are neither anchors nor targets). Measurements: edges with NeighborInfo/traceroute/direct-RF evidence (relay-only links excluded). Gates: ≥ 3 anchors, ≥ 5 samples, pairwise spacing ≥ 200 m, spread ≥ 500 m, minor/major axis ≥ 0.2 (non-collinear), outlier anchors > 150 km from the median dropped.
+- Uncalibrated (default): SNR-weighted centroid of anchors, `quality: very_low`, radius = max(mean anchor distance, 2 km). Honest meaning: "somewhere among these anchors".
+- Calibrated (`GEOLOCATION_CALIBRATION` YAML with `default: {p0_dbm, path_loss_exponent}`): Levenberg–Marquardt on log-distance ranges from RSSI with Huber weights; uncertainty from max(observed misfit, 6 dB) shadowing propagated through the model, floor 500 m; `quality: low`. Simulation (4 anchors, 4 dB shadowing, 200 placements): mean error ≈ 2.5 km, 100 % within 2× reported radius — deliberately conservative.
+- Coordinates rounded to 0.001° (~100 m) and radius to 100 m; never meter-scale. Suppressed estimates carry `estimate_note` with the reason.
+
+## D-017 MapLibre 5 instead of 6 (2026-10-31)
+
+MapLibre GL JS 6.x (6.14.0) breaks label rendering when deck.gl 9.4 is interleaved (`MapboxOverlay({interleaved: true})`): every symbol layer drawn after a deck layer is placed (queryRenderedFeatures reports it) but not painted. Removing the overlay restores labels, and MapLibre 5.24.0 with the same deck.gl works correctly. The frontend pins `maplibre-gl@5.24.0` (deck.gl 9.4 targets MapLibre 5). Revisit when deck.gl declares MapLibre 6 support. MapLibre 6 additionally ships its worker as a separate ES module that bundlers must emit (`setWorkerUrl`), which MapLibre 5 does not require. Found by Playwright screenshots, not by label queries — the e2e suite now saves screenshots for review (`docs/screenshots/`).
+
+## D-018 Frontend scope choices (2026-10-31)
+
+- Plan §4.1 listed Radix UI, uPlot and comlink workers. The UI uses native, labelled HTML controls (buttons, range/datetime inputs, `role` attributes) instead of Radix; sparklines and the traffic strip are small SVGs instead of uPlot; no Web Workers yet — client transforms are linear passes over server-bounded payloads (≤ 5 000 nodes, ≤ 20 000 edges). Add workers if M5 profiling shows main-thread hotspots.
+- Labels: mesh layers are interleaved beneath the basemap's label layers (`beforeId: labels-start`), so place, peak and road names stay readable over nodes and links.
+- While a new window loads, the previous result is shown only when it cannot leak data (same rolling window moving forward); otherwise a loading state is shown. Responses whose echoed window differs from the request are discarded.
+- (Pulse animation replaced by radar pings; see D-023.)
+- Map glyphs: OpenMapTiles fonts v2.0 (Noto Sans Regular/Bold, SIL OFL), downloaded at image build time and checksum-verified; one font per text stack because the static glyph server cannot combine stacks.
+
+## D-019 MapLibre advisory GHSA-jrc7-96c5-q579 (2026-10-31)
+
+`npm audit` reports a critical XSS sanitizer bypass in MapLibre's `DOM.sanitize()` for versions ≤ 6.4.0, fixed in 6.16.0. 6.16.0 still breaks label rendering with the interleaved deck.gl overlay (re-tested; D-017), so the frontend stays on 5.24.0 with a mitigation. In 5.24.0, `DOM.sanitize` has exactly one call site: the AttributionControl's `innerHTML`. The app disables MapLibre's attribution control and renders the required OpenMapTiles/OSM credit as static React text (e2e `attribution.spec.ts` asserts the control is absent). The vulnerable function is therefore never called, and the app uses no Popup HTML. The CSP (`script-src 'self'`) is a second layer. Upgrade to MapLibre ≥ 6.16 as soon as deck.gl supports it, or replace the deck layers with native MapLibre layers.
+
+`govulncheck`: `golang.org/x/net` updated to v0.62.0 (two advisories, not reachable from our code). One `golang.org/x/crypto` advisory has no fix and is not reachable (`govulncheck` reports 0 affecting vulnerabilities).
+
+## D-020 In-window playback removed (2026-10-31)
+
+The operator descoped spec §9.2 (Play / Pause / Restart / Speed / Scrub) and the related parts of §4.3 (replay cursor `t`), §10 (`at=` parameters, `GET /api/v1/replay`, tamper-resistant pagination cursors) and §17 tests 14, 15 (replay cursor half) and 31. The intent was only that the frontend loads the past hours or days on first load; sliding the selected window back through the retention period (§9.1) stays.
+
+Removed: the `at` parameter and `window.at` echo, `/api/v1/replay`, HMAC cursors and `API_CURSOR_SECRET`, the Redis cursor secret, and the timeline's playback controls and replay pulses. Every view is now scoped to exactly `[start, end)`. Test 14 is covered as "a window ending before a later rename shows the earlier name"; test 15 by window switching only.
+
+## D-021 Map styling: uniform links, one line per pair, role size, last-heard colour (2026-10-31)
+
+Operator request:
+- **Links** have a fixed width per class, never by sample count: infrastructure links (both ends ROUTER or ROUTER_LATE in the window's NodeInfo) 3 px, all other links 1.25 px, including router ↔ non-router and links to nodes with no reported role. Each class is its own pair of map layers (solid and dashed) with its own switch in Layers; infrastructure links draw on top. The classes also differ in **colour**: infrastructure bright blue (76, 201, 240), other links neutral grey-blue (150, 163, 184). Colour therefore no longer encodes confidence; confidence is opacity (high solid, medium fainter) plus dashes for inferred links. Selection is shown in white, never by width.
+- **One line per node pair.** Directed edges stay separate in the API and in the details panel (each direction's evidence, confidence, SNR/RSSI and time range). On the map the pair takes the better direction's confidence (shown as opacity), is dashed only if every present direction is inferred. No arrowheads; direction is shown in the details panel and hover text.
+- **Marker size by role** (`identity.role` from in-window NodeInfo): ROUTER and ROUTER_LATE 8 px radius, CLIENT_BASE 6.5 px, everything else (or no role in the window) 5 px. Gateways keep their blue ring; selection is a white outline.
+- **Marker colour by last heard**, as a fraction of the selected window: age = (window end − last_seen) / window length, mapped onto a reversed, clipped inferno ramp (pale yellow = heard at the window end, dark magenta = heard only near its start). The legend labels the stops in hours or days of the current window, so the scale changes with the window. This replaces the "stale" grey (not heard in the last quarter). Node list dots use the same colour.
+
+## D-022 Toggleable map layers, names hidden by default (2026-10-31)
+
+Operator request: the map was too dense. A **Layers** button on the map opens switches for:
+- **Mesh:** infrastructure links, other links, inferred links, uncertainty circles, node names (zoom ≥ 10, 18 px, full Unicode glyph set) and animated traffic. Node names start on. deck.gl's CollisionFilterExtension hid every label in interleaved mode, so overlapping names are not de-cluttered yet.
+- **Basemap groups** (`frontend/src/map/layers.ts`, ids from `web/styles/dark.json`). Borders, and land cover and parks start on. Major roads, minor roads and rail, rivers and streams, buildings, place names, peaks, road names and numbers, and water names start off. Water and the background are always drawn.
+
+Choices are a per-viewer convenience stored in `localStorage` (`meshmap:toggles:v3`; bumped whenever defaults change, wrapped in try/catch; defaults apply when storage is unavailable). The style is patched with the saved visibility before the map is created, so hidden layers never flash.
+
+This deviates from the spec's "mandatory labels" (§11 and the M4 gate). The labels still exist and render when switched on, and the e2e suite checks both that they are hidden by default and that place, peak, road and border labels appear once enabled.
+
+## D-023 Live traffic as radar pings (2026-10-31)
+
+Operator request: the moving-dot pulses were rare and easy to miss. Each RF transmission we can attribute to a node is now one expanding ring centred on the transmitter, growing until it encloses every node known to have heard that transmission directly. Each of those nodes flashes as the ring reaches it. Logic is in `frontend/src/map/pings.ts` (unit-tested).
+
+Attribution, per live gateway reception:
+- The originator always made the **first broadcast** (blue ring), keyed by logical packet + originator, so all copies of one packet share one ping.
+- `direct_rf`, or hop count 0 (`hop_start − hop_limit`, now included in live events as `hops`): the gateway heard the first broadcast directly.
+- Otherwise the gateway heard a **rebroadcast** (amber ring) by the last hop, resolved from the relay byte exactly as the backend does (D-024). An unresolved byte attributes nothing to any relay.
+- **Traceroutes** use their recorded path instead (live events carry `path`: `route` for requests, `route_back` for replies; "" for an unrecorded hop). Chain = originator, path, then the gateway if it did not append itself. Each adjacent pair is one transmission by the first node heard directly by the second, so every relay on the route gets its own ring. Unrecorded hops break the chain without inventing receivers.
+- **Hop count** (`hop_start − hop_limit`, the hops spent). The first hop always spends one. Later receivers skip spending only under Meshtastic's 0-cost rule: the receiver is ROUTER, ROUTER_LATE or CLIENT_BASE, and the last hop was another of those roles that it has favourited. So:
+  - Count 0: the gateway heard the originator (matched the route in 99 of 99 traceroute copies).
+  - Count 1 with a resolved relay whose role is known and **not** zero-cost-capable: that relay spent the only hop, so it was the first hop and heard the originator directly. It joins the first broadcast's ring.
+  - Count 1 with a zero-cost-capable or unknown relay role: nothing is inferred. On mqtt.868.no traceroutes, 41 of 178 count-1 copies had 2–5 relays, and every one ended at a zero-cost-capable role, which is consistent with the rule.
+- A gateway uplinking its own packet, or a transmission with no placeable direct receiver, shows only a brief 1.5 s soft glow, deliberately unlike a ring. It stays open for receivers for the full collection time, about 10.5 s, and a receiver arriving later grows a ring from nothing.
+- Rings are drawn in screen pixels: max(distance to the farthest receiver at the current zoom, 22 px). The 22 px floor grows in with the ring. Without it, co-located receivers were invisible: the most common relay→gateway pair on mqtt.868.no, NORb → North GW, reports identical positions (0 m). Receiver flashes use the same pixel radius, so they fire when the visible ring reaches them.
+- Verified against live traffic (4-minute capture: 7 of 18 drawable pings had a placeable receiver) and with an injected sequence (grow, linger, grow again, flash, fade).
+
+Timing: a ping grows for 3 s (ease-out), lingers at full size for 5 s, then fades over 2.5 s. Uploads of one packet arrive over several seconds (measured on mqtt.868.no: median spread 3.1 s, p90 8.8 s), so a ping accepts receivers for as long as it is on the map, about 10.5 s, which covers roughly 90 % of packets. A receiver outside the ring starts a new 3 s growth from the ring's current size, with no jump, and resets the linger. Any new receiver brings a lingering or fading ring back to full strength. Once a ping has ended, late copies of that transmission do not ping again for 20 s. At most 80 pings run at once. Transmitters or receivers without a position are skipped. Pings follow the "Animated traffic" switch and are off under prefers-reduced-motion.
+
+## D-024 Narrowing the last-hop byte (2026-10-31)
+
+The last-hop byte has only 256 values, so collisions are expected, but only nodes within radio range of the gateway can be the last hop. `graph.ResolveRelay` (backend) and `resolveRelay` in `frontend/src/map/pings.ts` (the same rules) narrow the candidates:
+1. Candidates: window nodes with that last byte, other than the originator and the gateway.
+2. **Range:** drop candidates whose reported in-window position is farther from the gateway than the bound: the longest confirmed link in the window × 1.25, at least 50 km (184 km on mqtt.868.no). Unpositioned candidates stay, because they cannot be ruled out. Estimates are never used.
+3. **Confirmed links:** if several remain, the single candidate with NeighborInfo, traceroute or direct-RF evidence to the gateway wins. Relay-hint evidence never counts, so inferences cannot reinforce themselves.
+4. Otherwise unresolved.
+
+Measured on 72 h of mqtt.868.no traffic:
+- Ambiguous relay bytes fell from 1,292 to 116, and resolved relay samples rose from 625 to 1,799.
+- Against traceroute ground truth (the route names the true last relay), 378 copies: before 87 correct, 0 wrong, 291 unresolved; after 355 correct, 0 wrong, 23 unresolved. Some confirmed links come from the same traceroutes, which favours step 3; step 2 is independent of them.
+
+## D-025 Coarse anchors for location estimates (2026-10-31)
+
+Operator decision: the anchor threshold `GEOLOCATION_MIN_PRECISION_BITS` drops from 20 to **15**. On mqtt.868.no only 10 of 65 positioned nodes report ≥ 20 bits; 55 report 12–16 bits, the common coarse public setting. With 20 bits there was 1 estimate; with 15 there are 7.
+
+Anchor imprecision is now part of the uncertainty. `geo.PrecisionErrorM(bits, lat)` is the half-diagonal of the reported precision cell; firmware reports the centre of the cell. That is about 0.8 km for 15 bits at 63°N and 0 for 32 bits. The largest anchor error is added in full to the radius (worst case: every anchor shifted the same way), and the estimate's reasons say so. Estimates remain coarse: radii on live data are 5–69 km, the honest "somewhere among these anchors" of the uncalibrated method.
+
+Every unpositioned node now carries an `estimate_note`, including "no confirmed direct links to nodes reporting a position with at least 15-bit precision". Previously, nodes without any anchor link had no explanation.
+
+## D-026 Selection focus and a collapsible side panel (2026-10-31)
+
+Operator request:
+- **Accuracy circles** are off by default (Layers → "Accuracy circles"). The selected node always shows its circle: the estimate's uncertainty, or for a coarse reported position the precision-cell error (`precisionErrorM`, mirroring the backend's `geo.PrecisionErrorM`, drawn in neutral white instead of estimate purple).
+- **Selecting a node** shows only links that involve it: all of them, bypassing the level-of-detail cap and viewport culling. Clearing the selection restores every link.
+- **The side panel** (Nodes, Details, Filters, Legend) starts hidden; the map takes the full width. A top-bar button ("Nodes & details" / "Hide panel") toggles it. Selecting a node or link opens it on Details. If the selection opened it, closing the details hides it again; if the viewer opened it, it stays open.
+
+The layer-choice storage key moved to `meshmap:toggles:v4` so the new circle default applies.
+
+## D-027 Ping fill gradient, deselect on empty click, initial fit (2026-10-31)
+
+- **Ping rings** have a radial fill whose opacity follows the observed signal. It is full at the transmitter; at each receiver's on-screen distance it equals that receiver's measured strength (gateway SNR mapped from −20…+10 dB to 0…1, else RSSI −130…−70 dBm); and it fades to transparent at the edge. The profile never increases outward. Receivers known only from a traceroute path or the hop-count rule carry no measurement and count as 0.5. Measurements attach only to the gateway that reported them. deck.gl circles have no radial gradients, so the fill is drawn as 16 abutting concentric bands (`ringProfile`, `RING_BANDS`).
+- **Clicking empty map** clears the selection (and so hides an auto-opened side panel).
+- **The map starts at "Fit to data"** once the first snapshot with positions arrives, unless the view has already moved from the configured start.
+
+## D-028 Rebroadcasts wait for the upstream ring (2026-10-31)
+
+A ping for a transmission by X of packet P checks whether another ping for P lists X as a receiver; X then heard P from that transmitter. If so, X's ping stays hidden until the upstream ring reaches X (the moment X flashes), then grows from nothing. This applies to the originator's first broadcast and to traceroute relays in sequence. Without upstream information (no upstream ping on the map, or X not a known receiver of it), the rebroadcast pings immediately. A waiting ping starts anyway if the upstream ping disappears or the collection time (~10.5 s) passes. Upstream information that arrives only after a rebroadcast has started cannot delay it retroactively.
+
+## D-029 Overlays instead of layout shifts (2026-10-31)
+
+Operator request: opening UI must not resize the map.
+- The **side panel** overlays the right edge (a bottom sheet on narrow screens). While it is open, map buttons, coordinates and attribution move clear of it, and "Fit to data" plus the zoom-to-selected-node pad or offset for the covered area.
+- The **time bar** overlays the bottom of the map. Collapsed, only its first row shows (live badge, presets, start/end, time zone); hover, keyboard focus or a tap slides the rest up (0.25 s; instant with reduced motion). The visible height is published as `--tl-peek` so the panel, scale bar, coordinates and attribution sit above it.
+- **"Fit to data"** is an icon button in the zoom control group (top left); its accessible name is still "Fit to data".
+
+The map canvas keeps the same size whatever opens or animates (checked in e2e).
+
+## D-030 Caching, offline use and installation (2026-10-31)
+
+Operator request: cache static assets and tiles, make as much as possible work offline without downloading tiles, use a (service) worker, and make the app installable on phones.
+- **HTTP caching (Caddy):** `/assets/*` (content-hashed) `max-age=1y, immutable`; fonts 30 d immutable; icons 7 d; the map style 5 min plus a 1-day stale-while-revalidate. The page, `sw.js` and the manifest are `no-cache`, so a deploy is picked up on the next load. Tiles: `max-age=1d, stale-while-revalidate=7d`, with ETag/Last-Modified from the file server; the browser's HTTP cache handles the PMTiles range requests.
+- **Service worker** (`frontend/sw/sw.js`, hand-written; the `meshmap-sw` Vite plugin injects the file list and a content-hash version, so every build gets a fresh cache and old ones are deleted on activation):
+  - Precache: everything in the build except source maps, plus `/styles/dark.json`.
+  - Pages: network first, falling back to the cached shell, so the app opens offline.
+  - API GETs: network first (8 s timeout); successful responses are kept (at most 60). Offline, the last copy for the same URL is served with `x-meshmap-offline: 1`, and the app shows "Offline: showing the data last received (time)". A view never seen before returns a 503 problem response.
+  - Fonts (glyph ranges): cache first, stored as used. Style: stale-while-revalidate.
+  - Network only, never stored by the worker: `/tiles/*`, `/api/v1/stream`, health and metrics.
+- **Installable:** `manifest.webmanifest` (standalone, dark theme, 192/512 icons plus a maskable 512 and an Apple touch icon), mobile web-app meta tags, and an "Install app" button wherever the browser offers an install prompt (Chrome/Edge/Android). On iOS: Share → Add to Home Screen.
+- Service workers and installation require HTTPS in production (localhost is exempt); see operations.
+- Playwright blocks service workers by default (request interception cannot see worker fetches); `e2e/pwa.spec.ts` opts in to check the manifest, icons, headers, offline reload with the same nodes, and that no tile is in any worker cache.
+
+## D-031 Views derived in the browser (2026-10-31)
+
+Operator decision: the backend should be a packet log; processing belongs in the frontend. The server-side views stay in place for now, in case the change is reverted.
+- **New endpoint** `GET /api/v1/observations`: the decoded rows of a window, in id order, paged (`after`, `limit` ≤ 20 000). Same window validation as every view; `since`/`until` only narrow the bounds (they are clamped to the window, never widen it). Each row carries compact keys and only public decoded RF fields: header fields, radio metadata, signature status, and the port fields the views use (NodeInfo identity, position, device telemetry, NeighborInfo, traceroute). Never envelope bytes, payload bodies, public keys or MQTT topics. `generation` (decoder + configuration) tells the browser when its copy is stale. `Cache-Control: no-store`; the service worker does not store it.
+- **Derivation worker** (`frontend/src/derive/`): a Web Worker holds the rows for one contiguous time range and builds snapshot, traffic and node detail with the same output shapes as the API. It ports `query`, `graph` and `geo` one to one. A rolling window only fetches rows since the last sync (with a 2-minute overlap for late commits); a fixed window that overlaps what is held fetches only the missing ends. Rows older than 8 days before the newest window are dropped, and the copy is capped at 750 000 rows. Live refreshes run every 10 s (30 s for server views).
+- **IndexedDB** keeps the copy across reloads, so a reload fetches only new rows, and offline the window is built from what is held. This replaces the offline API copies for these views.
+- **Geolocation settings** (enabled, minimum precision bits, excluded nodes, gates, calibration) are published in `capabilities.geolocation` so the browser applies the operator's rules. Excluded nodes stay excluded, but the inputs are public, so exclusion is a display rule, not a secret.
+- **Parity:** `tests/parity.test.ts` (run with `PARITY_BASE=<url>`) derives snapshot, filtered snapshot, traffic and node details from `/observations` and compares them field by field with the server's views for the same window. To make the comparison exact, the server now reads traceroute copies in time order and sorts geolocation measurements by anchor. Both were sources of nondeterminism.
+- `?derive=server` (remembered per browser) switches back to the server's views; `?derive=client` returns to the default.
+
+## D-032 OK-to-MQTT and map reports (2026-10-31)
+
+Operator decisions.
+- **OK to MQTT** (`Data.bitfield` bit 0). Firmware withholds packets without the flag only from brokers with a public address, so they can reach us through a local broker bridged to ours. Measured on 2026-10-31: 3 of 5,218 rows lacked the flag, all a gateway's own NodeInfo.
+  - A packet without the flag that a gateway other than its sender uplinked is kept and marked `not_ok_to_mqtt`. Its **NodeInfo is rejected** (`not_ok_to_mqtt_nodeinfo`), so the node is shown as present but never named. This is a slight anonymisation, not a promise: its id, traffic and any reported position remain.
+  - A **gateway uplinking its own packets** is never filtered, whatever the flag: it chose to uplink.
+  - No bitfield at all (firmware before 2.5) means no preference was expressed: treated as allowed.
+  - Nodes with marked packets in the window carry `mqtt_opt_out` and render with a permanent red ring (not a switchable layer); the tooltip, node panel and legend explain it.
+- **Map reports** (`…/2/map/`, `MAP_REPORT_APP`) are stored as packet type `mapreport` (crypto `mqtt_map_report`, signature not applicable). Only reports published by the node they describe (sender = gateway) are accepted. Their location is stored as an ordinary position, and every position consumer (latest position, position history, geolocation anchors at ≥ 15 bits) reads `position` and `mapreport` packets alike. When a node has both in the window, its latest Position packet and latest map report are compared: if their precision circles (the worst-case error for each one's precision bits) overlap, they agree and the more precise one is used (the newer on a tie); if not, the node may have moved and the newer one is used, as it is when either precision is unknown. The chosen position reports its `source`. Every report has packet id 0, so the logical key adds a 5-minute time bucket. Their names and role are stored but not used for identity: they are unauthenticated MQTT claims, like the gateway id. Map reports never animate as radio pings.
+- `DecodeVersion` 2. Rows decoded before this change carry neither map reports nor the marking. The 3 unflagged rows found were all self-uplinks, which stay as they are.
+
+## D-033 Full rows over the live stream (2026-10-31)
+
+Operator decision. Each `delta` event's live event now also carries `row`: the same compact row `/observations` returns. Both paths build it with `ingest.NewObsRow`, and an integration test checks a streamed row equals the stored one. The summary fields stay for `?derive=server`.
+- The page forwards streamed rows to the derivation worker, which merges them at once. Views are rebuilt debounced: once the stream has been quiet for 2 s, and at least every 5 s while it keeps flowing. Pings never wait for a rebuild. Views then rebuild without any request.
+- A rolling window built in the browser ends at the server's current time (`now` in each `/observations` response gives the clock offset), so a streamed row counts immediately instead of at the next 10 s window step.
+- The stream is opened without filters when views are built in the browser (the store needs every row); filters apply locally, to views and pings alike. Pings are built from the rows.
+- Fetching `/observations` is now only a gap filler: once a minute on a heartbeat, and immediately when the stream reconnects after an interruption. Streamed rows do not advance the store's coverage mark, so anything the stream missed is fetched then. Rows that arrive before the first sync are held and merged after it.
+
+## D-034 No ping bursts after a sleeping tab (2026-10-31)
+
+Browsers throttle or freeze background tabs, and on resume they deliver the stream's backlog at once, which produced a burst of pings. Pings are now created only for packets handled while the page is visible and at most 10 s old by the server clock (offset from stream heartbeats; the stream sends one on connect). Rows still reach the derivation worker regardless, so views stay complete; only the animation skips them.
+
+## D-035 Clustered node names (2026-10-31)
+
+Operator request: names of nodes close together overlapped; markers must stay put.
+- Names whose label boxes would overlap at the current zoom are grouped into a cluster (screen space, grid-bucketed). A collapsed cluster shows the most prominent node's name — routers first, then the busiest — plus "+N".
+- A cluster fans out while hovered (marker or name; a 400 ms grace period lets the mouse reach the names) and while one of its nodes is selected. Names sit on the smallest ring around the cluster on which no two label boxes overlap. They keep their markers' angular order and have a leader line to their marker. Clicking a fanned-out name selects that node.
+- Hovering a clustered marker shows no tooltip, since its names are already fanned out; hovering a name shows its long name.
+
+## D-036 Per-node packet logs (2026-10-31)
+
+Operator request: the selected node's panel shows its packets, built by the derivation worker from the window's rows (filters apply). One combined log, newest first, with an "Include relayed" toggle (on by default); up to 200 own and 200 relayed entries, 50 shown at first.
+- **Own packets:** one entry per logical packet the node sent: time, type, destination, fewest hops any gateway saw, gateways, signature.
+- **Relayed for others:** other nodes' packets this node passed on, from two kinds of evidence:
+  - a gateway's last-hop byte resolved to it, with the same narrowing and context as links (D-022);
+  - it appears in a traceroute's recorded route (`route` for requests, `route_back` for replies).
+
+  The uplinking gateway appends itself to the route it reports. That trailing entry only received the copy and is not counted (found on real data: a CLIENT_MUTE gateway was credited with 135 relays).
+- With `?derive=server` only the own log is available (from the node detail's recent packets).
+- A last-hop byte equal to the uplinking gateway's own low byte is the gateway itself: it is ignored everywhere (links, this log, pings) instead of resolving to another node sharing that byte (4 of 4,245 relayed receptions on 2026-10-31).
+- Limitation: a unique last-hop byte match can still name the wrong node when the true relay was not seen in the window. On 2026-10-31, one CLIENT_MUTE node (which never rebroadcasts) was credited with 2 relays this way.
+
+## D-037 Packet routes on the map (2026-10-31)
+
+Operator request. Selecting a packet in the log draws its routing graph and hides every link while it is shown. Clicking the row again, selecting another node or clearing the selection removes it. The map frames the route once when it is drawn.
+- The graph comes from every in-window reception of the packet (rows sharing its logical key), as directed transmitter → receiver segments:
+  - **Traceroute:** the recorded route, with the gateway appended unless it already recorded itself.
+  - **Zero-hop reception:** sender → gateway.
+  - **Resolved relay:** relay → gateway. Sender → relay too, solid only when one hop was spent by a relay whose known role cannot receive at zero cost (the same rule as the pings, D-027).
+  - **Relay byte resolving to nobody:** sender → gateway.
+  - Packets the sender uplinked itself, and MQTT or non-radio transports, add nothing.
+- **Solid** when both nodes of a hop are known to be adjacent. **Dashed** when nodes between them are missing: an unrecorded traceroute hop, an unknown relay, or the unknown path from the sender to a relay. A solid segment wins over a dashed one for the same hop. Hovering a segment says which case it is.
+- A segment whose end has no position (reported or estimated) cannot be drawn; the panel counts those. Routes need views built in the browser.

@@ -1,0 +1,3 @@
+.scratch
+protobufs
+test/fixtures/captured/*.txt.large

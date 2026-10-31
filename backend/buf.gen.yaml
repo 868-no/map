@@ -1,0 +1,29 @@
+# Generates Go bindings for the subset of the pinned Meshtastic protobufs the
+# observatory needs. Output is committed; regenerate with `scripts/go.sh buf generate`.
+version: v2
+managed:
+  enabled: true
+  override:
+    - file_option: go_package
+      path: meshtastic
+      value: github.com/868-no/map/internal/protocol/pb
+plugins:
+  - local: protoc-gen-go
+    out: internal/protocol/pb
+    opt:
+      - paths=import
+      - module=github.com/868-no/map/internal/protocol/pb
+inputs:
+  - directory: protobufs
+    paths:
+      - protobufs/meshtastic/mqtt.proto
+      - protobufs/meshtastic/mesh.proto
+      - protobufs/meshtastic/portnums.proto
+      - protobufs/meshtastic/telemetry.proto
+      - protobufs/meshtastic/channel.proto
+      - protobufs/meshtastic/config.proto
+      - protobufs/meshtastic/module_config.proto
+      - protobufs/meshtastic/device_ui.proto
+      - protobufs/meshtastic/field_metadata.proto
+      - protobufs/meshtastic/atak.proto
+      - protobufs/meshtastic/xmodem.proto

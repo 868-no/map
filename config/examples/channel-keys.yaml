@@ -1,0 +1,19 @@
+# Copy to ./secrets/channel-keys.yaml. Channel PSKs are symmetric channel keys,
+# not node public keys. List the current key first, then previous keys kept
+# during a rotation. Fake values only (AQ== is the public default key).
+channels:
+  - name: LongFast
+    broker_ids: ["*"]
+    mode: ctr               # ctr (classic) or ccm (firmware 2.8.1+ use_aead channels)
+    psks: ["AQ=="]
+  - name: NarrowFast
+    broker_ids: ["*"]
+    mode: ctr
+    psks: ["AQ=="]
+  - name: Private
+    broker_ids: [no868]
+    mode: ccm
+    psks:
+      - "hex:00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"   # current
+      - "ZmFrZS1wcmV2aW91cy1rZXktMzItYnl0ZXMtbG9uZyE="                         # previous
+    accept_plaintext: false

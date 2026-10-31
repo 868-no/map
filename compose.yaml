@@ -1,0 +1,113 @@
+# Meshtastic MQTT Mesh Observatory
+#   docker compose up -d --build                 production, built locally (mount ./secrets, see README)
+#   BACKEND_IMAGE=ghcr.io/868-no/map-backend:latest WEB_IMAGE=ghcr.io/868-no/map-web:latest \
+#     docker compose pull backend web && docker compose up -d   production, published images
+#   DEMO_MODE=true docker compose --profile demo up -d --build   offline demo
+name: meshmap
+
+x-backend: &backend
+  build: ./backend
+  image: ${BACKEND_IMAGE:-meshmap-backend:local}
+  restart: unless-stopped
+  env_file:
+    - path: .env
+      required: false
+  environment:
+    POSTGRES_HOST: postgres
+    REDIS_URL: redis://redis:6379/0
+  volumes:
+    - ./secrets:/run/secrets:ro
+  depends_on:
+    postgres: { condition: service_healthy }
+    redis: { condition: service_healthy }
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-meshmap}
+      POSTGRES_USER: ${POSTGRES_USER:-meshmap}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    command:
+      - postgres
+      - -c
+      - shared_buffers=512MB
+      - -c
+      - effective_cache_size=2GB
+      - -c
+      - work_mem=32MB
+      - -c
+      - maintenance_work_mem=256MB
+      - -c
+      - max_wal_size=2GB
+      - -c
+      - random_page_cost=1.1
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    # Ephemeral by design: no RDB snapshots, no AOF; bounded memory with LRU eviction.
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "${REDIS_MAXMEMORY:-256mb}", "--maxmemory-policy", "allkeys-lru"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  backend:
+    <<: *backend
+    command: ["serve"]
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/meshmap", "healthcheck"]
+      interval: 10s
+      timeout: 5s
+      start_period: 20s
+      retries: 6
+
+  maintenance:
+    <<: *backend
+    command: ["maintenance"]
+
+  web:
+    build:
+      context: .
+      dockerfile: web/Dockerfile
+      args:
+        E2E_HOOKS: ${E2E_HOOKS:-false}
+    image: ${WEB_IMAGE:-meshmap-web:local}
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-8080}:80"
+    volumes:
+      # Self-hosted basemap built by scripts/basemap_import.sh
+      - ./data/basemap:/srv/tiles:ro
+      # Optional access control snippets (see docs/operations.md)
+      - ./deploy/caddy-auth:/etc/caddy/auth:ro
+    depends_on:
+      backend: { condition: service_healthy }
+
+  mosquitto:
+    profiles: [demo]
+    image: eclipse-mosquitto:2
+    restart: unless-stopped
+    volumes:
+      - ./deploy/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+    # Not published to the host: reachable only on the compose network.
+
+  demo-publisher:
+    profiles: [demo]
+    <<: *backend
+    command: ["demo-publish", "--host", "mosquitto", "--rate", "${DEMO_RATE:-5}"]
+    depends_on:
+      mosquitto: { condition: service_started }
+
+volumes:
+  pgdata:

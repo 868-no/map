@@ -1,0 +1,11 @@
+# local scratch data (live captures may contain community node names/positions)
+backend/.scratch/
+.env
+secrets/
+node_modules/
+frontend/dist/
+*.pmtiles
+data/
+frontend/tsconfig.tsbuildinfo
+frontend/e2e/.results/
+frontend/test-results/
