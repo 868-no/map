@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
+import { docShot } from './shots'
 
 type Labels = { counts: Record<string, number>; names: Record<string, string[]> }
 // Shape of the e2e hook's layers(): our own mesh layers (id + data).
@@ -62,13 +63,13 @@ test('genuine place, peak, road and border labels render (self-hosted basemap)',
   await viewAt(page, 63.43, 10.40, 10)
   await expect.poll(async () => (await labels()).names['place-city'] ?? [], { timeout: 30_000 }).toContain('Trondheim')
   await expect.poll(async () => sum(await labels(), 'road-')).toBeGreaterThan(0)
-  await page.screenshot({ path: '../docs/screenshots/trondheim.png' })
+  await docShot(page, 'trondheim.png')
   await viewAt(page, 61.636, 8.312, 11) // Jotunheimen
   await expect.poll(async () => ((await labels()).names['mountain-peak'] ?? []).length, { timeout: 30_000 }).toBeGreaterThan(0)
-  await page.screenshot({ path: '../docs/screenshots/peaks-jotunheimen.png' })
+  await docShot(page, 'peaks-jotunheimen.png')
   await viewAt(page, 63.33, 12.1, 8) // Storlien: Norway–Sweden border
   await expect.poll(async () => (await labels()).counts['boundary-country'] ?? 0, { timeout: 30_000 }).toBeGreaterThan(0)
-  await page.screenshot({ path: '../docs/screenshots/border-storlien.png' })
+  await docShot(page, 'border-storlien.png')
 })
 
 test('default rolling 3-day window, presets and node details', async ({ page }) => {
@@ -95,10 +96,10 @@ test('default rolling 3-day window, presets and node details', async ({ page }) 
     return m.loaded() && m.areTilesLoaded()
   })
   await page.waitForTimeout(500)
-  await page.screenshot({ path: '../docs/screenshots/node-details.png' })
+  await docShot(page, 'node-details.png')
   await page.getByRole('button', { name: 'Fit to data' }).click()
   await page.waitForTimeout(1500)
-  await page.screenshot({ path: '../docs/screenshots/live-overview.png' })
+  await docShot(page, 'live-overview.png')
 })
 
 test('API payloads never carry envelopes, ciphertext or message bodies', async ({ page }) => {
@@ -148,7 +149,7 @@ test('rejects nothing silently: invalid URL windows fall back, mobile layout wor
   await expect(page.locator('.node-row').first()).toBeVisible()
   await page.getByRole('button', { name: 'Fit to data' }).click()
   await page.waitForTimeout(1500)
-  await page.screenshot({ path: '../docs/screenshots/mobile.png' })
+  await docShot(page, 'mobile.png')
 })
 
 test('legend explains role sizes and a last-heard scale that follows the window', async ({ page }) => {

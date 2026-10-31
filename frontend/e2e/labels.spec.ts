@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
+import { docShot } from './shots'
 
 // Names of nodes close together collapse into one ("NAME +N") and fan out
 // on hover or while one of them is selected; markers never move.
@@ -48,7 +49,7 @@ test('close-together names collapse, and fan out on hover and selection', async 
   await expect.poll(async () => (await labels(page)).texts).toEqual(['ALFA', 'BRAV', 'CHAR', 'FARX'])
   expect((await labels(page)).leaders).toBe(3)
   await page.waitForTimeout(300)
-  await page.screenshot({ path: '../docs/screenshots/label-fan.png', clip: { x: pt.x - 200, y: pt.y - 150, width: 400, height: 300 } })
+  await docShot(page, 'label-fan.png', { clip: { x: pt.x - 200, y: pt.y - 150, width: 400, height: 300 } })
 
   // Leave: it collapses again after a short grace period.
   await page.mouse.move(pt.x + 300, pt.y + 200)

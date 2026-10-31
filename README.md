@@ -53,6 +53,7 @@ NODE_NETWORK=host scripts/node.sh sh -c 'PARITY_BASE=http://localhost:8080 npx v
                                       # browser-derived views == server views on live data
 docker run --rm --network host --ipc=host -v "$PWD":/src -w /src/frontend \
   mcr.microsoft.com/playwright:v1.64.1-noble npx playwright test     # e2e against a running stack
+                                      # (add -e UPDATE_SCREENSHOTS=1 to refresh docs/screenshots)
 scripts/bench.sh                      # 2M-row reference benchmark
 ```
 
