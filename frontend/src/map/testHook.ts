@@ -2,13 +2,18 @@
 // VITE_E2E_HOOKS=true; production images never contain it.
 import type * as maplibregl from 'maplibre-gl'
 import type { Layer } from '@deck.gl/core'
-import { pingCount } from './pings'
+import { activePings, pingCount } from './pings'
 
 export function installTestHook(map: maplibregl.Map, layers: () => Layer[] | null): void {
   if (import.meta.env.VITE_E2E_HOOKS !== 'true') return
   ;(window as unknown as Record<string, unknown>).__meshmap = {
     map,
     pings: pingCount,
+    // The ping animation right now: rings, and links (with how far each has travelled).
+    pingFrame: () => {
+      const f = activePings(performance.now(), map.getZoom())
+      return { rings: f.rings.length, trails: f.trails.map((t) => t.progress) }
+    },
     // The mesh layers currently on the map: id and data (deck.gl's public layer props).
     layers: () => (layers() ?? []).map((l) => ({ id: l.id, data: l.props.data as unknown[] })),
     // Genuine rendered basemap label features.

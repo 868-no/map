@@ -6,8 +6,22 @@ import type { ObsRow } from '../src/api/types'
  * returns the given rows (window and since/until applied like the API) and
  * the live stream stays silent. The browser derives everything from them.
  */
-export async function mockObservations(page: Page, rows: ObsRow[]) {
-  await page.route('**/api/v1/stream*', (route) => route.abort())
+export async function mockObservations(page: Page, rows: ObsRow[], live?: Promise<() => ObsRow[]>) {
+  // The stream: silent, or (when `live` resolves) one delta with those rows,
+  // stamped as just observed, after a heartbeat giving the server clock.
+  await page.route('**/api/v1/stream*', async (route) => {
+    if (!live) return route.abort()
+    const make = await live
+    const now = Date.now()
+    const iso = (ms: number) => new Date(ms).toISOString()
+    const events = make().map((r) => ({ id: r.i, t: iso(r.t), row: r }))
+    const sse = (event: string, data: unknown) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`
+    return route.fulfill({
+      headers: { 'content-type': 'text/event-stream' },
+      body: 'retry: 600000\n\n' + sse('heartbeat', { now: iso(now), window: { start: iso(now - 72 * 3_600_000), end: iso(now), rolling: true } }) +
+        sse('status', { live: true }) + sse('delta', { events }),
+    })
+  })
   await page.route('**/api/v1/observations*', (route) => {
     const q = new URL(route.request().url()).searchParams
     const now = Math.floor(Date.now() / 10_000) * 10_000
@@ -42,4 +56,10 @@ export function nodeRows(num: number, name: string, opts: { lat?: number; lon?: 
 export function neighborRow(reporter: number, neighbors: number[], t = Date.now() - 60_000): ObsRow {
   ++seq
   return { i: seq, t, b: 'e2e', s: reporter, y: 'neighborinfo', l: hex(seq * 7919), o: hex(seq * 104729), sg: 'unsigned', nb: { neighbors: neighbors.map((id) => ({ id, snr: 5 })) } }
+}
+
+/** A live reception: `gw` heard `src` directly (zero hops), just now. */
+export function directReception(src: number, gw: number): ObsRow {
+  ++seq
+  return { i: 1e9 + seq, t: Date.now(), b: 'e2e', g: gw, s: src, y: 'text', l: hex(seq * 7919), o: hex(seq * 104729), sg: 'unsigned', sn: 6, rs: -95, hs: 3, hl: 3, dr: true, rr: 'zero_hop_rf' }
 }

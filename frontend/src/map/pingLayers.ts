@@ -8,6 +8,8 @@ import { UNDER_LABELS, type RGBA } from './deckShared'
 export const PING_ORIGIN: [number, number, number] = [125, 224, 255]
 export const PING_RELAY: [number, number, number] = [255, 196, 110]
 const rgb = (r: { rebroadcast: boolean }) => (r.rebroadcast ? PING_RELAY : PING_ORIGIN)
+/** The ping colour lifted 45 % toward white: the travelling link's core. */
+const bright = (r: { rebroadcast: boolean }) => rgb(r).map((c) => Math.round(c + (255 - c) * 0.45)) as [number, number, number]
 // Rings are kept light so the map stays readable under busy traffic.
 const RING_ALPHA = 0.6
 const FILL_ALPHA = 0.18
@@ -18,17 +20,29 @@ export function buildPingLayers(now: number, zoom: number): Layer[] {
   return [
     // The links the transmission travels: each grows from the transmitter
     // with the ring's edge, reaching its receiver as the ring does, then
-    // stays (fainter) while the ring lingers and fades.
+    // settles (thinner, fainter) while the ring lingers and fades. Drawn as
+    // a wide soft glow under a bright core so it reads over busy maps.
     new LineLayer<Trail>({
-      id: 'ping-trails', ...UNDER_LABELS, data: trails, getSourcePosition: (t) => t.from, getTargetPosition: (t) => t.tip,
-      widthUnits: 'pixels', getWidth: (t) => (t.progress < 1 ? 2.5 : 1.5),
-      getColor: (t) => [...rgb(t), Math.round(t.alpha * (t.progress < 1 ? 0.85 : 0.45))] as RGBA,
+      id: 'ping-trail-glow', ...UNDER_LABELS, data: trails, getSourcePosition: (t) => t.from, getTargetPosition: (t) => t.tip,
+      widthUnits: 'pixels', getWidth: (t) => (t.progress < 1 ? 10 : 5),
+      getColor: (t) => [...rgb(t), Math.round(t.alpha * (t.progress < 1 ? 0.35 : 0.15))] as RGBA,
       updateTriggers: { getTargetPosition: now, getWidth: now, getColor: now },
     }),
-    // The travelling head, on the ring's edge.
+    new LineLayer<Trail>({
+      id: 'ping-trails', ...UNDER_LABELS, data: trails, getSourcePosition: (t) => t.from, getTargetPosition: (t) => t.tip,
+      widthUnits: 'pixels', getWidth: (t) => (t.progress < 1 ? 3.5 : 2),
+      getColor: (t) => [...bright(t), Math.round(t.alpha * (t.progress < 1 ? 1 : 0.6))] as RGBA,
+      updateTriggers: { getTargetPosition: now, getWidth: now, getColor: now },
+    }),
+    // The travelling head, on the ring's edge: a halo and a bright point.
     new ScatterplotLayer<Trail>({
-      id: 'ping-trail-heads', ...UNDER_LABELS, data: moving, getPosition: (t) => t.tip, getRadius: 3.5, radiusUnits: 'pixels',
-      filled: true, stroked: false, getFillColor: (t) => [...rgb(t), t.alpha] as RGBA,
+      id: 'ping-trail-halos', ...UNDER_LABELS, data: moving, getPosition: (t) => t.tip, getRadius: 11, radiusUnits: 'pixels',
+      filled: true, stroked: false, getFillColor: (t) => [...rgb(t), Math.round(t.alpha * 0.35)] as RGBA,
+      updateTriggers: { getPosition: now, getFillColor: now },
+    }),
+    new ScatterplotLayer<Trail>({
+      id: 'ping-trail-heads', ...UNDER_LABELS, data: moving, getPosition: (t) => t.tip, getRadius: 5, radiusUnits: 'pixels',
+      filled: true, stroked: false, getFillColor: (t) => [...bright(t), t.alpha] as RGBA,
       updateTriggers: { getPosition: now, getFillColor: now },
     }),
     // Radial fill: concentric bands whose opacity follows the signal
