@@ -106,13 +106,15 @@ export default function MapView({ caps, snapshot, onPositions }: Props) {
 
   const { placed, pos, links } = useMemo(() => {
     const nodes = snapshot?.nodes ?? []
-    const { placed } = placeNodes(nodes, windowEnd, windowMs)
+    const { placed: all } = placeNodes(nodes, windowEnd, windowMs)
+    const placed = filters.positionedOnly ? all.filter((p) => p.kind === 'reported') : all
+    // Positions of the markers actually drawn: links, pings and the camera use only these.
     const pos = new Map<string, [number, number]>()
     for (const p of placed) pos.set(p.node.id, [p.lon, p.lat])
     const edges = filterEdges(snapshot?.edges ?? [], filters, toggles)
     const roles = new Map(nodes.map((n) => [n.id, n.identity?.role]))
     const links = linkGeometry(edges, pos, roles).filter((g) => (g.infra ? toggles.infraLinks : toggles.otherLinks))
-    return { placed: filters.positionedOnly ? placed.filter((p) => p.kind === 'reported') : placed, pos, links }
+    return { placed, pos, links }
   }, [snapshot, filters, toggles.infraLinks, toggles.otherLinks, toggles.inferred, windowEnd, windowMs]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => onPositions(pos), [pos, onPositions])

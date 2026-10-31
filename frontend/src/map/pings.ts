@@ -17,6 +17,7 @@ export type { Transmission }
 type LngLat = [number, number]
 
 interface Ping {
+  tx: string
   center: LngLat
   born: number
   rebroadcast: boolean
@@ -76,6 +77,25 @@ const radiusAt = (p: Ping, now: number) => p.from + (p.to - p.from) * ease(growt
 const endOf = (p: Ping) => (p.heard ? p.settled + PING_LINGER + PING_FADE : p.born + PING_COLLECT)
 
 /** Add a transmission; a ping still on the map takes the new receiver. */
+/**
+ * Positions of the nodes currently drawn. Estimates are recomputed on every
+ * rebuild and may move or vanish while a ping is on screen, so each frame
+ * follows the current markers instead of the positions a ping started with.
+ * Empty (tests, before the first snapshot): pings keep their own positions.
+ */
+let drawn: Map<string, LngLat> = new Map()
+export function setPingPositions(pos: Map<string, LngLat>): void {
+  drawn = pos
+}
+
+/** Grow again from wherever the ring is now. */
+function regrow(p: Ping, to: number, now: number) {
+  p.from = p.heard ? radiusAt(p, now) : 0
+  p.to = to
+  p.growStart = now
+  p.settled = now + PING_GROW
+}
+
 export function addTransmission(t: Transmission, pos: Map<string, LngLat>, now = performance.now()): void {
   const center = pos.get(t.tx)
   if (!center) return
@@ -84,7 +104,7 @@ export function addTransmission(t: Transmission, pos: Map<string, LngLat>, now =
     const s = seen.get(t.key)
     if (s !== undefined && now - s < SEEN_TTL) return
     if (pings.size >= MAX_PINGS) pings.delete(pings.keys().next().value!) // drop the oldest under heavy traffic
-    p = { center, born: now, rebroadcast: t.rebroadcast, heard: false, heardAt: 0, receivers: new Map(), from: 0, to: 0, growStart: now, settled: now + PING_GROW }
+    p = { tx: t.tx, center, born: now, rebroadcast: t.rebroadcast, heard: false, heardAt: 0, receivers: new Map(), from: 0, to: 0, growStart: now, settled: now + PING_GROW }
     // Who did this transmitter hear the packet from? If that ping is on the
     // map, start only when its ring arrives here.
     const lp = packetOf(t.key)
@@ -109,11 +129,8 @@ export function addTransmission(t: Transmission, pos: Map<string, LngLat>, now =
   if (!p.heard || dist * OVERSHOOT > p.to) {
     // Grow again from wherever the ring is now (from nothing for a blip).
     if (!p.heard) p.heardAt = now
-    p.from = p.heard ? radiusAt(p, now) : 0
+    regrow(p, dist * OVERSHOOT, now)
     p.heard = true
-    p.to = dist * OVERSHOOT
-    p.growStart = now
-    p.settled = now + PING_GROW
   } else {
     p.settled = Math.max(p.settled, now) // already inside: keep the ring up while it flashes
   }
@@ -161,6 +178,28 @@ export function metresPerPixel(lat: number, zoom: number): number {
 }
 
 /** Current rings and blips (pixels at this zoom) and receiver flashes. */
+/**
+ * Moves a ping onto the current markers: the transmitter and each receiver
+ * where it is drawn now; receivers no longer drawn are dropped, and one that
+ * moved beyond the ring makes it grow again. False when the transmitter is gone.
+ */
+function follow(p: Ping, now: number): boolean {
+  const c = drawn.get(p.tx)
+  if (!c) return false
+  p.center = c
+  for (const [id, rx] of p.receivers) {
+    const rp = drawn.get(id)
+    if (!rp) {
+      p.receivers.delete(id)
+      continue
+    }
+    rx.pos = rp
+    rx.dist = distanceM(c, rp)
+    if (rx.dist * OVERSHOOT > p.to + 1) regrow(p, rx.dist * OVERSHOOT, now)
+  }
+  return true
+}
+
 // Web Mercator y for a latitude: the ring is a circle on screen, so a point
 // a given fraction along a link must be interpolated in projected space.
 const mercY = (lat: number) => Math.log(Math.tan(Math.PI / 4 + (lat * Math.PI) / 360))
@@ -191,6 +230,10 @@ export function activePings(now: number, zoom: number): { rings: Ring[]; blips: 
     if (now >= end) {
       pings.delete(k)
       seen.set(k, now)
+      continue
+    }
+    if (drawn.size && !follow(p, now)) {
+      pings.delete(k) // its transmitter is no longer on the map
       continue
     }
     if (p.heard) {

@@ -322,3 +322,11 @@ Operator decision, after the engine matched the server views field by field (sna
 ## D-042 Lighter pings, animated links (2026-10-31)
 
 Operator request. Rings have no outline (first drawn at 60 % opacity, then removed on request): the signal-strength fill (18 %, was 30 %) shows the reach, and the animated links' heads mark the edge. Each direct receiver's link is animated: a line grows from the transmitter toward the receiver with a bright head. The head's fraction of the way equals the ring's radius over the receiver's distance, both in screen pixels (the same test that marks the receiver reached, and interpolated in Web Mercator space so the head sits exactly on the ring's edge). Ring and line therefore arrive on the same frame. The line then stays, fainter, while the ring lingers and fades. While travelling it is drawn to stand out: a 10 px soft glow under a 3.5 px core lifted toward white, at full strength, with a haloed head; after arrival it settles to a 2 px core and fades with the ring. `e2e/pings.spec.ts` sends one live reception through a mocked stream and checks the link mid-flight and on arrival.
+
+## D-043 Pings follow the markers drawn now (2026-10-31)
+
+Reported by the operator: a link animation ran to a place with no node. A live check matched every animated link's end against the drawn markers for 4 minutes, and found the mismatches were estimated nodes. Their estimates are recomputed on every rebuild (every few seconds under traffic) and can shift or vanish, but a ping kept the positions its receivers had when it started. The "positioned nodes only" filter had the same flaw: estimated nodes were hidden but still used by pings and links. Now:
+- The map hands pings (and links and the camera) only the positions of markers actually drawn.
+- Each frame, a ping looks up its transmitter and receivers there. A moved receiver is followed, and the ring regrows if needed; one no longer drawn is dropped; a ping whose transmitter is gone ends.
+
+After the fix, the same check found every link ending at a marker (14 link ends, 3 of them estimated nodes).

@@ -12,7 +12,7 @@ export function installTestHook(map: maplibregl.Map, layers: () => Layer[] | nul
     // The ping animation right now: rings, and links (with how far each has travelled).
     pingFrame: () => {
       const f = activePings(performance.now(), map.getZoom())
-      return { rings: f.rings.length, trails: f.trails.map((t) => t.progress) }
+      return { rings: f.rings.length, trails: f.trails.map((t) => t.progress), targets: f.trails.map((t) => t.to) }
     },
     // The mesh layers currently on the map: id and data (deck.gl's public layer props).
     layers: () => (layers() ?? []).map((l) => ({ id: l.id, data: l.props.data as unknown[] })),

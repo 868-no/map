@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { subscribeLive } from './api/client'
 import MapView from './map/MapView'
-import { addTransmission, clearPings, pingWanted } from './map/pings'
+import { addTransmission, clearPings, pingWanted, setPingPositions } from './map/pings'
 import Timeline from './timeline/Timeline'
 import { usePwa } from './pwa'
 import { EdgePanel, NodeList, NodePanel } from './features/panels'
@@ -35,6 +35,7 @@ export default function App() {
   const geo = useRef<Map<string, [number, number]>>(new Map())
   const onPositions = useCallback((pos: Map<string, [number, number]>) => {
     geo.current = pos
+    setPingPositions(pos) // pings follow the markers as estimates move
   }, [])
   // The worker attributes live rows to transmissions; the animation places them.
   useEffect(() => onTransmissions((ts) => ts.forEach((t) => addTransmission(t, geo.current))), [])

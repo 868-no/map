@@ -162,3 +162,29 @@ describe('pingWanted', () => {
     expect(pingWanted(now - 800, now, true)).toBe(false) // nobody is watching
   })
 })
+
+describe('pings follow the markers drawn now', () => {
+  beforeEach(() => clearPings())
+  const tx = (rx?: string) => ({ key: `q|${A}`, tx: A, rx, rebroadcast: false })
+  it('a receiver whose estimate moves is followed; one no longer drawn is dropped', async () => {
+    const { setPingPositions } = await import('../src/map/pings')
+    const at = new Map<string, [number, number]>([[A, [10, 63]], [B, [10.2, 63]], [GW, [10.1, 63]]])
+    setPingPositions(at)
+    addTransmission(tx(GW), at, 0)
+    addTransmission(tx(B), at, 0)
+    // B's estimate moves farther out: its link goes there and the ring regrows to reach it.
+    const moved = new Map(at).set(B, [10.3, 63.05] as [number, number])
+    setPingPositions(moved)
+    expect(activePings(100).trails.find((t) => t.to === moved.get(B))).toBeDefined()
+    expect(activePings(100 + 2 * PING_GROW).trails.find((t) => t.to === moved.get(B))!.progress).toBe(1)
+    // GW is no longer drawn (e.g. its estimate vanished): no link to where it was.
+    const gone = new Map(moved)
+    gone.delete(GW)
+    setPingPositions(gone)
+    expect(activePings(200 + 2 * PING_GROW).trails.map((t) => t.to)).toEqual([moved.get(B)])
+    // The transmitter gone: the ping ends.
+    setPingPositions(new Map([[B, moved.get(B)!]]))
+    expect(activePings(300 + 2 * PING_GROW).trails).toHaveLength(0)
+    setPingPositions(new Map())
+  })
+})
