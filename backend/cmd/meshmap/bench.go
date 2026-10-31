@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"runtime"
 	"slices"
 	"time"
@@ -125,6 +126,7 @@ func seedCmd() *cobra.Command {
 func benchCmd() *cobra.Command {
 	var n int
 	var hours int
+	var dump string
 	cmd := &cobra.Command{
 		Use:   "bench",
 		Short: "Measure full-window /observations fetches on the current database",
@@ -150,6 +152,7 @@ func benchCmd() *cobra.Command {
 			end := time.Now().UTC().Add(-time.Minute).Truncate(time.Minute)
 			var took, first []time.Duration
 			var rows, bytes, pages int
+			var all []json.RawMessage // first window's rows, for --dump
 			for i := 0; i < n; i++ {
 				// Distinct windows (shifted by i minutes) avoid measuring one cached plan.
 				we := end.Add(-time.Duration(i) * time.Minute)
@@ -176,12 +179,24 @@ func benchCmd() *cobra.Command {
 						return err
 					}
 					rows, bytes, pages = rows+len(page.Rows), bytes+len(body), pages+1
+					if i == 0 && dump != "" {
+						all = append(all, page.Rows...)
+					}
 					if !page.More {
 						break
 					}
 					cursor = page.NextCursor
 				}
 				took = append(took, time.Since(t0))
+			}
+			if dump != "" {
+				b, err := json.Marshal(all)
+				if err != nil {
+					return err
+				}
+				if err := os.WriteFile(dump, b, 0o644); err != nil {
+					return err
+				}
 			}
 			fmt.Printf("%dh window: %d rows in %d pages, %d MiB uncompressed | first page p50 %s | whole window p50 %s p95 %s\n",
 				hours, rows, pages, bytes>>20, pct(first, 50), pct(took, 50), pct(took, 95))
@@ -190,6 +205,7 @@ func benchCmd() *cobra.Command {
 	}
 	cmd.Flags().IntVar(&n, "n", 8, "fetches per window length")
 	cmd.Flags().IntVar(&hours, "hours", 72, "window length")
+	cmd.Flags().StringVar(&dump, "dump", "", "also write the first window's rows (JSON array) to this file, e.g. for the engine benchmark")
 	return cmd
 }
 
