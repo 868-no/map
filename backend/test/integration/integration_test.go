@@ -15,10 +15,11 @@ import (
 	"testing"
 	"time"
 
+	"net/url"
+
 	"github.com/eclipse/paho.golang/autopaho"
 	"github.com/eclipse/paho.golang/paho"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"net/url"
 
 	"github.com/868-no/map/internal/cache"
 	"github.com/868-no/map/internal/config"
@@ -322,9 +323,6 @@ func TestRetention(t *testing.T) {
 	st2, err := r.RunOnce(ctx)
 	if err != nil || st2.DeletedRows != 0 {
 		t.Fatalf("second run: %+v %v", st2, err)
-	}
-	if rev, _ := rc.R.Get(ctx, cache.RetentionRevKey).Int(); rev != 1 {
-		t.Fatalf("retention revision %d, want 1 (bumped only when rows were deleted)", rev)
 	}
 	if got, _ := maintenance.LastStatus(ctx, rc); got == nil || got.DeletedRows != 0 {
 		t.Fatal("status not shared via Redis")

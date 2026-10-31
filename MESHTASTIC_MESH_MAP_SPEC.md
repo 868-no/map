@@ -5,7 +5,7 @@
 **Version:** 1.1 — 2026-10-31 (1.0 — 2026-10-31)  
 **Deliverable:** Working, documented, tested Docker Compose application; not a mock-up.
 
-> **Revision note (1.1, 2026-10-31).** Updated to match the implementation. The rationale for each change is recorded in `docs/decisions.md` (D-001…D-033). Main areas changed: in-window playback removed (sliding windows and live mode remain; §4.3, §9, §12, §15–17); basemap labels and most layers switchable and hidden by default (§10.1); map rendering — one line per node pair, infrastructure vs other links, node size by role and colour by last-heard age (§7.3, §10.2–10.3); live traffic as radar pings (§7.3); narrowed last-hop resolution (§7.1 D); coarse anchors with precision error for location estimates (§8); overlay UI layout (§10.1, §15); caching, offline use and installation (§10.4); result cache flushed on every deploy (§4.3, §5); Go backend (§13). Processing split (D-031, D-033): the backend serves window-scoped decoded observations, and streams each new one as it is stored; the browser derives every view in a Web Worker; the server-side views remain available (`?derive=server`) until the operator retires them.
+> **Revision note (1.1, 2026-10-31).** Updated to match the implementation. The rationale for each change is recorded in `docs/decisions.md` (D-001…D-041). Main areas changed: in-window playback removed (sliding windows and live mode remain; §4.3, §9, §12, §15–17); basemap labels and most layers switchable and hidden by default (§10.1); map rendering — one line per node pair, infrastructure vs other links, node size by role and colour by last-heard age (§7.3, §10.2–10.3); live traffic as radar pings (§7.3); narrowed last-hop resolution (§7.1 D); coarse anchors with precision error for location estimates (§8); overlay UI layout (§10.1, §15); caching, offline use and installation (§10.4); result cache flushed on every deploy (§4.3, §5); Go backend (§13). Processing split (D-031, D-033, D-040, D-041): the backend is the packet log. It serves window-scoped decoded observations and streams each new one as it is stored; the browser derives every view in a WebAssembly engine in a Web Worker. The server-built views were retired.
 
 ## 0. Instructions to the implementation agent
 
@@ -176,10 +176,9 @@ All rows represent accepted packet observations. Invalid/decrypt-failed/signatur
 ### Query strategy
 
 - Restrict by `observed_at >= :start AND observed_at < :end` at the SQL level before deriving any graph or state.
-- Push grouped counts, latest-in-window announcements, positions, and time buckets into PostgreSQL or bounded streaming backend reducers.
-- Query only required event kinds for each view rather than deserializing the entire six-month log.
+- The server reads only the requested window's rows (never the entire six-month log); grouped counts, latest-in-window announcements, positions, links and time buckets are derived from those rows in the browser.
 - Order and bound per-view row reads by `(observed_at, id)`; do not use large `OFFSET` scans.
-- Use Redis for snapshots, short-window aggregation, hot indexes, and request coalescing. Cache objects must be reconstructible exclusively from `packet_log` and scoped to the exact window and filters. Cache TTL and active invalidation required for fresh writes, window expiry, purges, schema changes and secret/key configuration changes; the result cache is flushed whenever the backend starts.
+- Views are derived in the browser (D-041), so the server keeps no result cache. Redis holds only ephemeral, rebuildable state: dedupe keys, live pub/sub and maintenance status.
 - Limit RAM via bounded queues, batch processing, compressed output where beneficial, and streaming reads. Avoid full in-process table scans and ORM object graphs.
 
 ## 6. Retention and scheduled maintenance
@@ -258,8 +257,8 @@ This is an **estimate**, not triangulation in the GPS sense. LoRa SNR/RSSI depen
 
 ### 9.2 Loading and live semantics
 
-- On initial load, fetch an aggregate snapshot for the full selected range, so users see the state immediately without leaving the browser connected for days. There is no in-window playback.
-- Send compact, server-computed views (nodes, positions, link evidence, bucketed traffic), **not raw protobuf packets**. Do not persist snapshots in another table.
+- On initial load, fetch the selected range's decoded observations (paged, parallel time slices) and derive the full state in the browser (a WebAssembly engine in a Web Worker), so users see the state immediately without leaving the browser connected for days. The browser keeps its copy in IndexedDB and later fetches only what is new. There is no in-window playback.
+- Send compact decoded rows, **not raw protobuf packets**, envelopes or payload bodies. Do not persist derived state in another table.
 - On a rolling live window, incoming accepted packets update state via SSE or WebSocket. Also remove evidence that has rolled out of the beginning of the window, even if no new packet arrives.
 - On a fixed historical window, live updates after its end are not displayed, counted, streamed, or applied to its state (the live stream accepts only rolling windows).
 - Changing start/end or filters that affect the graph cancels obsolete requests; server and client must discard stale results. Include request IDs or generation identifiers to prevent cross-window UI contamination.
@@ -308,7 +307,7 @@ These targets are development acceptance budgets, not promises about unlimited p
 **Reference workload:** at least 2 million accepted packet observations retained, 2,000 nodes, 20,000 distinct candidate edges over an interval, and burst ingestion of 100 MQTT messages/second on a 4 vCPU / 8 GiB machine. Test larger data sets as time permits.
 
 - Ingestion continues while historical queries and retention cleanup are running; backlog remains bounded and recovers after temporary DB outages.
-- 3-day snapshot at reference workload: target <= 2 seconds warm cache and <= 10 seconds cold cache under normal local network conditions (track p50/p95). Render initial useful map incrementally rather than blocking the UI on all ancillary charts.
+- 3-day window at reference workload: target <= 2 seconds to fetch a window the browser already holds most of, and <= 10 seconds from empty, under normal local network conditions (track p50/p95). Render initial useful map incrementally rather than blocking the UI on all ancillary charts.
 - Pan/zoom target near 60 FPS on a desktop for normal density; >= 30 FPS during supported dense animation scenarios. Stop animations on hidden tabs and reduced-motion preference.
 - Client must remain responsive and not load entire raw historical logs into JS heap. Target < 250 MiB sustained heap for reference density, excluding browser basemap tile cache and other browser overhead; instrument and report actual results.
 - Render links/points using instancing or batched GPU buffers, memoized derived views and level of detail; add Web Workers for client transforms if profiling shows main-thread hotspots (none are used yet; a service worker provides offline support). Avoid React rerenders per packet or DOM markers per node at scale.
@@ -326,11 +325,8 @@ Suggested endpoints (paths may change, semantics may not):
 | --- | --- |
 | `GET /api/v1/capabilities` | Supported intervals, window duration limits, feature flags, viewport defaults; no secrets |
 | `GET /api/v1/retention` | Retention cutoff, earliest/latest available `observed_at` and server UTC now |
-| `GET /api/v1/snapshot?start=&end=` or `?duration=` | Time-isolated nodes, edges, positions, estimates, counts and graph summary |
-| `GET /api/v1/traffic?start=&end=&bucket=&filters=` | Unique packet counts vs gateway receptions, types, directional estimates, time-bucket summaries |
-| `GET /api/v1/nodes/{id}?start=&end=` | Selected-window node details and bounded evidence |
-| `GET /api/v1/edges?start=&end=&filters=` | Evidence-backed directed links with provenance and per-direction radio statistics |
-| `GET /api/v1/stream?duration=&filters=` | SSE live updates for a rolling window only (fixed windows rejected): compact reception events — originator, gateway, type, signature status, SNR/RSSI, direct-RF flag, relay byte, hop count, logical packet key and, for traceroutes, the recorded path — plus heartbeats with the current window bounds and retention notices |
+| `GET /api/v1/observations?start=&end=` or `?duration=`, optional `since`/`until` (narrowing only) and `cursor` | The decoded observations of the window, paged in `(observed_at, id)` order: compact rows with header fields, radio metadata, signature status and the decoded fields views need (identity, position, device telemetry, NeighborInfo, traceroute, map report). Browsers derive every view from them (D-031, D-041) |
+| `GET /api/v1/stream?duration=` | SSE live updates for a rolling window only (fixed windows rejected): each new observation with its full row, as `/observations` returns it, plus heartbeats with the current window bounds and retention notices |
 | `GET /api/openapi.yaml` | The OpenAPI document (also committed as `docs/api-openapi.yaml`) |
 | `GET /health/live` and `/health/ready` | Container orchestration health; readiness checks DB, cache, and startup status |
 | `GET /metrics` | Optional operator-only metrics, not openly browsable mesh-derived history |
@@ -477,7 +473,7 @@ Mobile layout: map fills screen; the side panel becomes a bottom sheet; the coll
 
 ### M2 — Time-window backend
 
-- Exact-filter snapshots, window-isolated NodeInfo/positions, traffic buckets, retention, live stream, cache and API/OpenAPI tests.
+- Window-isolated observations (server) and window-isolated NodeInfo/positions, traffic buckets and links (engine), retention, live stream and API/OpenAPI tests.
 - **Gate:** switching windows never reveals metadata from previous/next windows; cold start reconstructs from existing DB rows without waiting for MQTT.
 
 ### M3 — Topology, provenance and inference

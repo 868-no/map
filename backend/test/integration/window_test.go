@@ -6,10 +6,12 @@ import (
 	"context"
 	"crypto/ed25519"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"reflect"
+	"slices"
 	"testing"
 	"time"
 
@@ -100,7 +102,7 @@ type apiClient struct {
 
 func newAPI(t *testing.T, pool *pgxpool.Pool, rc *cache.Client, now time.Time) *apiClient {
 	env := config.Env{RetentionMonths: 6, DefaultWindowHours: 72, MaxWindowHours: 168, LiveQuantum: 10 * time.Second}
-	s := &api.Server{Pool: pool, Results: cache.NewResults(rc, nil), Env: env, ConfigRev: "it", Log: quiet,
+	s := &api.Server{Pool: pool, Env: env, ConfigRev: "it", Log: quiet,
 		Now: func() time.Time { return now }}
 	mux := http.NewServeMux()
 	s.NewHandler(mux)
@@ -124,54 +126,58 @@ func (c *apiClient) get(path string, q url.Values, out any) int {
 	return resp.StatusCode
 }
 
-type snapResp struct {
-	Meta struct {
-		Revision string `json:"revision"`
-	} `json:"meta"`
-	Nodes []struct {
-		ID       string `json:"id"`
-		Status   string `json:"status"`
-		Identity *struct {
-			LongName string `json:"long_name"`
-		} `json:"identity"`
-		Position *struct {
-			Lat float64 `json:"lat"`
-		} `json:"position"`
-		Telemetry *struct {
-			Battery *float64 `json:"battery"`
-		} `json:"telemetry"`
-		Packets int `json:"packets"`
-	} `json:"nodes"`
-	Counts struct {
-		Packets    int `json:"packets"`
-		Receptions int `json:"receptions"`
-	} `json:"counts"`
+// obsRow is the part of an /observations row these tests read.
+type obsRow struct {
+	ID int64  `json:"i"`
+	T  int64  `json:"t"`
+	Y  string `json:"y"`
+	S  uint32 `json:"s"`
+	NK bool   `json:"nk"`
+	NI *struct {
+		LongName string `json:"long_name"`
+	} `json:"ni"`
+	PO *struct {
+		Lat           float64 `json:"lat"`
+		PrecisionBits uint32  `json:"precision_bits"`
+	} `json:"po"`
+}
+
+// rows fetches every page of a window from /observations.
+func (c *apiClient) rows(q url.Values) ([]obsRow, int) {
+	c.t.Helper()
+	var all []obsRow
+	q2 := url.Values{}
+	for k, v := range q {
+		q2[k] = v
+	}
+	for {
+		var page struct {
+			Rows       []obsRow `json:"rows"`
+			More       bool     `json:"more"`
+			NextCursor string   `json:"next_cursor"`
+		}
+		if code := c.get("/api/v1/observations", q2, &page); code != 200 {
+			return nil, code
+		}
+		all = append(all, page.Rows...)
+		if !page.More {
+			return all, 200
+		}
+		q2.Set("cursor", page.NextCursor)
+	}
+}
+
+// kinds lists "type:src" for each row, in order.
+func kinds(rows []obsRow) []string {
+	var out []string
+	for _, r := range rows {
+		out = append(out, fmt.Sprintf("%s:%x", r.Y, r.S))
+	}
+	return out
 }
 
 func win(start, end time.Time) url.Values {
 	return url.Values{"start": {start.Format(time.RFC3339Nano)}, "end": {end.Format(time.RFC3339Nano)}}
-}
-
-func (s snapResp) node(id uint32) *struct {
-	ID       string `json:"id"`
-	Status   string `json:"status"`
-	Identity *struct {
-		LongName string `json:"long_name"`
-	} `json:"identity"`
-	Position *struct {
-		Lat float64 `json:"lat"`
-	} `json:"position"`
-	Telemetry *struct {
-		Battery *float64 `json:"battery"`
-	} `json:"telemetry"`
-	Packets int `json:"packets"`
-} {
-	for i := range s.Nodes {
-		if s.Nodes[i].ID == protocol.NodeID(id) {
-			return &s.Nodes[i]
-		}
-	}
-	return nil
 }
 
 const (
@@ -183,7 +189,10 @@ const (
 var base = time.Date(2026, 10, 30, 0, 0, 0, 0, time.UTC)
 var testNow = base.Add(24 * time.Hour)
 
-// §17 tests 11, 12, 13, 14 (as window end) and 17.
+// §17 tests 11, 12, 13, 14 (as window end) and 17. The server's half of
+// time isolation: /observations returns exactly the rows observed in
+// [start, end). The views built from them are the engine's half
+// (frontend/engine: views over Store::slice).
 func TestTemporalIsolation(t *testing.T) {
 	pool := freshDB(t)
 	rc := redisClient(t)
@@ -195,115 +204,78 @@ func TestTemporalIsolation(t *testing.T) {
 	f.nodeInfo(T3, nodeA, gw1, "NewName")
 	f.position(T3, nodeA, gw1, 64.0)
 	c := newAPI(t, pool, rc, testNow)
-
+	a := fmt.Sprintf("%x", nodeA)
+	at := func(typs ...string) []string {
+		var out []string
+		for _, ty := range typs {
+			out = append(out, ty+":"+a)
+		}
+		return out
+	}
 	cases := []struct {
-		name      string
-		q         url.Values
-		wantName  string // "" = no identity
-		wantLat   float64
-		wantFound bool
+		name string
+		q    url.Values
+		want []string
 	}{
-		{"only T2: neither name, no position (test 11/12)", win(T2.Add(-time.Hour), T2.Add(time.Hour)), "", 0, true},
-		{"T1 not T3: OldName", win(T1.Add(-time.Hour), T2.Add(time.Hour)), "OldName", 63.0, true},
-		{"T3 not T1: NewName", win(T2.Add(-time.Hour), T3.Add(time.Hour)), "NewName", 64.0, true},
-		{"both: latest in window", win(T1.Add(-time.Hour), T3.Add(time.Hour)), "NewName", 64.0, true},
-		{"end before T3 hides later rename (test 14)", win(T1.Add(-time.Hour), T3), "OldName", 63.0, true},
-		{"start exactly at T1 includes T1 (test 13)", win(T1, T1.Add(time.Hour)), "OldName", 63.0, true},
-		{"start 1ms after T1 excludes it (test 13)", win(T1.Add(time.Millisecond), T1.Add(2*time.Hour)), "", 0, false},
-		{"end exactly at T1 excludes it (test 13)", win(T1.Add(-time.Hour), T1), "", 0, false},
+		{"only T2 (tests 11/12)", win(T2.Add(-time.Hour), T2.Add(time.Hour)), at("telemetry")},
+		{"T1 not T3", win(T1.Add(-time.Hour), T2.Add(time.Hour)), at("nodeinfo", "position", "telemetry")},
+		{"T3 not T1", win(T2.Add(-time.Hour), T3.Add(time.Hour)), at("telemetry", "nodeinfo", "position")},
+		{"end before T3 hides the later rename (test 14)", win(T1.Add(-time.Hour), T3), at("nodeinfo", "position", "telemetry")},
+		{"start exactly at T1 includes T1 (test 13)", win(T1, T1.Add(time.Hour)), at("nodeinfo", "position")},
+		{"start 1ms after T1 excludes it (test 13)", win(T1.Add(time.Millisecond), T1.Add(2*time.Hour)), nil},
+		{"end exactly at T1 excludes it (test 13)", win(T1.Add(-time.Hour), T1), nil},
 	}
 	for _, tc := range cases {
-		var s snapResp
-		if code := c.get("/api/v1/snapshot", tc.q, &s); code != 200 {
+		rows, code := c.rows(tc.q)
+		if code != 200 {
 			t.Fatalf("%s: HTTP %d", tc.name, code)
 		}
-		n := s.node(nodeA)
-		if (n != nil) != tc.wantFound {
-			t.Errorf("%s: node present=%v, want %v", tc.name, n != nil, tc.wantFound)
-			continue
-		}
-		if n == nil {
-			continue
-		}
-		got := ""
-		if n.Identity != nil {
-			got = n.Identity.LongName
-		}
-		if got != tc.wantName {
-			t.Errorf("%s: name %q, want %q", tc.name, got, tc.wantName)
-		}
-		if (n.Position == nil) != (tc.wantLat == 0) || (n.Position != nil && n.Position.Lat != tc.wantLat) {
-			t.Errorf("%s: position %+v, want lat %v", tc.name, n.Position, tc.wantLat)
+		if got := kinds(rows); !slices.Equal(got, tc.want) {
+			t.Errorf("%s: rows %v, want %v", tc.name, got, tc.want)
 		}
 	}
-
-	// Node detail obeys the same window.
-	var d struct {
-		Identity *struct {
-			LongName string `json:"long_name"`
-		} `json:"identity"`
-		Positions []any `json:"positions"`
-	}
-	if code := c.get("/api/v1/nodes/"+url.PathEscape(protocol.NodeID(nodeA)), win(T2.Add(-time.Hour), T2.Add(time.Hour)), &d); code != 200 {
-		t.Fatalf("node detail HTTP %d", code)
-	}
-	if d.Identity != nil || len(d.Positions) != 0 {
-		t.Errorf("node detail leaked out-of-window identity/positions: %+v", d)
-	}
-	if code := c.get("/api/v1/nodes/"+url.PathEscape(protocol.NodeID(nodeB)), win(T1, T3), nil); code != 404 {
-		t.Errorf("absent node: HTTP %d, want 404", code)
-	}
-
 	// Test 17: a fixed historic window does not change when later data arrives.
-	var before, after snapResp
 	q := win(T1.Add(-time.Hour), T2.Add(time.Hour))
-	c.get("/api/v1/snapshot", q, &before)
+	before, _ := c.rows(q)
 	f.nodeInfo(T3.Add(time.Hour), nodeB, gw1, "Later")
-	c.get("/api/v1/snapshot", q, &after)
-	if before.Meta.Revision != after.Meta.Revision || len(before.Nodes) != len(after.Nodes) || after.node(nodeB) != nil {
-		t.Errorf("fixed window changed after later ingestion")
+	after, _ := c.rows(q)
+	if !slices.Equal(kinds(before), kinds(after)) {
+		t.Errorf("fixed window changed after later ingestion: %v -> %v", kinds(before), kinds(after))
 	}
 }
 
-// §17 test 15: cached results are scoped by window and revision; new
-// in-window data yields a new revision rather than a stale hit.
-func TestCacheScoping(t *testing.T) {
+// §17 test 15 (no stale results): with no server-side result cache, a row
+// inserted inside a window is returned by the very next request, and
+// other windows are unaffected.
+func TestNoStaleResults(t *testing.T) {
 	pool := freshDB(t)
 	rc := redisClient(t)
 	f := newFixture(t, pool)
 	f.nodeInfo(base.Add(time.Hour), nodeA, gw1, "Alpha")
 	c := newAPI(t, pool, rc, testNow)
-	w1 := win(base, base.Add(2*time.Hour))
-	w2 := win(base.Add(2*time.Hour), base.Add(4*time.Hour))
-	var a, b, a2 snapResp
-	c.get("/api/v1/snapshot", w1, &a)
-	c.get("/api/v1/snapshot", w2, &b)
-	if a.node(nodeA) == nil || b.node(nodeA) != nil {
-		t.Fatal("windows not isolated")
+	w1, w2 := win(base, base.Add(2*time.Hour)), win(base.Add(2*time.Hour), base.Add(4*time.Hour))
+	if a, _ := c.rows(w1); len(a) != 1 {
+		t.Fatalf("window 1: %v", kinds(a))
 	}
 	f.nodeInfo(base.Add(90*time.Minute), nodeA, gw1, "Beta")
-	c.get("/api/v1/snapshot", w1, &a2)
-	if a2.Meta.Revision == a.Meta.Revision || a2.node(nodeA).Identity.LongName != "Beta" {
-		t.Fatalf("stale cache served after in-window insert: rev %s -> %s, name %s", a.Meta.Revision, a2.Meta.Revision, a2.node(nodeA).Identity.LongName)
-	}
-	keys, _ := rc.R.Keys(context.Background(), "meshmap:res:*").Result()
-	if len(keys) < 3 {
-		t.Fatalf("expected separate cache entries per window/revision, got %d", len(keys))
+	a, _ := c.rows(w1)
+	b, _ := c.rows(w2)
+	if len(a) != 2 || a[1].NI == nil || a[1].NI.LongName != "Beta" || len(b) != 0 {
+		t.Fatalf("after insert: window 1 %v, window 2 %v", kinds(a), kinds(b))
 	}
 }
 
-// §17 test 16: the rolling window ejects evidence that aged out, with no
-// new packets arriving.
+// §17 test 16: the rolling window drops rows that aged out, with no new
+// packets arriving.
 func TestRollingWindowEviction(t *testing.T) {
 	pool := freshDB(t)
 	f := newFixture(t, pool)
 	f.nodeInfo(base, nodeA, gw1, "Aging")
 	q := url.Values{"duration": {"24h"}}
-	var in, out snapResp
-	newAPI(t, pool, nil, base.Add(23*time.Hour)).get("/api/v1/snapshot", q, &in)
-	newAPI(t, pool, nil, base.Add(24*time.Hour+time.Minute)).get("/api/v1/snapshot", q, &out)
-	if in.node(nodeA) == nil || out.node(nodeA) != nil {
-		t.Fatalf("rolling eviction failed: before=%v after=%v", in.node(nodeA) != nil, out.node(nodeA) != nil)
+	in, _ := newAPI(t, pool, nil, base.Add(23*time.Hour)).rows(q)
+	out, _ := newAPI(t, pool, nil, base.Add(24*time.Hour+time.Minute)).rows(q)
+	if len(in) != 1 || len(out) != 0 {
+		t.Fatalf("rolling eviction failed: before=%d after=%d", len(in), len(out))
 	}
 }
 
@@ -320,15 +292,16 @@ func TestRangeRejections(t *testing.T) {
 		"bad-timestamp": {"start": {"yesterday"}, "end": {"today"}},
 		"bad-duration":  {"duration": {"8d"}},
 	} {
-		if code := c.get("/api/v1/snapshot", q, nil); code != 400 {
+		if code := c.get("/api/v1/observations", q, nil); code != 400 {
 			t.Errorf("%s: HTTP %d, want 400", name, code)
 		}
 	}
 }
 
-// §17 tests 19 and 20: retention deletion invalidates cached results, and a
-// restart with an empty Redis reconstructs identical results.
-func TestRetentionInvalidationAndRebuild(t *testing.T) {
+// §17 tests 19 and 20: rows deleted by retention are gone from the next
+// response, and responses do not depend on Redis (a restart with an empty
+// Redis returns identical rows).
+func TestRetentionAndRebuild(t *testing.T) {
 	pool := freshDB(t)
 	rc := redisClient(t)
 	f := newFixture(t, pool)
@@ -337,71 +310,26 @@ func TestRetentionInvalidationAndRebuild(t *testing.T) {
 	old := cutoff.Add(-time.Hour)
 	f.nodeInfo(old, nodeA, gw1, "Expiring")
 	f.nodeInfo(cutoff.Add(2*time.Hour), nodeB, gw1, "Staying")
-	// Window starts after the cutoff at query time but includes the old row
-	// only while it is retained: use a window ending just after the cutoff
-	// queried "before" retention runs (clock earlier), then after.
-	early := newAPI(t, pool, rc, now.Add(-2*time.Hour)) // cutoff 2 h earlier: old row selectable
+	early := newAPI(t, pool, rc, now.Add(-2*time.Hour)) // cutoff 2 h earlier: the old row is selectable
 	q := win(old.Add(-30*time.Minute), cutoff.Add(3*time.Hour))
-	var s1 snapResp
-	if code := early.get("/api/v1/snapshot", q, &s1); code != 200 || s1.node(nodeA) == nil {
-		t.Fatalf("precondition: HTTP %d, expiring node present=%v", code, s1.node(nodeA) != nil)
+	if rows, code := early.rows(q); code != 200 || len(rows) != 2 {
+		t.Fatalf("precondition: HTTP %d, rows %v", code, kinds(rows))
 	}
 	r := &maintenance.Runner{Pool: pool, Cache: rc, Months: 6, Interval: 24 * time.Hour, Log: quiet, Now: func() time.Time { return now }}
 	if st, err := r.RunOnce(context.Background()); err != nil || st.DeletedRows != 1 {
 		t.Fatalf("retention: %+v %v", st, err)
 	}
-	var s2 snapResp
-	early.get("/api/v1/snapshot", q, &s2)
-	if s2.node(nodeA) != nil || s2.Meta.Revision == s1.Meta.Revision {
-		t.Fatal("deleted evidence reappeared from cache")
+	if rows, _ := early.rows(q); len(rows) != 1 || rows[0].S != nodeB {
+		t.Fatalf("deleted row reappeared: %v", kinds(rows))
 	}
-
-	// Restart: fresh server, Redis wiped -> identical JSON.
-	q2 := win(cutoff.Add(time.Hour), cutoff.Add(5*time.Hour))
-	var warm, cold json.RawMessage
-	early.get("/api/v1/snapshot", q2, &warm)
 	_ = rc.R.FlushDB(context.Background()).Err()
-	newAPI(t, pool, nil, now.Add(-2*time.Hour)).get("/api/v1/snapshot", q2, &cold)
-	if stripVolatile(t, warm) != stripVolatile(t, cold) {
-		t.Fatalf("rebuild differs:\nwarm %s\ncold %s", warm, cold)
-	}
-}
-
-// stripVolatile removes generation time and the cache generation part of
-// the revision (Redis-held retention counter resets when Redis is wiped).
-func stripVolatile(t *testing.T, raw json.RawMessage) string {
-	var m map[string]any
-	if err := json.Unmarshal(raw, &m); err != nil {
-		t.Fatal(err)
-	}
-	meta := m["meta"].(map[string]any)
-	delete(meta, "generated_at")
-	delete(meta, "revision")
-	delete(m, "$schema") // contains the (test) server address
-	b, _ := json.Marshal(m)
-	return string(b)
-}
-
-// Deploys flush computed results (cache keys do not encode code versions);
-// dedupe keys survive.
-func TestResultCacheFlush(t *testing.T) {
-	pool := freshDB(t)
-	rc := redisClient(t)
-	f := newFixture(t, pool)
-	f.nodeInfo(base.Add(time.Hour), nodeA, gw1, "Alpha")
-	c := newAPI(t, pool, rc, testNow)
-	c.get("/api/v1/snapshot", win(base, base.Add(2*time.Hour)), nil)
-	ctx := context.Background()
-	rc.R.Set(ctx, "meshmap:obs:keep", "1", 0)
-	n, err := cache.NewResults(rc, nil).Flush(ctx)
-	if err != nil || n == 0 {
-		t.Fatalf("flush: n=%d err=%v", n, err)
-	}
-	if keys, _ := rc.R.Keys(ctx, cache.ResultKeyPrefix+"*").Result(); len(keys) != 0 {
-		t.Fatalf("results left: %v", keys)
-	}
-	if v, _ := rc.R.Get(ctx, "meshmap:obs:keep").Result(); v != "1" {
-		t.Fatal("dedupe key removed")
+	q2 := win(cutoff.Add(time.Hour), cutoff.Add(5*time.Hour))
+	warm, _ := early.rows(q2)
+	cold, _ := newAPI(t, pool, nil, now.Add(-2*time.Hour)).rows(q2)
+	wj, _ := json.Marshal(warm)
+	cj, _ := json.Marshal(cold)
+	if string(wj) != string(cj) {
+		t.Fatalf("rebuild differs:\nwarm %s\ncold %s", wj, cj)
 	}
 }
 
@@ -523,37 +451,29 @@ func TestMapReportsAndMQTTOptOut(t *testing.T) {
 	f.store(T1, nodeB, gw1, &pb.Data{Portnum: pb.PortNum_POSITION_APP, Payload: pb2, Bitfield: &notOK}, nil)
 
 	c := newAPI(t, pool, rc, testNow)
-	var s struct {
-		Nodes []struct {
-			ID         string    `json:"id"`
-			MQTTOptOut bool      `json:"mqtt_opt_out"`
-			Identity   *struct{} `json:"identity"`
-			Position   *struct {
-				Lat           float64 `json:"lat"`
-				PrecisionBits uint32  `json:"precision_bits"`
-			} `json:"position"`
-		} `json:"nodes"`
+	rows, code := c.rows(win(base, base.Add(6*time.Hour)))
+	if code != 200 {
+		t.Fatalf("HTTP %d", code)
 	}
-	if c.get("/api/v1/snapshot", win(base, base.Add(6*time.Hour)), &s) != 200 {
-		t.Fatal("status")
-	}
-	seen := 0
-	for _, n := range s.Nodes {
-		switch n.ID {
-		case protocol.NodeID(nodeA):
-			seen++
-			if n.Position == nil || n.Position.Lat != 64.0 || n.Position.PrecisionBits != 16 || n.MQTTOptOut {
-				t.Fatalf("nodeA: map report should be the latest position: %+v", n)
+	var reports, bPos, bInfo int
+	for _, r := range rows {
+		switch {
+		case r.S == nodeA && r.Y == "mapreport":
+			reports++
+			if r.PO == nil || r.PO.Lat != 64.0 || r.PO.PrecisionBits != 16 {
+				t.Fatalf("map report position: %+v", r.PO)
 			}
-		case protocol.NodeID(nodeB):
-			seen++
-			if !n.MQTTOptOut || n.Identity != nil || n.Position == nil {
-				t.Fatalf("nodeB: %+v", n)
+		case r.S == nodeB && r.Y == "position":
+			bPos++
+			if !r.NK {
+				t.Fatal("nodeB position should be marked not OK to MQTT")
 			}
+		case r.S == nodeB && r.Y == "nodeinfo":
+			bInfo++
 		}
 	}
-	if seen != 2 {
-		t.Fatalf("nodes missing: %+v", s.Nodes)
+	if reports != 1 || bPos != 1 || bInfo != 0 {
+		t.Fatalf("map reports %d, nodeB positions %d, nodeB NodeInfo %d (want 1, 1, 0)", reports, bPos, bInfo)
 	}
 }
 

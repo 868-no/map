@@ -24,7 +24,6 @@ import (
 	"github.com/868-no/map/internal/maintenance"
 	"github.com/868-no/map/internal/mqtt"
 	"github.com/868-no/map/internal/observability"
-	"github.com/868-no/map/internal/query"
 	"github.com/868-no/map/internal/security"
 	"github.com/868-no/map/internal/storage"
 )
@@ -317,16 +316,9 @@ func serveCmd() *cobra.Command {
 				// Retention notices always; live events too in API-only mode.
 				go hub.FeedFromRedis(ingestCtx, rc, noIngest, log)
 			}
-			results := cache.NewResults(rc, func(op string) { m.CacheErrors.WithLabelValues(op).Inc() })
-			// A new deploy may derive results differently: start with an empty result cache.
-			if n, err := results.Flush(ctx); err != nil {
-				log.Warn("could not flush result cache", "err", err)
-			} else if n > 0 {
-				log.Info("flushed result cache", "keys", n)
-			}
-			apiSrv := &api.Server{Pool: pool, Results: results,
+			apiSrv := &api.Server{Pool: pool,
 				Hub: hub, Env: c.Env, ConfigRev: c.Revision(), Metrics: m, Log: log,
-				Geo: query.GeoOptions{Enabled: c.Env.GeolocationEnabled, MinPrecisionBits: c.Env.GeolocationMinPrec, Exclude: c.Exclude, Params: c.GeoParams()}}
+				Geo: api.GeoOptions{Enabled: c.Env.GeolocationEnabled, MinPrecisionBits: c.Env.GeolocationMinPrec, Exclude: c.Exclude, Params: c.GeoParams()}}
 			apiSrv.NewHandler(mux)
 			handler := api.Protect(mux, api.Limits{Trusted: c.Proxies, PerSecond: 20, Burst: 60, Timeout: 20 * time.Second, MaxStreams: 4})
 			srv := &http.Server{Addr: c.Env.HTTPAddr, Handler: handler, ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 2 * time.Minute}

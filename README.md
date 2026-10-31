@@ -49,15 +49,15 @@ The host needs only Docker; Go and Node run in containers.
 scripts/go.sh go test ./...           # backend unit tests (incl. real-capture replay)
 scripts/integration.sh                # Postgres/Redis/Mosquitto integration tests (spec §17 tests 1-35)
 scripts/node.sh npx vitest run        # frontend unit tests
-NODE_NETWORK=host scripts/node.sh sh -c 'PARITY_BASE=http://localhost:8080 npx vitest run tests/parity.test.ts'
-                                      # browser-derived views == server views on live data
+scripts/wasm.sh test                  # engine (Rust) tests, incl. the golden 12 h fixture
+scripts/wasm.sh                       # build the engine to WebAssembly (needed before frontend tests/builds)
 docker run --rm --network host --ipc=host -v "$PWD":/src -w /src/frontend \
   mcr.microsoft.com/playwright:v1.64.1-noble npx playwright test     # e2e against a running stack
                                       # (add -e UPDATE_SCREENSHOTS=1 to refresh docs/screenshots)
 scripts/bench.sh                      # 2M-row reference benchmark
 ```
 
-Views are built in the browser from `/api/v1/observations` (D-031). Open the app with `?derive=server` to use the server-built views instead; the choice is remembered, and `?derive=client` switches back.
+Every view is built in the browser, by a WebAssembly engine (`frontend/engine`, Rust) in a Web Worker, from the decoded rows of `/api/v1/observations` and the live stream (D-031, D-040, D-041).
 
 ## Operations
 

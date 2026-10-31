@@ -2,7 +2,6 @@ package ingest
 
 import (
 	"context"
-	"encoding/hex"
 	"log/slog"
 	"runtime"
 	"slices"
@@ -42,35 +41,13 @@ type Promoter interface {
 	Promote(security.Identity) bool
 }
 
-// LiveEvent is the compact summary of an accepted observation sent to SSE
-// clients. It never contains payload bytes or envelope data.
+// LiveEvent announces an accepted observation to SSE clients: its row id,
+// observed_at and the full compact row, identical to what /observations
+// returns (D-033, D-041). Never payload bytes or envelope data.
 type LiveEvent struct {
-	ID       int64     `json:"id"`
-	T        time.Time `json:"t"`
-	Node     string    `json:"node"`
-	Gateway  string    `json:"gw,omitempty"`
-	Type     string    `json:"type"`
-	Sig      string    `json:"sig"`
-	Broker   string    `json:"broker"`
-	Channel  string    `json:"channel,omitempty"`
-	SNR      *float32  `json:"snr,omitempty"`
-	RSSI     *int32    `json:"rssi,omitempty"`
-	DirectRF bool      `json:"direct_rf,omitempty"`
-	Logical  string    `json:"lp"`
-	// Reception is the observation key prefix (one gateway reception).
-	Reception string `json:"rx"`
-	RelayHint *int32 `json:"relay,omitempty"`
-	// Hops is hop_start - hop_limit when both are known: 0 = the gateway
-	// heard the originator, 1 = the last hop heard the originator directly.
-	Hops *int16 `json:"hops,omitempty"`
-	// Path is set for valid traceroutes only: the relays this copy passed
-	// through after the originator, in order (route for requests,
-	// route_back for replies). Adjacent entries heard each other directly.
-	// "" marks a hop that did not record itself. Null for other packets.
-	Path []string `json:"path" nullable:"true"`
-	// Row is the full compact row, identical to what /observations returns,
-	// so browsers deriving views can merge it without fetching (D-033).
-	Row *ObsRow `json:"row,omitempty"`
+	ID  int64     `json:"id"`
+	T   time.Time `json:"t"`
+	Row *ObsRow   `json:"row"`
 }
 
 // Config sizes the pipeline.
@@ -470,32 +447,5 @@ func (p *Pipeline) afterCommit(obs []*Observation, ids []int64) {
 }
 
 func toLive(o *Observation, id int64) LiveEvent {
-	e := LiveEvent{
-		ID: id, T: o.ObservedAt, Node: protocol.NodeID(o.Source), Type: o.PacketType,
-		Sig: string(o.SignatureStatus), Broker: o.BrokerID, Channel: o.Channel,
-		SNR: o.RxSNR, RSSI: o.RxRSSI, DirectRF: o.Meta.Rx.DirectRF, RelayHint: o.RelayHint,
-	}
-	if o.Gateway != nil {
-		e.Gateway = protocol.NodeID(*o.Gateway)
-	}
-	if o.HopStart != nil && o.HopLimit != nil {
-		h := *o.HopStart - *o.HopLimit
-		e.Hops = &h
-	}
-	if t := o.Meta.Traceroute; t != nil && t.Valid {
-		hops := t.Route
-		if t.IsReply {
-			hops = t.RouteBack
-		}
-		e.Path = make([]string, len(hops))
-		for i, h := range hops {
-			if !h.Unknown {
-				e.Path[i] = protocol.NodeID(h.ID)
-			}
-		}
-	}
-	e.Logical = hex.EncodeToString(o.LogicalKey[:8])
-	e.Reception = hex.EncodeToString(o.ObservationKey[:8])
-	e.Row = LiveRow(o, id)
-	return e
+	return LiveEvent{ID: id, T: o.ObservedAt, Row: LiveRow(o, id)}
 }

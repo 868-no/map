@@ -116,11 +116,6 @@ func (r *Runner) publish(ctx context.Context, st Status) {
 	b, _ := json.Marshal(st)
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
-	if st.DeletedRows > 0 {
-		if err := r.Cache.R.Incr(ctx, cache.RetentionRevKey).Err(); err != nil {
-			r.Log.Warn("retention revision bump failed; caches expire by TTL", "err", err)
-		}
-	}
 	if err := r.Cache.R.Set(ctx, cache.MaintStatusKey, b, 0).Err(); err != nil {
 		r.Log.Warn("status store failed", "err", err)
 	}

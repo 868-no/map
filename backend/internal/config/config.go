@@ -350,7 +350,7 @@ func (c *Config) SecurityChannels() []security.ChannelConfig {
 }
 
 // Revision is a digest of everything that changes decoding or derived
-// results (channel keys, modes, policy, retention). It is part of cache keys;
+// results (channel keys, modes, policy, retention). It is part of the data generation;
 // it reveals nothing about the keys themselves.
 func (c *Config) Revision() string {
 	h := sha256.New()

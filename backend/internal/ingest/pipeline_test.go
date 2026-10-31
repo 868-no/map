@@ -3,7 +3,6 @@ package ingest
 import (
 	"context"
 	"errors"
-	"github.com/868-no/map/internal/protocol/ports"
 	"io"
 	"log/slog"
 	"slices"
@@ -206,21 +205,10 @@ func TestPipelinePromotesAfterCommit(t *testing.T) {
 	<-done
 }
 
-func TestLiveEventTraceroutePath(t *testing.T) {
-	o := &Observation{Source: 1, PacketType: "traceroute"}
-	o.Meta.Traceroute = &ports.Traceroute{Valid: true, Route: []ports.Hop{{ID: 0xa}}, RouteBack: []ports.Hop{{ID: 0xb}, {ID: 0xFFFFFFFF, Unknown: true}, {ID: 0xc}}}
-	if p := toLive(o, 1).Path; len(p) != 1 || p[0] != "!0000000a" {
-		t.Fatalf("request path %v", p)
-	}
-	o.Meta.Traceroute.IsReply = true
-	if p := toLive(o, 1).Path; len(p) != 3 || p[0] != "!0000000b" || p[1] != "" || p[2] != "!0000000c" {
-		t.Fatalf("reply path %v", p)
-	}
-	o.Meta.Traceroute.Valid = false
-	if p := toLive(o, 1).Path; p != nil {
-		t.Fatalf("invalid traceroute must carry no path, got %v", p)
-	}
-	if p := toLive(&Observation{Source: 1}, 1).Path; p != nil {
-		t.Fatal("non-traceroute must carry no path")
+func TestLiveEventCarriesTheRow(t *testing.T) {
+	o := &Observation{Source: 7, PacketType: "position", ObservedAt: time.UnixMilli(1_800_000_000_123)}
+	e := toLive(o, 42)
+	if e.ID != 42 || e.Row == nil || e.Row.ID != 42 || e.Row.Source != 7 || e.Row.T != 1_800_000_000_123 || e.Row.Type != "position" {
+		t.Fatalf("live event %+v row %+v", e, e.Row)
 	}
 }

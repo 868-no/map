@@ -299,3 +299,22 @@ Operator request. Selecting a packet in the log draws its routing graph and hide
 - **Live merges append.** Each streamed batch copied and re-sorted the whole row store. Rows that belong at the end, nearly all of them, are now appended in place.
 - **Batched IndexedDB writes.** Live rows were written in one transaction per batch, several a second. They are now batched (2 s quiet, 5 s at most); large fetched batches, trims, resets and coverage updates flush immediately, in order.
 - **Vendor chunks.** The bundle was one 2.1 MB file, so every deploy invalidated all of it. MapLibre (1.0 MB), deck.gl (0.9 MB) and React (0.2 MB) are now separate chunks that stay cached across app deploys; the app's own code is 139 kB (46 kB compressed).
+
+## D-040 A WebAssembly engine for the browser's hot paths (2026-10-31)
+
+Operator request: rewrite the client's hot paths in something that compiles to WebAssembly. **Rust** (`frontend/engine`, crates serde, serde_json and wasm-bindgen, pinned): no garbage collector, a small module (617 kB, 194 kB compressed), and mature tooling. The toolchain runs in a pinned Docker image (`scripts/wasm.sh`; the web image has its own Rust stage).
+- **What moved:** the row store, snapshot (nodes, links, relay resolution, location estimates, counts), traffic, node detail, packet log, packet route, and live ping attribution. The TypeScript ports were removed. Views keep their shapes (now typed by hand in `src/api/views.ts`).
+- **Rows never become JavaScript objects.** The worker stages each raw `/observations` page in the engine (staged batches let a fresh start still discard them), merges streamed rows as JSON text, and gets views back as JSON text. Those go to the page as transferred UTF-8 bytes rather than a structured clone of a large object graph. Strings are interned and packet keys stored as integers; the engine indexes relay candidates by low byte.
+- **Fetching:** after a range's first page, the rest is split into four time slices fetched in parallel into one batch.
+- **Persistence:** hourly gzip-compressed chunks in the API's row format (IndexedDB v2); only changed hours are rewritten. The coverage record is written after the rows it describes, so a reload never believes it holds rows it does not.
+- **Pings:** the page decides which live rows to animate (visible, recent, filtered, not map reports); the worker returns their transmissions.
+- **CSP:** `script-src` gains `'wasm-unsafe-eval'`, which allows WebAssembly compilation only, not JavaScript eval.
+- **Relay rule:** a relay byte never resolves to a node whose role never rebroadcasts (CLIENT_MUTE). This removed the false relays credited to "stro" (D-036).
+- **Tests:** Rust unit tests (including the ported ping attribution and position choice), a golden test against the retired server views, and an isolation test; the page's tests use a fake backend for the row store.
+
+## D-041 Server-built views retired (2026-10-31)
+
+Operator decision, after the engine matched the server views field by field (snapshot, filtered snapshot, traffic, 18 node panels on live data; then frozen as the golden fixture `frontend/engine/tests/fixtures/mesh-12h`).
+- **Removed:** `/snapshot`, `/traffic`, `/nodes/{id}`, `/edges`, the query code behind them, the Go link-graph and estimator packages (the estimator's settings types stay for configuration), the Redis result cache and its flush on start, the retention revision, `?derive=server`, and the summary fields of live events. Live events are now `{id, t, row}`. The stream no longer filters; browsers filter.
+- **Server tests** check the server's half of time isolation on `/observations`: exact `[start, end)` rows, millisecond boundaries, rolling eviction, fixed windows unaffected by later data, deletions by retention, and responses independent of Redis. The engine's isolation test covers derived fields.
+- `meshmap bench` now times full-window `/observations` fetches.

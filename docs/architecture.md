@@ -17,22 +17,22 @@
 │  identity index (in memory, rebuilt from packet_log)                             │
 │                                                                                  │
 │  HTTP API (huma, OpenAPI 3.1): capabilities, retention, observations (paged     │
-│  decoded rows), snapshot, traffic, nodes/{id}, edges, stream (SSE) · health     │
-│  query layer: every SQL via window.Predicate → graph reducer → geolocation       │
+│  decoded rows), stream (SSE: every new row) · health · metrics                  │
+│  query layer: every SQL via window.Predicate                                    │
 └───────────────┬───────────────────────────────┬──────────────────────────────────┘
                 │                               │
         PostgreSQL 16                     Redis 7 (ephemeral)
-        packet_log (only table)           dedupe keys, result cache,
-                ▲                         retention revision, live pub/sub,
-                │                         maintenance status
+        packet_log (only table)           dedupe keys, live pub/sub,
+                ▲                         maintenance status
+                │
    maintenance (meshmap maintenance)
    daily retention under advisory lock
 
 ┌──────────── web (Caddy) :WEB_PORT ────────────┐
 │  /            React app (MapLibre + deck.gl)  │
-│               + derivation Web Worker         │
-│               (rows in IndexedDB, D-031;      │
-│               live rows via SSE, D-033)       │
+│               + derivation Web Worker running │
+│               the WebAssembly engine (D-040): │
+│               rows in IndexedDB, live via SSE │
 │  /api, /health → backend:8000 (SSE flushed)   │
 │  /tiles       self-hosted PMTiles (ranges)    │
 │  /fonts, /styles  bundled glyphs + dark style │
@@ -78,17 +78,17 @@ backend/
   internal/identity       in-memory authoritative key index (rebuilt from packet_log)
   internal/storage        schema, COPY batches, ingestion lookups
   internal/window         window semantics, retention cutoff
-  internal/query          snapshot, traffic, node detail, edges (window-scoped SQL)
-  internal/graph          evidence → directed edges, confidence
-  internal/geo            location estimates with uncertainty
-  internal/cache          Redis wrapper, result cache with singleflight
+  internal/query          /observations paging (window-scoped SQL)
+  internal/geo            location-estimate settings (the estimator runs in the browser)
+  internal/cache          Redis wrapper (dedupe, live pub/sub, maintenance status)
   internal/api            huma handlers, SSE hub, health, rate limits, client IP
   internal/maintenance    retention runner
   internal/demo           simulator, scenarios, demo publisher
   test/integration        Postgres/Redis/Mosquitto integration tests
 frontend/                 React + MapLibre GL 5 + deck.gl 9 (Vite); e2e/ Playwright
-  src/derive/             Web Worker: row store (incremental sync, IndexedDB) and ports of
-                          query/graph/geo that build every view in the browser (D-031)
+  engine/                 Rust → WebAssembly: row store, links, location estimates, traffic,
+                          node details, packet logs and routes, ping attribution (D-040)
+  src/derive/             Web Worker: sync and coverage, IndexedDB chunks, drives the engine
 web/                      Caddyfile, dark OpenMapTiles style, image build (fonts)
-scripts/                  go.sh, node.sh, integration.sh, bench.sh, basemap_import.sh
+scripts/                  go.sh, node.sh, wasm.sh, integration.sh, bench.sh, basemap_import.sh
 ```

@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"errors"
 	"slices"
 	"time"
 
@@ -10,9 +9,7 @@ import (
 
 	"fmt"
 
-	"github.com/868-no/map/internal/cache"
 	"github.com/868-no/map/internal/geo"
-	"github.com/868-no/map/internal/graph"
 	"github.com/868-no/map/internal/ingest"
 	"github.com/868-no/map/internal/protocol"
 	"github.com/868-no/map/internal/query"
@@ -124,274 +121,14 @@ func (s *Server) retention(ctx context.Context, _ *struct{}) (*RetentionOutput, 
 	return &RetentionOutput{Body: out}, nil
 }
 
-// ---- snapshot ----
-
-type SnapshotInput struct {
-	WindowParams
-	FilterParams
-}
-
-type SnapshotBody struct {
-	Meta Meta `json:"meta"`
-	query.Snapshot
-}
-
-type SnapshotOutput struct{ Body SnapshotBody }
-
-func (s *Server) snapshot(ctx context.Context, in *SnapshotInput) (*SnapshotOutput, error) {
-	w, err := s.parseWindow(in.WindowParams)
-	if err != nil {
-		return nil, err
-	}
-	f, err := in.FilterParams.parse()
-	if err != nil {
-		return nil, err
-	}
-	release, err := s.acquire(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer release()
-	rev, useCache, err := s.revision(ctx, w)
-	if err != nil {
-		return nil, err
-	}
-	snap, err := cache.Get(ctx, s.Results, cacheKey("snapshot", w, f, rev, ""), s.ttl(w), useCache,
-		func(ctx context.Context) (*query.Snapshot, error) {
-			return query.BuildSnapshot(ctx, s.Pool, w, f, s.Geo)
-		})
-	if err != nil {
-		return nil, err
-	}
-	return &SnapshotOutput{Body: SnapshotBody{Meta: s.meta(w, rev, f), Snapshot: *snap}}, nil
-}
-
-// ---- traffic ----
-
-type TrafficInput struct {
-	WindowParams
-	FilterParams
-	Bucket string `query:"bucket" doc:"Minimum bucket width (1m, 5m, 15m, 1h, 6h); widened to keep at most 600 buckets" example:"5m"`
-}
-
-type TrafficBody struct {
-	Meta Meta `json:"meta"`
-	query.Traffic
-}
-
-type TrafficOutput struct{ Body TrafficBody }
-
-func (s *Server) traffic(ctx context.Context, in *TrafficInput) (*TrafficOutput, error) {
-	w, err := s.parseWindow(in.WindowParams)
-	if err != nil {
-		return nil, err
-	}
-	f, err := in.FilterParams.parse()
-	if err != nil {
-		return nil, err
-	}
-	var req time.Duration
-	if in.Bucket != "" {
-		if req, err = time.ParseDuration(in.Bucket); err != nil || req <= 0 {
-			return nil, huma.Error400BadRequest("bucket: invalid duration")
-		}
-	}
-	bucket := query.BucketFor(w.Duration(), req)
-	release, err := s.acquire(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer release()
-	rev, useCache, err := s.revision(ctx, w)
-	if err != nil {
-		return nil, err
-	}
-	tr, err := cache.Get(ctx, s.Results, cacheKey("traffic", w, f, rev, bucket.String()), s.ttl(w), useCache,
-		func(ctx context.Context) (*query.Traffic, error) {
-			return query.BuildTraffic(ctx, s.Pool, w, f, bucket)
-		})
-	if err != nil {
-		return nil, err
-	}
-	return &TrafficOutput{Body: TrafficBody{Meta: s.meta(w, rev, f), Traffic: *tr}}, nil
-}
-
-// ---- node detail ----
-
-type NodeInput struct {
-	ID string `path:"id" doc:"Node id (!xxxxxxxx) or decimal node number" example:"!a1b2c3d4"`
-	WindowParams
-	FilterParams
-}
-
-type NodeBody struct {
-	Meta Meta `json:"meta"`
-	query.NodeDetail
-}
-
-type NodeOutput struct{ Body NodeBody }
-
-func (s *Server) node(ctx context.Context, in *NodeInput) (*NodeOutput, error) {
-	num, ok := protocol.ParseNodeID(in.ID)
-	if !ok || !protocol.ValidNode(num) {
-		return nil, huma.Error400BadRequest("invalid node id")
-	}
-	w, err := s.parseWindow(in.WindowParams)
-	if err != nil {
-		return nil, err
-	}
-	f, err := in.FilterParams.parse()
-	if err != nil {
-		return nil, err
-	}
-	release, err := s.acquire(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer release()
-	rev, useCache, err := s.revision(ctx, w)
-	if err != nil {
-		return nil, err
-	}
-	d, err := cache.Get(ctx, s.Results, cacheKey("node", w, f, rev, protocol.NodeID(num)), s.ttl(w), useCache,
-		func(ctx context.Context) (*query.NodeDetail, error) {
-			return query.BuildNodeDetail(ctx, s.Pool, w, f, num)
-		})
-	if errors.Is(err, query.ErrNoNode) {
-		return nil, huma.Error404NotFound("node not observed or referenced in the selected window")
-	}
-	if err != nil {
-		return nil, err
-	}
-	return &NodeOutput{Body: NodeBody{Meta: s.meta(w, rev, f), NodeDetail: *d}}, nil
-}
-
-// ---- edges ----
-
-type EdgesInput struct {
-	WindowParams
-	FilterParams
-	Evidence      string `query:"evidence" doc:"Keep edges having any of these evidence types: neighbor, traceroute, direct_rf, relay_hint (comma-separated)"`
-	MinConfidence string `query:"min_confidence" enum:"low,medium,high" default:"low"`
-	BBox          string `query:"bbox" doc:"west,south,east,north: keep edges with an endpoint positioned (reported or estimated) inside"`
-	Inferred      bool   `query:"include_inferred" default:"true" doc:"Include relay-hint-only (inferred) links"`
-}
-
-type EdgesBody struct {
-	Meta      Meta         `json:"meta"`
-	Edges     []graph.Edge `json:"edges"`
-	Truncated bool         `json:"truncated"`
-	Total     int          `json:"total" doc:"edges in the window before evidence/confidence/bbox filtering"`
-}
-
-type EdgesOutput struct{ Body EdgesBody }
-
-func (s *Server) edges(ctx context.Context, in *EdgesInput) (*EdgesOutput, error) {
-	w, err := s.parseWindow(in.WindowParams)
-	if err != nil {
-		return nil, err
-	}
-	f, err := in.FilterParams.parse()
-	if err != nil {
-		return nil, err
-	}
-	var bbox *[4]float64
-	if in.BBox != "" {
-		var b [4]float64
-		parts := splitList(in.BBox)
-		if len(parts) != 4 {
-			return nil, huma.Error400BadRequest("bbox: want west,south,east,north")
-		}
-		for i, p := range parts {
-			if _, err := fmt.Sscanf(p, "%g", &b[i]); err != nil {
-				return nil, huma.Error400BadRequest("bbox: invalid number")
-			}
-		}
-		bbox = &b
-	}
-	evid := splitList(in.Evidence)
-	rank := map[string]int{"low": 0, "medium": 1, "high": 2}
-	minRank, ok := rank[in.MinConfidence]
-	if !ok {
-		minRank = 0
-	}
-	release, err := s.acquire(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer release()
-	rev, useCache, err := s.revision(ctx, w)
-	if err != nil {
-		return nil, err
-	}
-	snap, err := cache.Get(ctx, s.Results, cacheKey("snapshot", w, f, rev, ""), s.ttl(w), useCache,
-		func(ctx context.Context) (*query.Snapshot, error) {
-			return query.BuildSnapshot(ctx, s.Pool, w, f, s.Geo)
-		})
-	if err != nil {
-		return nil, err
-	}
-	pos := map[uint32][2]float64{}
-	for _, n := range snap.Nodes {
-		switch {
-		case n.Position != nil:
-			pos[n.Num] = [2]float64{n.Position.Lon, n.Position.Lat}
-		case n.Estimate != nil:
-			pos[n.Num] = [2]float64{n.Estimate.Lon, n.Estimate.Lat}
-		}
-	}
-	inBox := func(n uint32) bool {
-		p, ok := pos[n]
-		return ok && p[0] >= bbox[0] && p[0] <= bbox[2] && p[1] >= bbox[1] && p[1] <= bbox[3]
-	}
-	out := EdgesBody{Meta: s.meta(w, rev, f), Edges: []graph.Edge{}, Truncated: snap.EdgesTruncated, Total: len(snap.Edges)}
-	for _, e := range snap.Edges {
-		if rank[e.Confidence] < minRank || (e.Inferred && !in.Inferred) {
-			continue
-		}
-		if len(evid) > 0 && !hasEvidence(e, evid) {
-			continue
-		}
-		if bbox != nil && !inBox(e.SrcNum) && !inBox(e.DstNum) {
-			continue
-		}
-		out.Edges = append(out.Edges, e)
-	}
-	return &EdgesOutput{Body: out}, nil
-}
-
-func hasEvidence(e graph.Edge, types []string) bool {
-	for _, t := range types {
-		switch t {
-		case "neighbor":
-			if e.Evidence.Neighbor > 0 {
-				return true
-			}
-		case "traceroute":
-			if e.Evidence.Traceroute > 0 {
-				return true
-			}
-		case "direct_rf":
-			if e.Evidence.DirectRF > 0 {
-				return true
-			}
-		case "relay_hint":
-			if e.Evidence.RelayHint > 0 {
-				return true
-			}
-		}
-	}
-	return false
-}
-
 // ---- raw observations (client-side derivation, D-031) ----
 
 type ObservationsInput struct {
 	WindowParams
-	Since string `query:"since" doc:"Narrow the lower bound to this instant (RFC 3339); clamped to the window, never widening it"`
-	Until string `query:"until" doc:"Narrow the upper bound to this instant (RFC 3339); clamped to the window"`
+	Since  string `query:"since" doc:"Narrow the lower bound to this instant (RFC 3339); clamped to the window, never widening it"`
+	Until  string `query:"until" doc:"Narrow the upper bound to this instant (RFC 3339); clamped to the window"`
 	Cursor string `query:"cursor" doc:"Page cursor: next_cursor from the previous page"`
-	Limit int    `query:"limit" minimum:"0" maximum:"20000" doc:"Page size (default and maximum 20000)"`
+	Limit  int    `query:"limit" minimum:"0" maximum:"20000" doc:"Page size (default and maximum 20000)"`
 }
 
 type ObservationsBody struct {

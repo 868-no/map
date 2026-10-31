@@ -21,40 +21,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/edges": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Evidence-backed directed links with provenance and per-direction radio statistics */
-        get: operations["edges"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/nodes/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** One node's in-window details and bounded evidence */
-        get: operations["node"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/observations": {
         parameters: {
             query?: never;
@@ -89,23 +55,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/snapshot": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Time-isolated nodes, positions and counts for a window */
-        get: operations["snapshot"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/stream": {
         parameters: {
             query?: never;
@@ -115,26 +64,9 @@ export interface paths {
         };
         /**
          * Live updates for the rolling window (SSE)
-         * @description Events: `delta` (new receptions), `heartbeat` (every 15 s, current window bounds), `retention` (rows deleted; refetch), `status` (live availability).
+         * @description Events: `delta` (new observations, each with its full row), `heartbeat` (every 15 s, current window bounds), `retention` (rows deleted; refetch), `status` (live availability).
          */
         get: operations["stream"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/traffic": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Unique packets vs gateway receptions in time buckets */
-        get: operations["traffic"];
         put?: never;
         post?: never;
         delete?: never;
@@ -147,23 +79,6 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
-        Bucket: {
-            by_type?: {
-                [key: string]: number;
-            };
-            /**
-             * Format: int64
-             * @description unique logical packets first seen in this bucket
-             */
-            packets: number;
-            /**
-             * Format: int64
-             * @description distinct gateway receptions
-             */
-            receptions: number;
-            /** Format: date-time */
-            start: string;
-        };
         Calibration: {
             /** Format: double */
             p0_dbm: number;
@@ -210,79 +125,6 @@ export interface components {
             tile_source: string;
             /** Format: double */
             zoom: number;
-        };
-        Counts: {
-            /** @description unique packets per packet type */
-            by_type: {
-                [key: string]: number;
-            };
-            /** Format: int64 */
-            edges: number;
-            /** Format: int64 */
-            estimated: number;
-            /** Format: date-time */
-            first_event?: string;
-            /** Format: date-time */
-            last_event?: string;
-            /** Format: int64 */
-            nodes: number;
-            nodes_truncated: boolean;
-            /**
-             * Format: int64
-             * @description unique logical packets
-             */
-            packets: number;
-            /** Format: int64 */
-            positioned: number;
-            /**
-             * Format: int64
-             * @description distinct gateway receptions
-             */
-            receptions: number;
-            /** Format: int64 */
-            referenced: number;
-        };
-        Edge: {
-            /** @enum {string} */
-            confidence: "high" | "medium" | "low";
-            /** @example !0badf00d */
-            dst: string;
-            /** Format: int32 */
-            dst_num: number;
-            evidence: components["schemas"]["EvidenceCounts"];
-            /** Format: date-time */
-            first_at: string;
-            /** @description true when supported only by relay-hint inference */
-            inferred: boolean;
-            /** Format: date-time */
-            last_at: string;
-            reason: string;
-            /** @description dBm measured at dst (gateway receptions only) */
-            rssi: components["schemas"]["Stats"];
-            /** Format: int64 */
-            samples: number;
-            /** @description dB measured at dst */
-            snr: components["schemas"]["Stats"];
-            /** @example !a1b2c3d4 */
-            src: string;
-            /** Format: int32 */
-            src_num: number;
-        };
-        EdgesBody: {
-            /**
-             * Format: uri
-             * @description A URL to the JSON Schema for this object.
-             * @example https://example.com/api/schemas/EdgesBody.json
-             */
-            readonly $schema?: string;
-            edges: components["schemas"]["Edge"][] | null;
-            meta: components["schemas"]["Meta"];
-            /**
-             * Format: int64
-             * @description edges in the window before evidence/confidence/bbox filtering
-             */
-            total: number;
-            truncated: boolean;
         };
         ErrorDetail: {
             /** @description Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id' */
@@ -331,44 +173,6 @@ export interface components {
              */
             type: string;
         };
-        Estimate: {
-            /** Format: int64 */
-            anchor_count: number;
-            anchors: string[] | null;
-            /** Format: date-time */
-            evidence_from: string;
-            /** Format: date-time */
-            evidence_to: string;
-            /** Format: double */
-            lat: number;
-            /** Format: double */
-            lon: number;
-            /** @enum {string} */
-            method: "weighted_centroid" | "log_distance_wls";
-            /** @enum {string} */
-            quality: "very_low" | "low";
-            reasons: string[] | null;
-            /** Format: int64 */
-            sample_count: number;
-            /** Format: double */
-            uncertainty_radius_m: number;
-        };
-        EvidenceCounts: {
-            /** Format: int64 */
-            direct_rf: number;
-            /** Format: int64 */
-            neighbor: number;
-            /** Format: int64 */
-            relay_hint: number;
-            /** Format: int64 */
-            traceroute: number;
-        };
-        Filters: {
-            brokers?: string[] | null;
-            channels?: string[] | null;
-            gateways?: number[] | null;
-            types?: string[] | null;
-        };
         GeoSettings: {
             calibration?: components["schemas"]["Calibration"];
             enabled: boolean;
@@ -393,176 +197,24 @@ export interface components {
             /** Format: double */
             uncalibrated_floor_m: number;
         };
-        Hearing: {
-            /**
-             * Format: int64
-             * @description receptions proven to be zero-hop RF
-             */
-            direct_rf: number;
-            /** Format: date-time */
-            last_at: string;
-            node: string;
-            /** Format: int64 */
-            receptions: number;
-            /** @description dBm, direct-RF receptions only */
-            rssi: components["schemas"]["Stats"];
-            /** @description dB, direct-RF receptions only */
-            snr: components["schemas"]["Stats"];
-        };
         Heartbeat: {
             /** Format: date-time */
             now: string;
             window: components["schemas"]["WindowEcho"];
         };
-        Identity: {
-            has_public_key: boolean;
-            hw_model?: string;
-            long_name?: string;
-            /** Format: date-time */
-            observed_at: string;
-            role?: string;
-            short_name?: string;
-            /** @enum {string} */
-            signature: "verified" | "unsigned" | "unverifiable" | "not-applicable";
-        };
         LiveDelta: {
             events: components["schemas"]["LiveEvent"][] | null;
         };
         LiveEvent: {
-            broker: string;
-            channel?: string;
-            direct_rf?: boolean;
-            gw?: string;
-            /** Format: int32 */
-            hops?: number;
             /** Format: int64 */
             id: number;
-            lp: string;
-            node: string;
-            path: string[] | null;
-            /** Format: int32 */
-            relay?: number;
-            row?: components["schemas"]["ObsRow"];
-            /** Format: int32 */
-            rssi?: number;
-            rx: string;
-            sig: string;
-            /** Format: float */
-            snr?: number;
+            row: components["schemas"]["ObsRow"];
             /** Format: date-time */
             t: string;
-            type: string;
         };
         LiveStatus: {
             live: boolean;
             reason?: string;
-        };
-        Meta: {
-            filters: components["schemas"]["Filters"];
-            /** Format: date-time */
-            generated_at: string;
-            /** @description Data generation; changes when in-window data, retention or configuration change */
-            revision: string;
-            window: components["schemas"]["WindowEcho"];
-        };
-        Node: {
-            brokers?: string[] | null;
-            /** @description Approximate location from in-window RF links; never a reported position */
-            estimate?: components["schemas"]["Estimate"];
-            /** @description Why no estimate was produced for an unpositioned node */
-            estimate_note?: string;
-            /** Format: date-time */
-            first_seen?: string;
-            /**
-             * Format: int64
-             * @description receptions this node uplinked as an MQTT gateway
-             */
-            gateway_receptions: number;
-            /** @example !a1b2c3d4 */
-            id: string;
-            identity?: components["schemas"]["Identity"];
-            is_gateway: boolean;
-            /** Format: date-time */
-            last_seen?: string;
-            /** @description The node sent packets in the window without the OK-to-MQTT flag that reached us through another gateway; its NodeInfo is not stored, so it stays unnamed */
-            mqtt_opt_out?: boolean;
-            /** Format: int32 */
-            num: number;
-            /**
-             * Format: int64
-             * @description unique packets originated in window
-             */
-            packets: number;
-            position?: components["schemas"]["Position"];
-            /**
-             * Format: int64
-             * @description gateway receptions of those packets
-             */
-            receptions: number;
-            signatures: components["schemas"]["SignatureCounts"];
-            /**
-             * @description observed: sent or uplinked packets in the window; referenced: only mentioned by others' NeighborInfo/traceroutes
-             * @enum {string}
-             */
-            status: "observed" | "referenced";
-            telemetry?: components["schemas"]["Telemetry"];
-        };
-        NodeBody: {
-            /**
-             * Format: uri
-             * @description A URL to the JSON Schema for this object.
-             * @example https://example.com/api/schemas/NodeBody.json
-             */
-            readonly $schema?: string;
-            brokers?: string[] | null;
-            /** @description Approximate location from in-window RF links; never a reported position */
-            estimate?: components["schemas"]["Estimate"];
-            /** @description Why no estimate was produced for an unpositioned node */
-            estimate_note?: string;
-            /** Format: date-time */
-            first_seen?: string;
-            /**
-             * Format: int64
-             * @description receptions this node uplinked as an MQTT gateway
-             */
-            gateway_receptions: number;
-            /** @description sources this node uplinked as a gateway */
-            heard: components["schemas"]["Hearing"][] | null;
-            /** @description gateways that uplinked this node's packets */
-            heard_by: components["schemas"]["Hearing"][] | null;
-            /** @example !a1b2c3d4 */
-            id: string;
-            identity?: components["schemas"]["Identity"];
-            is_gateway: boolean;
-            /** Format: date-time */
-            last_seen?: string;
-            meta: components["schemas"]["Meta"];
-            /** @description The node sent packets in the window without the OK-to-MQTT flag that reached us through another gateway; its NodeInfo is not stored, so it stays unnamed */
-            mqtt_opt_out?: boolean;
-            /** Format: int32 */
-            num: number;
-            /**
-             * Format: int64
-             * @description unique packets originated in window
-             */
-            packets: number;
-            position?: components["schemas"]["Position"];
-            positions: components["schemas"]["PositionSample"][] | null;
-            recent_packets: components["schemas"]["PacketSummary"][] | null;
-            /**
-             * Format: int64
-             * @description gateway receptions of those packets
-             */
-            receptions: number;
-            signatures: components["schemas"]["SignatureCounts"];
-            /**
-             * @description observed: sent or uplinked packets in the window; referenced: only mentioned by others' NeighborInfo/traceroutes
-             * @enum {string}
-             */
-            status: "observed" | "referenced";
-            telemetry?: components["schemas"]["Telemetry"];
-            telemetry_series: components["schemas"]["TelemetrySample"][] | null;
-            truncated: boolean;
         };
         ObsHop: {
             /** Format: int32 */
@@ -697,56 +349,6 @@ export interface components {
             /** @description The full window the rows belong to */
             window: components["schemas"]["WindowEcho"];
         };
-        PacketSummary: {
-            /**
-             * Format: date-time
-             * @description first in-window reception
-             */
-            at: string;
-            /** Format: int64 */
-            bytes: number;
-            channel?: string;
-            crypto: string;
-            /** Format: int32 */
-            packet_id: number;
-            /** Format: int64 */
-            receptions: number;
-            signature: string;
-            to?: string;
-            type: string;
-        };
-        Position: {
-            /** Format: int32 */
-            alt?: number;
-            /** Format: double */
-            lat: number;
-            /** Format: double */
-            lon: number;
-            /** Format: date-time */
-            observed_at: string;
-            /** Format: int32 */
-            precision_bits: number;
-            precision_known: boolean;
-            /** @enum {string} */
-            signature: "verified" | "unsigned" | "unverifiable" | "not-applicable";
-            /**
-             * @description Packet type the position came from
-             * @enum {string}
-             */
-            source: "position" | "mapreport";
-        };
-        PositionSample: {
-            /** Format: date-time */
-            at: string;
-            /** Format: double */
-            lat: number;
-            /** Format: double */
-            lon: number;
-            /** Format: int32 */
-            precision_bits: number;
-            precision_known: boolean;
-            signature: string;
-        };
         Preset: {
             /**
              * Format: int64
@@ -780,48 +382,6 @@ export interface components {
             /** Format: int64 */
             retention_months: number;
         };
-        SignatureCounts: {
-            /** Format: int64 */
-            not_applicable: number;
-            /** Format: int64 */
-            unsigned: number;
-            /** Format: int64 */
-            unverifiable: number;
-            /** Format: int64 */
-            verified: number;
-        };
-        SnapshotBody: {
-            /**
-             * Format: uri
-             * @description A URL to the JSON Schema for this object.
-             * @example https://example.com/api/schemas/SnapshotBody.json
-             */
-            readonly $schema?: string;
-            counts: components["schemas"]["Counts"];
-            diagnostics: components["schemas"]["SnapshotBodyDiagnosticsStruct"];
-            edges: components["schemas"]["Edge"][] | null;
-            edges_truncated: boolean;
-            meta: components["schemas"]["Meta"];
-            nodes: components["schemas"]["Node"][] | null;
-        };
-        SnapshotBodyDiagnosticsStruct: {
-            /** Format: int64 */
-            relay_ambiguous: number;
-            /** Format: int64 */
-            relay_unmatched: number;
-        };
-        Stats: {
-            /** Format: double */
-            last?: number;
-            /** Format: double */
-            max?: number;
-            /** Format: double */
-            median?: number;
-            /** Format: double */
-            min?: number;
-            /** Format: int64 */
-            n: number;
-        };
         Status: {
             /** Format: date-time */
             cutoff: string;
@@ -833,48 +393,6 @@ export interface components {
             last_run: string;
             /** Format: int64 */
             table_bytes: number;
-        };
-        Telemetry: {
-            /** Format: double */
-            air_util?: number;
-            /** Format: double */
-            battery?: number;
-            /** Format: double */
-            ch_util?: number;
-            /** Format: date-time */
-            observed_at: string;
-            /** Format: int32 */
-            uptime?: number;
-            /** Format: double */
-            voltage?: number;
-        };
-        TelemetrySample: {
-            /** Format: double */
-            air_util?: number;
-            /** Format: date-time */
-            at: string;
-            /** Format: double */
-            battery?: number;
-            /** Format: double */
-            ch_util?: number;
-            /** Format: double */
-            voltage?: number;
-        };
-        TrafficBody: {
-            /**
-             * Format: uri
-             * @description A URL to the JSON Schema for this object.
-             * @example https://example.com/api/schemas/TrafficBody.json
-             */
-            readonly $schema?: string;
-            /** @example 5m0s */
-            bucket: string;
-            buckets: components["schemas"]["Bucket"][] | null;
-            meta: components["schemas"]["Meta"];
-            /** Format: int64 */
-            packets: number;
-            /** Format: int64 */
-            receptions: number;
         };
         WindowEcho: {
             /** Format: date-time */
@@ -912,167 +430,6 @@ export interface operations {
             };
             /** @description Error */
             default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ErrorModel"];
-                };
-            };
-        };
-    };
-    edges: {
-        parameters: {
-            query?: {
-                /** @description Inclusive start, RFC 3339 (UTC recommended). Omit start and end for the rolling live window. */
-                start?: string;
-                /** @description Exclusive end, RFC 3339. */
-                end?: string;
-                /** @description Rolling window length (1h to 168h); default 72h. */
-                duration?: string;
-                /** @description Channel names, comma-separated */
-                channel?: string;
-                /** @description Broker ids, comma-separated */
-                broker?: string;
-                /** @description Gateway node ids (!xxxxxxxx), comma-separated */
-                gateway?: string;
-                /** @description Packet types (nodeinfo, position, mapreport, telemetry, neighborinfo, traceroute, text, routing, other), comma-separated */
-                type?: string;
-                /** @description Keep edges having any of these evidence types: neighbor, traceroute, direct_rf, relay_hint (comma-separated) */
-                evidence?: string;
-                min_confidence?: "low" | "medium" | "high";
-                /** @description west,south,east,north: keep edges with an endpoint positioned (reported or estimated) inside */
-                bbox?: string;
-                /** @description Include relay-hint-only (inferred) links */
-                include_inferred?: boolean;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["EdgesBody"];
-                };
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ErrorModel"];
-                };
-            };
-            /** @description Unprocessable Entity */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ErrorModel"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ErrorModel"];
-                };
-            };
-            /** @description Service Unavailable */
-            503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ErrorModel"];
-                };
-            };
-        };
-    };
-    node: {
-        parameters: {
-            query?: {
-                /** @description Inclusive start, RFC 3339 (UTC recommended). Omit start and end for the rolling live window. */
-                start?: string;
-                /** @description Exclusive end, RFC 3339. */
-                end?: string;
-                /** @description Rolling window length (1h to 168h); default 72h. */
-                duration?: string;
-                /** @description Channel names, comma-separated */
-                channel?: string;
-                /** @description Broker ids, comma-separated */
-                broker?: string;
-                /** @description Gateway node ids (!xxxxxxxx), comma-separated */
-                gateway?: string;
-                /** @description Packet types (nodeinfo, position, mapreport, telemetry, neighborinfo, traceroute, text, routing, other), comma-separated */
-                type?: string;
-            };
-            header?: never;
-            path: {
-                /** @description Node id (!xxxxxxxx) or decimal node number */
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["NodeBody"];
-                };
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ErrorModel"];
-                };
-            };
-            /** @description Not Found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ErrorModel"];
-                };
-            };
-            /** @description Unprocessable Entity */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ErrorModel"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ErrorModel"];
-                };
-            };
-            /** @description Service Unavailable */
-            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -1183,77 +540,6 @@ export interface operations {
             };
         };
     };
-    snapshot: {
-        parameters: {
-            query?: {
-                /** @description Inclusive start, RFC 3339 (UTC recommended). Omit start and end for the rolling live window. */
-                start?: string;
-                /** @description Exclusive end, RFC 3339. */
-                end?: string;
-                /** @description Rolling window length (1h to 168h); default 72h. */
-                duration?: string;
-                /** @description Channel names, comma-separated */
-                channel?: string;
-                /** @description Broker ids, comma-separated */
-                broker?: string;
-                /** @description Gateway node ids (!xxxxxxxx), comma-separated */
-                gateway?: string;
-                /** @description Packet types (nodeinfo, position, mapreport, telemetry, neighborinfo, traceroute, text, routing, other), comma-separated */
-                type?: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SnapshotBody"];
-                };
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ErrorModel"];
-                };
-            };
-            /** @description Unprocessable Entity */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ErrorModel"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ErrorModel"];
-                };
-            };
-            /** @description Service Unavailable */
-            503: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ErrorModel"];
-                };
-            };
-        };
-    };
     stream: {
         parameters: {
             query?: {
@@ -1263,14 +549,6 @@ export interface operations {
                 end?: string;
                 /** @description Rolling window length; default 72h */
                 duration?: string;
-                /** @description Channel names, comma-separated */
-                channel?: string;
-                /** @description Broker ids, comma-separated */
-                broker?: string;
-                /** @description Gateway node ids (!xxxxxxxx), comma-separated */
-                gateway?: string;
-                /** @description Packet types (nodeinfo, position, mapreport, telemetry, neighborinfo, traceroute, text, routing, other), comma-separated */
-                type?: string;
             };
             header?: never;
             path?: never;
@@ -1333,79 +611,6 @@ export interface operations {
             };
             /** @description Error */
             default: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ErrorModel"];
-                };
-            };
-        };
-    };
-    traffic: {
-        parameters: {
-            query?: {
-                /** @description Inclusive start, RFC 3339 (UTC recommended). Omit start and end for the rolling live window. */
-                start?: string;
-                /** @description Exclusive end, RFC 3339. */
-                end?: string;
-                /** @description Rolling window length (1h to 168h); default 72h. */
-                duration?: string;
-                /** @description Channel names, comma-separated */
-                channel?: string;
-                /** @description Broker ids, comma-separated */
-                broker?: string;
-                /** @description Gateway node ids (!xxxxxxxx), comma-separated */
-                gateway?: string;
-                /** @description Packet types (nodeinfo, position, mapreport, telemetry, neighborinfo, traceroute, text, routing, other), comma-separated */
-                type?: string;
-                /** @description Minimum bucket width (1m, 5m, 15m, 1h, 6h); widened to keep at most 600 buckets */
-                bucket?: string;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TrafficBody"];
-                };
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ErrorModel"];
-                };
-            };
-            /** @description Unprocessable Entity */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ErrorModel"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/problem+json": components["schemas"]["ErrorModel"];
-                };
-            };
-            /** @description Service Unavailable */
-            503: {
                 headers: {
                     [name: string]: unknown;
                 };

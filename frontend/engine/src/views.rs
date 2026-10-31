@@ -919,3 +919,34 @@ fn hearings(rows: &[&Row], keep: impl Fn(&Row) -> bool, other: impl Fn(&Row) -> 
     out.truncate(MAX_GATEWAYED);
     out.into_iter().map(|(_, h)| h).collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::row::Position as P;
+
+    fn pos(id: i64, ty: u32, lat: f64, bits: u32, t: i64) -> Row {
+        Row {
+            id, t, broker: 0, gw: None, src: 1, dst: None, pid: None, channel: 0, ty, lp: id as u64, ok: id as u64, snr: None, rssi: None, hs: None, hl: None,
+            relay: None, sig: 0, dr: false, rr: 0, crypto: 0, bytes: 0, nk: false, pos: Some(P { lat, lon: 10.7, alt: None, bits, known: bits > 0 }), detail: None,
+        }
+    }
+
+    #[test]
+    fn choose_position_between_packet_and_map_report() {
+        const H: i64 = 3_600_000;
+        let (p, m) = (ty::POSITION, ty::MAPREPORT);
+        // 14 bits: ~1.2 km error radius; 32 bits: exact. 200 m apart: overlapping.
+        let cases = [
+            ("overlap: precise older wins", pos(1, p, 61.2232, 32, 0), pos(2, m, 61.2250, 14, H), p),
+            ("overlap: precise newer wins", pos(1, p, 61.2232, 13, 0), pos(2, m, 61.2250, 16, H), m),
+            ("overlap, equal precision: newer", pos(1, p, 61.2232, 16, H), pos(2, m, 61.2233, 16, 0), p),
+            ("apart (moving): newer despite lower precision", pos(1, p, 61.0, 32, 0), pos(2, m, 61.45, 14, H), m),
+            ("unknown precision: newer", pos(1, p, 61.2232, 0, H), pos(2, m, 61.2232, 32, 0), p),
+        ];
+        for (name, a, b, want) in cases {
+            assert_eq!(choose_position(&a, &b).ty, want, "{name}");
+            assert_eq!(choose_position(&b, &a).ty, want, "{name} (swapped)");
+        }
+    }
+}

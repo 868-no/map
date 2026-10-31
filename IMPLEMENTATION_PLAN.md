@@ -437,3 +437,5 @@ Test broker for captures and integration smoke tests: `mqtt.868.no:1883` (read-o
 6. **OpenFreeMap terms** for public deployments; self-hosted PMTiles is the documented fallback.
 7. **Replay density** beyond client budget → server coalesces per node per bucket and the UI labels reduced resolution.
 8. **Identity after retention.** Verified keys older than retention vanish; document TOFU limitation and expose `identity_since`.
+
+**Amendment (2026-10-31, D-040/D-041):** the backend is the packet log only. Views are derived in the browser by a Rust/WebAssembly engine (`frontend/engine`); `/snapshot`, `/traffic`, `/nodes/{id}`, `/edges` and the Redis result cache were removed. The engine's outputs were held to the server views on a recorded 12-hour window before removal (`frontend/engine/tests/golden.rs`).

@@ -13,12 +13,11 @@ import (
 
 // Keys used by ingestion.
 const (
-	LiveChannel     = "meshmap:live"
-	obsPrefix       = "meshmap:obs:"
-	ObservationTTL  = 15 * time.Minute
-	opTimeout       = 250 * time.Millisecond
-	RetentionRevKey = "meshmap:retention_rev"
-	MaintStatusKey  = "meshmap:maint:status"
+	LiveChannel    = "meshmap:live"
+	obsPrefix      = "meshmap:obs:"
+	ObservationTTL = 15 * time.Minute
+	opTimeout      = 250 * time.Millisecond
+	MaintStatusKey = "meshmap:maint:status"
 )
 
 // Client is a thin Redis wrapper with short per-operation timeouts.

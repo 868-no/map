@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -16,12 +15,9 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/868-no/map/internal/api"
-	"github.com/868-no/map/internal/cache"
 	"github.com/868-no/map/internal/config"
 	"github.com/868-no/map/internal/demo"
-	"github.com/868-no/map/internal/geo"
 	"github.com/868-no/map/internal/ingest"
-	"github.com/868-no/map/internal/query"
 	"github.com/868-no/map/internal/security"
 	"github.com/868-no/map/internal/storage"
 )
@@ -124,14 +120,14 @@ func seedCmd() *cobra.Command {
 	return cmd
 }
 
-// benchCmd measures API latency for the snapshot, traffic and edges
-// endpoints, cold (no cache, distinct windows) and warm (cache hits).
+// benchCmd measures what a browser does when it opens a window: fetch every
+// /observations page for it (the views are derived client-side, D-041).
 func benchCmd() *cobra.Command {
 	var n int
 	var hours int
 	cmd := &cobra.Command{
 		Use:   "bench",
-		Short: "Measure API latency on the current database (cold and warm cache)",
+		Short: "Measure full-window /observations fetches on the current database",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			e, err := config.LoadEnv()
 			if err != nil {
@@ -143,9 +139,7 @@ func benchCmd() *cobra.Command {
 				return err
 			}
 			defer pool.Close()
-			rc := openCache(e, log)
-			s := &api.Server{Pool: pool, Results: cache.NewResults(rc, nil), Env: e, ConfigRev: "bench", Log: log,
-				Geo: query.GeoOptions{Enabled: true, MinPrecisionBits: 20, Exclude: map[uint32]bool{}, Params: geo.DefaultParams()}}
+			s := &api.Server{Pool: pool, Env: e, ConfigRev: "bench", Log: log}
 			mux := http.NewServeMux()
 			s.NewHandler(mux)
 			srv := httptest.NewServer(mux)
@@ -154,56 +148,68 @@ func benchCmd() *cobra.Command {
 			_ = pool.QueryRow(cmd.Context(), `SELECT count(*) FROM packet_log`).Scan(&rowsTotal)
 			fmt.Printf("database rows: %d; CPUs visible to bench: %d\n", rowsTotal, runtime.NumCPU())
 			end := time.Now().UTC().Add(-time.Minute).Truncate(time.Minute)
-			for _, ep := range []string{"/api/v1/snapshot", "/api/v1/traffic", "/api/v1/edges"} {
-				var cold, warm []time.Duration
-				var size int
-				for i := 0; i < n; i++ {
-					// Distinct windows (shifted by i minutes) defeat the cache: cold.
-					we := end.Add(-time.Duration(i) * time.Minute)
-					q := url.Values{"start": {we.Add(-time.Duration(hours) * time.Hour).Format(time.RFC3339)}, "end": {we.Format(time.RFC3339)}}
-					if rc != nil {
-						_ = rc.R.FlushDB(context.Background()).Err()
+			var took, first []time.Duration
+			var rows, bytes, pages int
+			for i := 0; i < n; i++ {
+				// Distinct windows (shifted by i minutes) avoid measuring one cached plan.
+				we := end.Add(-time.Duration(i) * time.Minute)
+				q := url.Values{"start": {we.Add(-time.Duration(hours) * time.Hour).Format(time.RFC3339)}, "end": {we.Format(time.RFC3339)}}
+				t0 := time.Now()
+				rows, bytes, pages = 0, 0, 0
+				for cursor := ""; ; {
+					if cursor != "" {
+						q.Set("cursor", cursor)
 					}
-					d, sz, err := timeGet(srv.URL + ep + "?" + q.Encode())
+					d, body, err := timeGetBody(srv.URL + "/api/v1/observations?" + q.Encode())
 					if err != nil {
 						return err
 					}
-					cold = append(cold, d)
-					size = sz
-					d, _, err = timeGet(srv.URL + ep + "?" + q.Encode())
-					if err != nil {
+					if pages == 0 {
+						first = append(first, d)
+					}
+					var page struct {
+						Rows       []json.RawMessage `json:"rows"`
+						More       bool              `json:"more"`
+						NextCursor string            `json:"next_cursor"`
+					}
+					if err := json.Unmarshal(body, &page); err != nil {
 						return err
 					}
-					warm = append(warm, d)
+					rows, bytes, pages = rows+len(page.Rows), bytes+len(body), pages+1
+					if !page.More {
+						break
+					}
+					cursor = page.NextCursor
 				}
-				fmt.Printf("%-18s %dh window: cold p50 %6s p95 %6s | warm p50 %6s p95 %6s | %d KiB\n", ep, hours,
-					pct(cold, 50), pct(cold, 95), pct(warm, 50), pct(warm, 95), size/1024)
+				took = append(took, time.Since(t0))
 			}
+			fmt.Printf("%dh window: %d rows in %d pages, %d MiB uncompressed | first page p50 %s | whole window p50 %s p95 %s\n",
+				hours, rows, pages, bytes>>20, pct(first, 50), pct(took, 50), pct(took, 95))
 			return nil
 		},
 	}
-	cmd.Flags().IntVar(&n, "n", 10, "requests per endpoint")
+	cmd.Flags().IntVar(&n, "n", 8, "fetches per window length")
 	cmd.Flags().IntVar(&hours, "hours", 72, "window length")
 	return cmd
 }
 
-func timeGet(u string) (time.Duration, int, error) {
+func timeGetBody(u string) (time.Duration, []byte, error) {
 	t := time.Now()
 	resp, err := http.Get(u)
 	if err != nil {
-		return 0, 0, err
+		return 0, nil, err
 	}
 	defer resp.Body.Close()
 	b, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return 0, 0, err
+		return 0, nil, err
 	}
 	if resp.StatusCode != 200 {
 		var p map[string]any
 		_ = json.Unmarshal(b, &p)
-		return 0, 0, fmt.Errorf("%s: HTTP %d %v", u, resp.StatusCode, p["detail"])
+		return 0, nil, fmt.Errorf("%s: HTTP %d %v", u, resp.StatusCode, p["detail"])
 	}
-	return time.Since(t), len(b), nil
+	return time.Since(t), b, nil
 }
 
 func pct(d []time.Duration, p int) time.Duration {
