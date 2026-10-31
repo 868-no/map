@@ -17,7 +17,6 @@ Requires Docker with Compose.
 
 ```sh
 cp .env.example .env          # set POSTGRES_PASSWORD and DEMO_MODE=true
-scripts/basemap_import.sh     # self-hosted Norway basemap (~10 min, 1.7 GB), once
 docker compose --profile demo up -d --build
 open http://localhost:8080
 ```
@@ -39,7 +38,7 @@ Channel PSKs are symmetric channel keys, not node public keys. Secrets live in `
 
 ## Map tiles
 
-The default is a self-hosted PMTiles archive (`scripts/basemap_import.sh [geofabrik-area]`) served by the `web` service. To use an online OpenMapTiles-schema provider instead, set `MAP_TILE_SOURCE` to a TileJSON URL. See [docs/basemap.md](docs/basemap.md).
+The default is a self-hosted PMTiles archive, built on first start (and refreshed monthly) by the `basemap` service and served by the `web` service. To use an online OpenMapTiles-schema provider instead, set `MAP_TILE_SOURCE` to a TileJSON URL. See [docs/basemap.md](docs/basemap.md).
 
 ## Tests
 

@@ -1,7 +1,9 @@
 # Meshtastic MQTT Mesh Observatory
 #   docker compose up -d --build                 production, built locally (mount ./secrets, see README)
 #   BACKEND_IMAGE=ghcr.io/868-no/map-backend:latest WEB_IMAGE=ghcr.io/868-no/map-web:latest \
-#     docker compose pull backend web && docker compose up -d   production, published images
+#     BASEMAP_IMAGE=ghcr.io/868-no/map-basemap:latest \
+#     docker compose pull backend web basemap && docker compose up -d   production, published images
+#   deploy/compose.production.yaml               production configured entirely in one Compose file
 #   DEMO_MODE=true docker compose --profile demo up -d --build   offline demo
 name: meshmap
 
@@ -87,12 +89,26 @@ services:
     ports:
       - "${WEB_PORT:-8080}:80"
     volumes:
-      # Self-hosted basemap built by scripts/basemap_import.sh
+      # Self-hosted basemap, kept present and fresh by the basemap service
       - ./data/basemap:/srv/tiles:ro
       # Optional access control snippets (see docs/operations.md)
       - ./deploy/caddy-auth:/etc/caddy/auth:ro
     depends_on:
       backend: { condition: service_healthy }
+
+  # Builds data/basemap/basemap.pmtiles when it is missing or older than
+  # BASEMAP_MAX_AGE_DAYS, then idles. A build downloads several GB and needs
+  # about PLANETILER_HEAP of memory (default 8g for Norway).
+  basemap:
+    build: ./basemap
+    image: ${BASEMAP_IMAGE:-meshmap-basemap:local}
+    restart: unless-stopped
+    environment:
+      BASEMAP_AREA: ${BASEMAP_AREA:-norway}
+      BASEMAP_MAX_AGE_DAYS: ${BASEMAP_MAX_AGE_DAYS:-30}
+      PLANETILER_HEAP: ${PLANETILER_HEAP:-8g}
+    volumes:
+      - ./data/basemap:/data
 
   mosquitto:
     profiles: [demo]

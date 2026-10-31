@@ -55,8 +55,12 @@ type Env struct {
 	LogLevel             string        `env:"LOG_LEVEL" envDefault:"info"`
 	BrokersConfig        string        `env:"MQTT_BROKERS_CONFIG" envDefault:"/run/secrets/mqtt-brokers.yaml"`
 	ChannelsConfig       string        `env:"CHANNEL_KEYS_CONFIG" envDefault:"/run/secrets/channel-keys.yaml"`
-	DemoMode             bool          `env:"DEMO_MODE" envDefault:"false"`
-	GeoCalibration       string        `env:"GEOLOCATION_CALIBRATION"`
+	// The same YAML documents inline, for deployments configured entirely in
+	// the Compose file. When set they replace the files above. Never logged.
+	BrokersYAML    string `env:"MQTT_BROKERS"`
+	ChannelsYAML   string `env:"CHANNEL_KEYS"`
+	DemoMode       bool   `env:"DEMO_MODE" envDefault:"false"`
+	GeoCalibration string `env:"GEOLOCATION_CALIBRATION"`
 }
 
 // TLS settings for a broker.
@@ -135,10 +139,10 @@ func Load() (*Config, error) {
 	}
 	c := &Config{Env: e}
 	var errs []error
-	if err := readYAML(e.BrokersConfig, "brokers", &c.Brokers, e.DemoMode); err != nil {
+	if err := readYAML(e.BrokersYAML, "MQTT_BROKERS", e.BrokersConfig, "brokers", &c.Brokers, e.DemoMode); err != nil {
 		errs = append(errs, err)
 	}
-	if err := readYAML(e.ChannelsConfig, "channels", &c.Channels, e.DemoMode); err != nil {
+	if err := readYAML(e.ChannelsYAML, "CHANNEL_KEYS", e.ChannelsConfig, "channels", &c.Channels, e.DemoMode); err != nil {
 		errs = append(errs, err)
 	}
 	if err := c.validate(); err != nil {
@@ -150,13 +154,20 @@ func Load() (*Config, error) {
 	return c, nil
 }
 
-func readYAML(path, key string, out any, optional bool) error {
-	b, err := os.ReadFile(path)
-	if err != nil {
-		if optional && errors.Is(err, os.ErrNotExist) {
-			return nil
+// readYAML decodes the key list from inline (the env var named envName) when
+// set, otherwise from the file at path.
+func readYAML(inline, envName, path, key string, out any, optional bool) error {
+	b := []byte(inline)
+	if inline == "" {
+		var err error
+		if b, err = os.ReadFile(path); err != nil {
+			if optional && errors.Is(err, os.ErrNotExist) {
+				return nil
+			}
+			return fmt.Errorf("%s config %s: %w", key, path, err)
 		}
-		return fmt.Errorf("%s config %s: %w", key, path, err)
+	} else {
+		path = "from " + envName
 	}
 	var doc yaml.Node
 	if err := yaml.Unmarshal(b, &doc); err != nil {
@@ -239,7 +250,7 @@ func (c *Config) validate() error {
 		var doc struct {
 			Default geo.Calibration `yaml:"default"`
 		}
-		if err := readYAML(e.GeoCalibration, "calibration", &doc, false); err != nil {
+		if err := readYAML("", "", e.GeoCalibration, "calibration", &doc, false); err != nil {
 			add("%v", err)
 		} else if doc.Default.Exponent < 1.5 || doc.Default.Exponent > 6 || doc.Default.P0DBm > 0 || doc.Default.P0DBm < -100 {
 			add("GEOLOCATION_CALIBRATION: default.path_loss_exponent must be 1.5..6 and p0_dbm -100..0")

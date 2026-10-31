@@ -372,3 +372,11 @@ Operator request. Both link layers (infrastructure and other links) now start sw
 Reported by the operator: animations still piled up while the tab was unfocused. A covered or minimised window can stop getting animation frames while `document.hidden` stays false (Linux compositors, for example). So the hidden-tab gate (D-034) let pings in, but no frames ran to play or expire them. Rebroadcast pings waiting for their upstream ring then all started at once on the first frame back, because "upstream gone" meant "start now".
 - The animation loop records each frame. Live rows get pings only when a frame arrived within the last second (`painting()`), as well as the tab being visible and the packet at most 10 s old.
 - A waiting rebroadcast starts no later than its own collection timeout, so after a pause it keeps its original timing and mostly expires instead of starting late.
+
+## D-049 Compose-only configuration and a basemap service (2026-10-31)
+
+Operator requirements for production:
+- **Behind a reverse proxy:** the proxy terminates HTTPS. Nothing changes; `web` already trusts forwarded addresses from private ranges only.
+- **Configuration in the Compose stack:** the backend also reads broker and channel configuration from the `MQTT_BROKERS` and `CHANNEL_KEYS` env vars. They hold the same YAML as the files and replace them when set. Configuration errors name the variable. `check-config` redacts them like the files, and nothing logs the env. `deploy/compose.production.yaml` is a complete stack on published images, with secrets filled in from the stack's environment.
+- **Basemap built by an image:** a new `basemap` service, `ghcr.io/868-no/map-basemap`, is Planetiler plus `basemap/run.sh`. It builds `basemap.pmtiles` into a volume shared with `web` when the file is missing, and rebuilds it every 30 days. The new file replaces the old one with a single rename. A failed build is retried after an hour. It is a separate service rather than part of the `web` image because a build needs Java and about 8 GB of heap, which shouldn't sit in the web server. Tested end to end with the Monaco extract.
+- **Backups:** the operator won't run backups. The `pg_dump` and `pg_restore` commands stay documented, and the docs now say they are not automated.

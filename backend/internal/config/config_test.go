@@ -103,3 +103,24 @@ func TestProductionRequiresFiles(t *testing.T) {
 		t.Fatal("missing config must fail outside demo mode")
 	}
 }
+
+// Compose-only deployments put the YAML in env vars; they replace the files.
+func TestInlineYAMLReplacesFiles(t *testing.T) {
+	t.Setenv("POSTGRES_PASSWORD", "s3cret-db-password")
+	t.Setenv("MQTT_BROKERS_CONFIG", "/nonexistent/b.yaml")
+	t.Setenv("CHANNEL_KEYS_CONFIG", "/nonexistent/c.yaml")
+	t.Setenv("MQTT_BROKERS", goodBrokers)
+	t.Setenv("CHANNEL_KEYS", goodChannels)
+	c, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(c.Brokers) != 1 || len(c.Channels) != 2 || c.Brokers[0].Password != "hunter2-broker" {
+		t.Fatalf("inline config not used: %d brokers, %d channels", len(c.Brokers), len(c.Channels))
+	}
+	t.Setenv("CHANNEL_KEYS", "channels: {not: a list}")
+	_, err = Load()
+	if err == nil || !strings.Contains(err.Error(), "from CHANNEL_KEYS") {
+		t.Fatalf("error should name the env var: %v", err)
+	}
+}

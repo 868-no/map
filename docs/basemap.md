@@ -6,8 +6,21 @@ The map uses one dark style (`web/styles/dark.json`) on the **OpenMapTiles** vec
 
 No external map requests at runtime: tiles, glyphs and style are served by the `web` service.
 
+The `basemap` service (`ghcr.io/868-no/map-basemap`, `basemap/`) keeps the archive present and fresh in a volume shared with `web`. When `basemap.pmtiles` is missing it builds it, and it rebuilds it when the file is older than `BASEMAP_MAX_AGE_DAYS` (default 30; 0 never rebuilds). Between builds it idles. A failed build is retried after an hour. Settings:
+
+| Variable | Default | |
+|---|---|---|
+| `BASEMAP_AREA` | `norway` | any Geofabrik area name |
+| `BASEMAP_MAX_AGE_DAYS` | `30` | rebuild interval |
+| `BASEMAP_LANGUAGES` | `no,nb,nn,se,en` | name languages kept |
+| `PLANETILER_HEAP` | `8g` | Java heap while building |
+
+Norway takes about 10 minutes and writes about 1.7 GB. A build needs about 6 GB of free disk for downloads and temporary files; the OSM extract and temporary files are removed afterwards, while water polygons and Natural Earth stay cached for the next build.
+
+To build by hand instead (e.g. on a development machine):
+
 ```sh
-scripts/basemap_import.sh            # Norway (Geofabrik "norway"), ~10 min, ~1.7 GB output
+scripts/basemap_import.sh            # Norway (Geofabrik "norway")
 scripts/basemap_import.sh sweden     # any Geofabrik area name
 ```
 

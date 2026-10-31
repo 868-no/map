@@ -1,0 +1,120 @@
+# Meshtastic MQTT Mesh Observatory: production, configured entirely in this
+# file (no .env, no ./secrets). Published images; HTTPS is terminated by a
+# reverse proxy in front of `web` (see docs/operations.md).
+#
+# Values written ${LIKE_THIS} are filled in from the environment of the stack
+# (e.g. the stack's env panel, or `export` before `docker compose up`), so
+# secrets need not be written into this file. Replace them inline if you
+# prefer. Note that env values are visible to anyone who can `docker inspect`.
+#
+#   docker compose -f compose.production.yaml up -d
+name: meshmap
+
+x-backend-env: &backend-env
+  POSTGRES_HOST: postgres
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+  REDIS_URL: redis://redis:6379/0
+  DEMO_MODE: "false"
+  # Map defaults and windows (see backend/internal/config/config.go for all options)
+  DEFAULT_MAP_LAT: "63.43"
+  DEFAULT_MAP_LON: "10.40"
+  DEFAULT_MAP_ZOOM: "7"
+  RETENTION_MONTHS: "6"
+  # Brokers and channel keys: the same YAML as config/examples/*.yaml.
+  MQTT_BROKERS: |
+    brokers:
+      - id: no868
+        host: mqtt.868.no
+        port: 1883
+        protocol: v5
+        tls: { enabled: false }
+        username: ${MQTT_USERNAME:?set MQTT_USERNAME}
+        password: ${MQTT_PASSWORD:?set MQTT_PASSWORD}
+        client_id: meshmap-ingest-1
+        topics:
+          - { filter: "msh/#", qos: 0 }
+        accept_retained: false
+  CHANNEL_KEYS: |
+    channels:
+      - { name: LongFast, broker_ids: ["*"], mode: ctr, psks: ["AQ=="] }
+      - { name: NarrowFast, broker_ids: ["*"], mode: ctr, psks: ["AQ=="] }
+
+x-backend: &backend
+  image: ghcr.io/868-no/map-backend:${MESHMAP_TAG:-latest}
+  restart: unless-stopped
+  environment: *backend-env
+  depends_on:
+    postgres: { condition: service_healthy }
+    redis: { condition: service_healthy }
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: meshmap
+      POSTGRES_USER: meshmap
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+    command: [postgres, -c, shared_buffers=512MB, -c, effective_cache_size=2GB, -c, work_mem=32MB,
+              -c, maintenance_work_mem=256MB, -c, max_wal_size=2GB, -c, random_page_cost=1.1]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U meshmap -d meshmap"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  backend:
+    <<: *backend
+    command: ["serve"]
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/meshmap", "healthcheck"]
+      interval: 10s
+      timeout: 5s
+      start_period: 20s
+      retries: 6
+
+  maintenance:
+    <<: *backend
+    command: ["maintenance"]
+
+  web:
+    image: ghcr.io/868-no/map-web:${MESHMAP_TAG:-latest}
+    restart: unless-stopped
+    ports:
+      - "8080:80" # the reverse proxy's upstream
+    volumes:
+      - basemap:/srv/tiles:ro
+    depends_on:
+      backend: { condition: service_healthy }
+
+  # Builds the basemap into the shared volume on first start (downloads
+  # several GB; needs about PLANETILER_HEAP of memory while building), then
+  # rebuilds it every BASEMAP_MAX_AGE_DAYS. The map works meanwhile, without
+  # a basemap.
+  basemap:
+    image: ghcr.io/868-no/map-basemap:${MESHMAP_TAG:-latest}
+    restart: unless-stopped
+    environment:
+      BASEMAP_AREA: norway
+      BASEMAP_MAX_AGE_DAYS: "30"
+      PLANETILER_HEAP: 8g
+    volumes:
+      - basemap:/data
+
+volumes:
+  pgdata:
+  # Replace with a bind mount (e.g. /srv/meshmap/basemap) if preferred; web
+  # and basemap must share it.
+  basemap:

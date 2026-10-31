@@ -5,12 +5,21 @@
 ```sh
 cp .env.example .env              # set POSTGRES_PASSWORD
 mkdir -p secrets && cp config/examples/*.yaml secrets/   # edit brokers and channel keys
-scripts/basemap_import.sh         # once; self-hosted basemap
 docker compose run --rm backend check-config
 docker compose up -d --build
 ```
 
-The map is at `http://<host>:${WEB_PORT:-8080}`. Only the `web` service publishes a port.
+The map is at `http://<host>:${WEB_PORT:-8080}`. Only the `web` service publishes a port. On first start the `basemap` service builds the self-hosted basemap (see [basemap.md](basemap.md)); until it is ready the map works without one.
+
+### Everything in one Compose file
+
+[`deploy/compose.production.yaml`](../deploy/compose.production.yaml) runs the published images with all configuration in the Compose file: no `.env`, no `./secrets`. Broker and channel configuration go in the `MQTT_BROKERS` and `CHANNEL_KEYS` environment variables, as the same YAML as the files (when set, they replace `MQTT_BROKERS_CONFIG` and `CHANNEL_KEYS_CONFIG`). Secrets are written as `${POSTGRES_PASSWORD}`, `${MQTT_USERNAME}` and `${MQTT_PASSWORD}` and filled in from the stack's environment. Check it with:
+
+```sh
+docker compose -f compose.production.yaml run --rm backend check-config
+```
+
+Env values are visible to anyone who can run `docker inspect` on the host; use the file-based configuration if that matters.
 
 ### Continuous integration
 
@@ -18,17 +27,18 @@ The map is at `http://<host>:${WEB_PORT:-8080}`. Only the `web` service publishe
 
 ### Published images
 
-GitHub Actions (`.github/workflows/images.yml`) builds both images for every pull request and publishes them to GitHub Container Registry from `main` and from version tags, for `linux/amd64` and `linux/arm64`, with provenance and SBOM attestations:
+GitHub Actions (`.github/workflows/images.yml`) builds the three images for every pull request and publishes them to GitHub Container Registry from `main` and from version tags, for `linux/amd64` and `linux/arm64`, with provenance and SBOM attestations:
 
 | Image | Tags |
 |---|---|
 | `ghcr.io/868-no/map-backend` | `latest` and `main` (main branch), `X.Y.Z` and `X.Y` (tag `vX.Y.Z`), `sha-<commit>` |
 | `ghcr.io/868-no/map-web` | same |
+| `ghcr.io/868-no/map-basemap` | same |
 
-To run them instead of building locally, set `BACKEND_IMAGE` and `WEB_IMAGE` in `.env` (see `.env.example`), then:
+To run them instead of building locally, set `BACKEND_IMAGE`, `WEB_IMAGE` and `BASEMAP_IMAGE` in `.env` (see `.env.example`), then:
 
 ```sh
-docker compose pull backend web
+docker compose pull backend web basemap
 docker compose up -d
 ```
 
@@ -82,6 +92,8 @@ MQTT delivers Meshtastic traffic at QoS 0, so senders cannot be slowed. If Postg
 The `maintenance` service deletes rows older than `RETENTION_MONTHS` (default 6 calendar months, clamped at month ends) daily at 03:00 UTC, and at startup if a run is overdue. It deletes in 5 000-row transactions under a PostgreSQL advisory lock, then runs `VACUUM (ANALYZE)`, bumps the retention revision (invalidating cached results) and notifies open browser sessions. Run it manually with `docker compose run --rm maintenance maintenance --once`.
 
 ## Backup and restore
+
+Not automated: schedule the dump below (e.g. with cron) if the history matters to you. Without backups, losing the database volume loses the history; the map refills from live traffic.
 
 ```sh
 docker compose exec -T postgres pg_dump -U meshmap -Fc meshmap > meshmap-$(date +%F).dump

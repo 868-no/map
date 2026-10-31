@@ -2,6 +2,7 @@
 # GitHub Container Registry from main and from version tags (vX.Y.Z).
 #   ghcr.io/868-no/map-backend   backend/Dockerfile (Go API, ingest, maintenance)
 #   ghcr.io/868-no/map-web       web/Dockerfile     (Caddy + built frontend)
+#   ghcr.io/868-no/map-basemap   basemap/Dockerfile (Planetiler basemap builder)
 name: images
 
 on:
@@ -35,6 +36,9 @@ jobs:
           - image: map-web
             context: .
             dockerfile: web/Dockerfile
+          - image: map-basemap
+            context: basemap
+            dockerfile: basemap/Dockerfile
     env:
       PUBLISH: ${{ github.event_name != 'pull_request' }}
     steps:
