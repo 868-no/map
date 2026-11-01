@@ -175,7 +175,7 @@ export function NodePanel({ id, snapshot }: { id: string; snapshot: SnapshotView
           <li key={e.src + e.dst + (e.mqtt ? 'm' : '')}>
             <button onClick={() => select({ kind: 'edge', src: e.src, dst: e.dst, mqtt: !!e.mqtt })}>
               {e.src === id ? <>→ {names.get(e.dst) ?? e.dst}</> : <>← {names.get(e.src) ?? e.src}</>}{' '}
-              {e.mqtt ? <span className="conf conf-mqtt" title="Over MQTT, not radio">MQTT</span> : <span className={`conf conf-${e.confidence}`}>{e.confidence}</span>} {e.snr.median !== undefined && e.snr.median !== null && <small>SNR {e.snr.median} dB</small>}
+              {e.mqtt ? <span className="conf conf-mqtt" title="Over the internet through an MQTT broker, not radio">Internet</span> : <span className={`conf conf-${e.confidence}`}>{e.confidence}</span>} {e.snr.median !== undefined && e.snr.median !== null && <small>SNR {e.snr.median} dB</small>}
             </button>
           </li>
         ))}
@@ -308,7 +308,7 @@ export function EdgePanel({ a, b, mqtt = false, snapshot }: { a: string; b: stri
         NeighborInfo {e.evidence.neighbor} · traceroute {e.evidence.traceroute} · direct gateway RF {e.evidence.direct_rf} · inferred last hop {e.evidence.relay_hint}
       </dd>
       {e.mqtt ? (
-        <><dt>Why MQTT</dt><dd><span className="conf conf-mqtt">MQTT</span> {e.reason}</dd></>
+        <><dt>Why internet</dt><dd><span className="conf conf-mqtt">Internet</span> {e.reason}</dd></>
       ) : (
         <><dt>Confidence</dt><dd><span className={`conf conf-${e.confidence}`}>{e.confidence}</span> — {e.reason}{e.inferred && ' (inferred)'}</dd></>
       )}
@@ -337,14 +337,14 @@ export function EdgePanel({ a, b, mqtt = false, snapshot }: { a: string; b: stri
   return (
     <div className="panel">
       <button className="close" onClick={() => select(null)} aria-label="Close details">×</button>
-      <h2>{mqtt ? 'MQTT link' : 'Link'}</h2>
+      <h2>{mqtt ? 'Internet link' : 'Link'}</h2>
       <p>
         <button className="linkish" onClick={() => select({ kind: 'node', id: a })}>{name(a)}</button> ↔{' '}
         <button className="linkish" onClick={() => select({ kind: 'node', id: b })}>{name(b)}</button>
       </p>
       {mqtt ? (
         <p className="muted">
-          Not a radio link. Traceroutes recorded these hops at exactly 0 dB, the reading a packet gets when the receiving node takes it from an MQTT broker (downlink) instead of hearing it over the air.
+          Not a radio link: the packet crossed the internet through an MQTT broker. Traceroutes recorded these hops at exactly 0 dB, the reading a packet gets when the receiving node takes it from an MQTT broker (downlink) instead of hearing it over the air.
           They are kept out of the radio links, link statistics and position estimates.
         </p>
       ) : (

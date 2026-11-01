@@ -494,3 +494,7 @@ Operator request: a layer that splits Norway into its named regions (landsdeler)
 - **Drawing:** a faint tint and an outline per region, beneath everything else and under the basemap's labels. Names sit at hand-picked inland points away from the busiest node clusters (a unit test checks each falls inside its own region), scale with zoom and give way to node names from zoom 9. The layer is not pickable, so it never takes a click or hover from the mesh.
 - **Switch:** "Regions (landsdeler)" under Map in the layers panel, off by default. "© Kartverket" joins the attribution while it is on.
 
+
+## D-062 Plainer mesh layer names (2026-11-01)
+
+Operator request. The mesh switches are now, in order: Router links (was Infrastructure links), Client links (Other links), Internet links (MQTT links), Inferred links (was Inferred links (dashed); it modifies the router and client layers), Position accuracy (Accuracy circles), Node names, and Traffic (Animated traffic). The tooltips were rewritten against the code: evidence kinds, line styles, the zoom-10 name threshold and grouping, the ping ring's signal-strength fade, and that Traffic is live-only and off by default under reduced motion. The legend, the link panel ("Internet link", "Why internet") and hover text use the same words. Code and decisions keep the internal names (`infraLinks`, `otherLinks`, `mqttLinks`, MQTT links in D-055).

@@ -235,7 +235,7 @@ export default function MapView({ caps, snapshot, onPositions }: Props) {
           setHover({ x: info.x, y: info.y, text: `${name}${o.kind === 'estimated' ? ' — estimated location' : ''}${n.mqtt_opt_out ? ' — did not allow MQTT uplink; name withheld' : ''}` })
         } else {
           const dir = (e: Edge | undefined, from: string, to: string) => (e ? `${from} → ${to}: ${e.confidence}, ${e.samples} samples` : `${from} → ${to}: no evidence`)
-          setHover({ x: info.x, y: info.y, text: `${o.mqtt ? 'Over MQTT, not radio — ' : ''}${dir(o.ab, o.a, o.b)} · ${dir(o.ba, o.b, o.a)}` })
+          setHover({ x: info.x, y: info.y, text: `${o.mqtt ? 'Over the internet (MQTT), not radio — ' : ''}${dir(o.ab, o.a, o.b)} · ${dir(o.ba, o.b, o.a)}` })
         }
       },
       onClick: (info: PickingInfo) => {

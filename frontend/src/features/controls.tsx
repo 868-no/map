@@ -24,20 +24,20 @@ export function LayersPanel({ id, onClose }: { id: string; onClose: () => void }
     <div id={id} className="popover layers-panel" role="dialog" aria-label="Map layers" onKeyDown={(e) => e.key === 'Escape' && onClose()}>
       <button className="close" onClick={onClose} aria-label="Close layers">×</button>
       <h3>Mesh</h3>
-      {check('Infrastructure links (router ↔ router)', t.infraLinks, (v) => setT({ infraLinks: v }),
-        'Radio links where both nodes announce the ROUTER or ROUTER_LATE role in this window. Thick blue lines, one per node pair. Each link is backed by NeighborInfo, traceroute, direct gateway reception or a resolved relay byte observed in the selected window.')}
-      {check('Other links', t.otherLinks, (v) => setT({ otherLinks: v }),
-        'Radio links where at least one node has another role, or announced no role in this window. Thin grey-blue lines, backed by the same in-window evidence as infrastructure links.')}
-      {check('MQTT links (dotted)', t.mqttLinks, (v) => setT({ mqttLinks: v }),
-        'Hops that went over MQTT, not radio: traceroutes recorded them at exactly 0 dB, the reading a packet gets when a node takes it from an MQTT broker (downlink) and transmits it. Dotted green lines. They are never counted as radio links.')}
-      {check('Inferred links (dashed)', t.inferred, (v) => setT({ inferred: v }),
-        'Links supported only by a relay\'s last-hop byte, resolved to a single node by radio range and confirmed links. Low confidence: never directly measured.', !t.infraLinks && !t.otherLinks)}
-      {check('Accuracy circles (always shown for the selected node)', t.uncertainty, (v) => setT({ uncertainty: v }),
-        'For estimated positions: the area the node is likely within, from the positioned nodes that heard it directly. For a selected node with a coarse reported position: how far off that position may be.')}
-      {check('Node names (zoom ≥ 10)', t.labels, (v) => setT({ labels: v }),
-        'Each node\'s short name from its latest NodeInfo in the selected window (or the last 4 hex digits of its ID if none).')}
-      {check('Animated traffic', t.animation, (v) => setT({ animation: v }),
-        'Live radar pings: each soft ring is one radio transmission, growing to enclose the nodes known to have heard it directly, while a bright line travels along each link to those nodes, arriving with the ring. Blue: first broadcast by the originating node; amber: rebroadcast by a relay. The ring fades with measured signal strength. Live window only.')}
+      {check('Router links', t.infraLinks, (v) => setT({ infraLinks: v }),
+        'Radio links between two nodes that both announce the ROUTER or ROUTER_LATE role in the selected window. Thick blue lines, one per node pair. Each is backed by evidence from the window: NeighborInfo, a traceroute hop, a direct gateway reception, or a relay\'s last-hop byte resolved to a single node. Internet links are never included.')}
+      {check('Client links', t.otherLinks, (v) => setT({ otherLinks: v }),
+        'Radio links where at least one node has another role (a client role) or announced no role in the selected window. Thin grey lines, backed by the same kinds of evidence as router links.')}
+      {check('Internet links', t.mqttLinks, (v) => setT({ mqttLinks: v }),
+        'Hops that crossed the internet instead of the air: a gateway uplinked the packet to an MQTT broker, and the receiving node took it from the broker (downlink) and transmitted it. Found in traceroutes, which record these hops at exactly 0 dB, into nodes marked ↓. Dotted green lines. Never counted as radio links or used for position estimates.')}
+      {check('Inferred links', t.inferred, (v) => setT({ inferred: v }),
+        'Dashed router or client links supported only by a relay\'s last-hop byte, resolved to a single node by radio range and confirmed links. Low confidence: never directly measured. Needs router or client links switched on.', !t.infraLinks && !t.otherLinks)}
+      {check('Position accuracy', t.uncertainty, (v) => setT({ uncertainty: v }),
+        'A circle around each estimated position: the area the node is likely within, from the positioned nodes that heard it directly. The selected node\'s circle is always shown; for a coarse reported position it shows how far off that position may be.')}
+      {check('Node names', t.labels, (v) => setT({ labels: v }),
+        'Each node\'s short name from its latest NodeInfo in the selected window, or the last 4 hex digits of its ID. Shown from zoom 10. Names that would overlap are grouped (“+N”) and fan out when hovered.')}
+      {check('Traffic', t.animation, (v) => setT({ animation: v }),
+        'Live radar pings: each ring is one radio transmission, growing until it encloses the nodes known to have heard it directly, while a bright line travels to each of those nodes, arriving with the ring. Blue: first broadcast by the originating node; amber: rebroadcast by a relay. The ring fades outward, matching the signal strength measured at each receiver. Live window only; off by default when the system asks for reduced motion.')}
       <h3>Map</h3>
       {BASEMAP_GROUPS.map((g) => check(g.label, t.basemap[g.id], (v) => setT({ basemap: { [g.id]: v } }), g.info))}
       {check('Regions (landsdeler)', t.regions, (v) => setT({ regions: v }),
@@ -132,9 +132,9 @@ export function Legend({ snapshot }: { snapshot: SnapshotView | undefined }) {
       </ul>
       <h3>Links (one line per node pair)</h3>
       <ul>
-        <li><span className="ln infra thick" /> Infrastructure: both ends are ROUTER or ROUTER_LATE</li>
-        <li><span className="ln other thin" /> Other: at least one end has another role (or none reported)</li>
-        <li><span className="ln mqtt" /> MQTT (dotted green): not radio; a traceroute hop recorded at exactly 0 dB, taken from an MQTT broker</li>
+        <li><span className="ln infra thick" /> Router: both ends are ROUTER or ROUTER_LATE</li>
+        <li><span className="ln other thin" /> Client: at least one end has another role (or none reported)</li>
+        <li><span className="ln mqtt" /> Internet (dotted green): not radio; the packet crossed an MQTT broker (a traceroute hop recorded at exactly 0 dB)</li>
       </ul>
       <h3>Link confidence</h3>
       <ul>
