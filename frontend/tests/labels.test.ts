@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import type { MeshNode } from '../src/api/types'
+import type { MeshNode } from '../src/derive/views'
 import { clusterLabels, fanOut, fromPixels, labelData, toPixels } from '../src/map/labels'
 import type { PlacedNode } from '../src/map/model'
 

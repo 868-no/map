@@ -1,4 +1,4 @@
-import type { LiveEvent, Meta } from './types'
+import type { LiveEvent } from './types'
 import { noteResponse } from '../pwa'
 
 export class ApiError extends Error {
@@ -23,20 +23,6 @@ export async function getJSON<T>(path: string, params?: URLSearchParams, signal?
     throw new ApiError(res.status, detail)
   }
   return res.json() as Promise<T>
-}
-
-/**
- * Guard against cross-window contamination: a response is applied only if
- * its echoed window matches what was requested (a late response for an old
- * window is discarded even if the request was not aborted in time).
- */
-export function matchesRequest(meta: Meta, params: URLSearchParams): boolean {
-  const start = params.get('start'), end = params.get('end')
-  if (start && end) {
-    if (Date.parse(meta.window.start) !== Date.parse(start) || Date.parse(meta.window.end) !== Date.parse(end)) return false
-    return !meta.window.rolling
-  }
-  return meta.window.rolling
 }
 
 export interface Heartbeat {

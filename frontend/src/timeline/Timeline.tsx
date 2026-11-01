@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { Capabilities, Retention, SnapshotBody, TrafficBody } from '../api/types'
+import type { Capabilities, Retention } from '../api/types'
+import type { SnapshotView, TrafficView } from '../derive/views'
 import { useStore } from '../state/store'
 import { formatLocal, formatShort, fromLocalInput, isAmbiguousLocal, toLocalInput, zoneLabel } from '../lib/time'
 
@@ -8,8 +9,8 @@ const H = 3600_000
 interface Props {
   caps: Capabilities
   retention: Retention | undefined
-  snapshot: SnapshotBody | undefined
-  traffic: TrafficBody | undefined
+  snapshot: SnapshotView | undefined
+  traffic: TrafficView | undefined
   liveOK: boolean
 }
 

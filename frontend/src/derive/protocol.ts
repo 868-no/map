@@ -1,6 +1,7 @@
 // Messages between the page and the derivation worker.
 import type { Capabilities, ObsRow } from '../api/types'
 import type { WindowReq } from './rowStore'
+import type { ViewErrorKind } from './views'
 
 export type ViewKind = 'snapshot' | 'traffic' | 'node' | 'packetlog' | 'route'
 
@@ -40,6 +41,6 @@ export interface Transmission {
 
 export type Response =
   | { id: number; ok: true; body: Uint8Array; offline: boolean } // UTF-8 JSON, transferred
-  | { id: number; ok: false; status: number; message: string }
+  | { id: number; ok: false; kind: ViewErrorKind; message: string }
   | { type: 'changed' } // live rows arrived: views are worth rebuilding
   | { type: 'pings'; transmissions: Transmission[] }

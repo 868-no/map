@@ -1,16 +1,24 @@
 // IndexedDB copy of the engine's rows, so a reload (or an offline start)
 // begins from what was already fetched. Rows are stored per hour as gzip-
-// compressed JSON (the API's row format): only hours that changed are
-// rewritten. Best effort: without storage the app works the same, only
-// without the head start.
+// compressed JSON (the API's row format). A flush writes only what is new:
+// closed hours as one full chunk each, the open (newest) hour as small
+// append-only deltas that are compacted into its chunk when the hour closes,
+// after MAX_DELTAS deltas, or on the next load. Best effort: without storage
+// the app works the same, only without the head start.
 import type { Coverage } from './rowStore'
 
 const DB = 'meshmap-derive'
-const VERSION = 2 // 2: hourly compressed chunks (1 stored one record per row)
+// 2: hourly compressed chunks (1 stored one record per row). 3: adds the
+// open hour's deltas; version 2 chunks are read as they are.
+const VERSION = 3
 export const HOUR_MS = 3_600_000
+/** A delta re-exports this much before the last flush: rows may be merged slightly out of time order. */
+export const DELTA_OVERLAP_MS = 10 * 60_000
+/** Deltas an hour may collect before it is rewritten as one chunk. */
+export const MAX_DELTAS = 60
 
 export interface Persisted {
-  chunks: string[] // JSON arrays of rows
+  chunks: string[] // JSON arrays of rows (full hours and deltas; duplicates are dropped on load)
   cov: Coverage | null
   generation: string | null
 }
@@ -18,19 +26,79 @@ export interface Persisted {
 /** What persistence needs from the engine. */
 export interface Source {
   takeDirty(): number[] // hour starts with new rows
-  exportHour(start: number): string // JSON array of the hour's rows
+  exportRange(lo: number, hi: number): string // JSON array of rows in [lo, hi)
+  newestT(): number // 0 when empty
+}
+
+/** One record to store: an hour's full chunk (replacing its deltas), or one delta. */
+export type Write =
+  | { hour: number; full: true; text: string } // text '[]': the hour is empty
+  | { hour: number; full: false; seq: number; text: string }
+
+/**
+ * Decides what a flush writes. Per stored hour it remembers up to when rows
+ * are stored (mark) and how many deltas it has (seq). Pure: no storage.
+ */
+export class HourWriter {
+  private hours = new Map<number, { mark: number; seq: number }>()
+
+  /** Hours already stored (with their highest delta seq), as loaded into the engine. */
+  restore(stored: Map<number, number>, src: Source) {
+    const until = src.newestT() + 1
+    for (const [h, seq] of stored) this.hours.set(h, { mark: Math.min(h + HOUR_MS, until), seq })
+  }
+
+  /** Writes for the dirty hours, plus compaction of hours with deltas that are no longer open. */
+  plan(dirty: Iterable<number>, src: Source): Write[] {
+    const newest = src.newestT()
+    const open = Math.floor(newest / HOUR_MS) * HOUR_MS
+    const todo = new Set(dirty)
+    for (const [h, s] of this.hours) if (s.seq > 0 && h < open) todo.add(h)
+    const out: Write[] = []
+    for (const h of [...todo].sort((a, b) => a - b)) {
+      const s = this.hours.get(h)
+      const end = h + HOUR_MS
+      const mark = Math.min(end, newest + 1) // every row of the hour up to here is in this export
+      if (s && h >= open && s.seq < MAX_DELTAS) {
+        // The seq advances even when nothing is written, so the hour is
+        // compacted once it closes (a row older than the overlap may be in it).
+        const text = src.exportRange(Math.max(h, s.mark - DELTA_OVERLAP_MS), end)
+        this.hours.set(h, { mark, seq: s.seq + 1 })
+        if (text !== '[]') out.push({ hour: h, full: false, seq: s.seq + 1, text })
+      } else {
+        out.push({ hour: h, full: true, text: src.exportRange(h, end) })
+        this.hours.set(h, { mark, seq: 0 })
+      }
+    }
+    return out
+  }
+
+  /** Rows before t were removed: forget older hours and rewrite the partly trimmed one. */
+  removedBefore(t: number, src: Source): Write[] {
+    const hour = Math.floor(t / HOUR_MS) * HOUR_MS
+    for (const h of this.hours.keys()) if (h < hour) this.hours.delete(h)
+    this.hours.delete(hour)
+    return this.plan([hour], src)
+  }
+
+  reset() {
+    this.hours.clear()
+  }
 }
 
 function open(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB, VERSION)
-    req.onupgradeneeded = () => {
+    req.onupgradeneeded = (e) => {
       const db = req.result
-      if (db.objectStoreNames.contains('rows')) db.deleteObjectStore('rows')
-      if (!db.objectStoreNames.contains('chunks')) db.createObjectStore('chunks')
-      if (!db.objectStoreNames.contains('meta')) db.createObjectStore('meta')
-      // A format change starts over: the old meta described the old rows.
-      req.transaction?.objectStore('meta').clear()
+      if (e.oldVersion < 2) {
+        // A format change starts over: the old meta described the old rows.
+        if (db.objectStoreNames.contains('rows')) db.deleteObjectStore('rows')
+        if (!db.objectStoreNames.contains('chunks')) db.createObjectStore('chunks')
+        if (!db.objectStoreNames.contains('meta')) db.createObjectStore('meta')
+        req.transaction?.objectStore('meta').clear()
+      }
+      if (!db.objectStoreNames.contains('deltas')) db.createObjectStore('deltas') // keys [hour, seq]
     }
     req.onsuccess = () => resolve(req.result)
     req.onerror = () => reject(req.error)
@@ -43,12 +111,17 @@ const done = (tx: IDBTransaction) =>
     tx.onerror = tx.onabort = () => reject(tx.error)
   })
 
-const gzip = (text: string) => new Response(new Blob([text]).stream().pipeThrough(new CompressionStream('gzip'))).blob()
-const gunzip = (b: Blob) => new Response(b.stream().pipeThrough(new DecompressionStream('gzip'))).text()
+export const gzip = (text: string) => new Response(new Blob([text]).stream().pipeThrough(new CompressionStream('gzip'))).blob()
+export const gunzip = (b: Blob) => new Response(b.stream().pipeThrough(new DecompressionStream('gzip'))).text()
+
+/** All deltas of one hour: array keys [h] < [h, seq] < [h, Infinity]. */
+const deltasOf = (h: number) => IDBKeyRange.bound([h], [h, Infinity])
 
 export interface Persistence {
   restored: Persisted
-  /** Write the hours that changed (call after rows were added). */
+  /** Call once the restored chunks are in the engine: compacts what is left over. */
+  attach(src: Source): void
+  /** Write what changed (call after rows were added). */
   flush(src: Source): Promise<void>
   removedBefore(t: number, src: Source): void
   reset(): void
@@ -63,21 +136,30 @@ export async function openPersistence(): Promise<Persistence | null> {
     return null
   }
   const empty: Persisted = { chunks: [], cov: null, generation: null }
+  const stored = new Map<number, number>() // hour -> highest delta seq
   const restored = await new Promise<Persisted>((resolve) => {
-    const tx = db.transaction(['chunks', 'meta'], 'readonly')
+    const tx = db.transaction(['chunks', 'deltas', 'meta'], 'readonly')
+    const chunkKeys = tx.objectStore('chunks').getAllKeys()
     const chunks = tx.objectStore('chunks').getAll()
+    const deltaKeys = tx.objectStore('deltas').getAllKeys()
+    const deltas = tx.objectStore('deltas').getAll()
     const meta = tx.objectStore('meta').get('state')
     tx.oncomplete = async () => {
       const m = meta.result as { cov: Coverage | null; generation: string | null } | undefined
       if (!m) return resolve(empty)
+      for (const h of chunkKeys.result as number[]) stored.set(h, 0)
+      for (const [h, seq] of deltaKeys.result as [number, number][]) stored.set(h, Math.max(stored.get(h) ?? 0, seq))
       try {
-        resolve({ chunks: await Promise.all((chunks.result as Blob[]).map(gunzip)), cov: m.cov, generation: m.generation })
+        const blobs = [...(chunks.result as Blob[]), ...(deltas.result as Blob[])]
+        resolve({ chunks: await Promise.all(blobs.map(gunzip)), cov: m.cov, generation: m.generation })
       } catch {
+        stored.clear()
         resolve(empty)
       }
     }
     tx.onerror = () => resolve(empty)
   })
+  const writer = new HourWriter()
   // Writes run one after another; failures are ignored (the store is a cache).
   let chain = Promise.resolve()
   const run = (fn: () => Promise<IDBTransaction | null>) => {
@@ -87,41 +169,45 @@ export async function openPersistence(): Promise<Persistence | null> {
     }).catch(() => {})
     return chain
   }
-  const writeHours = (hours: number[], src: Source) =>
+  // The export happens now (it must see the engine as planned); only the compression waits.
+  const apply = (writes: Write[], before?: number) =>
     run(async () => {
-      if (!hours.length) return null
+      if (!writes.length && before === undefined) return null
       // Compress first: a transaction must not wait on other promises.
-      const blobs = await Promise.all(hours.map(async (h) => {
-        const text = src.exportHour(h)
-        return [h, text === '[]' ? null : await gzip(text)] as const
-      }))
-      const tx = db.transaction('chunks', 'readwrite')
-      const s = tx.objectStore('chunks')
-      for (const [h, b] of blobs) {
-        if (b) s.put(b, h)
-        else s.delete(h)
+      const blobs = await Promise.all(writes.map(async (w) => (w.text === '[]' ? null : await gzip(w.text))))
+      const tx = db.transaction(['chunks', 'deltas'], 'readwrite')
+      const chunks = tx.objectStore('chunks'), deltas = tx.objectStore('deltas')
+      if (before !== undefined) {
+        chunks.delete(IDBKeyRange.upperBound(before, true))
+        deltas.delete(IDBKeyRange.upperBound([before], true))
       }
+      writes.forEach((w, k) => {
+        const b = blobs[k]
+        if (!w.full) return b && deltas.put(b, [w.hour, w.seq])
+        deltas.delete(deltasOf(w.hour))
+        if (b) chunks.put(b, w.hour)
+        else chunks.delete(w.hour)
+      })
       return tx
     })
   return {
     restored,
-    flush: (src) => writeHours(src.takeDirty(), src),
-    removedBefore: (t, src) => {
-      const hour = Math.floor(t / HOUR_MS) * HOUR_MS
-      run(async () => {
-        const tx = db.transaction('chunks', 'readwrite')
-        tx.objectStore('chunks').delete(IDBKeyRange.upperBound(hour, true))
-        return tx
-      })
-      writeHours([hour], src) // the partly trimmed hour
+    attach: (src) => {
+      writer.restore(stored, src)
+      void apply(writer.plan([], src))
     },
-    reset: () =>
+    flush: (src) => apply(writer.plan(src.takeDirty(), src)),
+    removedBefore: (t, src) => void apply(writer.removedBefore(t, src), Math.floor(t / HOUR_MS) * HOUR_MS),
+    reset: () => {
+      writer.reset()
       void run(async () => {
-        const tx = db.transaction(['chunks', 'meta'], 'readwrite')
+        const tx = db.transaction(['chunks', 'deltas', 'meta'], 'readwrite')
         tx.objectStore('chunks').clear()
+        tx.objectStore('deltas').clear()
         tx.objectStore('meta').delete('state')
         return tx
-      }),
+      })
+    },
     meta: (cov, generation) =>
       void run(async () => {
         const tx = db.transaction('meta', 'readwrite')

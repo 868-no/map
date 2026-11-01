@@ -1,7 +1,8 @@
 import { keepPreviousData, useQuery, type Query } from '@tanstack/react-query'
 import { useMemo } from 'react'
-import { getJSON, matchesRequest } from '../api/client'
-import type { Capabilities, NodeBody, PacketLog, PacketRoute, Retention, SnapshotBody, TrafficBody } from '../api/types'
+import { getJSON } from '../api/client'
+import type { Capabilities, Retention } from '../api/types'
+import type { NodeView, PacketLog, PacketRoute, SnapshotView, TrafficView, ViewMeta } from '../derive/views'
 import { apiParams, useStore } from './store'
 import { create } from 'zustand'
 import { deriveView, onDerivedChange } from '../derive/client'
@@ -56,7 +57,7 @@ function safePlaceholder<T>(prev: T | undefined, prevQuery: Query<T, Error, T, K
 }
 
 /** A view built by the derivation worker for the current window and filters. */
-function useWindowQuery<T extends { meta: SnapshotBody['meta'] }>(kind: ViewKind, node?: string, enabled = true) {
+function useWindowQuery<T extends { meta: ViewMeta }>(kind: ViewKind, node?: string, enabled = true) {
   const { params, identity, epoch } = useWindowParams()
   const win = useStore((s) => s.win)
   const filters = useStore((s) => s.filters)
@@ -72,21 +73,25 @@ function useWindowQuery<T extends { meta: SnapshotBody['meta'] }>(kind: ViewKind
         filters: { channels: filters.channels, brokers: filters.brokers, types: filters.types },
       }, signal)
       if (usePwa.getState().servedOffline !== r.offline) usePwa.setState({ servedOffline: r.offline })
-      const body = r.body as T
-      if (!matchesRequest(body.meta, params)) throw new Error('stale response for a different window')
-      return body
+      // No window check needed: the worker answers each request by id, for the
+      // window in that request, and the result is stored under this key.
+      return r.body as T
     },
     // TanStack's NonFunctionGuard<T> cannot be expressed for a generic T.
     placeholderData: ((prev: T | undefined, prevQuery: Query<T, Error, T, Key> | undefined) => safePlaceholder<T>(prev, prevQuery, key)) as never,
     staleTime: 5_000,
+    // Every live rebuild is a new key: keeping old ones (5 min by default)
+    // would hold dozens of dead parsed views. The observer still keeps the
+    // previous result for placeholderData after its query is dropped.
+    gcTime: win.live ? 0 : 5 * 60_000,
     retry: 1,
   })
 }
 
-export const useSnapshot = () => useWindowQuery<SnapshotBody>('snapshot')
-export const useTraffic = () => useWindowQuery<TrafficBody>('traffic')
+export const useSnapshot = () => useWindowQuery<SnapshotView>('snapshot')
+export const useTraffic = () => useWindowQuery<TrafficView>('traffic')
 /** The node's own and relayed packets (D-036). */
 export const usePacketLog = (id: string | null) => useWindowQuery<PacketLog>('packetlog', id ?? undefined, !!id)
 /** One packet's routing graph (D-037). */
 export const usePacketRoute = (lp: string | null) => useWindowQuery<PacketRoute>('route', lp ?? undefined, !!lp)
-export const useNodeDetail = (id: string | null) => useWindowQuery<NodeBody>('node', id ?? undefined, !!id)
+export const useNodeDetail = (id: string | null) => useWindowQuery<NodeView>('node', id ?? undefined, !!id)

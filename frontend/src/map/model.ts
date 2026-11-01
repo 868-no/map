@@ -1,5 +1,5 @@
 // Pure view-model helpers for map layers (unit-tested; no WebGL here).
-import type { Edge, MeshNode } from '../api/types'
+import type { Edge, MeshNode } from '../derive/views'
 import type { Filters, Toggles } from '../state/store'
 
 export type NodeKind = 'reported' | 'estimated' | 'unpositioned'

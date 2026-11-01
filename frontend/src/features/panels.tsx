@@ -1,6 +1,5 @@
 import { useMemo, useState } from 'react'
-import type { Edge, MeshNode, SnapshotBody } from '../api/types'
-import type { Radio } from '../api/views'
+import type { Edge, MeshNode, Radio, SnapshotView } from '../derive/views'
 import { useNodeDetail, usePacketLog, usePacketRoute } from '../state/data'
 import { useStore } from '../state/store'
 import { formatLocal, formatLogTime, relativeAge } from '../lib/time'
@@ -24,7 +23,7 @@ function fmt(v: number | undefined | null, unit: string, digits = 1) {
   return v === undefined || v === null ? '—' : `${v.toFixed(digits)} ${unit}`
 }
 
-export function NodeList({ snapshot }: { snapshot: SnapshotBody | undefined }) {
+export function NodeList({ snapshot }: { snapshot: SnapshotView | undefined }) {
   const search = useStore((s) => s.search)
   const setSearch = useStore((s) => s.setSearch)
   const select = useStore((s) => s.select)
@@ -94,7 +93,7 @@ function radioSummary(r: Radio | undefined): { region: string; preset: string } 
   return { region, preset }
 }
 
-export function NodePanel({ id, snapshot }: { id: string; snapshot: SnapshotBody | undefined }) {
+export function NodePanel({ id, snapshot }: { id: string; snapshot: SnapshotView | undefined }) {
   const { data, isLoading, error } = useNodeDetail(id)
   const select = useStore((s) => s.select)
   const snapNode = (snapshot?.nodes ?? []).find((n) => n.id === id)
@@ -233,10 +232,16 @@ function PacketLogs({ id, names, positioned }: { id: string; names: Map<string, 
     | { kind: 'own'; hops?: number; signature: string }
     | { kind: 'relayed'; origin: string; evidence: ('relay_byte' | 'traceroute')[] }
   )
-  const entries: Entry[] = [
-    ...own.map((p) => ({ ...p, kind: 'own' as const })),
-    ...(withRelayed ? relayed.map((p) => ({ ...p, kind: 'relayed' as const, gateways: p.gateways.length })) : []),
-  ].sort((a, b) => Date.parse(b.at) - Date.parse(a.at))
+  // Newest first; times parsed once per log, not inside the comparator on every render.
+  const data = log.data
+  const entries = useMemo(() => {
+    const all: Entry[] = [
+      ...(data?.own ?? []).map((p) => ({ ...p, kind: 'own' as const })),
+      ...(withRelayed ? (data?.relayed ?? []).map((p) => ({ ...p, kind: 'relayed' as const, gateways: p.gateways.length })) : []),
+    ]
+    const ms = new Map(all.map((e) => [e, Date.parse(e.at)]))
+    return all.sort((a, b) => ms.get(b)! - ms.get(a)!)
+  }, [data, withRelayed])
   return (
     <>
       <div className="log-head">
@@ -291,7 +296,7 @@ function RouteNote({ positioned }: { positioned: Set<string> }) {
   )
 }
 
-export function EdgePanel({ a, b, mqtt = false, snapshot }: { a: string; b: string; mqtt?: boolean; snapshot: SnapshotBody | undefined }) {
+export function EdgePanel({ a, b, mqtt = false, snapshot }: { a: string; b: string; mqtt?: boolean; snapshot: SnapshotView | undefined }) {
   const select = useStore((s) => s.select)
   const names = new Map((snapshot?.nodes ?? []).map((n) => [n.id, nodeName(n, n.id)]))
   const name = (id: string) => names.get(id) ?? id

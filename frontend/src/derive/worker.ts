@@ -4,16 +4,12 @@
 // (D-031, D-040). Rows travel as JSON text straight into the engine; views
 // come back as JSON text and are handed to the page as transferable bytes.
 import init, { Engine } from '../engine/pkg/engine.js'
-import { openPersistence, HOUR_MS, type Persistence } from './persist'
+import { openPersistence, type Persistence, type Source } from './persist'
 import { RowStore, type Backend, type Fetched, type Synced, type WindowReq } from './rowStore'
-import { debounce } from './debounce'
+import { debounce, rebuildDelay } from './debounce'
+import { cursorMs, rangeEnd, sliceBounds } from './slices'
 import type { Request, Response, Transmission, ViewRequest } from './protocol'
-
-class HttpError extends Error {
-  constructor(public status: number, message: string) {
-    super(message)
-  }
-}
+import { ViewError, type ViewMeta } from './views'
 
 const ready = init()
 let engine: Engine
@@ -70,7 +66,7 @@ async function fetchRange(params: URLSearchParams): Promise<Fetched<number>> {
       } catch {
         /* non-JSON error body */
       }
-      throw new HttpError(res.status, detail)
+      throw new ViewError('upstream', `observations: ${res.status} ${detail}`)
     }
     return res.text()
   }
@@ -81,12 +77,8 @@ async function fetchRange(params: URLSearchParams): Promise<Fetched<number>> {
     while (meta.more) meta = JSON.parse(engine.stage(await page({ ...extra, cursor: meta.next_cursor ?? '' }), batch)) as Meta
   }
   if (first.more) {
-    // The cursor is "<unix µs>.<id>": the rest starts at that instant.
-    const lo = Math.floor(Number((first.next_cursor ?? '0').split('.')[0]) / 1000)
-    const until = params.get('until')
-    const hi = Math.min(Date.parse(first.window.end), until ? Date.parse(until) : Infinity)
-    const step = Math.max(Math.ceil((hi - lo) / SLICES), 1)
-    const bounds = Array.from({ length: SLICES + 1 }, (_, k) => Math.min(lo + k * step, hi))
+    // The rest starts at the first page's cursor instant.
+    const bounds = sliceBounds(cursorMs(first.next_cursor), rangeEnd(first.window.end, params.get('until')), SLICES)
     const iso = (ms: number) => new Date(ms).toISOString()
     await Promise.all(
       bounds.slice(0, -1).map(async (b, k) => {
@@ -101,7 +93,11 @@ async function fetchRange(params: URLSearchParams): Promise<Fetched<number>> {
   return { window: first.window, generation: first.generation, batch }
 }
 
-const source = { takeDirty: () => Array.from(engine.take_dirty()), exportHour: (h: number) => engine.export(h, h + HOUR_MS) }
+const source: Source = {
+  takeDirty: () => Array.from(engine.take_dirty()),
+  exportRange: (lo, hi) => engine.export(lo, hi),
+  newestT: () => engine.newest_t(),
+}
 const flushSoon = debounce(() => void persist?.flush(source), 2000, 5000)
 
 const started = (async () => {
@@ -116,6 +112,7 @@ const started = (async () => {
   if (persist) {
     for (const chunk of persist.restored.chunks) engine.add_rows(chunk, -Infinity)
     engine.take_dirty() // restored rows are already stored
+    persist.attach(source)
     store.load(persist.restored.cov, persist.restored.generation)
     const p = persist
     store.sink = {
@@ -151,9 +148,9 @@ function synced(win: WindowReq, epoch: string): Promise<{ synced: Synced; offlin
       pendingLive = []
       return { synced: s, offline: false }
     } catch (e) {
-      if (e instanceof HttpError) throw e
+      if (e instanceof ViewError) throw e // the API answered, with an error
       const s = store.offline(win, Date.now(), quantumMs)
-      if (!s) throw new HttpError(503, 'offline and no saved data for this window')
+      if (!s) throw new ViewError('unavailable', 'offline and no saved data for this window')
       return { synced: s, offline: true }
     }
   })
@@ -177,11 +174,15 @@ function bounds(win: WindowReq, s: Synced, offline: boolean): { start: number; e
   return { start: end - win.durationH * 3_600_000, end }
 }
 
-// Rebuild notices are debounced: views rebuild once the stream pauses for
-// 2 s, and at least every 5 s while it keeps flowing. Pings do not wait.
-export const REBUILD_QUIET_MS = 2000
-export const REBUILD_MAX_MS = 5000
-const changed = debounce(() => self.postMessage({ type: 'changed' } satisfies Response), REBUILD_QUIET_MS, REBUILD_MAX_MS)
+// Rebuild notices are debounced: views rebuild once the stream pauses, and
+// at least every so often while it keeps flowing; both scale with the
+// rolling window's length (rebuildDelay). Pings do not wait.
+let liveHours: number | null = null // of the window last requested
+const changed = debounce(
+  () => self.postMessage({ type: 'changed' } satisfies Response),
+  () => rebuildDelay(liveHours).quietMs,
+  () => rebuildDelay(liveHours).maxMs,
+)
 
 /** Live rows from the stream: merged, plus ping attribution for those the page wants animated. */
 function liveRows(rows: unknown[], ping: number[]) {
@@ -222,27 +223,28 @@ function remember(key: string, revision: string, make: () => string): string {
 
 async function view(req: ViewRequest): Promise<{ body: string; offline: boolean }> {
   await inited
+  liveHours = req.win.live ? req.win.durationH : null
   const { synced: sy, offline } = await synced(req.win, req.epoch)
   const { start, end } = bounds(req.win, sy, offline)
   const f = { channels: req.filters.channels, brokers: req.filters.brokers, types: req.filters.types }
   const fj = JSON.stringify(f)
   const revision = `${store.generation}.${engine.revision(start, end)}`
-  const meta = JSON.stringify({
+  // What the UI needs besides the body: the window built, and how recent the held data is.
+  const meta: ViewMeta = {
     window: { start: new Date(start).toISOString(), end: new Date(end).toISOString(), rolling: sy.rolling },
-    revision,
-    filters: Object.fromEntries(Object.entries(f).filter(([, v]) => v.length)),
-    generated_at: new Date().toISOString(),
-  })
+    data_until: new Date(Math.max(store.cov?.hi ?? 0, engine.newest_t())).toISOString(),
+  }
+  const mj = JSON.stringify(meta)
   const key = `${revision}|${start}|${end}|${fj}|${req.kind}|${req.node ?? ''}`
   let body: string
   try {
     body = remember(key, revision, () => engine.view(req.kind, start, end, fj, req.node ?? ''))
   } catch (e) {
-    throw new HttpError(400, e instanceof Error ? e.message : String(e))
+    throw new ViewError('bad_request', e instanceof Error ? e.message : String(e))
   }
-  if (body === 'null') throw new HttpError(404, 'node not observed or referenced in the selected window')
+  if (body === 'null') throw new ViewError('not_found', 'node not observed or referenced in the selected window')
   // Splice the meta in without parsing the (possibly large) body here.
-  return { body: body === '{}' ? `{"meta":${meta}}` : `{"meta":${meta},${body.slice(1)}`, offline }
+  return { body: body === '{}' ? `{"meta":${mj}}` : `{"meta":${mj},${body.slice(1)}`, offline }
 }
 
 self.onmessage = async (e: MessageEvent<Request>) => {
@@ -269,7 +271,7 @@ self.onmessage = async (e: MessageEvent<Request>) => {
     transfer.push(bytes.buffer)
     out = { id: msg.id, ok: true, body: bytes, offline }
   } catch (err) {
-    out = { id: msg.id, ok: false, status: err instanceof HttpError ? err.status : 500, message: err instanceof Error ? err.message : String(err) }
+    out = { id: msg.id, ok: false, kind: err instanceof ViewError ? err.kind : 'internal', message: err instanceof Error ? err.message : String(err) }
   }
   self.postMessage(out, transfer)
 }
