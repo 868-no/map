@@ -1,6 +1,6 @@
 {
-  "name": "Mesh Observatory",
-  "short_name": "Mesh Map",
+  "name": "868.no Map",
+  "short_name": "868.no Map",
   "description": "Live map of a Meshtastic mesh, reconstructed from MQTT traffic.",
   "id": "/",
   "start_url": "/",

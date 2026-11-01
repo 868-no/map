@@ -1,4 +1,4 @@
-# Meshtastic MQTT Mesh Observatory
+# 868.no Map (Meshtastic MQTT mesh map)
 #   docker compose up -d --build                 production, built locally (mount ./secrets, see README)
 #   BACKEND_IMAGE=ghcr.io/868-no/map-backend:latest WEB_IMAGE=ghcr.io/868-no/map-web:latest \
 #     BASEMAP_IMAGE=ghcr.io/868-no/map-basemap:latest \

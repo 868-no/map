@@ -38,7 +38,7 @@ The decoder, decryption and signature verification were replayed against a read-
 
 ## Policy differences from firmware (deliberate)
 
-- **Strict mode** (`SIGNATURE_POLICY=strict`) rejects signed packets whose key is unknown. Unlike firmware Strict it does **not** drop unsigned packets: the observatory's job is visibility, and unsigned traffic is labelled `unsigned`.
+- **Strict mode** (`SIGNATURE_POLICY=strict`) rejects signed packets whose key is unknown. Unlike firmware Strict it does **not** drop unsigned packets: the map's job is visibility, and unsigned traffic is labelled `unsigned`.
 - Firmware exempts AES-CCM channels from Strict because the tag authenticates channel membership; we do the same implicitly (CCM does not change signature status) and record `ccm_authenticated` as crypto provenance — it authenticates the channel, not the sender.
 
 ## Topics

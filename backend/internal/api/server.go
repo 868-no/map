@@ -137,7 +137,7 @@ func (s *Server) acquire(ctx context.Context) (func(), error) {
 // OpenAPI export).
 func (s *Server) NewHandler(mux *http.ServeMux) huma.API {
 	s.heavy = make(chan struct{}, 8)
-	cfg := huma.DefaultConfig("Meshtastic MQTT Mesh Observatory API", Version)
+	cfg := huma.DefaultConfig("868.no Map API", Version)
 	cfg.Info.Description = "The packet log of a Meshtastic mesh observed over MQTT: decoded observations of a requested " +
 		"half-open interval [start, end), paged, plus a live stream of new ones. Browsers derive every mesh view " +
 		"(nodes, links, location estimates, traffic) from these rows themselves. Timestamps are observed_at: when " +

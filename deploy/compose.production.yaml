@@ -1,4 +1,4 @@
-# Meshtastic MQTT Mesh Observatory: production, configured entirely in this
+# 868.no Map: production, configured entirely in this
 # file (no .env, no ./secrets). Published images; HTTPS is terminated by a
 # reverse proxy in front of `web` (see docs/operations.md).
 #

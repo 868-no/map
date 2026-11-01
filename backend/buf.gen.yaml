@@ -1,5 +1,5 @@
 # Generates Go bindings for the subset of the pinned Meshtastic protobufs the
-# observatory needs. Output is committed; regenerate with `scripts/go.sh buf generate`.
+# map needs. Output is committed; regenerate with `scripts/go.sh buf generate`.
 version: v2
 managed:
   enabled: true

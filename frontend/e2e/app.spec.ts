@@ -45,7 +45,7 @@ test('follows the browser theme, and a chosen theme overrides it from the first 
   await ready(page)
   expect(await pageBg(page)).toBe('rgb(246, 247, 249)')
   await expect.poll(() => mapBg(page)).toBe('#f3f1ec')
-  await expect(page.locator('.topbar h1')).toHaveText('Mesh Observatory')
+  await expect(page.locator('.topbar h1')).toHaveText('868.no Map')
 
   await page.getByRole('button', { name: 'Menu' }).click()
   await page.getByRole('dialog', { name: 'Menu' }).getByLabel('Dark').check()

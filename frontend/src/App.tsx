@@ -173,7 +173,9 @@ export default function App() {
   return (
     <div className="app">
       <header className="topbar">
-        <h1>Mesh Observatory</h1>
+        <h1 className="brand" aria-label="868.no Map">
+          <span className="brand-num">868</span><span className="brand-tld">.no</span> <span className="brand-map">Map</span>
+        </h1>
         {counts && (
           <span className="counters" aria-live="polite">
             {counts.nodes} nodes · {counts.referenced} referenced · {counts.positioned} positioned · {counts.estimated} estimated · {counts.edges} links · {counts.packets} packets / {counts.receptions} receptions

@@ -24,7 +24,7 @@ export function AppMenu({ id, onClose, canInstall, install }: { id: string; onCl
       {canInstall && (
         <>
           <h3>App</h3>
-          <button className="menu-item" onClick={() => { install(); onClose() }}>Install Mesh Observatory on this device</button>
+          <button className="menu-item" onClick={() => { install(); onClose() }}>Install 868.no Map on this device</button>
         </>
       )}
       <h3>About</h3>

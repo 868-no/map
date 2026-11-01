@@ -1,6 +1,6 @@
 {
  "version": 8,
- "name": "Mesh Observatory Dark",
+ "name": "868.no Map Dark",
  "metadata": {
   "meshmap:note": "OpenMapTiles schema. sources.openmaptiles.url and glyphs are filled in by the app from /api/v1/capabilities."
  },

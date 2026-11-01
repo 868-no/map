@@ -52,7 +52,7 @@ test('works offline with the last data received, and never stores tiles in the w
 
   await context.setOffline(true)
   await page.reload()
-  await expect(page.locator('.topbar h1')).toHaveText('Mesh Observatory')
+  await expect(page.locator('.topbar h1')).toHaveText('868.no Map')
   await expect(page.getByRole('status').filter({ hasText: 'Offline' })).toBeVisible()
   await page.getByRole('button', { name: 'Nodes & details' }).click()
   await expect(page.locator('.node-row').first()).toBeVisible()

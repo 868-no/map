@@ -15,7 +15,7 @@ import (
 func main() {
 	root := &cobra.Command{
 		Use:           "meshmap",
-		Short:         "Meshtastic MQTT mesh observatory backend",
+		Short:         "868.no Map backend (Meshtastic MQTT mesh map)",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
