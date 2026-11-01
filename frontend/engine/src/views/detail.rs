@@ -2,7 +2,7 @@
 
 use serde::Serialize;
 
-use super::{brokers, dest, downlinks, first_per_reception, identity_of, is_device_telemetry, is_identity, is_position, latest_by, origins, position_of, position_rows, referenced, sig_counts, telemetry_of, Node};
+use super::{brokers, dest, downlinks, first_per_reception, identity_of, is_device_telemetry, is_identity, is_position, latest_by, origins, position_of, position_rows, referenced, sig_counts, telemetry_of, traceroute_hops, Node};
 use crate::graph::{self, Stats};
 use crate::row::{Interner, Row};
 use crate::util::{iso, key_hex, map, node_id, set, FxMap, FxSet};
@@ -101,7 +101,7 @@ pub fn build_node_detail(rows: &[&Row], num: u32, i: &Interner) -> Option<NodeDe
     }
     n.gateway_receptions = gw_rx.len();
     n.is_gateway = !gw_rx.is_empty();
-    n.mqtt_downlink = downlinks(rows).remove(&num);
+    n.mqtt_downlink = downlinks(&traceroute_hops(rows)).remove(&num);
     if let Some(r) = latest_by(&own, is_identity, |r| r.src).get(&num) {
         n.identity = Some(identity_of(r, i));
     }

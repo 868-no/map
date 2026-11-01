@@ -2,8 +2,7 @@
 
 use serde::Serialize;
 
-use crate::graph::traceroute_samples;
-use crate::row::{ty, Row};
+use crate::graph::{SKey, Sample};
 use crate::util::{map, set, FxMap, FxSet};
 
 /// Evidence that a node takes packets from an MQTT broker (downlink) and
@@ -21,22 +20,15 @@ pub const DOWNLINK_MIN: usize = 3;
 pub const DOWNLINK_SHARE: f64 = 0.25;
 
 /// Probable MQTT downlink per node, from in-window traceroute hop SNRs
-/// (distinct traceroute packets, so many gateways uplinking one count once).
-pub fn downlinks(rows: &[&Row]) -> FxMap<u32, Downlink> {
+/// (`hops`: traceroute_hops of the rows; distinct traceroute packets, so many
+/// gateways uplinking one count once).
+pub fn downlinks(hops: &[Sample]) -> FxMap<u32, Downlink> {
     let mut per: FxMap<u32, (FxSet<u64>, FxSet<u64>)> = map();
-    let mut hops = Vec::new();
-    for r in rows {
-        if r.ty != ty::TRACEROUTE {
-            continue;
-        }
-        let Some(t) = r.traceroute().filter(|t| t.valid) else { continue };
-        hops.clear();
-        traceroute_samples(r.src, r.dst.unwrap_or(0), t.is_reply, &t.route, &t.snr_towards, &t.route_back, &t.snr_back, r.t, r.lp, &mut hops);
-        for h in &hops {
-            let Some(snr) = h.snr.filter(|_| h.dst != 0) else { continue };
-            let e = per.entry(h.dst).or_insert_with(|| (set(), set()));
-            if snr == 0.0 { e.0.insert(r.lp) } else { e.1.insert(r.lp) };
-        }
+    for h in hops {
+        let SKey::Tr(lp, ..) = h.key else { continue };
+        let Some(snr) = h.snr.filter(|_| h.dst != 0) else { continue };
+        let e = per.entry(h.dst).or_insert_with(|| (set(), set()));
+        if snr == 0.0 { e.0.insert(lp) } else { e.1.insert(lp) };
     }
     per.into_iter()
         .filter_map(|(n, (zero, other))| {
@@ -49,7 +41,12 @@ pub fn downlinks(rows: &[&Row]) -> FxMap<u32, Downlink> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::views::test_rows::pos;
+    use crate::row::{ty, Row};
+    use crate::views::{test_rows::pos, traceroute_hops};
+
+    fn downlinks_of(rows: &[Row]) -> FxMap<u32, Downlink> {
+        downlinks(&traceroute_hops(&rows.iter().collect::<Vec<_>>()))
+    }
 
     /// A traceroute request 1 -> 2 -> 3 (destination 9), with the SNR each hop received at.
     fn trace(id: i64, snr: [f64; 2]) -> Row {
@@ -63,16 +60,15 @@ mod tests {
     fn downlink_needs_several_traceroutes_at_exactly_zero_db() {
         // Node 3 is reached at 0 dB in 3 of 4 traceroutes: downlinking. Node 2 never.
         let rows = [trace(1, [5.0, 0.0]), trace(2, [6.0, 0.0]), trace(3, [4.0, 0.0]), trace(4, [5.0, -3.0])];
-        let refs: Vec<&Row> = rows.iter().collect();
-        let d = downlinks(&refs);
+        let d = downlinks_of(&rows);
         assert_eq!(d.get(&3), Some(&Downlink { zero_snr: 3, traceroutes: 4 }));
         assert!(!d.contains_key(&2));
         // Copies of one traceroute (several gateways) count once.
         let dup = [trace(1, [5.0, 0.0]), trace(1, [5.0, 0.0]), trace(1, [5.0, 0.0])];
-        assert!(downlinks(&dup.iter().collect::<Vec<_>>()).is_empty());
+        assert!(downlinks_of(&dup).is_empty());
         // A genuine 0 dB now and then is not enough: 3 of 13 is under a quarter.
         let mut many: Vec<Row> = (1..=10).map(|k| trace(k, [5.0, -2.0])).collect();
         many.extend((11..=13).map(|k| trace(k, [5.0, 0.0])));
-        assert!(downlinks(&many.iter().collect::<Vec<_>>()).is_empty());
+        assert!(downlinks_of(&many).is_empty());
     }
 }

@@ -14,10 +14,26 @@ pub struct EdgeResult {
     pub unmatched: usize,
 }
 
+/// Adjacent segments of every valid traceroute copy, in row order: link
+/// evidence (deduplicated in reduce) and downlink evidence alike.
+pub fn traceroute_hops(rows: &[&Row]) -> Vec<Sample> {
+    let mut out = Vec::new();
+    for r in rows {
+        if r.ty != ty::TRACEROUTE {
+            continue;
+        }
+        if let Some(t) = r.traceroute().filter(|t| t.valid) {
+            traceroute_samples(r.src, r.dst.unwrap_or(0), t.is_reply, &t.route, &t.snr_towards, &t.route_back, &t.snr_back, r.t, r.lp, &mut out);
+        }
+    }
+    out
+}
+
 /// Evidence-backed links. Relay bytes resolve only against known nodes,
 /// their reported positions, and the roles that can rebroadcast.
+/// `hops`: traceroute_hops of the rows.
 /// `downlinkers`: probable downlinking nodes, whose 0 dB traceroute hops become MQTT links (None: off).
-pub fn build_edges(rows: &[&Row], known: &[u32], pos: FxMap<u32, LatLon>, silent: FxSet<u32>, downlinkers: Option<&FxSet<u32>>) -> (EdgeResult, RelayContext) {
+pub fn build_edges(rows: &[&Row], hops: &[Sample], known: &[u32], pos: FxMap<u32, LatLon>, silent: FxSet<u32>, downlinkers: Option<&FxSet<u32>>) -> (EdgeResult, RelayContext) {
     let mut samples: Vec<Sample> = Vec::new();
     // A. NeighborInfo: neighbour -> reporter, the first copy of each logical packet.
     let mut first_nb: Vec<&Row> = Vec::new();
@@ -45,14 +61,7 @@ pub fn build_edges(rows: &[&Row], known: &[u32], pos: FxMap<u32, LatLon>, silent
         }
     }
     // B. Traceroute: adjacent segments of every valid copy (deduplicated in reduce).
-    for r in rows {
-        if r.ty != ty::TRACEROUTE {
-            continue;
-        }
-        if let Some(t) = r.traceroute().filter(|t| t.valid) {
-            traceroute_samples(r.src, r.dst.unwrap_or(0), t.is_reply, &t.route, &t.snr_towards, &t.route_back, &t.snr_back, r.t, r.lp, &mut samples);
-        }
-    }
+    samples.extend_from_slice(hops);
     // Traceroute hops that went over MQTT are links of their own, never radio
     // evidence (relay resolution, estimates, link statistics) (D-055).
     let (mut samples, mqtt) = match downlinkers {

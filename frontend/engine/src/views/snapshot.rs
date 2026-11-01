@@ -3,7 +3,7 @@
 use serde::Serialize;
 
 use super::estimate::estimate;
-use super::{brokers, build_edges, downlinks, identity_of, is_device_telemetry, is_identity, latest_by, origins, position_of, position_rows, referenced, sig_counts, telemetry_of, Node};
+use super::{brokers, build_edges, downlinks, identity_of, is_device_telemetry, is_identity, latest_by, origins, position_of, position_rows, referenced, sig_counts, telemetry_of, traceroute_hops, Node};
 use crate::geo;
 use crate::graph::{Edge, LatLon, RelayContext};
 use crate::row::{Interner, Row};
@@ -112,7 +112,8 @@ pub fn build_snapshot(rows: &[&Row], i: &Interner, g: &GeoOptions, rules: Rules)
         x.first = x.first.min(first);
         x.last = x.last.max(last);
     }
-    for (n, d) in downlinks(rows) {
+    let hops = traceroute_hops(rows);
+    for (n, d) in downlinks(&hops) {
         nodes.entry(n).or_insert_with(|| Node::new(n)).mqtt_downlink = Some(d);
     }
     for (n, r) in latest_by(rows, is_identity, |r| r.src) {
@@ -146,7 +147,7 @@ pub fn build_snapshot(rows: &[&Row], i: &Interner, g: &GeoOptions, rules: Rules)
     let roles: FxMap<u32, String> = nodes.iter().filter_map(|(&n, x)| x.identity.as_ref().filter(|id| !id.role.is_empty()).map(|id| (n, id.role.clone()))).collect();
     let silent: FxSet<u32> = if rules.silent { roles.iter().filter(|(_, r)| is_silent_role(r)).map(|(&n, _)| n).collect() } else { set() };
     let downlinkers: FxSet<u32> = nodes.iter().filter(|(_, x)| x.mqtt_downlink.is_some()).map(|(&n, _)| n).collect();
-    let (er, ctx) = build_edges(rows, &known, pos, silent, rules.mqtt_links.then_some(&downlinkers));
+    let (er, ctx) = build_edges(rows, &hops, &known, pos, silent, rules.mqtt_links.then_some(&downlinkers));
     if g.enabled {
         let radio: Vec<Edge> = er.edges.iter().filter(|e| !e.mqtt).cloned().collect();
         estimate(&mut nodes, &radio, g);
