@@ -177,6 +177,12 @@ pub fn build_snapshot(rows: &[&Row], i: &Interner, g: &GeoOptions, rules: Rules)
     for e in er.edges.iter_mut().filter(|e| !e.mqtt) {
         e.zero_cost = zc.remove(&(e.src_num, e.dst_num));
     }
+    // Routers' relaying, from the links and every packet's copies (D-078).
+    for (n, r) in crate::reliability::relaying(rows, &er.edges, &ctx, &roles) {
+        if let Some(x) = nodes.get_mut(&n) {
+            x.relaying = Some(r);
+        }
+    }
     if g.enabled {
         let radio: Vec<Edge> = er.edges.iter().filter(|e| !e.mqtt).cloned().collect();
         estimate(&mut nodes, &radio, g);

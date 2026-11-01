@@ -232,6 +232,7 @@ export function NodePanel({ id, snapshot }: { id: string; snapshot: SnapshotView
           <Sparkline label="Channel utilisation %" points={(d.telemetry_series ?? []).map((s) => [Date.parse(s.at), s.ch_util ?? null])} />
         </div>
       )}
+      <RelayingSection node={snapNode} snapshot={snapshot} />
       <ReachSection key={d.id} id={d.id} name={(n) => names.get(n) ?? n} />
       <h3>Links in window ({edges.length})</h3>
       <ul className="links">
@@ -485,6 +486,48 @@ function ReachSection({ id, name }: { id: string; name: (id: string) => string }
         relays for free over a 0-cost link (gold chevrons). Dashed lines skip relays that have no position on the map. Links never observed are missing, and intermittent ones count as always there.
         {r && r.nodes.length > 0 && shown && <> Nearest relays: {[...new Set(r.nodes.filter((n) => n.need === 1).map((n) => n.via))].slice(0, 3).map(name).join(', ')}.</>}
       </p>
+    </section>
+  )
+}
+
+/** Below this many expected packets the share says too little to show. */
+const MIN_EXPECTED = 10
+const pct = (seen: number, expected: number) => Math.round((100 * seen) / expected)
+
+/**
+ * Routers: how often they are seen relaying what they should relay (D-078),
+ * against the median of routers with the same role.
+ */
+function RelayingSection({ node, snapshot }: { node: MeshNode | undefined; snapshot: SnapshotView | undefined }) {
+  const r = node?.relaying
+  const role = node?.identity?.role
+  const peers = useMemo(() => {
+    const shares = (snapshot?.nodes ?? [])
+      .filter((n) => n.identity?.role === role && n.relaying && n.relaying.expected >= MIN_EXPECTED)
+      .map((n) => n.relaying!.seen / n.relaying!.expected)
+      .sort((a, b) => a - b)
+    return shares.length >= 3 ? { median: Math.round(100 * shares[Math.floor(shares.length / 2)]), count: shares.length } : null
+  }, [snapshot, role])
+  if (!r) return null
+  return (
+    <section className="relaying">
+      <h3 title="A ROUTER or ROUTER_LATE rebroadcasts every packet it receives with hops left. Counted only where a gateway that hears it (a witness) also got the packet.">Relaying</h3>
+      {r.expected < MIN_EXPECTED ? (
+        <p className="muted">Too few packets to judge: {r.expected} it should have relayed where a witness could have seen it.</p>
+      ) : (
+        <>
+          <p>
+            Seen relaying <b>{r.seen}</b> of {r.expected} packets it should have relayed (<b>{pct(r.seen, r.expected)} %</b>)
+            {peers && <> · {role} median {peers.median} % ({peers.count} routers)</>}
+          </p>
+          <p className="muted reach-caveat">
+            A lower bound: {r.witnesses} gateway{r.witnesses === 1 ? '' : 's'} hear{r.witnesses === 1 ? 's' : ''} it directly, and a gateway uplinks only the first copy it hears, so its
+            rebroadcast is unseen whenever another copy got there first{role === 'ROUTER_LATE' ? ' (likely for a ROUTER_LATE, which waits before relaying)' : ''}.
+            {' '}{r.received_as_gateway === r.expected ? 'It uplinked every one of them itself, so it surely received them.' : `${r.expected - r.received_as_gateway} of them are inferred from a strong link to the sender rather than its own uplink.`}
+            {' '}Compare with routers of the same role and coverage rather than reading it as an absolute.
+          </p>
+        </>
+      )}
     </section>
   )
 }

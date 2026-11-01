@@ -24,7 +24,7 @@ fn norm(v: &Value, server: bool) -> Value {
         Value::Object(o) => {
             let mut out = serde_json::Map::new();
             for (k, x) in o {
-                if server && (k == "source" || k == "radio" || k == "mqtt_downlink" || k == "zero_cost" || k == "moved_at" || k == "track" || k == "airborne" || k == "refined") {
+                if server && (k == "source" || k == "radio" || k == "mqtt_downlink" || k == "zero_cost" || k == "moved_at" || k == "track" || k == "airborne" || k == "refined" || k == "relaying") {
                     continue;
                 }
                 let mut x = norm(x, server);

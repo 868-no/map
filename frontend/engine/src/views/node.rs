@@ -111,6 +111,9 @@ pub struct Node {
     /// the map places it here rather than at the latest report.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub refined: Option<crate::movement::Anchor>,
+    /// Routers: how often it is seen relaying what it should relay (D-078).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub relaying: Option<crate::reliability::Relaying>,
     #[serde(skip)]
     pub(super) first: i64,
     #[serde(skip)]
@@ -143,7 +146,7 @@ impl Node {
         Node {
             id: node_id(n), num: n, status: "observed", identity: None, position: None, telemetry: None, first_seen: None, last_seen: None,
             packets: 0, receptions: 0, gateway_receptions: 0, is_gateway: false, signatures: Signatures::default(), brokers: None,
-            mqtt_opt_out: false, estimate: None, estimate_note: None, mqtt_downlink: None, moved_at: None, track: None, airborne: false, refined: None, first: i64::MAX, last: i64::MIN, pos: None,
+            mqtt_opt_out: false, estimate: None, estimate_note: None, mqtt_downlink: None, moved_at: None, track: None, airborne: false, refined: None, relaying: None, first: i64::MAX, last: i64::MIN, pos: None,
         }
     }
 }

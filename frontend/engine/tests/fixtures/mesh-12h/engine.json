@@ -30036,6 +30036,12 @@
           "source": "position"
         },
         "receptions": 228,
+        "relaying": {
+          "expected": 460,
+          "received_as_gateway": 450,
+          "seen": 46,
+          "witnesses": 3
+        },
         "signatures": {
           "not_applicable": 44,
           "unsigned": 10,
@@ -30075,6 +30081,12 @@
           "source": "position"
         },
         "receptions": 89,
+        "relaying": {
+          "expected": 502,
+          "received_as_gateway": 491,
+          "seen": 43,
+          "witnesses": 3
+        },
         "signatures": {
           "not_applicable": 2,
           "unsigned": 14,
@@ -30946,6 +30958,12 @@
           "radius_m": 10.0,
           "reports": 16
         },
+        "relaying": {
+          "expected": 523,
+          "received_as_gateway": 0,
+          "seen": 124,
+          "witnesses": 1
+        },
         "signatures": {
           "not_applicable": 3,
           "unsigned": 46,
@@ -31070,6 +31088,12 @@
           "source": "position"
         },
         "receptions": 125,
+        "relaying": {
+          "expected": 1,
+          "received_as_gateway": 0,
+          "seen": 1,
+          "witnesses": 1
+        },
         "signatures": {
           "not_applicable": 3,
           "unsigned": 37,
@@ -31337,6 +31361,12 @@
           "source": "position"
         },
         "receptions": 137,
+        "relaying": {
+          "expected": 97,
+          "received_as_gateway": 0,
+          "seen": 17,
+          "witnesses": 1
+        },
         "signatures": {
           "not_applicable": 2,
           "unsigned": 30,
@@ -31745,6 +31775,12 @@
           "source": "position"
         },
         "receptions": 143,
+        "relaying": {
+          "expected": 433,
+          "received_as_gateway": 0,
+          "seen": 43,
+          "witnesses": 3
+        },
         "signatures": {
           "not_applicable": 4,
           "unsigned": 18,
@@ -31881,6 +31917,12 @@
           "source": "position"
         },
         "receptions": 112,
+        "relaying": {
+          "expected": 306,
+          "received_as_gateway": 0,
+          "seen": 65,
+          "witnesses": 2
+        },
         "signatures": {
           "not_applicable": 8,
           "unsigned": 13,
@@ -32035,6 +32077,12 @@
           "source": "position"
         },
         "receptions": 125,
+        "relaying": {
+          "expected": 331,
+          "received_as_gateway": 0,
+          "seen": 63,
+          "witnesses": 3
+        },
         "signatures": {
           "not_applicable": 4,
           "unsigned": 16,
@@ -32359,6 +32407,12 @@
           "source": "position"
         },
         "receptions": 74,
+        "relaying": {
+          "expected": 374,
+          "received_as_gateway": 0,
+          "seen": 268,
+          "witnesses": 5
+        },
         "signatures": {
           "not_applicable": 2,
           "unsigned": 15,
@@ -32539,6 +32593,12 @@
           "source": "position"
         },
         "receptions": 36,
+        "relaying": {
+          "expected": 658,
+          "received_as_gateway": 0,
+          "seen": 96,
+          "witnesses": 1
+        },
         "signatures": {
           "not_applicable": 5,
           "unsigned": 11,
@@ -32958,6 +33018,12 @@
           "source": "position"
         },
         "receptions": 52,
+        "relaying": {
+          "expected": 475,
+          "received_as_gateway": 0,
+          "seen": 96,
+          "witnesses": 2
+        },
         "signatures": {
           "not_applicable": 2,
           "unsigned": 9,
@@ -33168,6 +33234,12 @@
           "source": "position"
         },
         "receptions": 60,
+        "relaying": {
+          "expected": 96,
+          "received_as_gateway": 0,
+          "seen": 12,
+          "witnesses": 2
+        },
         "signatures": {
           "not_applicable": 2,
           "unsigned": 9,
@@ -33855,6 +33927,12 @@
           "source": "position"
         },
         "receptions": 45,
+        "relaying": {
+          "expected": 470,
+          "received_as_gateway": 0,
+          "seen": 25,
+          "witnesses": 2
+        },
         "signatures": {
           "not_applicable": 3,
           "unsigned": 5,
@@ -33953,6 +34031,12 @@
         "num": 1299288895,
         "packets": 8,
         "receptions": 21,
+        "relaying": {
+          "expected": 66,
+          "received_as_gateway": 0,
+          "seen": 19,
+          "witnesses": 2
+        },
         "signatures": {
           "not_applicable": 2,
           "unsigned": 6,
@@ -34500,6 +34584,12 @@
         "num": 496056339,
         "packets": 6,
         "receptions": 11,
+        "relaying": {
+          "expected": 347,
+          "received_as_gateway": 0,
+          "seen": 138,
+          "witnesses": 2
+        },
         "signatures": {
           "not_applicable": 4,
           "unsigned": 2,
@@ -41898,6 +41988,12 @@
           "source": "position"
         },
         "receptions": 30,
+        "relaying": {
+          "expected": 188,
+          "received_as_gateway": 188,
+          "seen": 30,
+          "witnesses": 3
+        },
         "signatures": {
           "not_applicable": 0,
           "unsigned": 7,
@@ -41976,6 +42072,12 @@
           "source": "position"
         },
         "receptions": 25,
+        "relaying": {
+          "expected": 186,
+          "received_as_gateway": 186,
+          "seen": 11,
+          "witnesses": 3
+        },
         "signatures": {
           "not_applicable": 0,
           "unsigned": 4,

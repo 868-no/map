@@ -10,6 +10,7 @@ pub mod graph;
 pub mod packets;
 pub mod radio;
 pub mod reach;
+pub mod reliability;
 pub mod row;
 pub mod store;
 pub mod util;

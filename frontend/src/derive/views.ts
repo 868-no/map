@@ -102,6 +102,8 @@ export interface MeshNode {
   track?: { lat: number; lon: number; alt?: number; at: string }[] // its positions in time order, newest last, when it moved
   airborne?: boolean // moving and reporting more than 750 m above sea level
   refined?: { lat: number; lon: number; radius_m: number; reports: number; agree: number } // narrowed from reports jumping around one place (D-077)
+  // Routers: packets it received with hops left where a witness gateway got them, and how many of its rebroadcasts were reported (D-078)
+  relaying?: { expected: number; seen: number; witnesses: number; received_as_gateway: number }
 }
 
 /** Directed src -> dst: dst heard src. */
