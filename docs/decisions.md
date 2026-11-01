@@ -393,3 +393,16 @@ Operator request: publish an accurate license, compatible with Meshtastic's prot
 
   All are GPL-3.0-compatible. Fonts (OFL), map data (ODbL, CC-BY, public domain) and the container base images are listed in `THIRD_PARTY_NOTICES.md`, with a Meshtastic trademark disclaimer.
 - **Source link:** visitors' browsers receive the compiled frontend, which counts as distributing it, so the attribution bar links to the source. CI builds the web image with the commit hash (`SOURCE_REVISION`); a modified build can set `SOURCE_URL`. AGPL-3.0 would also have been compatible and would additionally cover the backend as a network service; GPL-3.0 matches upstream.
+
+## D-051 Light theme, repository link, privacy policy (2026-11-01)
+
+Operator request. This reverses the spec's dark-only design.
+- **Themes:** viewers choose Follow browser (the default), Light or Dark under Layers; the choice is stored with the other layer settings.
+  - `public/theme-boot.js` sets `data-theme` on `<html>` before the first paint, so there's no flash. It has to be a separate file because the CSP blocks inline scripts.
+  - UI colours are CSS tokens with a light set.
+  - The basemap has a light style, `web/styles/light.json`. It is generated from `dark.json` and has the same layers; a unit test enforces that. A theme change copies its paint properties onto the live map instead of calling `setStyle`, which would drop the interleaved deck.gl layers and the layer visibility.
+  - Overlay colours come from a palette per theme (`map/palette.ts`). The node age ramp, route and opt-out colours stay the same in both.
+  - `MAP_STYLE_LIGHT_URL` configures the light style; capabilities report it as `map.style_url_light`.
+- **Repository link:** a GitHub icon in the top bar, next to the existing "Source (GPL-3.0)" link (D-050).
+- **Privacy policy:** a static page, `/privacy.html`, linked from the attribution bar. It is readable without the app and linkable. `privacy.js` fills in this deployment's operator (`OPERATOR_NAME`, `OPERATOR_CONTACT`, new in capabilities), retention, geolocation and tile source. What it says about visitors was checked against the code: IPs are held only in the rate limiter's memory, dropped after 10 idle minutes, and never logged; the Caddy image keeps no access log; there are no cookies; browser storage holds settings, data and the app shell. The service worker used to cache every navigation as `/index.html`, which would have stored the policy as the offline app; precached pages are now cached under their own path.
+- **Found while writing it:** "message bodies are never stored" was only true of `decoded_metadata`. `envelope_bytes` keeps the raw envelope: encrypted text messages, readable with the public default key, and plain text from gateways that uplink decrypted packets. The policy and `architecture.md` now say so; whether to keep it is the operator's decision.

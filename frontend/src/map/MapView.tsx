@@ -5,7 +5,7 @@ import { MapboxOverlay } from '@deck.gl/mapbox'
 import type { Layer, PickingInfo } from '@deck.gl/core'
 import type { Capabilities, Edge, SnapshotBody } from '../api/types'
 import { useStore } from '../state/store'
-import { loadStyle, registerPMTiles } from './style'
+import { applyStylePaint, loadStyle, registerPMTiles } from './style'
 import { filterEdges, linkGeometry, placeNodes, visibleLinks, type LinkGeom, type PlacedNode } from './model'
 import { frameArrived, pingCount } from './pings'
 import { BASEMAP_GROUPS } from './layers'
@@ -16,12 +16,11 @@ import { clusterLabels, type Cluster, type LabelDatum } from './labels'
 import { usePacketRoute } from '../state/data'
 import { installTestHook } from './testHook'
 import { LayersPanel } from '../features/controls'
+import { PRIVACY_URL, SOURCE_HREF } from '../links'
+import { useTheme, type Theme } from '../theme'
+import { PALETTES } from './palette'
 
-// The map is GPL-3.0 (it builds on Meshtastic's GPL protobufs): every visitor
-// gets the compiled frontend, so the page links to its corresponding source,
-// at the commit the image was built from when known.
-const SOURCE_URL = import.meta.env.VITE_SOURCE_URL || 'https://github.com/868-no/map'
-const SOURCE_HREF = import.meta.env.VITE_SOURCE_REVISION ? `${SOURCE_URL}/tree/${import.meta.env.VITE_SOURCE_REVISION}` : SOURCE_URL
+
 
 interface Props {
   caps: Capabilities
@@ -46,13 +45,17 @@ export default function MapView({ caps, snapshot, onPositions }: Props) {
   const selection = useStore((s) => s.selection)
   const select = useStore((s) => s.select)
   const search = useStore((s) => s.search)
+  const theme = useTheme()
+  const palette = PALETTES[theme]
+  const styleFor = (t: Theme) => (t === 'light' ? caps.map.style_url_light : caps.map.style_url)
+  const themeRef = useRef(theme) // the theme the map's style currently shows
 
   // Map + overlay lifecycle.
   useEffect(() => {
     if (!container.current) return
     let cancelled = false
     registerPMTiles()
-    loadStyle(caps.map.style_url, caps.map.tile_source)
+    loadStyle(styleFor(themeRef.current), caps.map.tile_source)
       .then((style) => {
         if (cancelled || !container.current) return
         // Start with the viewer's layer choices so hidden layers never flash.
@@ -95,7 +98,15 @@ export default function MapView({ caps, snapshot, onPositions }: Props) {
       mapRef.current?.remove()
       mapRef.current = null
     }
-  }, [caps])
+  }, [caps]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Theme changes repaint the basemap in place (same layers, other colours).
+  useEffect(() => {
+    const map = mapRef.current
+    if (!ready || !map || themeRef.current === theme) return
+    themeRef.current = theme
+    applyStylePaint(map, styleFor(theme)).catch((e: Error) => console.warn('theme style', e.message))
+  }, [ready, theme]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Basemap layer groups the viewer switched on or off.
   useEffect(() => {
@@ -157,8 +168,8 @@ export default function MapView({ caps, snapshot, onPositions }: Props) {
 
   // Static layers, rebuilt on data/filter/selection change; pings animate on top.
   const baseLayers = useMemo(
-    () => buildMeshLayers({ placed, links: shownLinks, selection, search, toggles, zoom, clusters, exploded, route }),
-    [placed, shownLinks, selection, search, toggles, zoom, clusters, exploded, route],
+    () => buildMeshLayers({ placed, links: shownLinks, selection, search, toggles, zoom, clusters, exploded, route, palette }),
+    [placed, shownLinks, selection, search, toggles, zoom, clusters, exploded, route, palette],
   )
 
   // Animation loop: runs only while pings are alive (~30 fps), then settles
@@ -183,11 +194,11 @@ export default function MapView({ caps, snapshot, onPositions }: Props) {
         return
       }
       animating = true
-      overlay.setProps({ layers: [...baseLayers, ...buildPingLayers(now, mapRef.current?.getZoom() ?? 8)] })
+      overlay.setProps({ layers: [...baseLayers, ...buildPingLayers(now, mapRef.current?.getZoom() ?? 8, palette)] })
     }
     raf = requestAnimationFrame(render)
     return () => cancelAnimationFrame(raf)
-  }, [ready, baseLayers, toggles.animation])
+  }, [ready, baseLayers, toggles.animation, palette])
 
   // Picking: hover tooltip + click selection.
   useEffect(() => {
@@ -255,6 +266,8 @@ export default function MapView({ caps, snapshot, onPositions }: Props) {
         <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">© OpenStreetMap contributors</a>
         {' · '}
         <a href={SOURCE_HREF} target="_blank" rel="noreferrer" title="This map is free software under the GNU GPL v3; its source code">Source (GPL-3.0)</a>
+        {' · '}
+        <a href={PRIVACY_URL} target="_blank" rel="noreferrer">Privacy</a>
       </div>
       {hover && (
         <div className="tooltip" style={{ left: hover.x + 12, top: hover.y + 12 }} role="tooltip">

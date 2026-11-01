@@ -133,8 +133,8 @@ export default function Timeline({ caps, retention, snapshot, traffic, liveOK }:
           <svg viewBox="0 0 1000 40" preserveAspectRatio="none" role="img">
             {bars.map((b, i) => (
               <g key={i}>
-                <rect x={b.x * 1000} y={40 - b.r * 38} width={Math.max(1000 / Math.max(bars.length, 1) - 1, 1)} height={b.r * 38} fill="#2b4a5c" />
-                <rect x={b.x * 1000} y={40 - b.p * 38} width={Math.max(1000 / Math.max(bars.length, 1) - 1, 1)} height={b.p * 38} fill="#4cc9f0" />
+                <rect x={b.x * 1000} y={40 - b.r * 38} width={Math.max(1000 / Math.max(bars.length, 1) - 1, 1)} height={b.r * 38} style={{ fill: 'var(--bar-dim)' }} />
+                <rect x={b.x * 1000} y={40 - b.p * 38} width={Math.max(1000 / Math.max(bars.length, 1) - 1, 1)} height={b.p * 38} style={{ fill: 'var(--accent)' }} />
               </g>
             ))}
           </svg>

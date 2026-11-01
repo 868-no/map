@@ -3,18 +3,16 @@ import { LineLayer, ScatterplotLayer } from '@deck.gl/layers'
 import type { Layer } from '@deck.gl/core'
 import { activePings, RING_BANDS, type Blip, type Flash, type Ring, type Trail } from './pings'
 import { UNDER_LABELS, type RGBA } from './deckShared'
-
-// Ping colours: first broadcast by the originator, rebroadcast by a relay.
-export const PING_ORIGIN: [number, number, number] = [125, 224, 255]
-export const PING_RELAY: [number, number, number] = [255, 196, 110]
-const rgb = (r: { rebroadcast: boolean }) => (r.rebroadcast ? PING_RELAY : PING_ORIGIN)
-/** The ping colour lifted 45 % toward white: the travelling link's core. */
-const bright = (r: { rebroadcast: boolean }) => rgb(r).map((c) => Math.round(c + (255 - c) * 0.45)) as [number, number, number]
+import type { MapPalette } from './palette'
 // Rings have no outline: a soft fill whose opacity follows the signal at each
 // receiver shows the reach, and the animated links' heads mark its edge.
 const FILL_ALPHA = 0.18
 
-export function buildPingLayers(now: number, zoom: number): Layer[] {
+export function buildPingLayers(now: number, zoom: number, palette: MapPalette): Layer[] {
+  // Ping colours: first broadcast by the originator, rebroadcast by a relay;
+  // the travelling link's core stands out from its glow.
+  const rgb = (r: { rebroadcast: boolean }) => (r.rebroadcast ? palette.pingRelay : palette.pingOrigin)
+  const bright = (r: { rebroadcast: boolean }) => palette.pingCore(rgb(r))
   const { rings, blips, flashes, trails } = activePings(now, zoom)
   const moving = trails.filter((t) => t.progress < 1)
   return [

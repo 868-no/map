@@ -1,6 +1,6 @@
 # Basemap
 
-The map uses one dark style (`web/styles/dark.json`) on the **OpenMapTiles** vector schema. Required labels come from these layers: `place` (cities, towns, villages, country), `mountain_peak` (peaks with elevation, ▲), `transportation` and `transportation_name` (road hierarchy, names, route refs such as E6), and `boundary` (dashed national and county borders). Mesh overlays are drawn beneath the label layers, so names stay readable.
+The map has a dark and a light style (`web/styles/dark.json`, `web/styles/light.json`) on the **OpenMapTiles** vector schema. They have the same layers and differ only in paint: switching theme copies the other style's paint onto the live map, and a unit test keeps them in step. The light style is generated from the dark one by a colour table (keep both when editing layers). Required labels come from these layers: `place` (cities, towns, villages, country), `mountain_peak` (peaks with elevation, ▲), `transportation` and `transportation_name` (road hierarchy, names, route refs such as E6), and `boundary` (dashed national and county borders). Mesh overlays are drawn beneath the label layers, so names stay readable.
 
 ## Self-hosted PMTiles (default)
 

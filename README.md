@@ -1,6 +1,6 @@
 # Meshtastic MQTT Mesh Observatory
 
-An interactive, permanently dark map for observing Meshtastic mesh networks using only traffic from one or more MQTT brokers. It decrypts channel traffic, verifies XEdDSA packet signatures and stores each accepted gateway reception in one PostgreSQL table (`packet_log`). From that table the browser reconstructs nodes, evidence-backed RF links, traffic and coarse location estimates for any time window in the retention period. Nothing from outside the selected window ever leaks into a view.
+An interactive map, in light and dark themes, for observing Meshtastic mesh networks using only traffic from one or more MQTT brokers. It decrypts channel traffic, verifies XEdDSA packet signatures and stores each accepted gateway reception in one PostgreSQL table (`packet_log`). From that table the browser reconstructs nodes, evidence-backed RF links, traffic and coarse location estimates for any time window in the retention period. Nothing from outside the selected window ever leaks into a view.
 
 ![Live overview](docs/screenshots/live-overview.png)
 
@@ -9,6 +9,8 @@ An interactive, permanently dark map for observing Meshtastic mesh networks usin
 - **Live pings:** each transmission heard live animates as a ring at the transmitter; packets addressed to one node also animate a line to each direct receiver (D-047). The link layers start switched off.
 - **Honest positions:** reported positions only from in-window packets. Estimates need ≥ 3 well-spaced anchors and are drawn as hollow markers with an uncertainty circle; there are no guessed pins.
 - **Crypto:** AES-CTR and firmware 2.8.1+ AES-CCM channels, firmware-compatible XEdDSA verification with trust-on-first-use, and per-packet status (`verified`, `unsigned`, `unverifiable`, `not-applicable`). Verified against real firmware 2.8 traffic.
+- **Light and dark themes:** follows the browser's setting by default; viewers can pick one under Layers.
+- **Privacy:** no accounts, cookies, analytics or third-party requests; a [privacy policy](frontend/public/privacy.html) at `/privacy.html` fills in the deployment's operator, contact and retention from the API.
 - **Installable and offline-capable:** add it to a phone's home screen; without a connection it opens with the last data it received (map tiles are not stored offline).
 - **Self-hosted:** Docker Compose, a self-hosted PMTiles basemap with switchable layers (place, peak, road and border labels; most names hidden by default), no external services at runtime apart from the basemap service's OpenStreetMap downloads when it builds.
 

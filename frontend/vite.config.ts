@@ -30,7 +30,7 @@ function serviceWorker(): Plugin {
         .sort()
       const hash = createHash('sha256')
       for (const u of urls) hash.update(u).update(readFileSync(join(outDir, u)))
-      const precache = [...urls, '/styles/dark.json']
+      const precache = [...urls, '/styles/dark.json', '/styles/light.json']
       const src = readFileSync('sw/sw.js', 'utf8')
         .replace("'__VERSION__'", JSON.stringify(hash.digest('hex').slice(0, 12)))
         .replace('const PRECACHE = __PRECACHE__', `const PRECACHE = ${JSON.stringify(precache)}`)

@@ -105,6 +105,7 @@ export interface components {
             max_window_hours: number;
             /** Format: int64 */
             min_window_hours: number;
+            operator: components["schemas"]["CapabilitiesBodyOperatorStruct"];
             presets: components["schemas"]["Preset"][] | null;
             /** Format: int64 */
             retention_months: number;
@@ -120,11 +121,20 @@ export interface components {
             lat: number;
             /** Format: double */
             lon: number;
+            /** @description Map style for the dark theme */
             style_url: string;
+            /** @description Map style for the light theme (same layers) */
+            style_url_light: string;
             /** @description Vector tile source for the style: pmtiles:///path for the self-hosted archive, or a TileJSON URL */
             tile_source: string;
             /** Format: double */
             zoom: number;
+        };
+        CapabilitiesBodyOperatorStruct: {
+            /** @description How to reach the operator about privacy (e-mail address or URL) */
+            contact?: string;
+            /** @description Who runs this deployment */
+            name?: string;
         };
         ErrorDetail: {
             /** @description Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id' */

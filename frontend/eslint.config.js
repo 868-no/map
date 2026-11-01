@@ -19,5 +19,7 @@ export default tseslint.config(
   },
   { files: ['e2e/**/*.ts', 'vite.config.ts', 'playwright.config.ts'], languageOptions: { globals: globals.node } },
   { files: ['sw/**/*.js'], languageOptions: { globals: globals.serviceworker } },
+  // Plain scripts served next to the pages (theme boot, privacy policy).
+  { files: ['public/**/*.js'], languageOptions: { globals: globals.browser } },
   { rules: { '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }] } },
 )

@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { defaultBasemap, type BasemapGroup } from '../map/layers'
+import type { ThemeChoice } from '../theme'
 
 export type Confidence = 'low' | 'medium' | 'high'
 
@@ -19,6 +20,7 @@ export interface Toggles {
   uncertainty: boolean
   animation: boolean
   labels: boolean
+  theme: ThemeChoice
   basemap: Record<BasemapGroup, boolean>
 }
 
@@ -50,11 +52,12 @@ interface Store {
 export const defaultFilters: Filters = { channels: [], brokers: [], types: [], evidence: [], minConfidence: 'low', positionedOnly: false }
 const prefersReducedMotion = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
 
-export const defaultToggles: Toggles = { infraLinks: false, otherLinks: false, inferred: true, uncertainty: false, animation: !prefersReducedMotion, labels: true, basemap: defaultBasemap }
+export const defaultToggles: Toggles = { infraLinks: false, otherLinks: false, inferred: true, uncertainty: false, animation: !prefersReducedMotion, labels: true, theme: 'system', basemap: defaultBasemap }
 
 // Layer choices are a per-viewer convenience kept in browser storage; the
 // map works the same when storage is unavailable.
-const TOGGLES_KEY = 'meshmap:toggles:v5' // bumped when defaults change (v2 node names on, v3 major roads off, v4 accuracy circles off, v5 links off)
+// public/theme-boot.js reads the theme from this key too.
+export const TOGGLES_KEY = 'meshmap:toggles:v5' // bumped when defaults change (v2 node names on, v3 major roads off, v4 accuracy circles off, v5 links off)
 function loadToggles(): Toggles {
   try {
     const saved = JSON.parse(window.localStorage.getItem(TOGGLES_KEY) ?? 'null') as Partial<Toggles> | null

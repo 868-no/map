@@ -51,6 +51,10 @@ Pin a version tag or `sha-…` in production (`compose.production.yaml` takes it
 - Key rotation: add the new key first and keep the old one until no traffic uses it, then restart `backend`. The configuration hash is part of the `generation` that `/observations` reports, so browsers discard the rows they hold and refetch.
 - Optional: `GEOLOCATION_CALIBRATION` is the path to a YAML file with `default: {p0_dbm, path_loss_exponent}` for calibrated RF location estimates (D-016). All other settings are environment variables; see `.env.example` and `backend/internal/config/config.go`.
 
+## Privacy policy
+
+The map links to `/privacy.html` (source: `frontend/public/privacy.html`). It describes what this software collects and fills in, from `/api/v1/capabilities`, the operator (`OPERATOR_NAME`), how to reach them (`OPERATOR_CONTACT`, an e-mail address or URL), the retention period, whether position estimates are on and whether map tiles come from an outside provider. Set both operator variables in production. If you change what the deployment collects or shares (an outside tile provider, access logs in your reverse proxy), check the page still matches, and edit it if not; it is a draft for the operator to review, not legal advice.
+
 ## HTTPS / reverse proxy
 
 Terminate TLS in front of `web`, for example with Caddy:

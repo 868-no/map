@@ -44,6 +44,8 @@ components:
         min_window_hours:
           format: int64
           type: integer
+        operator:
+          $ref: "#/components/schemas/CapabilitiesBodyOperatorStruct"
         presets:
           items:
             $ref: "#/components/schemas/Preset"
@@ -70,6 +72,7 @@ components:
         - geolocation
         - signature_policy
         - decode_version
+        - operator
       type: object
     CapabilitiesBodyFeaturesStruct:
       additionalProperties: false
@@ -92,6 +95,10 @@ components:
           format: double
           type: number
         style_url:
+          description: Map style for the dark theme
+          type: string
+        style_url_light:
+          description: Map style for the light theme (same layers)
           type: string
         tile_source:
           description: "Vector tile source for the style: pmtiles:///path for the self-hosted archive, or a TileJSON URL"
@@ -104,7 +111,18 @@ components:
         - lon
         - zoom
         - style_url
+        - style_url_light
         - tile_source
+      type: object
+    CapabilitiesBodyOperatorStruct:
+      additionalProperties: false
+      properties:
+        contact:
+          description: How to reach the operator about privacy (e-mail address or URL)
+          type: string
+        name:
+          description: Who runs this deployment
+          type: string
       type: object
     ErrorDetail:
       additionalProperties: false

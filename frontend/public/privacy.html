@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark light" />
+    <meta name="theme-color" content="#0e1116" />
+    <title>Privacy policy · Mesh Observatory</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <script src="/theme-boot.js"></script>
+    <style>
+      :root { color-scheme: dark; --bg: #0e1116; --panel: #151a21; --line: #2a323c; --text: #e6edf3; --muted: #8b949e; --accent: #4cc9f0; }
+      :root[data-theme='light'] { color-scheme: light; --bg: #f6f7f9; --panel: #ffffff; --line: #d0d7de; --text: #1f2328; --muted: #59636e; --accent: #0a7ea4; }
+      @media (prefers-color-scheme: light) {
+        :root:not([data-theme]) { color-scheme: light; --bg: #f6f7f9; --panel: #ffffff; --line: #d0d7de; --text: #1f2328; --muted: #59636e; --accent: #0a7ea4; }
+      }
+      html, body { margin: 0; background: var(--bg); color: var(--text); }
+      body { font: 15px/1.6 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; }
+      main { max-width: 46rem; margin: 0 auto; padding: 24px 16px 48px; }
+      h1 { font-size: 1.6rem; margin: 0.4em 0 0.2em; }
+      h2 { font-size: 1.15rem; margin: 1.8em 0 0.4em; padding-top: 0.6em; border-top: 1px solid var(--line); }
+      a { color: var(--accent); }
+      .muted { color: var(--muted); }
+      .summary { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 4px 18px; }
+      ul { padding-left: 1.3em; }
+      li { margin: 0.25em 0; }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <p><a href="/">← Back to the map</a></p>
+      <h1>Privacy policy</h1>
+      <p class="muted">Mesh Observatory · last updated 1 November 2026</p>
+
+      <p>
+        <span data-show="operator" hidden>This site is run by <span data-fill="operator"></span>, who is responsible for the processing described here.</span>
+        <span data-show="no-operator">The operator of this site is responsible for the processing described here.</span>
+        <span data-show="contact" hidden>Contact about privacy: <span data-fill="contact"></span>.</span>
+      </p>
+
+      <div class="summary">
+        <p><strong>In short:</strong></p>
+        <ul>
+          <li>No accounts, no cookies, no analytics and no advertising.</li>
+          <li>Your IP address is used only in memory, to limit request rates, and is never logged or stored by this service.</li>
+          <li>The map shows information that Meshtastic radios broadcast publicly and that reached a public MQTT broker. It is kept for <span data-fill="retention">a limited time (six months by default)</span>.</li>
+        </ul>
+      </div>
+
+      <h2>When you visit this site</h2>
+      <p>
+        <strong>Your connection.</strong> Like any website, this one receives your IP address and the details of each request (address, time, browser).
+        This service keeps IP addresses only in memory, to stop any one visitor from overloading it, and forgets each address 10 minutes after its last request.
+        It writes no access logs and stores no addresses.
+        The server's hosting provider or reverse proxy may keep its own short-term connection logs for security.
+      </p>
+      <p>
+        <strong>On your device.</strong> The map stores, in your browser only:
+      </p>
+      <ul>
+        <li>your display settings (map layers and theme), in local storage;</li>
+        <li>a copy of the mesh data it has downloaded, in IndexedDB, so it loads faster and works offline;</li>
+        <li>the app's own files, in the service worker cache.</li>
+      </ul>
+      <p>
+        None of this is sent back to the server. You can delete it at any time by clearing this site's data in your browser. The site sets no cookies.
+      </p>
+      <p>
+        <strong>Other services.</strong>
+        <span data-show="tiles-local">Map tiles, fonts and styles all come from this server: visiting the map makes no requests to anyone else.</span>
+        <span data-show="tiles-remote" hidden>Map tiles are loaded from <span data-fill="tile-host"></span>, which receives your IP address and the map areas you view, under its own privacy policy. Fonts and styles come from this server.</span>
+        Links to GitHub, OpenStreetMap and OpenMapTiles only contact those sites if you follow them.
+      </p>
+
+      <h2>Mesh network data</h2>
+      <p>
+        <strong>Where it comes from.</strong> Meshtastic nodes broadcast packets over LoRa radio. Gateways that hear them may forward ("uplink") them to MQTT brokers, and this service subscribes to such brokers.
+        It receives nothing that was not already broadcast over the air and published to the broker. Anyone in radio range, or subscribed to the same broker, can receive the same information.
+      </p>
+      <p><strong>What is kept and shown.</strong> For each packet a gateway received:</p>
+      <ul>
+        <li>the node ID of the sender, the gateway and, for directed packets, the recipient;</li>
+        <li>what the node announces about itself: name, short name, hardware model, role and public key;</li>
+        <li>positions the node broadcast, at the precision it chose, and its map reports (including region and radio preset);</li>
+        <li>device telemetry: battery level, voltage, channel and airtime utilisation, uptime;</li>
+        <li>lists of neighbouring nodes, and routes recorded by traceroutes;</li>
+        <li>reception details: time, signal strength (SNR and RSSI), hop counts, channel name and the MQTT topic it arrived on;</li>
+        <li>whether the packet's signature could be verified.</li>
+      </ul>
+      <p data-show="geolocation">
+        <strong>Estimated positions.</strong> For nodes that do not broadcast a position, the map may show a coarse estimated area, worked out from the positioned nodes that heard them directly.
+        It is drawn as an outlined marker with an uncertainty circle and is never presented as an exact position. The operator can exclude individual nodes from estimates.
+      </p>
+      <p>
+        <strong>Messages.</strong> The contents of text messages are never decoded for display, never shown and never served by the API.
+        The database does keep each packet exactly as it was received, so it can be decoded again after software updates.
+        For a text message, that is the message encrypted with its channel's key, which anyone who has the key can read; the key of the default public channels is publicly known.
+        If a gateway uplinked the packet already decrypted, the stored packet contains the message text itself.
+        Only the operator has access to these stored packets.
+      </p>
+      <p>
+        <strong>Nodes that did not allow MQTT uplink.</strong> Meshtastic lets a node mark its packets as not OK to forward to MQTT. When such packets still reach this service through another gateway, their name announcements (NodeInfo) are discarded.
+        The node appears only as an unnamed node marked with a red ring. Gateways that forward their own traffic have chosen to do so and are treated normally.
+      </p>
+      <p>
+        <strong>Who can see it.</strong> The map and its API are public. Everything above, except stored packets, can be viewed by anyone visiting the site, for any time window within the retention period.
+      </p>
+      <p>
+        <strong>How long it is kept.</strong> Packets older than <span data-fill="retention-short">the retention period (six months by default)</span> are deleted automatically every day.
+      </p>
+
+      <h2>Legal basis and your rights</h2>
+      <p>
+        Information about a radio node, such as its name or position, can relate to the person who runs it. Where it does, it is processed on the basis of legitimate interest
+        (Article 6(1)(f) of the GDPR): documenting and understanding the coverage and health of a public mesh network, using only information its participants chose to broadcast publicly.
+        Measures limiting the impact include respecting the OK-to-MQTT flag, keeping positions at the precision broadcast, showing estimates only as coarse areas, never displaying messages, and automatic deletion.
+      </p>
+      <p>
+        You may ask for access to, correction or deletion of data about your node, or object to its processing, for example to have it excluded from position estimates or removed.
+        <span data-show="contact" hidden>Contact <span data-fill="contact"></span>.</span>
+        <span data-show="no-contact">Contact the operator of this site.</span>
+        Your node's ID (shown in the Meshtastic app, e.g. !a1b2c3d4) helps find its data.
+        You can also lodge a complaint with your data protection authority; in Norway, that is <a href="https://www.datatilsynet.no/" rel="noreferrer">Datatilsynet</a>.
+      </p>
+      <p>
+        To stop your node's packets reaching public MQTT brokers at all, turn off "OK to MQTT" in its LoRa settings, and do not enable uplink on public brokers.
+      </p>
+
+      <h2>About this software</h2>
+      <p>
+        This site runs Mesh Observatory, free software under the GNU GPL v3. Its <a href="https://github.com/868-no/map" rel="noreferrer">source code</a> shows exactly what is collected and how.
+        This policy describes the software as published; the operator may change it, and will update this page if they do.
+      </p>
+    </main>
+    <script src="/privacy.js"></script>
+  </body>
+</html>

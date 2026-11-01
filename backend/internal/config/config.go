@@ -33,28 +33,32 @@ type Env struct {
 
 	HTTPAddr string `env:"HTTP_ADDR" envDefault:":8000"`
 
-	RetentionMonths      int           `env:"RETENTION_MONTHS" envDefault:"6"`
-	DefaultWindowHours   int           `env:"DEFAULT_WINDOW_HOURS" envDefault:"72"`
-	MaxWindowHours       int           `env:"MAX_WINDOW_HOURS" envDefault:"168"`
-	MaintenanceInterval  int           `env:"MAINTENANCE_INTERVAL_HOURS" envDefault:"24"`
-	LiveQuantum          time.Duration `env:"LIVE_QUANTUM" envDefault:"10s"`
-	DefaultMapLat        float64       `env:"DEFAULT_MAP_LAT" envDefault:"63.43"`
-	DefaultMapLon        float64       `env:"DEFAULT_MAP_LON" envDefault:"10.40"`
-	DefaultMapZoom       float64       `env:"DEFAULT_MAP_ZOOM" envDefault:"7"`
-	MapStyleURL          string        `env:"MAP_STYLE_URL" envDefault:"/styles/dark.json"`
-	MapTileSource        string        `env:"MAP_TILE_SOURCE" envDefault:"pmtiles:///tiles/basemap.pmtiles"`
-	GeolocationEnabled   bool          `env:"GEOLOCATION_ENABLED" envDefault:"true"`
-	GeolocationExclude   []string      `env:"GEOLOCATION_EXCLUDE_NODE_IDS" envSeparator:","`
-	GeolocationMinPrec   uint32        `env:"GEOLOCATION_MIN_PRECISION_BITS" envDefault:"15"`
-	PublicMetricsEnabled bool          `env:"PUBLIC_METRICS_ENABLED" envDefault:"false"`
-	SignaturePolicy      string        `env:"SIGNATURE_POLICY" envDefault:"balanced"`
-	TrustedProxies       []string      `env:"TRUSTED_PROXIES" envSeparator:"," envDefault:"10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,127.0.0.0/8,::1/128,fc00::/7"`
-	IngestQueueSize      int           `env:"INGEST_QUEUE_SIZE" envDefault:"20000"`
-	WriterBatchSize      int           `env:"WRITER_BATCH_SIZE" envDefault:"500"`
-	KeyAttemptBudget     int           `env:"KEY_ATTEMPT_BUDGET" envDefault:"4"`
-	LogLevel             string        `env:"LOG_LEVEL" envDefault:"info"`
-	BrokersConfig        string        `env:"MQTT_BROKERS_CONFIG" envDefault:"/run/secrets/mqtt-brokers.yaml"`
-	ChannelsConfig       string        `env:"CHANNEL_KEYS_CONFIG" envDefault:"/run/secrets/channel-keys.yaml"`
+	RetentionMonths     int           `env:"RETENTION_MONTHS" envDefault:"6"`
+	DefaultWindowHours  int           `env:"DEFAULT_WINDOW_HOURS" envDefault:"72"`
+	MaxWindowHours      int           `env:"MAX_WINDOW_HOURS" envDefault:"168"`
+	MaintenanceInterval int           `env:"MAINTENANCE_INTERVAL_HOURS" envDefault:"24"`
+	LiveQuantum         time.Duration `env:"LIVE_QUANTUM" envDefault:"10s"`
+	DefaultMapLat       float64       `env:"DEFAULT_MAP_LAT" envDefault:"63.43"`
+	DefaultMapLon       float64       `env:"DEFAULT_MAP_LON" envDefault:"10.40"`
+	DefaultMapZoom      float64       `env:"DEFAULT_MAP_ZOOM" envDefault:"7"`
+	MapStyleURL         string        `env:"MAP_STYLE_URL" envDefault:"/styles/dark.json"`
+	MapStyleLightURL    string        `env:"MAP_STYLE_LIGHT_URL" envDefault:"/styles/light.json"`
+	// Who runs this deployment, shown in the privacy policy (D-051).
+	OperatorName         string   `env:"OPERATOR_NAME"`
+	OperatorContact      string   `env:"OPERATOR_CONTACT"`
+	MapTileSource        string   `env:"MAP_TILE_SOURCE" envDefault:"pmtiles:///tiles/basemap.pmtiles"`
+	GeolocationEnabled   bool     `env:"GEOLOCATION_ENABLED" envDefault:"true"`
+	GeolocationExclude   []string `env:"GEOLOCATION_EXCLUDE_NODE_IDS" envSeparator:","`
+	GeolocationMinPrec   uint32   `env:"GEOLOCATION_MIN_PRECISION_BITS" envDefault:"15"`
+	PublicMetricsEnabled bool     `env:"PUBLIC_METRICS_ENABLED" envDefault:"false"`
+	SignaturePolicy      string   `env:"SIGNATURE_POLICY" envDefault:"balanced"`
+	TrustedProxies       []string `env:"TRUSTED_PROXIES" envSeparator:"," envDefault:"10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,127.0.0.0/8,::1/128,fc00::/7"`
+	IngestQueueSize      int      `env:"INGEST_QUEUE_SIZE" envDefault:"20000"`
+	WriterBatchSize      int      `env:"WRITER_BATCH_SIZE" envDefault:"500"`
+	KeyAttemptBudget     int      `env:"KEY_ATTEMPT_BUDGET" envDefault:"4"`
+	LogLevel             string   `env:"LOG_LEVEL" envDefault:"info"`
+	BrokersConfig        string   `env:"MQTT_BROKERS_CONFIG" envDefault:"/run/secrets/mqtt-brokers.yaml"`
+	ChannelsConfig       string   `env:"CHANNEL_KEYS_CONFIG" envDefault:"/run/secrets/channel-keys.yaml"`
 	// The same YAML documents inline, for deployments configured entirely in
 	// the Compose file. When set they replace the files above. Never logged.
 	BrokersYAML    string `env:"MQTT_BROKERS"`

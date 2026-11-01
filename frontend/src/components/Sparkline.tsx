@@ -11,7 +11,7 @@ export function Sparkline({ label, points }: { label: string; points: [number, n
   return (
     <figure className="spark">
       <svg viewBox="0 0 200 40" role="img" aria-label={`${label}: ${ys[0].toFixed(1)} to ${ys[ys.length - 1].toFixed(1)}`}>
-        <path d={d} fill="none" stroke="#4cc9f0" strokeWidth="1.5" />
+        <path d={d} fill="none" style={{ stroke: 'var(--accent)' }} strokeWidth="1.5" />
       </svg>
       <figcaption>
         {label}: {y0.toFixed(1)}–{y1.toFixed(1)} (last {ys[ys.length - 1].toFixed(1)})

@@ -35,7 +35,7 @@
 │               rows in IndexedDB, live via SSE │
 │  /api, /health → backend:8000 (SSE flushed)   │
 │  /tiles       self-hosted PMTiles (ranges)    │
-│  /fonts, /styles  bundled glyphs + dark style │
+│  /fonts, /styles  glyphs, dark + light styles │
 └───────────────────────────────────────────────┘
 ```
 
@@ -49,7 +49,7 @@ One application table, `packet_log` (`backend/internal/storage/schema.sql`): one
 - `observation_key`: one gateway's reception (logical key + gateway + receive metadata + payload hash). Unique per row in practice; it is the dedupe key.
 - `observed_at`: server receive time, the only time used for windows.
 
-`decoded_metadata` holds minimal, sanitised typed data (NodeInfo incl. public key, position, telemetry, neighbours, traceroute route/SNR, reception provenance). Message bodies are never stored. `envelope_bytes` keeps the raw envelope for re-decoding and audits; it is never returned by the API.
+`decoded_metadata` holds minimal, sanitised typed data (NodeInfo incl. public key, position, telemetry, neighbours, traceroute route/SNR, reception provenance). Message bodies are never decoded into it. `envelope_bytes` keeps the raw envelope for re-decoding and audits; it is never returned by the API. For text messages that envelope still holds the message: encrypted with its channel key, or in plain text when a gateway uplinked it decrypted (the privacy policy says so).
 
 `obs_row` holds the row exactly as `/observations` serves it (minus its id), and `obs_row_version` the `ObsRowVersion` it was built with (D-046). Pages use it when the version is current and build the row from the other columns when it is not. At startup `serve` rebuilds missing or outdated encodings in the background, newest first. It is a cache of the row's own data, not derived state across rows.
 

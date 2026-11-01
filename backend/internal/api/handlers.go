@@ -34,7 +34,8 @@ type CapabilitiesBody struct {
 		Lat        float64 `json:"lat"`
 		Lon        float64 `json:"lon"`
 		Zoom       float64 `json:"zoom"`
-		StyleURL   string  `json:"style_url"`
+		StyleURL   string  `json:"style_url" doc:"Map style for the dark theme"`
+		StyleLight string  `json:"style_url_light" doc:"Map style for the light theme (same layers)"`
 		TileSource string  `json:"tile_source" doc:"Vector tile source for the style: pmtiles:///path for the self-hosted archive, or a TileJSON URL"`
 	} `json:"map"`
 	Features struct {
@@ -46,6 +47,11 @@ type CapabilitiesBody struct {
 	Geolocation     GeoSettings `json:"geolocation"`
 	SignaturePolicy string      `json:"signature_policy" enum:"balanced,strict"`
 	DecodeVersion   int         `json:"decode_version"`
+	// Shown in the privacy policy; empty when the operator has not set them.
+	Operator struct {
+		Name    string `json:"name,omitempty" doc:"Who runs this deployment"`
+		Contact string `json:"contact,omitempty" doc:"How to reach the operator about privacy (e-mail address or URL)"`
+	} `json:"operator"`
 }
 
 type CapabilitiesOutput struct{ Body CapabilitiesBody }
@@ -92,6 +98,8 @@ func (s *Server) capabilities(ctx context.Context, _ *struct{}) (*CapabilitiesOu
 	b.LiveQuantumSeconds = int(s.Env.LiveQuantum / time.Second)
 	b.RetentionMonths = s.Env.RetentionMonths
 	b.Map.Lat, b.Map.Lon, b.Map.Zoom, b.Map.StyleURL, b.Map.TileSource = s.Env.DefaultMapLat, s.Env.DefaultMapLon, s.Env.DefaultMapZoom, s.Env.MapStyleURL, s.Env.MapTileSource
+	b.Map.StyleLight = s.Env.MapStyleLightURL
+	b.Operator.Name, b.Operator.Contact = s.Env.OperatorName, s.Env.OperatorContact
 	b.Features.Geolocation = s.Env.GeolocationEnabled
 	b.Features.Live = s.Hub != nil && s.Hub.Available()
 	b.Geolocation = s.geoSettings()

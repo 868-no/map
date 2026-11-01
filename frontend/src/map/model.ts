@@ -132,12 +132,6 @@ export function linkGeometry(edges: Edge[], pos: Map<string, [number, number]>, 
   return out.sort((x, y) => y.samples - x.samples)
 }
 
-/** Link colour by class: infrastructure (router <-> router) vs everything else. */
-export const LINK_COLOR: { infra: [number, number, number]; other: [number, number, number] } = {
-  infra: [76, 201, 240],
-  other: [150, 163, 184],
-}
-
 /** Link opacity by confidence (low links are also dashed). */
 /** A selected packet's route (D-037). */
 export const ROUTE_COLOR: [number, number, number, number] = [255, 170, 60, 240]

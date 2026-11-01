@@ -47,7 +47,9 @@ self.addEventListener('fetch', (event) => {
   if (p.startsWith('/tiles/') || p === '/api/v1/stream' || p === '/api/v1/observations' || p.startsWith('/health/') || p === '/metrics') return
 
   if (req.mode === 'navigate') {
-    event.respondWith(networkFirst(req, SHELL, '/index.html'))
+    // Pages of their own (the privacy policy) are cached under their own
+    // path; every other navigation is the app, whose offline copy is /index.html.
+    event.respondWith(networkFirst(req, SHELL, p !== '/' && PRECACHE.includes(p) ? p : '/index.html'))
     return
   }
   if (p.startsWith('/api/')) {

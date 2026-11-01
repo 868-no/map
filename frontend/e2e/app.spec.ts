@@ -34,11 +34,34 @@ async function viewAt(page: Page, lat: number, lon: number, zoom: number): Promi
 
 const sum = (l: Labels, prefix: string) => Object.entries(l.counts).filter(([k]) => k.startsWith(prefix)).reduce((a, [, v]) => a + v, 0)
 
-test('stays dark from the first paint even when the OS prefers light', async ({ page }) => {
-  await page.goto('/')
-  const bg = await page.evaluate(() => getComputedStyle(document.documentElement).backgroundColor)
-  expect(bg).toBe('rgb(14, 17, 22)')
+type MapHook = { map: { getPaintProperty: (layer: string, prop: string) => unknown } }
+const pageBg = (page: Page) => page.evaluate(() => getComputedStyle(document.documentElement).backgroundColor)
+const mapBg = (page: Page) => page.evaluate(() => (window as unknown as { __meshmap: MapHook }).__meshmap.map.getPaintProperty('background', 'background-color'))
+
+// D-051: the theme follows the browser unless the viewer picks one; the
+// choice is remembered and applied before the first paint.
+test('follows the browser theme, and a chosen theme overrides it from the first paint', async ({ page }) => {
+  await page.emulateMedia({ colorScheme: 'light' })
+  await ready(page)
+  expect(await pageBg(page)).toBe('rgb(246, 247, 249)')
+  await expect.poll(() => mapBg(page)).toBe('#f3f1ec')
   await expect(page.locator('.topbar h1')).toHaveText('Mesh Observatory')
+
+  await page.getByRole('button', { name: 'Layers' }).click()
+  await page.getByRole('dialog', { name: 'Map layers' }).getByLabel('Dark').check()
+  await expect.poll(() => pageBg(page)).toBe('rgb(14, 17, 22)')
+  await expect.poll(() => mapBg(page)).toBe('#0e1116')
+
+  // Before any app code runs, the saved choice already applies.
+  await page.goto('/', { waitUntil: 'commit' })
+  await page.waitForSelector('html[data-theme]', { state: 'attached' })
+  expect(await page.evaluate(() => document.documentElement.dataset.theme)).toBe('dark')
+
+  await page.waitForFunction(() => !!(window as unknown as { __meshmap?: unknown }).__meshmap, null, { timeout: 30_000 })
+  await page.getByRole('button', { name: 'Layers' }).click()
+  await page.getByRole('dialog', { name: 'Map layers' }).getByLabel('Follow browser').check()
+  await expect.poll(() => pageBg(page)).toBe('rgb(246, 247, 249)')
+  await expect.poll(() => mapBg(page)).toBe('#f3f1ec')
 })
 
 async function showLayers(page: Page, names: string[]) {

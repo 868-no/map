@@ -9,7 +9,7 @@ export default defineConfig({
     baseURL: process.env.MESHMAP_URL ?? 'http://localhost:8080',
     viewport: { width: 1440, height: 900 },
     timezoneId: 'Europe/Oslo',
-    colorScheme: 'light', // the app must stay dark even when the OS prefers light
+    colorScheme: 'dark', // the app follows the browser: dark keeps screenshots consistent; theme tests emulate light
     // Request interception (page.route) does not see service-worker fetches;
     // the offline test opts back in.
     serviceWorkers: 'block',

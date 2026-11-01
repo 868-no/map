@@ -20,6 +20,10 @@ x-backend-env: &backend-env
   DEFAULT_MAP_LON: "10.40"
   DEFAULT_MAP_ZOOM: "7"
   RETENTION_MONTHS: "6"
+  # Shown in the privacy policy (/privacy.html). Set both: visitors and node
+  # owners need to know who runs the site and how to reach them.
+  OPERATOR_NAME: ${OPERATOR_NAME:-}
+  OPERATOR_CONTACT: ${OPERATOR_CONTACT:-}
   # Brokers and channel keys: the same YAML as config/examples/*.yaml.
   MQTT_BROKERS: |
     brokers:

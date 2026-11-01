@@ -1,10 +1,13 @@
 <!doctype html>
-<html lang="en" style="background:#0e1116;color-scheme:dark">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="color-scheme" content="dark" />
+    <meta name="color-scheme" content="dark light" />
     <meta name="theme-color" content="#0e1116" />
+    <!-- Before the stylesheet loads: the background of the theme theme-boot.js picks. -->
+    <style>html{background:#0e1116;color-scheme:dark}html[data-theme='light']{background:#f6f7f9;color-scheme:light}body{margin:0}</style>
+    <script src="/theme-boot.js"></script>
     <title>Mesh Observatory</title>
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="manifest" href="/manifest.webmanifest" />
@@ -15,7 +18,7 @@
     <meta name="apple-mobile-web-app-title" content="Mesh Map" />
     <meta name="description" content="Live map of a Meshtastic mesh, reconstructed from MQTT traffic." />
   </head>
-  <body style="margin:0;background:#0e1116">
+  <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
