@@ -4,7 +4,7 @@
 // (D-031, D-040). Rows travel as JSON text straight into the engine; views
 // come back as JSON text and are handed to the page as transferable bytes.
 import init, { Engine } from '../engine/pkg/engine.js'
-import { openPersistence, HOUR_MS, type Persistence } from './persist'
+import { openPersistence, type Persistence, type Source } from './persist'
 import { RowStore, type Backend, type Fetched, type Synced, type WindowReq } from './rowStore'
 import { debounce, rebuildDelay } from './debounce'
 import { cursorMs, rangeEnd, sliceBounds } from './slices'
@@ -93,7 +93,11 @@ async function fetchRange(params: URLSearchParams): Promise<Fetched<number>> {
   return { window: first.window, generation: first.generation, batch }
 }
 
-const source = { takeDirty: () => Array.from(engine.take_dirty()), exportHour: (h: number) => engine.export(h, h + HOUR_MS) }
+const source: Source = {
+  takeDirty: () => Array.from(engine.take_dirty()),
+  exportRange: (lo, hi) => engine.export(lo, hi),
+  newestT: () => engine.newest_t(),
+}
 const flushSoon = debounce(() => void persist?.flush(source), 2000, 5000)
 
 const started = (async () => {
@@ -108,6 +112,7 @@ const started = (async () => {
   if (persist) {
     for (const chunk of persist.restored.chunks) engine.add_rows(chunk, -Infinity)
     engine.take_dirty() // restored rows are already stored
+    persist.attach(source)
     store.load(persist.restored.cov, persist.restored.generation)
     const p = persist
     store.sink = {
