@@ -591,3 +591,7 @@ Operator request: no fit to the data when the page loads; center on Norway with 
 
 Operator request. The search (and the dimming of nodes it causes) is cleared when the panel closes or another rail panel replaces it. Picking a node from the results opens Details and keeps the search, so going back to Nodes shows the same results.
 
+## D-076 Reset under Settings (2026-11-01)
+
+Operator request: a button that clears all stored data and settings and reloads. "Reset and reload" (Settings, after a confirmation) stops the derivation worker so its database can go, clears local and session storage (layer choices, theme), deletes this site's IndexedDB databases (the copy of the rows), deletes the service worker's caches and unregisters it, then reloads without the query string, so the window and filters in the URL reset too. The privacy policy mentions it next to clearing site data in the browser.
+

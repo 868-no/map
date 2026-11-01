@@ -465,3 +465,22 @@ test('closing the Nodes panel clears its search', async ({ page }) => {
   await expect(page.getByPlaceholder(/Search/)).toHaveValue('')
 })
 
+
+// D-076: Settings → Reset forgets everything stored and reloads.
+test('reset clears stored settings and data, then reloads', async ({ page }) => {
+  await ready(page)
+  await showPanel(page, 'Settings')
+  await page.getByRole('complementary', { name: 'Settings' }).getByLabel('Dark').check()
+  await showPanel(page, 'Layers')
+  await page.getByRole('complementary', { name: 'Layers' }).getByLabel('Regions (landsdeler)').check()
+  expect(await page.evaluate(() => localStorage.length)).toBeGreaterThan(0)
+  await showPanel(page, 'Settings')
+  page.once('dialog', (d) => d.accept())
+  await Promise.all([page.waitForEvent('load'), page.getByRole('button', { name: 'Reset and reload' }).click()])
+  await page.waitForFunction(() => !!(window as unknown as { __meshmap?: unknown }).__meshmap, null, { timeout: 30_000 })
+  expect(await page.evaluate(() => localStorage.getItem('meshmap:toggles:v5'))).toBeNull()
+  await showPanel(page, 'Layers')
+  await expect(page.getByRole('complementary', { name: 'Layers' }).getByLabel('Regions (landsdeler)')).not.toBeChecked()
+  await showPanel(page, 'Settings')
+  await expect(page.getByRole('complementary', { name: 'Settings' }).getByLabel('Auto')).toBeChecked()
+})

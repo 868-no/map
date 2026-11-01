@@ -31,6 +31,14 @@ function get(): Worker {
   return worker
 }
 
+/** Stops the worker (and so its database connection); views fail until reload. */
+export function stopDerive(): void {
+  worker?.terminate()
+  worker = null
+  for (const w of waiting.values()) w.reject(new ViewError('unavailable', 'stopped'))
+  waiting.clear()
+}
+
 /** Called (batched) when streamed rows changed what the views would show. */
 export function onDerivedChange(fn: () => void): void {
   onChanged = fn
