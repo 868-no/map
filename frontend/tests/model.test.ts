@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ageColor, AGE_STOPS, AGE_STOPS_LIGHT, filterEdges, glyphInk, isInfraRole, mqttFlow, LOW_ZOOM_LINKS, precisionErrorM, visibleLinks, lastHeardAge, linkGeometry, placeNodes, roleRadius } from '../src/map/model'
+import { ageColor, AGE_STOPS, AGE_STOPS_LIGHT, bridgeRoute, filterEdges, glyphInk, isInfraRole, mqttFlow, LOW_ZOOM_LINKS, precisionErrorM, visibleLinks, lastHeardAge, linkGeometry, placeNodes, roleRadius } from '../src/map/model'
 import { defaultFilters, defaultToggles } from '../src/state/store'
 
 const node = (id: string, extra: object = {}) => ({ id, num: parseInt(id.slice(1), 16), status: 'observed', packets: 1, receptions: 1, gateway_receptions: 0, is_gateway: false,
@@ -112,5 +112,20 @@ describe('age ramp on the light basemap', () => {
   it('stands out from the background at every age, unlike the dark-theme ramp', () => {
     for (let k = 0; k <= 20; k++) expect(contrast(ageColor(k / 20, AGE_STOPS_LIGHT), LIGHT_BG)).toBeGreaterThan(2)
     expect(contrast(AGE_STOPS[0], LIGHT_BG)).toBeLessThan(1.2) // why it exists
+  })
+})
+
+describe('packet routes across nodes without a position', () => {
+  const seg = (a: string, b: string, why: 'traceroute' | 'relay' = 'traceroute') => ({ a, b, dashed: false, why })
+  it('joins placed nodes across unplaced ones, dashed, so the route stays whole', () => {
+    // origin(unplaced) -> u1(unplaced) -> L -> u2(unplaced) -> R -> gw: L and R must stay connected.
+    const pos = new Map<string, [number, number]>([['L', [5, 60]], ['R', [5.3, 60.3]], ['gw', [5.4, 60.4]]])
+    const out = bridgeRoute([seg('o', 'u1'), seg('u1', 'L'), seg('L', 'u2'), seg('u2', 'R'), seg('R', 'gw')], pos)
+    expect(out.map((s) => [s.seg.a, s.seg.b, s.dashed]).sort()).toEqual([['L', 'R', true], ['R', 'gw', false]])
+  })
+  it('draws placed segments unchanged, and a bridge only where no real segment joins the pair', () => {
+    const pos = new Map<string, [number, number]>([['a', [0, 0]], ['c', [1, 1]], ['d', [2, 2]]])
+    const out = bridgeRoute([seg('a', 'b'), seg('b', 'c'), seg('b', 'd'), seg('a', 'c', 'relay')], pos)
+    expect(out.map((s) => `${s.seg.a}>${s.seg.b}${s.dashed ? '~' : ''}`)).toEqual(['a>c', 'a>d~'])
   })
 })

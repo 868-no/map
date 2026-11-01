@@ -296,7 +296,7 @@ function PacketLogs({ id, names, positioned }: { id: string; names: Map<string, 
         </label>
       </div>
       {log.isLoading && <p className="muted">Loading…</p>}
-      <RouteNote positioned={positioned} />
+      <RouteNote positioned={positioned} name={(n) => names.get(n) ?? n} />
       <p className="muted small">Select a packet to draw its route on the map.</p>
       <table className="hear pkt-log" aria-label="Packet log">
         <colgroup><col style={{ width: 60 }} /><col /><col style={{ width: 92 }} /><col /><col style={{ width: 70 }} /><col style={{ width: 30 }} /></colgroup>
@@ -324,18 +324,18 @@ function PacketLogs({ id, names, positioned }: { id: string; names: Map<string, 
 }
 
 /** What the drawn route shows, and what it cannot. */
-function RouteNote({ positioned }: { positioned: Set<string> }) {
+function RouteNote({ positioned, name }: { positioned: Set<string>; name: (id: string) => string }) {
   const lp = useStore((s) => s.route)
   const showRoute = useStore((s) => s.showRoute)
   const r = usePacketRoute(lp)
   if (!lp) return null
   const segs = r.data?.segments ?? []
   const dashed = segs.filter((g) => g.dashed).length
-  const hidden = segs.filter((g) => !positioned.has(g.a) || !positioned.has(g.b)).length
+  const unplaced = [...new Set(segs.flatMap((g) => [g.a, g.b]))].filter((n) => !positioned.has(n))
   return (
     <p className="route-note">
       Route on the map: {segs.length} segment{segs.length === 1 ? '' : 's'}{dashed ? `, ${dashed} dashed (nodes missing)` : ''}
-      {hidden ? `; ${hidden} not drawn (node without position)` : ''}. Links are hidden meanwhile.{' '}
+      {unplaced.length ? `; ${unplaced.map(name).join(', ')} ${unplaced.length === 1 ? 'has' : 'have'} no position, so the route is dashed across ${unplaced.length === 1 ? 'it' : 'them'}` : ''}. Links are hidden meanwhile.{' '}
       <button className="linkish" onClick={() => showRoute(null)}>Clear route</button>
     </p>
   )

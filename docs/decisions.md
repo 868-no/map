@@ -296,6 +296,8 @@ Operator request. Selecting a packet in the log draws its routing graph and hide
 - **Solid** when both nodes of a hop are known to be adjacent. **Dashed** when nodes between them are missing: an unrecorded traceroute hop, an unknown relay, or the unknown path from the sender to a relay. A solid segment wins over a dashed one for the same hop. Hovering a segment says which case it is.
 - A segment whose end has no position (reported or estimated) cannot be drawn; the panel counts those. Routes need views built in the browser.
 
+- **Unplaced relays** (fix, 2026-11-01): segments touching a node without a position were dropped, so a route could leave out a relay that has one (reported for Lyefjell, between two unplaced relays). Each placed node is now joined to the nearest placed nodes before it in the route, dashed across those skipped (`map/model.ts` `bridgeRoute`, as for reach in D-069). Real segments win over bridges, and the route note names the nodes that have no position.
+
 ## D-038 Time-ordered paging for /observations (2026-10-31)
 
 `/observations` paged by row id (`id > after ORDER BY id`). At scale PostgreSQL served that by walking the primary key from the oldest row: on 500 000 seeded rows over 30 days, the first page of a 168 h window discarded 390 000 out-of-window rows (84 ms), and with 6 months of retention almost the whole table would be scanned per first page. Pages are now ordered by `(observed_at, id)` with an opaque `cursor` (`next_cursor`, Unix microseconds plus id), which the existing `observed_at` index serves directly: 24 ms for the same first page and 9 ms for later ones, independent of how much older data is retained. The cursor only positions within the window; `window.Predicate` still bounds every query.

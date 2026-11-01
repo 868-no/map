@@ -1,5 +1,5 @@
 // Pure view-model helpers for map layers (unit-tested; no WebGL here).
-import type { Edge, MeshNode } from '../derive/views'
+import type { Edge, MeshNode, RouteSegment } from '../derive/views'
 import type { Filters, Toggles } from '../state/store'
 
 export type NodeKind = 'reported' | 'estimated' | 'unpositioned'
@@ -197,4 +197,34 @@ export function visibleLinks(links: LinkGeom[], o: { selectedNode: string | null
   const mx = (e - w) * 0.25, my = (n - s) * 0.25
   const inside = (p: [number, number]) => p[0] >= w - mx && p[0] <= e + mx && p[1] >= s - my && p[1] <= n + my
   return links.filter((g) => inside(g.path[0]) || inside(g.path[1]))
+}
+
+/**
+ * A packet's route as drawable segments. Nodes without a position cannot be
+ * drawn: each placed node is joined to the nearest placed nodes before it in
+ * the route, dashed across the ones skipped, so the route stays whole.
+ */
+export function bridgeRoute(segs: RouteSegment[], pos: Map<string, [number, number]>): { from: [number, number]; to: [number, number]; dashed: boolean; seg: RouteSegment }[] {
+  const into = new Map<string, RouteSegment[]>()
+  for (const g of segs) into.set(g.b, [...(into.get(g.b) ?? []), g])
+  const placedBefore = (n: string, seen: Set<string>): string[] => {
+    if (seen.has(n)) return []
+    seen.add(n)
+    return (into.get(n) ?? []).flatMap((g) => (pos.has(g.a) ? [g.a] : placedBefore(g.a, seen)))
+  }
+  const out: ReturnType<typeof bridgeRoute> = []
+  const drawn = new Set<string>()
+  // Segments between placed nodes first, so a bridge never replaces a real one.
+  const ordered = [...segs.filter((g) => pos.has(g.a)), ...segs.filter((g) => !pos.has(g.a))]
+  for (const g of ordered) {
+    const b = pos.get(g.b)
+    if (!b) continue
+    for (const a of pos.has(g.a) ? [g.a] : placedBefore(g.a, new Set())) {
+      if (drawn.has(`${a}>${g.b}`)) continue
+      drawn.add(`${a}>${g.b}`)
+      const bridged = a !== g.a
+      out.push({ from: pos.get(a)!, to: b, dashed: g.dashed || bridged, seg: bridged ? { ...g, a, dashed: true, why: 'gap' } : g })
+    }
+  }
+  return out
 }

@@ -7,7 +7,7 @@ import type { Capabilities } from '../api/types'
 import type { Edge, SnapshotView } from '../derive/views'
 import { useStore } from '../state/store'
 import { applyStylePaint, loadStyle, registerPMTiles } from './style'
-import { filterEdges, linkGeometry, placeNodes, visibleLinks, type LinkGeom, type PlacedNode } from './model'
+import { bridgeRoute, filterEdges, linkGeometry, placeNodes, visibleLinks, type LinkGeom, type PlacedNode } from './model'
 import { frameArrived, pingCount } from './pings'
 import { BASEMAP_GROUPS } from './layers'
 import { meshLayerBuilder, type ReachGeom, type RouteGeom } from './meshLayers'
@@ -146,10 +146,7 @@ export default function MapView({ caps, snapshot, onPositions }: Props) {
   const routeQ = usePacketRoute(routeLp)
   const route = useMemo(() => {
     if (!routeLp) return null
-    return (routeQ.data?.segments ?? []).flatMap((g) => {
-      const a = pos.get(g.a), b = pos.get(g.b)
-      return a && b ? [{ from: a, to: b, dashed: g.dashed, seg: g }] : []
-    })
+    return bridgeRoute(routeQ.data?.segments ?? [], pos)
   }, [routeLp, routeQ.data, pos])
   // The selected node's simulated reach (D-069) replaces the links too.
   const reachOpt = useStore((s) => s.reach)
