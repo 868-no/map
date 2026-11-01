@@ -1,8 +1,8 @@
 // Page side of the derivation worker: every view is built there, in the
 // WebAssembly engine (D-031, D-040).
 import type { Capabilities, ObsRow } from '../api/types'
-import { ApiError } from '../api/client'
 import type { Request, Response, Transmission, ViewRequest } from './protocol'
+import { ViewError } from './views'
 
 let worker: Worker | null = null
 let nextId = 1
@@ -26,7 +26,7 @@ function get(): Worker {
     waiting.delete(r.id)
     // Views arrive as transferred UTF-8 JSON: no structured clone of a large object graph.
     if (r.ok) w.resolve({ body: JSON.parse(decoder.decode(r.body)), offline: r.offline })
-    else w.reject(new ApiError(r.status, r.message))
+    else w.reject(new ViewError(r.kind, r.message))
   }
   return worker
 }

@@ -1,4 +1,4 @@
-import type { SnapshotBody } from '../api/types'
+import type { SnapshotView } from '../derive/views'
 import { useStore, type Confidence } from '../state/store'
 import { AGE_STOPS, roleRadius } from '../map/model'
 import { BASEMAP_GROUPS } from '../map/layers'
@@ -44,7 +44,7 @@ export function LayersPanel({ id, onClose }: { id: string; onClose: () => void }
   )
 }
 
-export function FilterPanel({ snapshot }: { snapshot: SnapshotBody | undefined }) {
+export function FilterPanel({ snapshot }: { snapshot: SnapshotView | undefined }) {
   const f = useStore((s) => s.filters)
   const set = useStore((s) => s.setFilters)
   const brokers = [...new Set((snapshot?.nodes ?? []).flatMap((n) => n.brokers ?? []))].sort()
@@ -96,7 +96,7 @@ function ago(ms: number): string {
   return h <= 72 ? `${+h.toFixed(1)} h before` : `${+(h / 24).toFixed(1)} d before`
 }
 
-export function Legend({ snapshot }: { snapshot: SnapshotBody | undefined }) {
+export function Legend({ snapshot }: { snapshot: SnapshotView | undefined }) {
   const w = snapshot?.meta.window
   const windowMs = w ? Date.parse(w.end) - Date.parse(w.start) : 72 * 3600_000
   const gradient = `linear-gradient(to right, ${AGE_STOPS.map((c) => `rgb(${c.join(',')})`).join(', ')})`

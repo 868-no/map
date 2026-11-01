@@ -8,12 +8,7 @@ import { openPersistence, HOUR_MS, type Persistence } from './persist'
 import { RowStore, type Backend, type Fetched, type Synced, type WindowReq } from './rowStore'
 import { debounce } from './debounce'
 import type { Request, Response, Transmission, ViewRequest } from './protocol'
-
-class HttpError extends Error {
-  constructor(public status: number, message: string) {
-    super(message)
-  }
-}
+import { ViewError, type ViewMeta } from './views'
 
 const ready = init()
 let engine: Engine
@@ -70,7 +65,7 @@ async function fetchRange(params: URLSearchParams): Promise<Fetched<number>> {
       } catch {
         /* non-JSON error body */
       }
-      throw new HttpError(res.status, detail)
+      throw new ViewError('upstream', `observations: ${res.status} ${detail}`)
     }
     return res.text()
   }
@@ -151,9 +146,9 @@ function synced(win: WindowReq, epoch: string): Promise<{ synced: Synced; offlin
       pendingLive = []
       return { synced: s, offline: false }
     } catch (e) {
-      if (e instanceof HttpError) throw e
+      if (e instanceof ViewError) throw e // the API answered, with an error
       const s = store.offline(win, Date.now(), quantumMs)
-      if (!s) throw new HttpError(503, 'offline and no saved data for this window')
+      if (!s) throw new ViewError('unavailable', 'offline and no saved data for this window')
       return { synced: s, offline: true }
     }
   })
@@ -227,22 +222,22 @@ async function view(req: ViewRequest): Promise<{ body: string; offline: boolean 
   const f = { channels: req.filters.channels, brokers: req.filters.brokers, types: req.filters.types }
   const fj = JSON.stringify(f)
   const revision = `${store.generation}.${engine.revision(start, end)}`
-  const meta = JSON.stringify({
+  // What the UI needs besides the body: the window built, and how recent the held data is.
+  const meta: ViewMeta = {
     window: { start: new Date(start).toISOString(), end: new Date(end).toISOString(), rolling: sy.rolling },
-    revision,
-    filters: Object.fromEntries(Object.entries(f).filter(([, v]) => v.length)),
-    generated_at: new Date().toISOString(),
-  })
+    data_until: new Date(Math.max(store.cov?.hi ?? 0, engine.newest_t())).toISOString(),
+  }
+  const mj = JSON.stringify(meta)
   const key = `${revision}|${start}|${end}|${fj}|${req.kind}|${req.node ?? ''}`
   let body: string
   try {
     body = remember(key, revision, () => engine.view(req.kind, start, end, fj, req.node ?? ''))
   } catch (e) {
-    throw new HttpError(400, e instanceof Error ? e.message : String(e))
+    throw new ViewError('bad_request', e instanceof Error ? e.message : String(e))
   }
-  if (body === 'null') throw new HttpError(404, 'node not observed or referenced in the selected window')
+  if (body === 'null') throw new ViewError('not_found', 'node not observed or referenced in the selected window')
   // Splice the meta in without parsing the (possibly large) body here.
-  return { body: body === '{}' ? `{"meta":${meta}}` : `{"meta":${meta},${body.slice(1)}`, offline }
+  return { body: body === '{}' ? `{"meta":${mj}}` : `{"meta":${mj},${body.slice(1)}`, offline }
 }
 
 self.onmessage = async (e: MessageEvent<Request>) => {
@@ -269,7 +264,7 @@ self.onmessage = async (e: MessageEvent<Request>) => {
     transfer.push(bytes.buffer)
     out = { id: msg.id, ok: true, body: bytes, offline }
   } catch (err) {
-    out = { id: msg.id, ok: false, status: err instanceof HttpError ? err.status : 500, message: err instanceof Error ? err.message : String(err) }
+    out = { id: msg.id, ok: false, kind: err instanceof ViewError ? err.kind : 'internal', message: err instanceof Error ? err.message : String(err) }
   }
   self.postMessage(out, transfer)
 }

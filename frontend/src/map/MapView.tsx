@@ -3,7 +3,8 @@ import * as maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { MapboxOverlay } from '@deck.gl/mapbox'
 import type { Layer, PickingInfo } from '@deck.gl/core'
-import type { Capabilities, Edge, SnapshotBody } from '../api/types'
+import type { Capabilities } from '../api/types'
+import type { Edge, SnapshotView } from '../derive/views'
 import { useStore } from '../state/store'
 import { applyStylePaint, loadStyle, registerPMTiles } from './style'
 import { filterEdges, linkGeometry, placeNodes, visibleLinks, type LinkGeom, type PlacedNode } from './model'
@@ -22,7 +23,7 @@ import { PALETTES } from './palette'
 
 interface Props {
   caps: Capabilities
-  snapshot: SnapshotBody | undefined
+  snapshot: SnapshotView | undefined
   onPositions: (pos: Map<string, [number, number]>) => void
 }
 

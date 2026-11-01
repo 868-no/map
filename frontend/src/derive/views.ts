@@ -1,20 +1,29 @@
 // The views the WebAssembly engine builds (frontend/engine/src/views.rs and
-// packets.rs). They kept the shapes of the retired server views (D-041), so
-// the UI did not change; the engine is the source of truth for them now.
+// packets.rs). Their bodies kept the shapes of the retired server views
+// (D-041); the engine is the source of truth for them now. The worker adds
+// a small `meta` block of its own (ViewMeta).
 
 export type SignatureStatus = 'verified' | 'unsigned' | 'unverifiable' | 'not-applicable'
 
-export interface WindowEcho {
+export interface ViewWindow {
   start: string
   end: string
   rolling: boolean
 }
 
-export interface Meta {
-  window: WindowEcho
-  revision: string
-  filters: { channels?: string[]; brokers?: string[]; types?: string[] }
-  generated_at: string
+/** Added by the derivation worker to every view. */
+export interface ViewMeta {
+  window: ViewWindow // the window the view was built for
+  data_until: string // newest instant the browser's copy covers (last sync or newest row)
+}
+
+/** Why the worker could not build a view (D-041: no HTTP emulation). */
+export type ViewErrorKind = 'not_found' | 'bad_request' | 'unavailable' | 'upstream' | 'internal'
+
+export class ViewError extends Error {
+  constructor(public kind: ViewErrorKind, message: string) {
+    super(message)
+  }
 }
 
 export interface Stats {
@@ -122,8 +131,8 @@ export interface Counts {
   nodes_truncated: boolean
 }
 
-export interface SnapshotBody {
-  meta: Meta
+export interface SnapshotView {
+  meta: ViewMeta
   nodes: MeshNode[]
   edges: Edge[]
   edges_truncated: boolean
@@ -138,8 +147,8 @@ export interface Bucket {
   by_type?: Record<string, number>
 }
 
-export interface TrafficBody {
-  meta: Meta
+export interface TrafficView {
+  meta: ViewMeta
   bucket: string
   buckets: Bucket[]
   packets: number
@@ -170,8 +179,8 @@ export interface Radio {
   reported?: { region?: string; modem_preset?: string; at: string } // the node's own map report
 }
 
-export interface NodeBody extends MeshNode {
-  meta: Meta
+export interface NodeView extends MeshNode {
+  meta: ViewMeta
   positions: { at: string; lat: number; lon: number; precision_bits: number; precision_known: boolean; signature: string }[]
   telemetry_series: { at: string; battery?: number; voltage?: number; ch_util?: number; air_util?: number }[]
   heard_by: Hearing[]
@@ -204,7 +213,7 @@ export interface RelayedPacket {
 }
 
 export interface PacketLog {
-  meta: Meta
+  meta: ViewMeta
   own: OwnPacket[]
   relayed: RelayedPacket[]
   truncated: boolean
@@ -218,7 +227,7 @@ export interface RouteSegment {
 }
 
 export interface PacketRoute {
-  meta: Meta
+  meta: ViewMeta
   origin: string
   type: string
   segments: RouteSegment[]
