@@ -370,3 +370,23 @@ test('the map flies to a selected node once, not again when data refreshes', asy
   expect(Math.abs(c.lng - 5.0)).toBeLessThan(1e-6)
   expect(Math.abs(c.lat - 58.0)).toBeLessThan(1e-6)
 })
+
+test('the regions layer draws the five landsdeler, names them at overview zooms and credits Kartverket', async ({ page }) => {
+  test.setTimeout(90_000)
+  await ready(page)
+  const layers = () => page.evaluate(() => Object.fromEntries((window as unknown as { __meshmap: Hook }).__meshmap.layers().map((l) => [l.id, l.data])))
+  expect('regions' in (await layers())).toBe(false) // off by default
+  await expect(page.locator('.attribution')).not.toContainText('Kartverket')
+  await showLayers(page, ['Regions (landsdeler)'])
+  await viewAt(page, 65.4, 15.5, 4.1)
+  await expect.poll(async () => ((await layers()).regions as unknown as { features?: unknown[] } | undefined)?.features?.length ?? 0).toBe(5)
+  const names = ((await layers())['region-labels'] as { name: string }[]).map((l) => l.name)
+  expect(names.sort()).toEqual(['Nord-Norge', 'Sørlandet', 'Trøndelag', 'Vestlandet', 'Østlandet'])
+  await expect(page.locator('.attribution')).toContainText('© Kartverket')
+  await page.waitForTimeout(500)
+  await docShot(page, 'regions.png')
+  // Zoomed in, the outlines stay and the names give way to node names.
+  await viewAt(page, 63.43, 10.4, 10)
+  await expect.poll(async () => Object.keys(await layers())).toContain('regions')
+  expect('region-labels' in (await layers())).toBe(false)
+})

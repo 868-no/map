@@ -13,7 +13,7 @@ An interactive map, in light and dark themes, for observing Meshtastic mesh netw
 - **Light and dark themes:** follows the browser's setting by default (Auto); viewers can pick Light or Dark in the menu (☰).
 - **Privacy:** no accounts, cookies, analytics or third-party requests; a [privacy policy](frontend/public/privacy.html) at `/privacy.html` fills in the deployment's operator, contact and retention from the API.
 - **Installable and offline-capable:** add it to a phone's home screen; without a connection it opens with the last data it received (map tiles are not stored offline).
-- **Self-hosted:** Docker Compose, a self-hosted PMTiles basemap with switchable layers (place, peak, road and border labels; most names hidden by default), no external services at runtime apart from the basemap service's OpenStreetMap downloads when it builds.
+- **Self-hosted:** Docker Compose, a self-hosted PMTiles basemap with switchable layers (place, peak, road and border labels; most names hidden by default) and an optional regions layer that splits Norway into Nord-Norge, Trøndelag, Vestlandet, Østlandet and Sørlandet, no external services at runtime apart from the basemap service's OpenStreetMap downloads when it builds.
 
 ## Quick start (demo)
 

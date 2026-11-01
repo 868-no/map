@@ -2,6 +2,7 @@
 // opt-out colours read on both basemaps; everything drawn in the basemap's
 // own tones (text, outlines, selection, links, pings) changes with it.
 import type { Theme } from '../theme'
+import type { RegionId } from './regionData'
 
 type RGB = [number, number, number]
 type RGBA = [number, number, number, number]
@@ -24,6 +25,8 @@ export interface MapPalette {
   pingOrigin: RGB // first broadcast by the originator
   pingRelay: RGB // rebroadcast by a relay
   pingCore: (c: RGB) => RGB // the travelling link's bright core
+  regions: Record<RegionId, RGB> // landsdel tints (outline, name and faint fill)
+  regionFillAlpha: number
 }
 
 const toward = (c: RGB, target: number, f: number) => c.map((v) => Math.round(v + (target - v) * f)) as RGB
@@ -47,6 +50,8 @@ export const PALETTES: Record<Theme, MapPalette> = {
     pingOrigin: [125, 224, 255],
     pingRelay: [255, 196, 110],
     pingCore: (c) => toward(c, 255, 0.45),
+    regions: { nord: [129, 161, 255], trondelag: [255, 170, 120], vest: [110, 210, 190], ost: [230, 140, 200], sor: [235, 215, 110] },
+    regionFillAlpha: 38,
   },
   light: {
     selected: [20, 24, 30, 255],
@@ -66,5 +71,7 @@ export const PALETTES: Record<Theme, MapPalette> = {
     pingOrigin: [0, 150, 210],
     pingRelay: [222, 128, 0],
     pingCore: (c) => toward(c, 0, 0.25),
+    regions: { nord: [60, 90, 200], trondelag: [196, 98, 36], vest: [16, 132, 112], ost: [168, 58, 138], sor: [150, 120, 10] },
+    regionFillAlpha: 40,
   },
 }

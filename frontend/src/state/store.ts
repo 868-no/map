@@ -21,6 +21,7 @@ export interface Toggles {
   uncertainty: boolean
   animation: boolean
   labels: boolean
+  regions: boolean // Norway's landsdeler beneath the mesh
   theme: ThemeChoice
   basemap: Record<BasemapGroup, boolean>
 }
@@ -53,7 +54,7 @@ interface Store {
 export const defaultFilters: Filters = { channels: [], brokers: [], types: [], evidence: [], minConfidence: 'low', positionedOnly: false }
 const prefersReducedMotion = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
 
-export const defaultToggles: Toggles = { infraLinks: false, otherLinks: false, mqttLinks: false, inferred: true, uncertainty: false, animation: !prefersReducedMotion, labels: true, theme: 'system', basemap: defaultBasemap }
+export const defaultToggles: Toggles = { infraLinks: false, otherLinks: false, mqttLinks: false, inferred: true, uncertainty: false, animation: !prefersReducedMotion, labels: true, regions: false, theme: 'system', basemap: defaultBasemap }
 
 // Layer choices are a per-viewer convenience kept in browser storage; the
 // map works the same when storage is unavailable.

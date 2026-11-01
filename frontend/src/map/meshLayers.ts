@@ -1,4 +1,5 @@
-// The static mesh layers: accuracy circles, links, nodes and node names.
+// The static mesh layers: regions (when on), accuracy circles, links, nodes
+// and node names.
 // Rebuilt when data, filters, selection, search or zoom change; pings
 // animate on top. Each layer's data array is memoised on its real inputs,
 // so deck.gl regenerates attributes only for layers whose data changed;
@@ -12,6 +13,7 @@ import { dashExt, UNDER_LABELS, type RGBA } from './deckShared'
 import { labelData, type Cluster } from './labels'
 import type { RouteSegment } from '../derive/views'
 import type { MapPalette } from './palette'
+import { regionLayers, type RegionCollection } from './regions'
 
 export interface MeshLayerInput {
   placed: PlacedNode[]
@@ -24,6 +26,7 @@ export interface MeshLayerInput {
   exploded: Set<string> // cluster ids shown fanned out
   route?: RouteGeom[] | null // a packet's route, drawn instead of links
   palette: MapPalette // colours for the current theme
+  regions?: RegionCollection | null // landsdeler, drawn beneath everything else
 }
 
 export interface RouteGeom {
@@ -112,7 +115,7 @@ export function meshLayerBuilder(): (input: MeshLayerInput) => Layer[] {
   const optOutOf = memoLast((placed: PlacedNode[]) => placed.filter((p) => p.node.mqtt_opt_out))
   const labelsOf = memoLast(labelData)
 
-  return ({ placed, links, selection: sel, search, toggles, zoom, clusters, exploded, route, palette: c }) => {
+  return ({ placed, links, selection: sel, search, toggles, zoom, clusters, exploded, route, palette: c, regions }) => {
     const q = search.trim().toLowerCase()
     const matches = (p: PlacedNode) =>
       !q || p.node.id.includes(q) || (p.node.identity?.long_name ?? '').toLowerCase().includes(q) || (p.node.identity?.short_name ?? '').toLowerCase().includes(q)
@@ -121,7 +124,7 @@ export function meshLayerBuilder(): (input: MeshLayerInput) => Layer[] {
     const selLink = sel?.kind === 'edge' ? `${sel.src}|${sel.dst}|${!!sel.mqtt}` : ''
     const isSelLink = (g: LinkGeom) => sel?.kind === 'edge' && !!sel.mqtt === g.mqtt && ((sel.src === g.a && sel.dst === g.b) || (sel.src === g.b && sel.dst === g.a))
     const linkColor = (g: LinkGeom) => (isSelLink(g) ? c.selected : [...(g.infra ? c.linkInfra : c.linkOther), CONFIDENCE_ALPHA[g.confidence] ?? 150]) as RGBA
-    const layers: Layer[] = []
+    const layers: Layer[] = regions ? regionLayers(regions, zoom, c) : []
 
     const circles = circlesOf(placed, toggles.uncertainty, selId)
     if (circles.length) {

@@ -18,6 +18,7 @@ import { usePacketRoute } from '../state/data'
 import { installTestHook } from './testHook'
 import { useTheme, type Theme } from '../theme'
 import { PALETTES } from './palette'
+import { useRegions } from './regions'
 
 
 
@@ -172,9 +173,10 @@ export default function MapView({ caps, snapshot, onPositions }: Props) {
   // Static layers, rebuilt on data/filter/selection change; pings animate on top.
   // The builder keeps each layer's data array while its inputs are unchanged.
   const [buildMeshLayers] = useState(meshLayerBuilder)
+  const regions = useRegions(toggles.regions)
   const baseLayers = useMemo(
-    () => buildMeshLayers({ placed, links: shownLinks, selection, search, toggles, zoom, clusters, exploded, route, palette }),
-    [buildMeshLayers, placed, shownLinks, selection, search, toggles, zoom, clusters, exploded, route, palette],
+    () => buildMeshLayers({ placed, links: shownLinks, selection, search, toggles, zoom, clusters, exploded, route, palette, regions }),
+    [buildMeshLayers, placed, shownLinks, selection, search, toggles, zoom, clusters, exploded, route, palette, regions],
   )
 
   // Animation loop: runs only while pings are alive (~30 fps), then settles
@@ -265,6 +267,12 @@ export default function MapView({ caps, snapshot, onPositions }: Props) {
       <div className="attribution">
         <a href="https://openmaptiles.org/" target="_blank" rel="noreferrer">© OpenMapTiles</a>{' '}
         <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">© OpenStreetMap contributors</a>
+        {toggles.regions && (
+          <>
+            {' '}
+            <a href="https://www.kartverket.no/" target="_blank" rel="noreferrer">© Kartverket</a>
+          </>
+        )}
       </div>
       {hover && (
         <div className="tooltip" style={{ left: hover.x + 12, top: hover.y + 12 }} role="tooltip">
