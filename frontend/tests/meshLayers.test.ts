@@ -49,13 +49,17 @@ describe('mesh layer builder', () => {
     const track = [{ lat: 60.2, lon: 10.2, at: 't0' }, { lat: 60.25, lon: 10.25, at: 't1' }]
     const mover: PlacedNode = { node: { ...node('!m'), moved_at: 't1', track, airborne: true }, kind: 'reported', lon: 10.3, lat: 60.3, age: 0 }
     const build = meshLayerBuilder()
-    const ls = byId(build({ ...base, placed: [...placed, mover] }))
+    const ls = byId(build({ ...base, placed: [...placed, mover], toggles: { ...base.toggles, trails: true } }))
     const trail = ls.trails.data as { alpha: number }[]
     expect(trail).toHaveLength(2) // two positions, then on to the marker
     expect(trail[1].alpha).toBeGreaterThan(trail[0].alpha) // fading towards the oldest
     expect((ls['trail-arrows'].data as unknown[]).length).toBe(2)
     expect((ls['mqtt-glyphs'].data as { flow: string }[]).map((g) => g.flow)).toEqual(['plane'])
-    expect('trails' in byId(build({ ...base, placed: [...placed, mover], toggles: { ...base.toggles, trails: false } }))).toBe(false)
+    expect('trails' in byId(build({ ...base, placed: [...placed, mover] }))).toBe(false) // off by default
+    // With another node selected, its trail is hidden; with this one, shown.
+    const on = { ...base.toggles, trails: true }
+    expect('trails' in byId(build({ ...base, placed: [...placed, mover], toggles: on, selection: { kind: 'node', id: '!a' } }))).toBe(false)
+    expect((byId(build({ ...base, placed: [...placed, mover], toggles: on, selection: { kind: 'node', id: '!m' } })).trails.data as unknown[]).length).toBe(2)
   })
 })
 

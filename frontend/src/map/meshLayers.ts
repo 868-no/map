@@ -123,7 +123,7 @@ const glyphsFor = (p: PlacedNode): Glyph[] => {
   const flow = mqttFlow(p.node)
   return [...(flow ? [{ p, flow }] : []), ...(p.node.airborne ? [{ p, flow: 'plane' as const }] : [])]
 }
-type Trail = { from: [number, number]; to: [number, number]; alpha: number }
+type Trail = { id: string; from: [number, number]; to: [number, number]; alpha: number }
 
 /**
  * A mesh layer builder with its own memo of data arrays. Keep one per map
@@ -175,15 +175,17 @@ export function meshLayerBuilder(): (input: MeshLayerInput) => Layer[] {
   const hollowOf = memoLast((placed: PlacedNode[]) => placed.filter((p) => p.kind === 'estimated'))
   // Trails behind moving nodes (D-073): segments between consecutive
   // positions, fading towards the oldest, ending at the marker.
-  const trailsOf = memoLast((placed: PlacedNode[]) => {
+  // With a node selected, only its trail.
+  const trailsOf = memoLast((placed: PlacedNode[], only: string | null) => {
     const segs: Trail[] = []
     for (const p of placed) {
+      if (only && p.node.id !== only) continue
       const t = p.node.track
       if (!t || t.length < 2) continue
       const pts: [number, number][] = [...t.map((x) => [x.lon, x.lat] as [number, number]), [p.lon, p.lat]]
       for (let k = 1; k < pts.length; k++) {
         if (pts[k][0] === pts[k - 1][0] && pts[k][1] === pts[k - 1][1]) continue
-        segs.push({ from: pts[k - 1], to: pts[k], alpha: Math.round(50 + (190 * k) / (pts.length - 1)) })
+        segs.push({ id: p.node.id, from: pts[k - 1], to: pts[k], alpha: Math.round(50 + (190 * k) / (pts.length - 1)) })
       }
     }
     return { segs, chevrons: segs.map((s) => ({ ...chevron(s.from, s.to), alpha: s.alpha })) }
@@ -260,7 +262,7 @@ export function meshLayerBuilder(): (input: MeshLayerInput) => Layer[] {
 
     // Where moving nodes have been, and which way they went (D-073).
     if (toggles.trails) {
-      const trails = trailsOf(placed)
+      const trails = trailsOf(placed, selId)
       if (trails.segs.length) {
         layers.push(
           new LineLayer<Trail>({

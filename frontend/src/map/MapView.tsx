@@ -22,9 +22,20 @@ import { useRegions } from './regions'
 
 /** Mainland Norway, Lindesnes to Nordkapp and Utsira to Grense Jakobselv. */
 const NORWAY_BOUNDS: [[number, number], [number, number]] = [[4.5, 57.9], [31.2, 71.25]]
+/** Where most of Norway (and its mesh) lies, east to west. */
+const NORWAY_FOCUS_LON = 13.5
+/** The start view's centre longitude: the focus, clamped so both ends of the country stay in view. */
+export function startLon(width: number, zoom: number): number {
+  const p = startPadding(width)
+  const degPerPx = 360 / (512 * 2 ** zoom)
+  const [[west], [east]] = NORWAY_BOUNDS
+  const lo = east - (width / 2 - p.right) * degPerPx // further west and Finnmark leaves the view
+  const hi = west + (width / 2 - p.left) * degPerPx // further east and the west coast does
+  return lo > hi ? (west + east) / 2 : Math.min(Math.max(NORWAY_FOCUS_LON, lo), hi)
+}
 /** Room around the country; on the right, for the floating tool rail. */
-const startPadding = () => {
-  const narrow = window.innerWidth <= 560
+const startPadding = (width = window.innerWidth) => {
+  const narrow = width <= 560
   return { top: 16, bottom: 16, left: 16, right: narrow ? 64 : 92 }
 }
 
@@ -82,6 +93,10 @@ export default function MapView({ caps, snapshot, onPositions }: Props) {
           maxPitch: 0,
           dragRotate: false,
         })
+        // The box's centre lies over Sweden (Finnmark reaches 31°E): keep its
+        // zoom, but move the view west towards the country's mass as far as
+        // the whole country stays in view (D-074).
+        map.jumpTo({ center: [startLon(map.getContainer().clientWidth, map.getZoom()), map.getCenter().lat] })
         map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-left')
         map.addControl(new maplibregl.ScaleControl({ unit: 'metric' }), 'bottom-left')
         map.on('mousemove', (e: maplibregl.MapMouseEvent) => {

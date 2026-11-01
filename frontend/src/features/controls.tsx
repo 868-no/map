@@ -43,7 +43,7 @@ export function LayersPanel() {
       {check('Node names', t.labels, (v) => setT({ labels: v }),
         'Each node\'s short name from its latest NodeInfo in the selected window, or the last 4 hex digits of its ID. Shown from zoom 10. Names that would overlap are grouped (“+N”) and fan out when hovered.')}
       {check('Trails', t.trails, (v) => setT({ trails: v }),
-        'Where moving nodes have been in the selected window: a line through their reported positions, fading towards the oldest, with chevrons pointing the way they went. A node counts as moving once two positions lie further apart than a few hundred metres plus what their precision explains; its links then use only evidence from after its latest move.')}
+        'Where moving nodes have been in the selected window: a line through their reported positions, fading towards the oldest, with chevrons pointing the way they went. With a node selected, only its trail. A node counts as moving once two positions lie further apart than a few hundred metres plus what their precision explains; its links then use only evidence from after its latest move.')}
       {check('Traffic', t.animation, (v) => setT({ animation: v }),
         'Live radar pings: each ring is one radio transmission, growing until it encloses the nodes known to have heard it directly, while a bright line travels to each of those nodes, arriving with the ring. Blue: first broadcast by the originating node; amber: rebroadcast by a relay. The ring fades outward, matching the signal strength measured at each receiver. Live window only; off by default when the system asks for reduced motion.')}
       <h3>Map</h3>
