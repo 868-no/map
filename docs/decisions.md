@@ -406,3 +406,11 @@ Operator request. This reverses the spec's dark-only design.
 - **Repository link:** a GitHub icon in the top bar, next to the existing "Source (GPL-3.0)" link (D-050).
 - **Privacy policy:** a static page, `/privacy.html`, linked from the attribution bar. It is readable without the app and linkable. `privacy.js` fills in this deployment's operator (`OPERATOR_NAME`, `OPERATOR_CONTACT`, new in capabilities), retention, geolocation and tile source. What it says about visitors was checked against the code: IPs are held only in the rate limiter's memory, dropped after 10 idle minutes, and never logged; the Caddy image keeps no access log; there are no cookies; browser storage holds settings, data and the app shell. The service worker used to cache every navigation as `/index.html`, which would have stored the policy as the offline app; precached pages are now cached under their own path.
 - **Found while writing it:** "message bodies are never stored" was only true of `decoded_metadata`. `envelope_bytes` keeps the raw envelope: encrypted text messages, readable with the public default key, and plain text from gateways that uplink decrypted packets. The policy and `architecture.md` now say so; whether to keep it is the operator's decision.
+
+## D-052 One home for app controls (2026-11-01)
+
+Operator feedback: the GitHub link, privacy, license, Layers and the side panel toggle were scattered over the top bar, the map and its credit line, and Theme had ended up among the map layers. Now:
+- **Top bar, right:** every app control sits together. Layers (map layers only), the side panel toggle (Nodes & details / Hide panel), and a menu (☰). Each has an icon and a label; phones show the icons only.
+- **Menu:** Theme (Auto, Light, Dark; Auto follows the browser), Install app when the browser offers it, and About links: source code on GitHub (at the built commit), license (GNU GPL v3) and privacy policy. It also shows the version.
+- **Popovers:** Layers and the menu drop from the top bar over the map and the side panel. Only one is open at a time, and Escape or a click elsewhere closes it.
+- **Map:** keeps only map controls (zoom, fit, scale). Its credit line is back to the required OpenMapTiles and OpenStreetMap credits.

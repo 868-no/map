@@ -1,11 +1,23 @@
 import { expect, test } from '@playwright/test'
 
-// D-051: the privacy policy and the source code are one click away, and the
-// policy states this deployment's own settings.
-test('links to the privacy policy and the GitHub repository', async ({ page }) => {
+// D-051, D-052: the menu in the top bar holds the theme and the links about
+// the site; the policy states this deployment's own settings.
+test('the menu holds the theme, source code, license and privacy policy', async ({ page }) => {
   await page.goto('/')
-  await expect(page.getByRole('link', { name: 'Source code on GitHub' })).toHaveAttribute('href', /^https:\/\/github\.com\/868-no\/map/)
-  await expect(page.locator('.attribution').getByRole('link', { name: 'Privacy' })).toHaveAttribute('href', '/privacy.html')
+  await page.getByRole('button', { name: 'Menu' }).click()
+  const menu = page.getByRole('dialog', { name: 'Menu' })
+  await expect(menu.getByRole('radiogroup', { name: 'Theme' })).toBeVisible()
+  await expect(menu.getByRole('link', { name: /Source code on GitHub/ })).toHaveAttribute('href', /^https:\/\/github\.com\/868-no\/map/)
+  await expect(menu.getByRole('link', { name: /License/ })).toHaveAttribute('href', /\/LICENSE$/)
+  await expect(menu.getByRole('link', { name: /Privacy policy/ })).toHaveAttribute('href', '/privacy.html')
+  // One popover at a time; Escape closes it.
+  await page.getByRole('button', { name: 'Layers' }).click()
+  await expect(menu).toHaveCount(0)
+  await expect(page.getByRole('dialog', { name: 'Map layers' })).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('dialog', { name: 'Map layers' })).toHaveCount(0)
+  // The map's credit line carries only the required map credits.
+  await expect(page.locator('.attribution')).toHaveText('© OpenMapTiles © OpenStreetMap contributors')
 })
 
 test('the privacy policy fills in retention and operator details from the API', async ({ page, request }) => {

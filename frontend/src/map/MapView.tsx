@@ -15,8 +15,6 @@ import { useCamera } from './camera'
 import { clusterLabels, type Cluster, type LabelDatum } from './labels'
 import { usePacketRoute } from '../state/data'
 import { installTestHook } from './testHook'
-import { LayersPanel } from '../features/controls'
-import { PRIVACY_URL, SOURCE_HREF } from '../links'
 import { useTheme, type Theme } from '../theme'
 import { PALETTES } from './palette'
 
@@ -39,7 +37,6 @@ export default function MapView({ caps, snapshot, onPositions }: Props) {
   const [cursor, setCursor] = useState<string>('')
   const [zoom, setZoom] = useState(caps.map.zoom)
   const [bounds, setBounds] = useState<[number, number, number, number] | null>(null)
-  const [layersOpen, setLayersOpen] = useState(false)
   const filters = useStore((s) => s.filters)
   const toggles = useStore((s) => s.toggles)
   const selection = useStore((s) => s.selection)
@@ -256,18 +253,10 @@ export default function MapView({ caps, snapshot, onPositions }: Props) {
           </svg>
         </button>
       </div>
-      <div className="map-tools">
-        <button aria-expanded={layersOpen} aria-controls="layers-panel" onClick={() => setLayersOpen((o) => !o)} title="Choose what the map shows">Layers</button>
-      </div>
-      {layersOpen && <LayersPanel id="layers-panel" onClose={() => setLayersOpen(false)} />}
       {cursor && <div className="coords" aria-hidden>{cursor}</div>}
       <div className="attribution">
         <a href="https://openmaptiles.org/" target="_blank" rel="noreferrer">© OpenMapTiles</a>{' '}
         <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">© OpenStreetMap contributors</a>
-        {' · '}
-        <a href={SOURCE_HREF} target="_blank" rel="noreferrer" title="This map is free software under the GNU GPL v3; its source code">Source (GPL-3.0)</a>
-        {' · '}
-        <a href={PRIVACY_URL} target="_blank" rel="noreferrer">Privacy</a>
       </div>
       {hover && (
         <div className="tooltip" style={{ left: hover.x + 12, top: hover.y + 12 }} role="tooltip">

@@ -6,13 +6,13 @@ import { addTransmission, clearPings, painting, pingWanted, setPingPositions } f
 import Timeline from './timeline/Timeline'
 import { usePwa } from './pwa'
 import { EdgePanel, NodeList, NodePanel } from './features/panels'
-import { FilterPanel, Legend } from './features/controls'
+import { FilterPanel, LayersPanel, Legend } from './features/controls'
+import { AppMenu } from './features/menu'
 import { useCapabilities, useLiveEpoch, useRetention, useSnapshot, useTraffic } from './state/data'
 import { initDerive, onTransmissions, sendLiveRows } from './derive/client'
 import { apiParams, defaultFilters, fromQuery, toQuery, useStore, type Filters } from './state/store'
 import type { ObsRow } from './api/types'
 import { applyTheme, useTheme } from './theme'
-import { REPO_URL } from './links'
 
 /** A live row passes the view filters (the stream itself is unfiltered). */
 function passes(r: ObsRow, f: Filters): boolean {
@@ -37,6 +37,23 @@ export default function App() {
   const geo = useRef<Map<string, [number, number]>>(new Map())
   const theme = useTheme()
   useEffect(() => applyTheme(theme), [theme])
+  // One top-bar popover at a time; Escape or a click elsewhere closes it.
+  const [popover, setPopover] = useState<'layers' | 'menu' | null>(null)
+  const actions = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!popover) return
+    const away = (e: Event) => {
+      if (!actions.current?.contains(e.target as Node)) setPopover(null)
+    }
+    const esc = (e: KeyboardEvent) => e.key === 'Escape' && setPopover(null)
+    document.addEventListener('pointerdown', away)
+    document.addEventListener('keydown', esc)
+    return () => {
+      document.removeEventListener('pointerdown', away)
+      document.removeEventListener('keydown', esc)
+    }
+  }, [popover])
+  const toggleOpen = (p: 'layers' | 'menu') => setPopover((o) => (o === p ? null : p))
   const onPositions = useCallback((pos: Map<string, [number, number]>) => {
     geo.current = pos
     setPingPositions(pos) // pings follow the markers as estimates move
@@ -163,15 +180,21 @@ export default function App() {
           </span>
         )}
         {snap.isFetching && <span className="spinner" aria-label="Updating" />}
-        {canInstall && <button className="install-btn" onClick={install} title="Install Mesh Observatory as an app on this device">Install app</button>}
-        <button className="panel-toggle" aria-expanded={panelOpen} aria-controls="sidebar" onClick={togglePanel} title={panelOpen ? 'Hide the side panel' : 'Show nodes, details, filters and legend'}>
-          {panelOpen ? 'Hide panel' : 'Nodes & details'}
-        </button>
-        <a className="topbar-link" href={REPO_URL} target="_blank" rel="noreferrer" title="Source code on GitHub (GPL-3.0)" aria-label="Source code on GitHub">
-          <svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true" fill="currentColor">
-            <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z" />
-          </svg>
-        </a>
+        <div className="topbar-actions" ref={actions}>
+          <button aria-expanded={popover === 'layers'} aria-controls="layers-panel" aria-label="Layers" onClick={() => toggleOpen('layers')} title="Choose what the map shows">
+            <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round"><path d="M10 3 2.5 7 10 11l7.5-4L10 3Z" /><path d="m2.5 10.5 7.5 4 7.5-4" /><path d="m2.5 14 7.5 4 7.5-4" /></svg>
+            <span className="btn-label">Layers</span>
+          </button>
+          <button className="panel-toggle" aria-expanded={panelOpen} aria-controls="sidebar" aria-label={panelOpen ? 'Hide panel' : 'Nodes & details'} onClick={togglePanel} title={panelOpen ? 'Hide the side panel' : 'Show nodes, details, filters and legend'}>
+            <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.6"><rect x="2.5" y="3.5" width="15" height="13" rx="2" /><path d="M12.5 3.5v13" /></svg>
+            <span className="btn-label">{panelOpen ? 'Hide panel' : 'Nodes & details'}</span>
+          </button>
+          <button className="icon-btn" aria-expanded={popover === 'menu'} aria-controls="app-menu" aria-label="Menu" onClick={() => toggleOpen('menu')} title="Theme, install, source code, license and privacy">
+            <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M3.5 5.5h13M3.5 10h13M3.5 14.5h13" /></svg>
+          </button>
+          {popover === 'layers' && <LayersPanel id="layers-panel" onClose={() => setPopover(null)} />}
+          {popover === 'menu' && <AppMenu id="app-menu" onClose={() => setPopover(null)} canInstall={canInstall} install={install} />}
+        </div>
       </header>
       <main className={`main${panelOpen ? '' : ' panel-closed'}`}>
         <MapView caps={caps.data} snapshot={snap.data} onPositions={onPositions} />

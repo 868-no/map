@@ -47,8 +47,8 @@ test('follows the browser theme, and a chosen theme overrides it from the first 
   await expect.poll(() => mapBg(page)).toBe('#f3f1ec')
   await expect(page.locator('.topbar h1')).toHaveText('Mesh Observatory')
 
-  await page.getByRole('button', { name: 'Layers' }).click()
-  await page.getByRole('dialog', { name: 'Map layers' }).getByLabel('Dark').check()
+  await page.getByRole('button', { name: 'Menu' }).click()
+  await page.getByRole('dialog', { name: 'Menu' }).getByLabel('Dark').check()
   await expect.poll(() => pageBg(page)).toBe('rgb(14, 17, 22)')
   await expect.poll(() => mapBg(page)).toBe('#0e1116')
 
@@ -58,8 +58,8 @@ test('follows the browser theme, and a chosen theme overrides it from the first 
   expect(await page.evaluate(() => document.documentElement.dataset.theme)).toBe('dark')
 
   await page.waitForFunction(() => !!(window as unknown as { __meshmap?: unknown }).__meshmap, null, { timeout: 30_000 })
-  await page.getByRole('button', { name: 'Layers' }).click()
-  await page.getByRole('dialog', { name: 'Map layers' }).getByLabel('Follow browser').check()
+  await page.getByRole('button', { name: 'Menu' }).click()
+  await page.getByRole('dialog', { name: 'Menu' }).getByLabel('Auto').check()
   await expect.poll(() => pageBg(page)).toBe('rgb(246, 247, 249)')
   await expect.poll(() => mapBg(page)).toBe('#f3f1ec')
 })

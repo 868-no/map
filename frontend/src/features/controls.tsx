@@ -2,9 +2,7 @@ import type { SnapshotBody } from '../api/types'
 import { useStore, type Confidence } from '../state/store'
 import { AGE_STOPS, roleRadius } from '../map/model'
 import { BASEMAP_GROUPS } from '../map/layers'
-import type { ThemeChoice } from '../theme'
 
-const THEMES: [ThemeChoice, string][] = [['system', 'Follow browser'], ['light', 'Light'], ['dark', 'Dark']]
 const TYPES = ['nodeinfo', 'position', 'telemetry', 'neighborinfo', 'traceroute', 'text', 'routing', 'other']
 const EVIDENCE: [string, string][] = [['neighbor', 'NeighborInfo'], ['traceroute', 'Traceroute'], ['direct_rf', 'Direct gateway RF'], ['relay_hint', 'Inferred last hop']]
 
@@ -23,7 +21,7 @@ export function LayersPanel({ id, onClose }: { id: string; onClose: () => void }
     </label>
   )
   return (
-    <div id={id} className="layers-panel" role="dialog" aria-label="Map layers" onKeyDown={(e) => e.key === 'Escape' && onClose()}>
+    <div id={id} className="popover layers-panel" role="dialog" aria-label="Map layers" onKeyDown={(e) => e.key === 'Escape' && onClose()}>
       <button className="close" onClick={onClose} aria-label="Close layers">×</button>
       <h3>Mesh</h3>
       {check('Infrastructure links (router ↔ router)', t.infraLinks, (v) => setT({ infraLinks: v }),
@@ -40,14 +38,6 @@ export function LayersPanel({ id, onClose }: { id: string; onClose: () => void }
         'Live radar pings: each soft ring is one radio transmission, growing to enclose the nodes known to have heard it directly, while a bright line travels along each link to those nodes, arriving with the ring. Blue: first broadcast by the originating node; amber: rebroadcast by a relay. The ring fades with measured signal strength. Live window only.')}
       <h3>Map</h3>
       {BASEMAP_GROUPS.map((g) => check(g.label, t.basemap[g.id], (v) => setT({ basemap: { [g.id]: v } }), g.info))}
-      <h3 id={`${id}-theme`}>Theme</h3>
-      <div role="radiogroup" aria-labelledby={`${id}-theme`}>
-        {THEMES.map(([v, label]) => (
-          <label key={v} title="Colours of the map and panels. Follow browser uses your device's light or dark setting and changes with it.">
-            <input type="radio" name={`${id}-theme`} value={v} checked={t.theme === v} onChange={() => setT({ theme: v })} /> {label}
-          </label>
-        ))}
-      </div>
     </div>
   )
 }
