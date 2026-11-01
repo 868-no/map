@@ -12,7 +12,8 @@ function covered(container: HTMLElement | null): { right: number; bottom: number
   const panel = document.getElementById('dock')
   if (!panel || panel.hidden || !container) return { right: 0, bottom: 0 }
   const a = container.getBoundingClientRect(), b = panel.getBoundingClientRect()
-  return b.top <= a.top + 1 ? { right: Math.max(0, a.right - b.left), bottom: 0 } : { right: 0, bottom: Math.max(0, a.bottom - b.top) }
+  // The side panel is narrow; the phone's bottom card spans most of the width.
+  return b.width < a.width * 0.6 ? { right: Math.max(0, a.right - b.left), bottom: 0 } : { right: 0, bottom: Math.max(0, a.bottom - b.top) }
 }
 
 export function useCamera(

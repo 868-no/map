@@ -558,3 +558,10 @@ Operator idea: when a node is selected, simulate its reach at different hop limi
 
 Operator decision: receptions we cannot decrypt are not stored, not even their unencrypted headers (sender, destination, gateway, channel name, hops, signal). Ingest keeps rejecting them as `no_key`. Only channels with a configured key, or the public default key (D-065), are stored. Channels with private keys are seen only as the primary channel names nodes report about themselves in map reports (D-064).
 
+## D-071 The rail and its panel as floating islands (2026-11-01)
+
+Operator request: make the right-hand sidebar a floating island over the map.
+- The rail and the open panel are rounded cards inset 10 px from the map's edges (8 px on phones), with a soft shadow and a translucent, blurred background. The map runs edge to edge beneath them; the rail no longer takes a column.
+- The rail is as tall as its buttons. The panel sits beside it, as tall as its content up to the bottom margin, scrolling inside past that. On phones it floats along the bottom, beside the rail, up to half the screen.
+- Banners, the coordinate readout and the credits stay clear of both. The camera keeps framed content clear of the panel, now telling the side panel from the bottom card by width.
+
