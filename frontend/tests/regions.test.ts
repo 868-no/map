@@ -39,4 +39,14 @@ describe('Norway regions layer', () => {
     expect(at(10.75, 59.91)).toBe('Østlandet') // Oslo
     expect(at(7.99, 58.15)).toBe('Sørlandet') // Kristiansand
   })
+  // The layer insets each outline with a negative path offset, which lands
+  // inside the region only when outer rings run counter-clockwise.
+  it('winds outer rings counter-clockwise and holes clockwise (RFC 7946)', () => {
+    const area = (r: Ring) => r.slice(1).reduce((s, b, i) => s + r[i][0] * b[1] - b[0] * r[i][1], 0) / 2
+    for (const f of fc.features)
+      for (const [outer, ...holes] of polygons(f.geometry)) {
+        expect(area(outer)).toBeGreaterThan(0)
+        for (const h of holes) expect(area(h)).toBeLessThan(0)
+      }
+  })
 })

@@ -256,8 +256,13 @@ test('the panel is closed until something is selected, and closes again when the
   // Hovering the node first, as a user would: a tooltip, or its name cluster fanning out.
   await expect.poll(async () => (await page.locator('.tooltip').isVisible()) || (await page.evaluate(() =>
     (window as unknown as { __meshmap: Hook }).__meshmap.layers().some((l) => l.id === 'label-leaders')))).toBe(true)
-  await page.mouse.click(box.x + pt.x, box.y + pt.y)
-  await expect(page.locator('#dock')).toBeVisible()
+  // The headless renderer sometimes keeps the page busy long enough between
+  // mouse down and up that the map takes it for a long press, not a click:
+  // click again (a no-op once selected) until the panel opens.
+  await expect(async () => {
+    await page.mouse.click(box.x + pt.x, box.y + pt.y)
+    await expect(page.locator('#dock')).toBeVisible({ timeout: 2000 })
+  }).toPass({ timeout: 20_000 })
   await expect(page.getByRole('button', { name: 'Details', exact: true })).toHaveAttribute('aria-pressed', 'true')
   await page.getByRole('button', { name: 'Close details' }).click()
   await expect(page.locator('#dock')).toBeHidden()

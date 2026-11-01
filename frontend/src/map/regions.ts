@@ -3,6 +3,7 @@
 // simplified by scripts/regions.sh. Fetched only when the layer is on.
 import { useEffect, useState } from 'react'
 import { GeoJsonLayer, TextLayer } from '@deck.gl/layers'
+import { PathStyleExtension, type PathStyleExtensionProps } from '@deck.gl/extensions'
 import type { Layer } from '@deck.gl/core'
 import regionsUrl from '../assets/regions.geojson?url'
 import { UNDER_LABELS, type RGBA } from './deckShared'
@@ -10,6 +11,13 @@ import type { MapPalette } from './palette'
 import { REGION_LABELS, REGION_LABEL_MAX_ZOOM, type RegionCollection, type RegionFeature, type RegionId } from './regionData'
 
 export { REGION_LABELS, type RegionCollection, type RegionId } from './regionData'
+
+// Outer rings run counter-clockwise (RFC 7946, as scripts/regions.sh writes
+// them), so a negative offset puts each outline inside its own region:
+// neighbours' borders run side by side along a shared boundary, not on top
+// of each other.
+const insetExt = new PathStyleExtension({ offset: true })
+const INSET = -0.5 // line widths: the line's outer edge on the boundary
 
 let cached: Promise<RegionCollection> | undefined
 
@@ -37,18 +45,18 @@ export function useRegions(enabled: boolean): RegionCollection | null {
   return enabled ? data : null
 }
 
-/** Faint per-region fills with outlines, and the region names at overview zooms. */
+/** Per-region outlines drawn inside each region (no fill), and the region names at overview zooms. */
 export function regionLayers(fc: RegionCollection, zoom: number, c: MapPalette): Layer[] {
   const tint = (id: RegionId, a: number) => [...c.regions[id], a] as RGBA
   const layers: Layer[] = [
-    new GeoJsonLayer<RegionFeature['properties']>({
+    new GeoJsonLayer<RegionFeature['properties'], PathStyleExtensionProps<RegionFeature>>({
       id: 'regions', ...UNDER_LABELS, data: fc as never,
-      filled: true, stroked: true,
-      getFillColor: (f) => tint(f.properties.id, c.regionFillAlpha),
-      getLineColor: (f) => tint(f.properties.id, 170),
-      lineWidthUnits: 'pixels', getLineWidth: 1.5,
+      filled: false, stroked: true,
+      getLineColor: (f) => tint(f.properties.id, 200),
+      lineWidthUnits: 'pixels', getLineWidth: 2,
+      extensions: [insetExt], getOffset: INSET,
       pickable: false,
-      updateTriggers: { getFillColor: [c], getLineColor: [c] },
+      updateTriggers: { getLineColor: [c] },
     }),
   ]
   if (zoom < REGION_LABEL_MAX_ZOOM) {

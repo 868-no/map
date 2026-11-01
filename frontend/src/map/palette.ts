@@ -26,8 +26,7 @@ export interface MapPalette {
   pingOrigin: RGB // first broadcast by the originator
   pingRelay: RGB // rebroadcast by a relay
   pingCore: (c: RGB) => RGB // the travelling link's bright core
-  regions: Record<RegionId, RGB> // landsdel tints (outline, name and faint fill)
-  regionFillAlpha: number
+  regions: Record<RegionId, RGB> // landsdel tints (outline and name)
   ageStops: [number, number, number][] // node colour by last heard (model.ts)
   zeroCost: RGB // chevrons on 0-cost links (D-068)
   trail: RGB // trails behind moving nodes, and the airplane badge (D-073)
@@ -56,7 +55,6 @@ export const PALETTES: Record<Theme, MapPalette> = {
     pingRelay: [255, 196, 110],
     pingCore: (c) => toward(c, 255, 0.45),
     regions: { nord: [129, 161, 255], trondelag: [255, 170, 120], vest: [110, 210, 190], ost: [230, 140, 200], sor: [235, 215, 110] },
-    regionFillAlpha: 38,
     ageStops: AGE_STOPS,
     zeroCost: [255, 214, 90],
     trail: [225, 232, 240],
@@ -81,7 +79,6 @@ export const PALETTES: Record<Theme, MapPalette> = {
     pingRelay: [222, 128, 0],
     pingCore: (c) => toward(c, 0, 0.25),
     regions: { nord: [60, 90, 200], trondelag: [196, 98, 36], vest: [16, 132, 112], ost: [168, 58, 138], sor: [150, 120, 10] },
-    regionFillAlpha: 40,
     ageStops: AGE_STOPS_LIGHT,
     zeroCost: [176, 118, 0],
     trail: [40, 46, 56],
