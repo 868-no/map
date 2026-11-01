@@ -1,12 +1,16 @@
 //! Nodes that move (D-073).
 //!
 //! A node's reported positions in the window, in time order, are its track.
-//! It moved when two consecutive positions lie further apart than a few
-//! hundred metres beyond what their precision explains: a position truncated
-//! to N bits can jump a whole cell while the node stands still, so the
-//! threshold grows with both positions' worst-case error. The time of its
-//! latest move is when its current place began; radio evidence from before
-//! then describes another place, so links are built only from later samples.
+//! It moved when a position lies further than a few hundred metres, beyond
+//! what precision explains, from where it last settled: drift is measured
+//! from that reference point, not from the previous position, so a slow
+//! mover whose every step is short still counts once it has gone far enough.
+//! A position truncated to N bits can jump a whole cell while the node stands
+//! still, so the threshold grows with both positions' worst-case error, and
+//! movement is judged on the node's finest positions alone. Each
+//! move makes that position the new reference; the time of the latest move
+//! is when its current place began. Radio evidence from before then describes
+//! another place, so links are built only from later samples.
 
 use serde::Serialize;
 
@@ -68,12 +72,22 @@ pub fn movements(rows: &[&Row]) -> FxMap<u32, Movement> {
                 pts.push(r);
             }
         }
+        // Judge movement on its finest positions: a node that reports precise
+        // Position packets and coarse map reports moves within the coarse
+        // cells unseen, and mixing the two inflates the threshold.
+        let finest = (0..=32u32).rev().find(|&b| pts.iter().filter(|r| r.pos.unwrap().bits == b).count() >= 2);
+        let judged: Vec<&Row> = match finest {
+            Some(b) => pts.iter().copied().filter(|r| r.pos.unwrap().bits == b).collect(),
+            None => pts.clone(),
+        };
         let mut moved_at = None;
-        for w in pts.windows(2) {
-            let (a, b) = (w[0].pos.unwrap(), w[1].pos.unwrap());
-            let d = distance_m(LatLon { lat: a.lat, lon: a.lon }, LatLon { lat: b.lat, lon: b.lon });
-            if d > move_threshold_m((a.lat, a.bits), (b.lat, b.bits)) {
-                moved_at = Some(w[1].t);
+        let mut reference = judged[0].pos.unwrap();
+        for r in &judged[1..] {
+            let b = r.pos.unwrap();
+            let d = distance_m(LatLon { lat: reference.lat, lon: reference.lon }, LatLon { lat: b.lat, lon: b.lon });
+            if d > move_threshold_m((reference.lat, reference.bits), (b.lat, b.bits)) {
+                moved_at = Some(r.t);
+                reference = b;
             }
         }
         if let Some(moved_at) = moved_at {

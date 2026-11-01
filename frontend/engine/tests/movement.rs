@@ -63,3 +63,26 @@ fn airborne_needs_height_and_movement() {
     let s = snapshot(json!([pos(1, 1, 63.40, 32, Some(20)), pos(2, 5, 63.45, 32, Some(20))]));
     assert!(node(&s, M)["airborne"].is_null());
 }
+
+#[test]
+fn a_slow_mover_counts_once_it_has_drifted_far_enough() {
+    // 150 m steps (well under 300 m each), heard directly at every one of them.
+    let step = 150.0 / 111_320.0;
+    let rows: Vec<Value> = (0..6).map(|k| pos(k + 1, k * 5, 63.40 + step * k as f64, 32, None)).collect();
+    let s = snapshot(Value::Array(rows));
+    let n = node(&s, M);
+    // 300 m from the start after the third step: moved then; the next reference is there.
+    assert_eq!(n["moved_at"], "2026-10-31T00:15:00.000Z", "{n}");
+    assert_eq!(n["track"].as_array().unwrap().len(), 6);
+    assert_eq!(link_samples(&s), Some(3), "receptions from its current place on");
+}
+
+#[test]
+fn precise_positions_decide_even_with_coarse_map_reports_in_between() {
+    // 32-bit positions 700 m apart, with 13-bit reports of the same places mixed in:
+    // judged on the precise ones alone, so the move is seen.
+    let east = 700.0 / 111_320.0;
+    let rows = json!([pos(1, 1, 63.40, 32, None), pos(2, 2, 63.40, 13, None), pos(3, 10, 63.40 + east, 32, None), pos(4, 11, 63.40 + east, 13, None)]);
+    assert_eq!(node(&snapshot(rows), M)["moved_at"], "2026-10-31T00:10:00.000Z");
+}
+
