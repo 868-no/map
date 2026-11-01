@@ -10,7 +10,7 @@ import { applyStylePaint, loadStyle, registerPMTiles } from './style'
 import { filterEdges, linkGeometry, placeNodes, visibleLinks, type LinkGeom, type PlacedNode } from './model'
 import { frameArrived, pingCount } from './pings'
 import { BASEMAP_GROUPS } from './layers'
-import { buildMeshLayers, type RouteGeom } from './meshLayers'
+import { meshLayerBuilder, type RouteGeom } from './meshLayers'
 import { buildPingLayers } from './pingLayers'
 import { useCamera } from './camera'
 import { clusterLabels, type Cluster, type LabelDatum } from './labels'
@@ -35,7 +35,7 @@ export default function MapView({ caps, snapshot, onPositions }: Props) {
   const [ready, setReady] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [hover, setHover] = useState<{ x: number; y: number; text: string } | null>(null)
-  const [cursor, setCursor] = useState<string>('')
+  const coords = useRef<HTMLDivElement>(null) // written directly: a re-render per mousemove is too costly
   const [zoom, setZoom] = useState(caps.map.zoom)
   const [bounds, setBounds] = useState<[number, number, number, number] | null>(null)
   const filters = useStore((s) => s.filters)
@@ -74,7 +74,12 @@ export default function MapView({ caps, snapshot, onPositions }: Props) {
         })
         map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-left')
         map.addControl(new maplibregl.ScaleControl({ unit: 'metric' }), 'bottom-left')
-        map.on('mousemove', (e: maplibregl.MapMouseEvent) => setCursor(`${e.lngLat.lat.toFixed(4)}, ${e.lngLat.lng.toFixed(4)}`))
+        map.on('mousemove', (e: maplibregl.MapMouseEvent) => {
+          const el = coords.current
+          if (!el) return
+          el.textContent = `${e.lngLat.lat.toFixed(4)}, ${e.lngLat.lng.toFixed(4)}`
+          el.hidden = false
+        })
         const view = () => {
           setZoom(map.getZoom())
           const b = map.getBounds()
@@ -165,9 +170,11 @@ export default function MapView({ caps, snapshot, onPositions }: Props) {
   }, [hoverCluster, selectedNode, clusters]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Static layers, rebuilt on data/filter/selection change; pings animate on top.
+  // The builder keeps each layer's data array while its inputs are unchanged.
+  const [buildMeshLayers] = useState(meshLayerBuilder)
   const baseLayers = useMemo(
     () => buildMeshLayers({ placed, links: shownLinks, selection, search, toggles, zoom, clusters, exploded, route, palette }),
-    [placed, shownLinks, selection, search, toggles, zoom, clusters, exploded, route, palette],
+    [buildMeshLayers, placed, shownLinks, selection, search, toggles, zoom, clusters, exploded, route, palette],
   )
 
   // Animation loop: runs only while pings are alive (~30 fps), then settles
@@ -254,7 +261,7 @@ export default function MapView({ caps, snapshot, onPositions }: Props) {
           </svg>
         </button>
       </div>
-      {cursor && <div className="coords" aria-hidden>{cursor}</div>}
+      <div ref={coords} className="coords" aria-hidden hidden />
       <div className="attribution">
         <a href="https://openmaptiles.org/" target="_blank" rel="noreferrer">© OpenMapTiles</a>{' '}
         <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">© OpenStreetMap contributors</a>
