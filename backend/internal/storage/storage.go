@@ -9,6 +9,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"hash/crc32"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -16,13 +18,14 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/868-no/map/internal/ingest"
+	"github.com/868-no/map/internal/obsrow"
 )
 
 //go:embed schema.sql
 var schemaSQL string
 
 // SchemaVersion is the value stored in the packet_log table comment.
-const SchemaVersion = "meshmap-schema:1"
+const SchemaVersion = "meshmap-schema:2"
 
 // Open creates a connection pool and verifies connectivity.
 func Open(ctx context.Context, url string) (*pgxpool.Pool, error) {
@@ -52,10 +55,17 @@ func InitSchema(ctx context.Context, pool *pgxpool.Pool) error {
 		return err
 	}
 	defer conn.Exec(context.WithoutCancel(ctx), `SELECT pg_advisory_unlock(hashtext('meshmap:schema'))`) //nolint:errcheck
+	forgetPartitions()
+	if n, err := migrateUnpartitioned(ctx, conn, schemaSQL); err != nil {
+		return fmt.Errorf("partition packet_log: %w", err)
+	} else if n > 0 {
+		slog.Default().Info("packet_log partitioned by month", "rows", n)
+	}
 	if _, err := conn.Exec(ctx, schemaSQL); err != nil {
 		return fmt.Errorf("apply schema: %w", err)
 	}
-	return nil
+	now := time.Now()
+	return EnsurePartitions(ctx, conn, now.AddDate(0, -1, 0), now.AddDate(0, 2, 0))
 }
 
 // CheckSchema verifies the schema version and that packet_log is the only
@@ -78,9 +88,11 @@ func CheckSchema(ctx context.Context, pool *pgxpool.Pool) error {
 	return nil
 }
 
-// ApplicationTables lists ordinary tables in the public schema.
+// ApplicationTables lists tables in the public schema, counting a
+// partitioned table once (its partitions are not separate tables).
 func ApplicationTables(ctx context.Context, pool *pgxpool.Pool) ([]string, error) {
-	rows, err := pool.Query(ctx, `SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE' ORDER BY 1`)
+	rows, err := pool.Query(ctx, `SELECT c.relname::text FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace
+		WHERE n.nspname = 'public' AND c.relkind IN ('r', 'p') AND NOT c.relispartition ORDER BY 1`)
 	if err != nil {
 		return nil, err
 	}
@@ -114,7 +126,7 @@ func Row(o *ingest.Observation) ([]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	tail, err := ingest.EncodeTail(ingest.RowOf(o, 0, meta))
+	tail, err := obsrow.EncodeTail(ingest.RowOf(o, 0, meta))
 	if err != nil {
 		return nil, err
 	}
@@ -122,25 +134,27 @@ func Row(o *ingest.Observation) ([]any, error) {
 		o.ObservedAt, o.BrokerID, o.Topic, optU32(o.Gateway), int64(o.Source), optU32(o.Destination),
 		int64(o.PacketID), nullStr(o.Channel), o.Portnum, o.PacketType, o.LogicalKey[:], o.ObservationKey[:],
 		o.RxTime, o.RxSNR, o.RxRSSI, o.HopStart, o.HopLimit, o.RelayHint, nullStr(o.Transport),
-		string(o.SignatureStatus), ingest.DecodeVersion, o.EnvelopeBytes, meta, string(tail), int16(ingest.ObsRowVersion),
+		string(o.SignatureStatus), ingest.DecodeVersion, o.EnvelopeBytes, meta, string(tail), int16(obsrow.Version),
 	}, nil
 }
 
-// InsertBatch writes observations in one transaction via COPY and returns
-// the assigned ids in input order (needed for identity binding rows).
+func joinColumns() string { return strings.Join(columns, ", ") }
+
+// stageTable is a per-connection temporary table InsertBatch copies into;
+// its name follows the column list so a schema change never reuses an old
+// one on a pooled connection.
+var stageTable = fmt.Sprintf("packet_log_stage_%08x", crc32.ChecksumIEEE([]byte(joinColumns())))
+
+// InsertBatch writes observations in one transaction and returns their row
+// ids in input order (needed for identity binding rows). Rows go in by COPY
+// to a staging table, then into packet_log skipping receptions already
+// stored (D-056): a batch retried after a commit whose outcome was lost gets
+// the ids of its first attempt instead of a second copy.
 func InsertBatch(ctx context.Context, pool *pgxpool.Pool, obs []*ingest.Observation) ([]int64, error) {
 	if len(obs) == 0 {
 		return nil, nil
 	}
-	tx, err := pool.Begin(ctx)
-	if err != nil {
-		return nil, err
-	}
-	defer tx.Rollback(context.WithoutCancel(ctx)) //nolint:errcheck
-	var before int64
-	if err := tx.QueryRow(ctx, `SELECT COALESCE(max(id), 0) FROM packet_log`).Scan(&before); err != nil {
-		return nil, err
-	}
+	lo, hi := obs[0].ObservedAt, obs[0].ObservedAt
 	rows := make([][]any, 0, len(obs))
 	for _, o := range obs {
 		r, err := Row(o)
@@ -148,31 +162,65 @@ func InsertBatch(ctx context.Context, pool *pgxpool.Pool, obs []*ingest.Observat
 			return nil, err
 		}
 		rows = append(rows, r)
+		lo, hi = minTime(lo, o.ObservedAt), maxTime(hi, o.ObservedAt)
 	}
-	if _, err := tx.CopyFrom(ctx, pgx.Identifier{"packet_log"}, columns, pgx.CopyFromRows(rows)); err != nil {
+	if err := EnsurePartitions(ctx, pool, lo, hi); err != nil {
 		return nil, err
 	}
-	// Identity columns are assigned in COPY order; read them back by key to
-	// avoid depending on that.
-	keys := make([][]byte, len(obs))
-	for i, o := range obs {
-		keys[i] = o.ObservationKey[:]
+	ids, err := insertBatch(ctx, pool, obs, rows)
+	if err != nil && strings.Contains(err.Error(), "no partition of relation") {
+		// A month this process remembered is gone (dropped elsewhere):
+		// re-check the catalog and try once more.
+		forgetPartitions()
+		if err := EnsurePartitions(ctx, pool, lo, hi); err != nil {
+			return nil, err
+		}
+		ids, err = insertBatch(ctx, pool, obs, rows)
 	}
-	idRows, err := tx.Query(ctx, `SELECT id, observation_key FROM packet_log WHERE id > $1 AND observation_key = ANY($2)`, before, keys)
+	return ids, err
+}
+
+func insertBatch(ctx context.Context, pool *pgxpool.Pool, obs []*ingest.Observation, rows [][]any) ([]int64, error) {
+	tx, err := pool.Begin(ctx)
 	if err != nil {
 		return nil, err
 	}
-	byKey := map[string]int64{}
-	for idRows.Next() {
-		var id int64
-		var k []byte
-		if err := idRows.Scan(&id, &k); err != nil {
+	defer tx.Rollback(context.WithoutCancel(ctx)) //nolint:errcheck
+	cols := joinColumns()
+	if _, err := tx.Exec(ctx, `CREATE TEMP TABLE IF NOT EXISTS `+stageTable+` ON COMMIT DELETE ROWS AS
+		SELECT `+cols+` FROM packet_log WITH NO DATA`); err != nil {
+		return nil, err
+	}
+	if _, err := tx.CopyFrom(ctx, pgx.Identifier{stageTable}, columns, pgx.CopyFromRows(rows)); err != nil {
+		return nil, err
+	}
+	byKey := make(map[string]int64, len(obs))
+	collect := func(q string) error {
+		r, err := tx.Query(ctx, q)
+		if err != nil {
+			return err
+		}
+		for r.Next() {
+			var id int64
+			var k []byte
+			if err := r.Scan(&id, &k); err != nil {
+				r.Close()
+				return err
+			}
+			byKey[string(k)] = id
+		}
+		return r.Err()
+	}
+	if err := collect(`INSERT INTO packet_log (` + cols + `) SELECT ` + cols + ` FROM ` + stageTable + `
+		ON CONFLICT (observation_key, observed_at) DO NOTHING RETURNING id, observation_key`); err != nil {
+		return nil, err
+	}
+	if len(byKey) < len(obs) {
+		// Already stored: an earlier attempt of this batch did commit.
+		if err := collect(`SELECT p.id, p.observation_key FROM packet_log p JOIN ` + stageTable + ` s
+			ON p.observation_key = s.observation_key AND p.observed_at = s.observed_at`); err != nil {
 			return nil, err
 		}
-		byKey[string(k)] = id
-	}
-	if err := idRows.Err(); err != nil {
-		return nil, err
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return nil, err
@@ -182,6 +230,20 @@ func InsertBatch(ctx context.Context, pool *pgxpool.Pool, obs []*ingest.Observat
 		ids[i] = byKey[string(o.ObservationKey[:])]
 	}
 	return ids, nil
+}
+
+func minTime(a, b time.Time) time.Time {
+	if b.Before(a) {
+		return b
+	}
+	return a
+}
+
+func maxTime(a, b time.Time) time.Time {
+	if b.After(a) {
+		return b
+	}
+	return a
 }
 
 // RecentObservation is the dedupe fallback when Redis is unavailable: the

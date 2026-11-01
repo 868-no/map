@@ -175,8 +175,8 @@ func TestPipelineDemoStream(t *testing.T) {
 	}
 	// Late provenance updates should be HOT (fillfactor 90): no index writes.
 	_, _ = pool.Exec(context.Background(), `SELECT pg_stat_force_next_flush()`)
-	upd := count(t, pool, `SELECT n_tup_upd FROM pg_stat_user_tables WHERE relname = 'packet_log'`)
-	hot := count(t, pool, `SELECT n_tup_hot_upd FROM pg_stat_user_tables WHERE relname = 'packet_log'`)
+	upd := count(t, pool, `SELECT COALESCE(sum(n_tup_upd), 0) FROM pg_stat_user_tables WHERE relname LIKE 'packet_log_p%'`)
+	hot := count(t, pool, `SELECT COALESCE(sum(n_tup_hot_upd), 0) FROM pg_stat_user_tables WHERE relname LIKE 'packet_log_p%'`)
 	t.Logf("worst case (whole stream via a, then via b): provenance updates %d, HOT %d", upd, hot)
 	multi := count(t, pool, `SELECT count(*) FROM (SELECT logical_packet_key FROM packet_log GROUP BY 1 HAVING count(DISTINCT gateway_node_id) > 1) x`)
 	if multi == 0 {
@@ -238,8 +238,8 @@ func TestBridgedBrokerLag(t *testing.T) {
 	_, _ = pool.Exec(context.Background(), `SELECT pg_stat_force_next_flush()`)
 	rows := count(t, pool, `SELECT count(*) FROM packet_log`)
 	inMem := count(t, pool, `SELECT count(*) FROM packet_log WHERE decoded_metadata->'also_via' IS NOT NULL`)
-	upd := count(t, pool, `SELECT n_tup_upd FROM pg_stat_user_tables WHERE relname = 'packet_log'`)
-	hot := count(t, pool, `SELECT n_tup_hot_upd FROM pg_stat_user_tables WHERE relname = 'packet_log'`)
+	upd := count(t, pool, `SELECT COALESCE(sum(n_tup_upd), 0) FROM pg_stat_user_tables WHERE relname LIKE 'packet_log_p%'`)
+	hot := count(t, pool, `SELECT COALESCE(sum(n_tup_hot_upd), 0) FROM pg_stat_user_tables WHERE relname LIKE 'packet_log_p%'`)
 	t.Logf("%d rows over %s; %d with also_via; %d needed a row update (%d HOT)", rows, time.Since(start).Round(time.Second), inMem, upd, hot)
 	if bad := count(t, pool, `SELECT count(*) FROM packet_log WHERE NOT (decoded_metadata->'also_via' ? (CASE broker_id WHEN 'a' THEN 'b' ELSE 'a' END))`); bad != 0 {
 		t.Fatalf("%d rows missing the other broker", bad)
@@ -288,7 +288,18 @@ func TestRetention(t *testing.T) {
 	const insert = `INSERT INTO packet_log (observed_at, broker_id, mqtt_topic, source_node_id, packet_type, logical_packet_key, observation_key, signature_status, decode_version, envelope_bytes)
 		SELECT $1::timestamptz - make_interval(mins => g), 't', 't', 1, 'other', '\x00', decode(md5(random()::text || g), 'hex'), 'unsigned', 1, '\x00'
 		FROM generate_series($2::int, $3::int) g`
+	if err := storage.EnsurePartitions(ctx, pool, cutoff.Add(-12000*time.Minute), now); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := pool.Exec(ctx, insert, cutoff, 1, 12000); err != nil { // 12 000 expired rows
+		t.Fatal(err)
+	}
+	// March lies wholly before the cutoff: its partition is dropped (D-056).
+	march := time.Date(2026, 3, 20, 0, 0, 0, 0, time.UTC)
+	if err := storage.EnsurePartitions(ctx, pool, march, march); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, insert, march, 1, 500); err != nil {
 		t.Fatal(err)
 	}
 	ins := func(at time.Time) {
@@ -314,8 +325,11 @@ func TestRetention(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if st.DeletedRows != 12000 || !st.Cutoff.Equal(cutoff) {
-		t.Fatalf("deleted %d (cutoff %s), want 12000 (cutoff %s)", st.DeletedRows, st.Cutoff, cutoff)
+	if st.DeletedRows != 12500 || !st.Cutoff.Equal(cutoff) {
+		t.Fatalf("deleted %d (cutoff %s), want 12500 (cutoff %s)", st.DeletedRows, st.Cutoff, cutoff)
+	}
+	if months, _ := storage.Partitions(ctx, pool); len(months) == 0 || months[0].Month() != time.April {
+		t.Fatalf("oldest partition after retention: %v, want April", months)
 	}
 	if n := count(t, pool, `SELECT count(*) FROM packet_log`); n != 3 {
 		t.Fatalf("%d rows left, want 3", n)

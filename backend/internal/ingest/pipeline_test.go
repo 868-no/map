@@ -212,3 +212,30 @@ func TestLiveEventCarriesTheRow(t *testing.T) {
 		t.Fatalf("live event %+v row %+v", e, e.Row)
 	}
 }
+
+// A shutdown during a database outage gives up after DrainTimeout instead
+// of retrying until the process is killed; the lost rows become a gap.
+func TestShutdownDuringOutageIsBounded(t *testing.T) {
+	sink := &memSink{failNext: 1 << 30}
+	p := New(Config{QueueSize: 10, Workers: 1, BatchSize: 10, FlushEvery: 5 * time.Millisecond, DrainTimeout: 300 * time.Millisecond, ProcessOpts: opts(t, longFast)},
+		sink, nil, nil, nil, observability.NewMetrics(), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { p.Run(ctx); close(done) }()
+	pk := pkt{from: 0x11111111, id: 9, to: 0xffffffff, gw: "!aabbccdd", data: posData(t), hopStart: 3, hopLimit: 3, snr: 5, rssi: -80}
+	p.Submit(msg(topicLF, envelope(t, pk, security.DefaultPSK[:], security.ModeCTR, "LongFast")))
+	waitFor(t, func() bool { return p.degraded.Load() })
+	start := time.Now()
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("shutdown hung while the database was down")
+	}
+	if d := time.Since(start); d < 250*time.Millisecond {
+		t.Fatalf("gave up after %s, before the drain timeout", d)
+	}
+	if g := p.Gaps(); len(g) != 1 || g[0].Reason != "shutdown_db_unavailable" || g[0].Dropped != 1 {
+		t.Fatalf("gaps %+v", g)
+	}
+}

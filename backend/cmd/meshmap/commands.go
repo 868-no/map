@@ -322,10 +322,12 @@ func serveCmd() *cobra.Command {
 				go hub.FeedFromRedis(ingestCtx, rc, noIngest, log)
 			}
 			apiSrv := &api.Server{Pool: pool,
-				Hub: hub, Env: c.Env, ConfigRev: c.Revision(), Metrics: m, Log: log,
+				Hub: hub, Env: c.Env, ConfigRev: c.Revision(), Metrics: m, Log: log, HeavySlots: c.Env.APIReadSlots,
 				Geo: api.GeoOptions{Enabled: c.Env.GeolocationEnabled, MinPrecisionBits: c.Env.GeolocationMinPrec, Exclude: c.Exclude, Params: c.GeoParams()}}
 			apiSrv.NewHandler(mux)
-			handler := api.Protect(mux, api.Limits{Trusted: c.Proxies, PerSecond: 20, Burst: 60, Timeout: 20 * time.Second, MaxStreams: 4})
+			handler := api.Protect(mux, api.Limits{Trusted: c.Proxies, PerSecond: c.Env.APIRatePerSecond, Burst: c.Env.APIRateBurst,
+				Timeout: c.Env.APIRequestTimeout, MaxStreams: c.Env.APIStreamsPerClient, MaxStreamsTotal: c.Env.APIStreamsTotal,
+				HeavyPerClient: c.Env.APIReadsPerClient})
 			srv := &http.Server{Addr: c.Env.HTTPAddr, Handler: handler, ReadHeaderTimeout: 5 * time.Second, IdleTimeout: 2 * time.Minute}
 			msrv := &http.Server{Addr: ":9100", Handler: api.MetricsHandler(m), ReadHeaderTimeout: 5 * time.Second}
 			errc := make(chan error, 2)
@@ -340,11 +342,16 @@ func serveCmd() *cobra.Command {
 				}
 			}
 			log.Info("shutting down")
+			// Stop taking MQTT input first (clients disconnect, workers drain,
+			// the writer flushes, bounded by its drain timeout), end live
+			// streams so Shutdown need not wait for them, then let in-flight
+			// requests finish.
+			stopIngest()
+			apiSrv.CloseStreams()
 			sctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 			defer cancel()
 			_ = srv.Shutdown(sctx)
 			_ = msrv.Shutdown(sctx)
-			stopIngest() // clients disconnect, workers drain, writer flushes
 			wg.Wait()
 			if rc != nil {
 				_ = rc.Close()

@@ -110,6 +110,8 @@ func (s *Server) stream(ctx context.Context, in *StreamInput, send sse.Sender) {
 		select {
 		case <-ctx.Done():
 			return
+		case <-s.closing:
+			return
 		case <-t.C:
 			if !heartbeat() {
 				return

@@ -1,9 +1,16 @@
--- meshmap schema. The ONLY application table is packet_log (spec §5).
--- Every statement is idempotent; init-schema runs it under an advisory lock.
+-- meshmap schema. The ONLY application table is packet_log (spec §5),
+-- range-partitioned by month on observed_at (D-056): retention drops whole
+-- months instead of deleting and vacuuming rows. Partitions are created by
+-- storage.EnsurePartitions, never by hand.
+-- Every statement is idempotent; init-schema runs it under an advisory lock
+-- (after migrating an unpartitioned table from schema 1, see migrate.go).
 -- The schema version lives in the table comment, not in a migrations table.
 
+-- PostgreSQL 16 has no identity columns on partitioned tables: a sequence.
+CREATE SEQUENCE IF NOT EXISTS packet_log_id_seq AS BIGINT;
+
 CREATE TABLE IF NOT EXISTS packet_log (
-    id                  BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    id                  BIGINT NOT NULL DEFAULT nextval('packet_log_id_seq'),
     observed_at         TIMESTAMPTZ NOT NULL,
     broker_id           TEXT NOT NULL,
     mqtt_topic          TEXT NOT NULL,
@@ -27,37 +34,34 @@ CREATE TABLE IF NOT EXISTS packet_log (
     decode_version      INTEGER NOT NULL,
     envelope_bytes      BYTEA NOT NULL,
     decoded_metadata    JSONB NOT NULL DEFAULT '{}'::jsonb,
+    -- The row as /observations serves it, minus its id (obsrow.EncodeTail),
+    -- so reads need not decode decoded_metadata (D-046). Derived data only:
+    -- rows of another obs_row_version (or none) are served from the columns
+    -- above and rebuilt in the background, so a logic change never leaves
+    -- stale copies.
+    obs_row             TEXT,
+    obs_row_version     SMALLINT,
+    -- The partition key must be part of every unique constraint.
+    CONSTRAINT packet_log_pkey PRIMARY KEY (id, observed_at),
     CONSTRAINT packet_log_signature_status_chk
         CHECK (signature_status IN ('verified', 'unsigned', 'unverifiable', 'not-applicable')),
     CONSTRAINT packet_log_node_ids_chk
         CHECK (source_node_id BETWEEN 1 AND 4294967294
                AND (gateway_node_id IS NULL OR gateway_node_id BETWEEN 1 AND 4294967294)
                AND (destination_node_id IS NULL OR destination_node_id BETWEEN 0 AND 4294967295))
-) WITH (fillfactor = 90);
+) PARTITION BY RANGE (observed_at);
 
--- The row as /observations serves it, minus its id (ingest.EncodeTail), so
--- reads need not decode decoded_metadata (D-046). Derived data only: rows of
--- another obs_row_version (or none) are served from the columns above and
--- rebuilt in the background, so a logic change never leaves stale copies.
-ALTER TABLE packet_log ADD COLUMN IF NOT EXISTS obs_row TEXT;
-ALTER TABLE packet_log ADD COLUMN IF NOT EXISTS obs_row_version SMALLINT;
+ALTER SEQUENCE packet_log_id_seq OWNED BY packet_log.id;
 
--- Leave room on each page so late broker-provenance updates (also_via) are
--- HOT updates without index writes. Applies to pages written from now on.
-ALTER TABLE packet_log SET (fillfactor = 90);
-
--- Serves every /observations page ((observed_at, id) keyset order, D-038).
+-- Serves every /observations page ((observed_at, id) keyset order, D-038)
+-- and the retention delete inside the oldest kept month.
 CREATE INDEX IF NOT EXISTS packet_log_time_idx        ON packet_log (observed_at DESC, id DESC);
 -- Identity rebuild at startup (latest verified NodeInfo per node).
 CREATE INDEX IF NOT EXISTS packet_log_source_time_idx ON packet_log (source_node_id, observed_at DESC);
--- Ingest dedupe: id lookup by observation key.
-CREATE INDEX IF NOT EXISTS packet_log_observation_idx ON packet_log (observation_key, observed_at DESC);
+-- One row per reception (D-056): a batch retried after a commit whose
+-- outcome was lost inserts nothing twice. Also the ingest dedupe lookup.
+CREATE UNIQUE INDEX IF NOT EXISTS packet_log_observation_key ON packet_log (observation_key, observed_at);
 -- Identity rebuild at startup (verified NodeInfo rows).
 CREATE INDEX IF NOT EXISTS packet_log_type_time_idx   ON packet_log (packet_type, observed_at DESC);
--- Cheap range pruning for retention deletes.
-CREATE INDEX IF NOT EXISTS packet_log_brin            ON packet_log USING BRIN (observed_at);
--- Served only the retired server views (D-041); every insert paid for them.
-DROP INDEX IF EXISTS packet_log_gateway_time_idx;
-DROP INDEX IF EXISTS packet_log_logical_idx;
 
-COMMENT ON TABLE packet_log IS 'meshmap-schema:1';
+COMMENT ON TABLE packet_log IS 'meshmap-schema:2';

@@ -1,6 +1,8 @@
-// Package maintenance runs retention: chunked deletion of rows older than the
-// configured cutoff under an advisory lock, then VACUUM (ANALYZE) and a notice
-// to open browsers. Safe to run repeatedly and from several processes.
+// Package maintenance runs retention under an advisory lock: months wholly
+// before the configured cutoff are dropped as partitions (D-056), the rest of
+// the expired rows (in the oldest kept month) are deleted in chunks and that
+// partition vacuumed, upcoming months get their partitions, and open browsers
+// are notified. Safe to run repeatedly and from several processes.
 package maintenance
 
 import (
@@ -14,6 +16,7 @@ import (
 
 	"github.com/868-no/map/internal/cache"
 	"github.com/868-no/map/internal/observability"
+	"github.com/868-no/map/internal/storage"
 	"github.com/868-no/map/internal/window"
 )
 
@@ -47,6 +50,12 @@ type Runner struct {
 	Now      func() time.Time
 }
 
+func (r *Runner) count(n int64) {
+	if r.Metrics != nil && n > 0 {
+		r.Metrics.RetentionRows.Add(float64(n))
+	}
+}
+
 func (r *Runner) now() time.Time {
 	if r.Now != nil {
 		return r.Now()
@@ -73,6 +82,27 @@ func (r *Runner) RunOnce(ctx context.Context) (Status, error) {
 
 	cutoff := window.RetentionCutoff(start, r.Months)
 	st := Status{Cutoff: cutoff}
+	now := r.now()
+	if err := storage.EnsurePartitions(ctx, conn, now, now.AddDate(0, 2, 0)); err != nil {
+		return st, err
+	}
+	months, err := storage.Partitions(ctx, conn)
+	if err != nil {
+		return st, err
+	}
+	for _, m := range months {
+		if m.AddDate(0, 1, 0).After(cutoff) {
+			break
+		}
+		n, err := storage.DropPartition(ctx, conn, m)
+		if err != nil {
+			return st, err
+		}
+		st.DeletedRows += n
+		r.count(n)
+		r.Log.Info("retention dropped a month", "partition", storage.PartitionName(m), "rows", n)
+	}
+	var trimmed int64
 	for {
 		tag, err := conn.Exec(ctx, `DELETE FROM packet_log WHERE id IN (
 			SELECT id FROM packet_log WHERE observed_at < $1 ORDER BY observed_at, id LIMIT $2)`, cutoff, chunkSize)
@@ -80,10 +110,8 @@ func (r *Runner) RunOnce(ctx context.Context) (Status, error) {
 			return st, err
 		}
 		n := tag.RowsAffected()
-		st.DeletedRows += n
-		if r.Metrics != nil {
-			r.Metrics.RetentionRows.Add(float64(n))
-		}
+		trimmed += n
+		r.count(n)
 		if n < chunkSize {
 			break
 		}
@@ -93,12 +121,14 @@ func (r *Runner) RunOnce(ctx context.Context) (Status, error) {
 		case <-time.After(chunkPause):
 		}
 	}
-	if st.DeletedRows > 0 {
-		if _, err := conn.Exec(ctx, `VACUUM (ANALYZE) packet_log`); err != nil {
+	st.DeletedRows += trimmed
+	if trimmed > 0 {
+		// Only the month the cutoff falls in had rows deleted.
+		if _, err := conn.Exec(ctx, `VACUUM (ANALYZE) `+storage.PartitionName(storage.Month(cutoff))); err != nil {
 			r.Log.Warn("vacuum failed", "err", err)
 		}
 	}
-	if err := conn.QueryRow(ctx, `SELECT pg_total_relation_size('packet_log')`).Scan(&st.TableBytes); err != nil {
+	if st.TableBytes, err = storage.TableBytes(ctx, r.Pool); err != nil {
 		return st, err
 	}
 	st.LastRun = r.now().UTC()

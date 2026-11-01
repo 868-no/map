@@ -61,69 +61,112 @@ func isTrusted(a netip.Addr, trusted []netip.Prefix) bool {
 
 // Limits configures request protection.
 type Limits struct {
-	Trusted    []netip.Prefix
-	PerSecond  float64       // sustained requests per client
-	Burst      int           // burst per client
-	Timeout    time.Duration // non-streaming request deadline
-	MaxStreams int           // concurrent SSE streams per client
+	Trusted         []netip.Prefix
+	PerSecond       float64       // sustained requests per client
+	Burst           int           // burst per client
+	Timeout         time.Duration // non-streaming request deadline
+	MaxStreams      int           // concurrent SSE streams per client
+	MaxStreamsTotal int           // concurrent SSE streams across all clients
+	HeavyPerClient  int           // concurrent /observations reads per client
 }
 
 type clientState struct {
 	lim     *rate.Limiter
+	heavy   chan struct{} // per-client share of the heavy-read slots
 	streams int
 	seen    time.Time
 }
 
-// Protect wraps /api with per-client rate limits, stream caps and deadlines.
+// ClientKey is what limits count per client: the address, or for IPv6 its
+// /64, since one subscriber line usually holds a whole /64.
+func ClientKey(a netip.Addr) netip.Prefix {
+	if a.Is6() {
+		p, _ := a.Prefix(64)
+		return p
+	}
+	return netip.PrefixFrom(a, a.BitLen())
+}
+
+// heavyPath is the endpoint whose reads hold a database connection while
+// they stream; each client may run only HeavyPerClient at once, so one
+// client cannot take every slot of Server.acquire.
+const heavyPath = "/api/v1/observations"
+
+// heavyWait is how long a read queues behind the same client's others.
+var heavyWait = 5 * time.Second
+
+// Protect wraps /api with per-client rate limits, concurrency and stream
+// caps, and deadlines.
 func Protect(next http.Handler, l Limits) http.Handler {
 	var mu sync.Mutex
-	clients := map[netip.Addr]*clientState{}
+	clients := map[netip.Prefix]*clientState{}
+	streams := 0
 	go func() {
 		for range time.Tick(time.Minute) {
 			mu.Lock()
 			for k, c := range clients {
-				if c.streams == 0 && time.Since(c.seen) > 10*time.Minute {
+				if c.streams == 0 && len(c.heavy) == 0 && time.Since(c.seen) > 10*time.Minute {
 					delete(clients, k)
 				}
 			}
 			mu.Unlock()
 		}
 	}()
+	tooMany := func(w http.ResponseWriter) {
+		w.Header().Set("Retry-After", "2")
+		http.Error(w, `{"title":"Too Many Requests","status":429}`, http.StatusTooManyRequests)
+	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !strings.HasPrefix(r.URL.Path, "/api/") {
 			next.ServeHTTP(w, r)
 			return
 		}
-		ip := ClientIP(r, l.Trusted)
+		key := ClientKey(ClientIP(r, l.Trusted))
 		mu.Lock()
-		c := clients[ip]
+		c := clients[key]
 		if c == nil {
-			c = &clientState{lim: rate.NewLimiter(rate.Limit(l.PerSecond), l.Burst)}
-			clients[ip] = c
+			c = &clientState{lim: rate.NewLimiter(rate.Limit(l.PerSecond), l.Burst), heavy: make(chan struct{}, max(l.HeavyPerClient, 1))}
+			clients[key] = c
 		}
 		c.seen = time.Now()
 		allowed := c.lim.Allow()
 		stream := r.URL.Path == "/api/v1/stream"
 		if stream && allowed {
-			if c.streams >= l.MaxStreams {
+			if c.streams >= l.MaxStreams || (l.MaxStreamsTotal > 0 && streams >= l.MaxStreamsTotal) {
 				allowed = false
 			} else {
 				c.streams++
+				streams++
 			}
 		}
 		mu.Unlock()
 		if !allowed {
-			w.Header().Set("Retry-After", "2")
-			http.Error(w, `{"title":"Too Many Requests","status":429}`, http.StatusTooManyRequests)
+			tooMany(w)
 			return
 		}
 		if stream {
-			defer func() { mu.Lock(); c.streams--; mu.Unlock() }()
+			defer func() { mu.Lock(); c.streams--; streams--; mu.Unlock() }()
 			next.ServeHTTP(w, r)
 			return
 		}
 		ctx, cancel := context.WithTimeout(r.Context(), l.Timeout)
 		defer cancel()
+		if r.URL.Path == heavyPath {
+			// Queue behind this client's own reads (the browser runs a few
+			// in parallel), but not for long.
+			t := time.NewTimer(heavyWait)
+			select {
+			case c.heavy <- struct{}{}:
+				t.Stop()
+				defer func() { <-c.heavy }()
+			case <-t.C:
+				tooMany(w)
+				return
+			case <-ctx.Done():
+				t.Stop()
+				return
+			}
+		}
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }

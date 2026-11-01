@@ -1,4 +1,4 @@
-package ingest
+package obsrow
 
 import (
 	"encoding/json"
@@ -8,7 +8,7 @@ import (
 
 func TestTailRoundTrip(t *testing.T) {
 	gw := uint32(42)
-	r := NewObsRow(RowFields{ID: 9, At: time.UnixMilli(1_800_000_000_123), Broker: "b", Gateway: &gw, Source: 7, Type: "position",
+	r := New(Fields{ID: 9, At: time.UnixMilli(1_800_000_000_123), Broker: "b", Gateway: &gw, Source: 7, Type: "position",
 		Logical: []byte{1, 2}, Reception: []byte{3}, Sig: "unsigned"},
 		[]byte(`{"topic_root":"msh/EU_868","position":{"lat":63.5,"lon":10.25,"precision_bits":13,"precision_known":true}}`))
 	tail, err := EncodeTail(r)

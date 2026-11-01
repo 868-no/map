@@ -53,12 +53,20 @@ type Env struct {
 	PublicMetricsEnabled bool     `env:"PUBLIC_METRICS_ENABLED" envDefault:"false"`
 	SignaturePolicy      string   `env:"SIGNATURE_POLICY" envDefault:"balanced"`
 	TrustedProxies       []string `env:"TRUSTED_PROXIES" envSeparator:"," envDefault:"10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,127.0.0.0/8,::1/128,fc00::/7"`
-	IngestQueueSize      int      `env:"INGEST_QUEUE_SIZE" envDefault:"20000"`
-	WriterBatchSize      int      `env:"WRITER_BATCH_SIZE" envDefault:"500"`
-	KeyAttemptBudget     int      `env:"KEY_ATTEMPT_BUDGET" envDefault:"4"`
-	LogLevel             string   `env:"LOG_LEVEL" envDefault:"info"`
-	BrokersConfig        string   `env:"MQTT_BROKERS_CONFIG" envDefault:"/run/secrets/mqtt-brokers.yaml"`
-	ChannelsConfig       string   `env:"CHANNEL_KEYS_CONFIG" envDefault:"/run/secrets/channel-keys.yaml"`
+	// Public API protection, per client (an IPv4 address or an IPv6 /64).
+	APIRatePerSecond    float64       `env:"API_RATE_PER_SECOND" envDefault:"20"`
+	APIRateBurst        int           `env:"API_RATE_BURST" envDefault:"60"`
+	APIRequestTimeout   time.Duration `env:"API_REQUEST_TIMEOUT" envDefault:"20s"`
+	APIStreamsPerClient int           `env:"API_STREAMS_PER_CLIENT" envDefault:"4"`
+	APIStreamsTotal     int           `env:"API_STREAMS_TOTAL" envDefault:"2000"`
+	APIReadsPerClient   int           `env:"API_READS_PER_CLIENT" envDefault:"4"`
+	APIReadSlots        int           `env:"API_READ_SLOTS" envDefault:"8"`
+	IngestQueueSize     int           `env:"INGEST_QUEUE_SIZE" envDefault:"20000"`
+	WriterBatchSize     int           `env:"WRITER_BATCH_SIZE" envDefault:"500"`
+	KeyAttemptBudget    int           `env:"KEY_ATTEMPT_BUDGET" envDefault:"4"`
+	LogLevel            string        `env:"LOG_LEVEL" envDefault:"info"`
+	BrokersConfig       string        `env:"MQTT_BROKERS_CONFIG" envDefault:"/run/secrets/mqtt-brokers.yaml"`
+	ChannelsConfig      string        `env:"CHANNEL_KEYS_CONFIG" envDefault:"/run/secrets/channel-keys.yaml"`
 	// The same YAML documents inline, for deployments configured entirely in
 	// the Compose file. When set they replace the files above. Never logged.
 	BrokersYAML    string `env:"MQTT_BROKERS"`
@@ -216,6 +224,11 @@ func (c *Config) validate() error {
 	}
 	if e.IngestQueueSize < 100 || e.WriterBatchSize < 1 || e.KeyAttemptBudget < 1 || e.KeyAttemptBudget > 16 {
 		add("INGEST_QUEUE_SIZE >= 100, WRITER_BATCH_SIZE >= 1, KEY_ATTEMPT_BUDGET 1..16 required")
+	}
+	if e.APIRatePerSecond <= 0 || e.APIRateBurst < 1 || e.APIRequestTimeout < time.Second || e.APIStreamsPerClient < 1 ||
+		e.APIStreamsTotal < e.APIStreamsPerClient || e.APIReadsPerClient < 1 || e.APIReadSlots < e.APIReadsPerClient {
+		add("API limits: API_RATE_PER_SECOND > 0, API_RATE_BURST >= 1, API_REQUEST_TIMEOUT >= 1s, API_STREAMS_PER_CLIENT >= 1, " +
+			"API_STREAMS_TOTAL >= API_STREAMS_PER_CLIENT, API_READS_PER_CLIENT >= 1, API_READ_SLOTS >= API_READS_PER_CLIENT")
 	}
 	if e.DefaultMapLat < -90 || e.DefaultMapLat > 90 || e.DefaultMapLon < -180 || e.DefaultMapLon > 180 {
 		add("DEFAULT_MAP_LAT/LON out of range")

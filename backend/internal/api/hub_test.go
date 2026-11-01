@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/868-no/map/internal/ingest"
+	"github.com/868-no/map/internal/obsrow"
 )
 
 // A delta is encoded once and delivered as those bytes to every subscriber;
@@ -18,7 +19,7 @@ func TestHubEncodesOnceAndFlagsDrops(t *testing.T) {
 	defer unsubFast()
 	slow, slowSub, unsubSlow := h.subscribe()
 	defer unsubSlow()
-	ev := []ingest.LiveEvent{{ID: 7, T: time.UnixMilli(1_800_000_000_000).UTC(), Row: &ingest.ObsRow{ID: 7, Source: 1, Type: "text"}}}
+	ev := []ingest.LiveEvent{{ID: 7, T: time.UnixMilli(1_800_000_000_000).UTC(), Row: &obsrow.ObsRow{ID: 7, Source: 1, Type: "text"}}}
 	h.PublishLive(context.Background(), ev)
 	a, b := <-fast, <-slow
 	if string(a.delta) != string(b.delta) || len(a.delta) == 0 {

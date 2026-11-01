@@ -24,6 +24,7 @@ import (
 	"github.com/868-no/map/internal/config"
 	"github.com/868-no/map/internal/ingest"
 	"github.com/868-no/map/internal/maintenance"
+	"github.com/868-no/map/internal/obsrow"
 	"github.com/868-no/map/internal/protocol"
 	"github.com/868-no/map/internal/protocol/pb"
 	"github.com/868-no/map/internal/security"
@@ -56,6 +57,15 @@ func newFixture(t *testing.T, pool *pgxpool.Pool) *fixture {
 
 func (f *fixture) store(at time.Time, from uint32, gw uint32, d *pb.Data, key *testutil.XKey) {
 	f.t.Helper()
+	obs := f.observation(at, from, gw, d, key)
+	if _, err := storage.InsertBatch(context.Background(), f.pool, []*ingest.Observation{obs}); err != nil {
+		f.t.Fatal(err)
+	}
+}
+
+// observation decodes a packet as ingest would, without storing it.
+func (f *fixture) observation(at time.Time, from uint32, gw uint32, d *pb.Data, key *testutil.XKey) *ingest.Observation {
+	f.t.Helper()
 	f.pid++
 	if key != nil {
 		d.XeddsaSignature = ed25519.Sign(key.EdPriv, security.SigningBuffer(from, f.pid, protocol.Broadcast, d))
@@ -74,9 +84,7 @@ func (f *fixture) store(at time.Time, from uint32, gw uint32, d *pb.Data, key *t
 	if obs.Promote != nil {
 		f.ids[obs.Promote.Node] = *obs.Promote
 	}
-	if _, err := storage.InsertBatch(context.Background(), f.pool, []*ingest.Observation{&obs}); err != nil {
-		f.t.Fatal(err)
-	}
+	return &obs
 }
 
 func (f *fixture) nodeInfo(at time.Time, from, gw uint32, name string) {
@@ -559,7 +567,7 @@ func TestStoredRowEncodings(t *testing.T) {
 	f.position(T1.Add(time.Minute), nodeA, gw1, 63.25)
 	f.telemetry(T1.Add(2*time.Minute), nodeA, gw1, 77)
 	ctx := context.Background()
-	if n := count(t, pool, `SELECT count(*) FROM packet_log WHERE obs_row IS NOT NULL AND obs_row_version = $1`, int16(ingest.ObsRowVersion)); n != 3 {
+	if n := count(t, pool, `SELECT count(*) FROM packet_log WHERE obs_row IS NOT NULL AND obs_row_version = $1`, int16(obsrow.Version)); n != 3 {
 		t.Fatalf("rows stored with their encoding: %d of 3", n)
 	}
 	c := newAPI(t, pool, rc, testNow)
@@ -574,7 +582,7 @@ func TestStoredRowEncodings(t *testing.T) {
 	if _, err := pool.Exec(ctx, `UPDATE packet_log SET obs_row = NULL, obs_row_version = NULL WHERE packet_type = 'nodeinfo'`); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := pool.Exec(ctx, `UPDATE packet_log SET obs_row = '"stale"}', obs_row_version = $1 WHERE packet_type = 'position'`, int16(ingest.ObsRowVersion-1)); err != nil {
+	if _, err := pool.Exec(ctx, `UPDATE packet_log SET obs_row = '"stale"}', obs_row_version = $1 WHERE packet_type = 'position'`, int16(obsrow.Version-1)); err != nil {
 		t.Fatal(err)
 	}
 	if got := page(); got != want {
@@ -584,7 +592,7 @@ func TestStoredRowEncodings(t *testing.T) {
 	if err != nil || n != 2 {
 		t.Fatalf("backfill: %d rows, %v (want 2)", n, err)
 	}
-	if n := count(t, pool, `SELECT count(*) FROM packet_log WHERE obs_row_version = $1`, int16(ingest.ObsRowVersion)); n != 3 {
+	if n := count(t, pool, `SELECT count(*) FROM packet_log WHERE obs_row_version = $1`, int16(obsrow.Version)); n != 3 {
 		t.Fatalf("current encodings after backfill: %d of 3", n)
 	}
 	if got := page(); got != want {

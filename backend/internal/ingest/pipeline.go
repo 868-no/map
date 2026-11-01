@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/868-no/map/internal/observability"
+	"github.com/868-no/map/internal/obsrow"
 	"github.com/868-no/map/internal/protocol"
 	"github.com/868-no/map/internal/security"
 )
@@ -45,20 +46,22 @@ type Promoter interface {
 // observed_at and the full compact row, identical to what /observations
 // returns (D-033, D-041). Never payload bytes or envelope data.
 type LiveEvent struct {
-	ID  int64     `json:"id"`
-	T   time.Time `json:"t"`
-	Row *ObsRow   `json:"row"`
+	ID  int64          `json:"id"`
+	T   time.Time      `json:"t"`
+	Row *obsrow.ObsRow `json:"row"`
 }
 
 // Config sizes the pipeline.
 type Config struct {
-	QueueSize   int
-	Workers     int
-	BatchSize   int
-	FlushEvery  time.Duration
-	MsgTimeout  time.Duration
-	DedupeTTL   time.Duration
-	ProcessOpts Options
+	QueueSize  int
+	Workers    int
+	BatchSize  int
+	FlushEvery time.Duration
+	DedupeTTL  time.Duration
+	// DrainTimeout bounds how long a shutdown keeps retrying a failing
+	// write; rows still unwritten then are counted as a gap.
+	DrainTimeout time.Duration
+	ProcessOpts  Options
 }
 
 // Pipeline is the staged ingest pipeline: bounded queue -> worker pool ->
@@ -86,7 +89,8 @@ type Pipeline struct {
 	pendMu   sync.Mutex
 	pending  map[int64][]string
 	closed   atomic.Bool
-	degraded atomic.Bool // writer currently failing
+	stopAt   atomic.Int64 // UnixNano when shutdown began
+	degraded atomic.Bool  // writer currently failing
 	lastOK   atomic.Int64
 
 	gapMu sync.Mutex
@@ -109,8 +113,8 @@ func New(cfg Config, sink Sink, dedupe Dedupe, pub Publisher, promote Promoter, 
 	if cfg.FlushEvery <= 0 {
 		cfg.FlushEvery = 200 * time.Millisecond
 	}
-	if cfg.MsgTimeout <= 0 {
-		cfg.MsgTimeout = 250 * time.Millisecond
+	if cfg.DrainTimeout <= 0 {
+		cfg.DrainTimeout = 10 * time.Second
 	}
 	if cfg.DedupeTTL <= 0 {
 		cfg.DedupeTTL = 15 * time.Minute
@@ -190,6 +194,7 @@ func (p *Pipeline) Run(ctx context.Context) {
 		p.writer()
 	}()
 	<-ctx.Done()
+	p.stopAt.Store(time.Now().UnixNano())
 	p.closed.Store(true)
 	close(p.queue)
 	wg.Wait()
@@ -201,12 +206,9 @@ func (p *Pipeline) worker() {
 	for msg := range p.queue {
 		p.m.QueueDepth.Set(float64(len(p.queue)))
 		start := time.Now()
+		// Process is bounded by its key-attempt budget (Options.KeyBudget).
 		obs, err := Process(msg, p.cfg.ProcessOpts)
 		p.m.ProcessLatency.Observe(time.Since(start).Seconds())
-		if time.Since(start) > p.cfg.MsgTimeout {
-			p.m.Rejected.WithLabelValues("processing_timeout").Inc()
-			continue
-		}
 		if err != nil {
 			p.m.Rejected.WithLabelValues(Category(err)).Inc()
 			continue
@@ -394,8 +396,23 @@ func (p *Pipeline) flush(batch []*Observation) {
 		}
 		p.degraded.Store(true)
 		p.m.WriterErrors.Inc()
-		p.log.Warn("batch insert failed; retrying", "rows", len(uniq), "err", err, "backoff", backoff)
-		time.Sleep(backoff)
+		wait := backoff
+		if p.closed.Load() {
+			// Shutting down: retry only until the drain deadline, then give
+			// the rows up as a gap rather than hang until killed.
+			left := time.Until(time.Unix(0, p.stopAt.Load()).Add(p.cfg.DrainTimeout))
+			if left <= 0 {
+				p.log.Error("database unavailable at shutdown; rows lost", "rows", len(uniq), "err", err)
+				p.m.Dropped.WithLabelValues("shutdown_db_unavailable").Add(float64(len(uniq)))
+				for _, o := range uniq {
+					p.noteGap(o.ObservedAt, "shutdown_db_unavailable")
+				}
+				return
+			}
+			wait = min(wait, left)
+		}
+		p.log.Warn("batch insert failed; retrying", "rows", len(uniq), "err", err, "backoff", wait)
+		time.Sleep(wait)
 		backoff = min(backoff*2, 30*time.Second)
 	}
 }

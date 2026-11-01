@@ -8,9 +8,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/868-no/map/internal/ingest"
+	"github.com/868-no/map/internal/obsrow"
 	"github.com/868-no/map/internal/storage"
 	"github.com/868-no/map/internal/window"
 )
@@ -18,8 +19,8 @@ import (
 // MaxObservationPage bounds one page of raw observations.
 const MaxObservationPage = 20000
 
-// ObsRow is ingest.ObsRow: the same compact row is streamed live.
-type ObsRow = ingest.ObsRow
+// ObsRow is obsrow.ObsRow: the same compact row is streamed live.
+type ObsRow = obsrow.ObsRow
 
 // Cursor is a position in (observed_at, id) order: the last row returned.
 type Cursor struct {
@@ -44,13 +45,25 @@ func ParseCursor(s string) (Cursor, bool) {
 	return Cursor{At: time.UnixMicro(u).UTC(), ID: i}, true
 }
 
-// ListObservations returns rows of w after the cursor (all of them when nil)
-// in (observed_at, id) order, at most limit of them, plus whether more
-// remain. Time order lets the observed_at index serve every page; id order
-// made PostgreSQL walk the primary key through all older rows (D-038).
-// Callers narrow w (never widen it) to fetch only what they do not hold.
-// Rows come encoded, mostly straight from obs_row (D-046).
-func ListObservations(ctx context.Context, pool *pgxpool.Pool, w window.Window, after *Cursor, limit int) ([]json.RawMessage, *Cursor, bool, error) {
+// Page is one page of a window's rows, read from the database as they are
+// written out: rows of w after the cursor (all of them when nil), in
+// (observed_at, id) order, at most limit of them. Time order lets the
+// observed_at index serve every page; id order made PostgreSQL walk the
+// primary key through all older rows (D-038). Callers narrow w (never widen
+// it) to fetch only what they do not hold. Rows come encoded, mostly
+// straight from obs_row (D-046), and are never collected in memory (D-057).
+type Page struct {
+	rows  pgx.Rows
+	limit int
+	after *Cursor
+	last  Cursor
+	n     int
+	more  bool
+}
+
+// OpenPage starts the query, so errors up to the first row are reported
+// before anything is written. Close it when done.
+func OpenPage(ctx context.Context, pool *pgxpool.Pool, w window.Window, after *Cursor, limit int) (*Page, error) {
 	if limit <= 0 || limit > MaxObservationPage {
 		limit = MaxObservationPage
 	}
@@ -59,44 +72,72 @@ func ListObservations(ctx context.Context, pool *pgxpool.Pool, w window.Window, 
 		// A cursor inside the window, never a bound on it.
 		b.and("(observed_at, id) > (?, ?)", after.At, after.ID)
 	}
-	ver := b.arg(int16(ingest.ObsRowVersion))
+	ver := b.arg(int16(obsrow.Version))
 	lim := b.arg(limit + 1)
 	rows, err := pool.Query(ctx, `SELECT `+storage.ObsColumns(ver)+`
 		FROM packet_log WHERE `+b.String()+` ORDER BY observed_at, id LIMIT `+lim, b.args...)
 	if err != nil {
-		return nil, nil, false, err
+		return nil, err
 	}
-	defer rows.Close()
-	out := make([]json.RawMessage, 0, min(limit, 4096))
-	var last Cursor
-	for rows.Next() {
-		f, tail, meta, err := storage.ScanObs(rows)
+	return &Page{rows: rows, limit: limit, after: after}, nil
+}
+
+// Each calls emit with each row's JSON in order; the slice is only valid
+// during the call. It stops after limit rows, noting whether more remain.
+func (p *Page) Each(emit func(row []byte) error) error {
+	buf := make([]byte, 0, 1024)
+	for p.rows.Next() {
+		f, tail, meta, err := storage.ScanObs(p.rows)
 		if err != nil {
-			return nil, nil, false, err
+			return err
 		}
-		if len(out) < limit {
-			last = Cursor{At: f.At, ID: f.ID}
+		if p.n == p.limit {
+			p.more = true
+			break
 		}
 		if tail != nil {
-			out = append(out, ingest.WithID(f.ID, tail))
-			continue
+			buf = obsrow.AppendWithID(buf[:0], f.ID, tail)
+		} else if buf, err = json.Marshal(obsrow.New(f, meta)); err != nil {
+			// Not yet re-encoded for this version (BackfillObsRows).
+			return err
 		}
-		// Not yet re-encoded for this version (BackfillObsRows).
-		b, err := json.Marshal(ingest.NewObsRow(f, meta))
-		if err != nil {
-			return nil, nil, false, err
+		if err := emit(buf); err != nil {
+			return err
 		}
-		out = append(out, b)
+		p.n++
+		p.last = Cursor{At: f.At, ID: f.ID}
 	}
-	if err := rows.Err(); err != nil {
+	p.rows.Close()
+	return p.rows.Err()
+}
+
+// More reports whether rows remain after this page (valid after Each).
+func (p *Page) More() bool { return p.more }
+
+// Next is the cursor after the last row written: the request's own cursor
+// when the page was empty (valid after Each).
+func (p *Page) Next() *Cursor {
+	if p.n == 0 {
+		return p.after
+	}
+	c := p.last
+	return &c
+}
+
+// Close releases the connection; safe to call more than once.
+func (p *Page) Close() { p.rows.Close() }
+
+// ListObservations collects one page in memory (tests and tools; the API
+// streams with OpenPage).
+func ListObservations(ctx context.Context, pool *pgxpool.Pool, w window.Window, after *Cursor, limit int) ([]json.RawMessage, *Cursor, bool, error) {
+	p, err := OpenPage(ctx, pool, w, after, limit)
+	if err != nil {
 		return nil, nil, false, err
 	}
-	more := len(out) > limit
-	if more {
-		out = out[:limit]
+	defer p.Close()
+	out := []json.RawMessage{}
+	if err := p.Each(func(row []byte) error { out = append(out, append([]byte(nil), row...)); return nil }); err != nil {
+		return nil, nil, false, err
 	}
-	if len(out) == 0 {
-		return out, after, false, nil
-	}
-	return out, &last, more, nil
+	return out, p.Next(), p.More(), nil
 }

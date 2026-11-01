@@ -10,33 +10,53 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/868-no/map/internal/ingest"
+	"github.com/868-no/map/internal/obsrow"
 )
 
 // ObsColumns is the select list ScanObs reads; version is the placeholder
-// bound to ingest.ObsRowVersion. decoded_metadata is only fetched for rows
-// whose stored obs_row is missing or of another version (D-046).
-func ObsColumns(version string) string { return strings.ReplaceAll(obsColumns, "$V", version) }
+// bound to obsrow.Version. Rows whose stored obs_row is current come as id,
+// observed_at and that encoding only; the columns that rebuild a row are
+// fetched just for rows missing it or of another version (D-046).
+func ObsColumns(version string) string {
+	cols := make([]string, len(rebuildColumns))
+	for i, c := range rebuildColumns {
+		cols[i] = "CASE WHEN obs_row_version = $V THEN NULL ELSE " + c + " END"
+	}
+	return strings.ReplaceAll("id, observed_at, CASE WHEN obs_row_version = $V THEN obs_row END, "+strings.Join(cols, ", "), "$V", version)
+}
 
-const obsColumns = `id, observed_at, broker_id, gateway_node_id, source_node_id, destination_node_id, packet_id,
-	COALESCE(channel_name, ''), packet_type, logical_packet_key, observation_key,
-	rx_snr, rx_rssi, hop_start, hop_limit, relay_hint, signature_status,
-	CASE WHEN obs_row_version = $V THEN obs_row END,
-	CASE WHEN obs_row_version = $V THEN NULL ELSE decoded_metadata END`
+// rebuildColumns are what obsrow.New needs besides id and observed_at.
+var rebuildColumns = []string{"broker_id", "gateway_node_id", "source_node_id", "destination_node_id", "packet_id",
+	"COALESCE(channel_name, '')", "packet_type", "logical_packet_key", "observation_key",
+	"rx_snr", "rx_rssi", "hop_start", "hop_limit", "relay_hint", "signature_status", "decoded_metadata"}
 
 // ScanObs reads one row selected with ObsColumns. tail is the stored
-// encoding when current (ingest.WithID completes it); otherwise it is nil
-// and f with meta builds the row.
-func ScanObs(rows pgx.Rows) (f ingest.RowFields, tail, meta []byte, err error) {
+// encoding when current (obsrow.WithID completes it), and f then holds only
+// ID and At; otherwise tail is nil and f with meta builds the row.
+func ScanObs(rows pgx.Rows) (f obsrow.Fields, tail, meta []byte, err error) {
 	var (
-		gw, dst, pid       *int64
-		src                int64
-		hopStart, hopLimit *int16
+		gw, src, dst, pid         *int64
+		hopStart, hopLimit        *int16
+		broker, channel, typ, sig *string
 	)
-	err = rows.Scan(&f.ID, &f.At, &f.Broker, &gw, &src, &dst, &pid, &f.Channel, &f.Type, &f.Logical, &f.Reception,
-		&f.SNR, &f.RSSI, &hopStart, &hopLimit, &f.Relay, &f.Sig, &tail, &meta)
-	f.Gateway, f.Source, f.Dest, f.PacketID, f.HopStart, f.HopLimit = u32(gw), uint32(src), u32(dst), u32(pid), hopStart, hopLimit
+	err = rows.Scan(&f.ID, &f.At, &tail, &broker, &gw, &src, &dst, &pid, &channel, &typ, &f.Logical, &f.Reception,
+		&f.SNR, &f.RSSI, &hopStart, &hopLimit, &f.Relay, &sig, &meta)
+	if err != nil || tail != nil {
+		return
+	}
+	f.Gateway, f.Dest, f.PacketID, f.HopStart, f.HopLimit = u32(gw), u32(dst), u32(pid), hopStart, hopLimit
+	f.Broker, f.Channel, f.Type, f.Sig = deref(broker), deref(channel), deref(typ), deref(sig)
+	if src != nil {
+		f.Source = uint32(*src)
+	}
 	return
+}
+
+func deref(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return *p
 }
 
 func u32(p *int64) *uint32 {
@@ -72,7 +92,7 @@ func BackfillObsRows(ctx context.Context, pool *pgxpool.Pool, log *slog.Logger) 
 		}
 	}
 	if total > 0 {
-		log.Info("stored row encodings rebuilt", "rows", total, "version", ingest.ObsRowVersion)
+		log.Info("stored row encodings rebuilt", "rows", total, "version", obsrow.Version)
 	}
 	return total, nil
 }
@@ -87,7 +107,7 @@ func backfillBatch(ctx context.Context, pool *pgxpool.Pool, below int64, limit i
 	defer tx.Rollback(context.WithoutCancel(ctx)) //nolint:errcheck
 	rows, err := tx.Query(ctx, `SELECT `+ObsColumns("$1")+` FROM packet_log
 		WHERE id < $2 AND obs_row_version IS DISTINCT FROM $1
-		ORDER BY id DESC LIMIT $3 FOR UPDATE SKIP LOCKED`, int16(ingest.ObsRowVersion), below, limit)
+		ORDER BY id DESC LIMIT $3 FOR UPDATE SKIP LOCKED`, int16(obsrow.Version), below, limit)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -99,7 +119,7 @@ func backfillBatch(ctx context.Context, pool *pgxpool.Pool, below int64, limit i
 			rows.Close()
 			return 0, 0, err
 		}
-		tail, err := ingest.EncodeTail(ingest.NewObsRow(f, meta))
+		tail, err := obsrow.EncodeTail(obsrow.New(f, meta))
 		if err != nil {
 			rows.Close()
 			return 0, 0, fmt.Errorf("row %d: %w", f.ID, err)
@@ -114,7 +134,7 @@ func backfillBatch(ctx context.Context, pool *pgxpool.Pool, below int64, limit i
 		return 0, 0, nil
 	}
 	if _, err := tx.Exec(ctx, `UPDATE packet_log p SET obs_row = u.tail, obs_row_version = $3
-		FROM unnest($1::bigint[], $2::text[]) AS u(id, tail) WHERE p.id = u.id`, ids, tails, int16(ingest.ObsRowVersion)); err != nil {
+		FROM unnest($1::bigint[], $2::text[]) AS u(id, tail) WHERE p.id = u.id`, ids, tails, int16(obsrow.Version)); err != nil {
 		return 0, 0, err
 	}
 	return len(ids), last, tx.Commit(ctx)

@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"reflect"
+	"sync"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -40,9 +42,18 @@ type Server struct {
 	Log       *slog.Logger
 	Now       func() time.Time
 	Geo       GeoOptions
+	// HeavySlots bounds concurrent /observations reads (database
+	// connections held while rows stream); default 8.
+	HeavySlots int
 
-	heavy chan struct{}
+	heavy   chan struct{}
+	closing chan struct{}
+	once    sync.Once
 }
+
+// CloseStreams ends every open live stream, so a shutdown need not wait
+// for SSE clients to leave.
+func (s *Server) CloseStreams() { s.once.Do(func() { close(s.closing) }) }
 
 func (s *Server) now() time.Time {
 	if s.Now != nil {
@@ -136,7 +147,11 @@ func (s *Server) acquire(ctx context.Context) (func(), error) {
 // NewHandler builds the HTTP handler for /api and returns the huma API (for
 // OpenAPI export).
 func (s *Server) NewHandler(mux *http.ServeMux) huma.API {
-	s.heavy = make(chan struct{}, 8)
+	if s.HeavySlots <= 0 {
+		s.HeavySlots = 8
+	}
+	s.heavy = make(chan struct{}, s.HeavySlots)
+	s.closing = make(chan struct{})
 	cfg := huma.DefaultConfig("868.no Map API", Version)
 	cfg.Info.Description = "The packet log of a Meshtastic mesh observed over MQTT: decoded observations of a requested " +
 		"half-open interval [start, end), paged, plus a live stream of new ones. Browsers derive every mesh view " +
@@ -156,6 +171,8 @@ func (s *Server) register(api huma.API) {
 	huma.Register(api, huma.Operation{OperationID: "retention", Method: http.MethodGet, Path: "/api/v1/retention",
 		Summary: "Retention cutoff, earliest/latest retained observation and server time", Tags: []string{"meta"}}, s.retention)
 	huma.Register(api, huma.Operation{OperationID: "observations", Method: http.MethodGet, Path: "/api/v1/observations",
-		Summary: "Decoded observations of a window, paged, for deriving views in the browser", Tags: []string{"mesh"}, Errors: []int{400, 503}}, s.observations)
+		Summary: "Decoded observations of a window, paged, for deriving views in the browser", Tags: []string{"mesh"}, Errors: []int{400, 503},
+		Responses: map[string]*huma.Response{"200": {Description: "OK", Content: map[string]*huma.MediaType{
+			"application/json": {Schema: api.OpenAPI().Components.Schemas.Schema(reflect.TypeOf(ObservationsBody{}), true, "ObservationsBody")}}}}}, s.observations)
 	s.registerStream(api)
 }

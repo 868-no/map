@@ -1,9 +1,12 @@
 package api
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"reflect"
 	"slices"
 	"time"
@@ -12,6 +15,7 @@ import (
 
 	"github.com/868-no/map/internal/geo"
 	"github.com/868-no/map/internal/ingest"
+	"github.com/868-no/map/internal/obsrow"
 	"github.com/868-no/map/internal/protocol"
 	"github.com/868-no/map/internal/query"
 )
@@ -159,9 +163,12 @@ func (RowList) Schema(r huma.Registry) *huma.Schema {
 	return huma.SchemaFromType(r, reflect.TypeOf([]query.ObsRow{}))
 }
 
+// ObservationsOutput streams the body: rows go from the database cursor to
+// the client as they are read, never collected (D-057). Its schema is
+// ObservationsBody, declared on the operation.
 type ObservationsOutput struct {
 	CacheControl string `header:"Cache-Control"`
-	Body         ObservationsBody
+	Body         func(huma.Context)
 }
 
 func (s *Server) observations(ctx context.Context, in *ObservationsInput) (*ObservationsOutput, error) {
@@ -188,35 +195,83 @@ func (s *Server) observations(ctx context.Context, in *ObservationsInput) (*Obse
 			n.End = t
 		}
 	}
-	out := ObservationsBody{Now: s.now(), Window: echo(w), Generation: fmt.Sprintf("d%d.r%d.c%s", ingest.DecodeVersion, ingest.ObsRowVersion, s.ConfigRev), Rows: RowList{}}
 	if n.End.Before(n.Start) {
 		n.End = n.Start
 	}
-	out.Since, out.Until = n.Start, n.End
+	var after *query.Cursor
+	if in.Cursor != "" {
+		c, ok := query.ParseCursor(in.Cursor)
+		if !ok {
+			return nil, huma.Error400BadRequest("cursor: invalid")
+		}
+		after = &c
+	}
+	head := ObservationsBody{Now: s.now(), Window: echo(w), Since: n.Start, Until: n.End,
+		Generation: fmt.Sprintf("d%d.r%d.c%s", ingest.DecodeVersion, obsrow.Version, s.ConfigRev)}
+	var page *query.Page
+	release := func() {}
 	if n.End.After(n.Start) {
-		release, err := s.acquire(ctx)
-		if err != nil {
+		if release, err = s.acquire(ctx); err != nil {
 			return nil, err
 		}
-		defer release()
-		var after *query.Cursor
-		if in.Cursor != "" {
-			c, ok := query.ParseCursor(in.Cursor)
-			if !ok {
-				return nil, huma.Error400BadRequest("cursor: invalid")
-			}
-			after = &c
-		}
-		rows, next, more, err := query.ListObservations(ctx, s.Pool, n, after, in.Limit)
-		if err != nil {
+		// Errors up to the first row still get a proper status.
+		if page, err = query.OpenPage(ctx, s.Pool, n, after, in.Limit); err != nil {
+			release()
 			return nil, err
-		}
-		out.Rows, out.More = rows, more
-		if next != nil {
-			out.NextCursor = next.String()
 		}
 	}
 	// Rows are immutable, but the window may still be filling; the browser
 	// keeps its own copy, so nothing here is worth a shared cache.
-	return &ObservationsOutput{CacheControl: "no-store", Body: out}, nil
+	return &ObservationsOutput{CacheControl: "no-store", Body: func(hc huma.Context) {
+		defer release()
+		hc.SetHeader("Content-Type", "application/json")
+		if page != nil {
+			defer page.Close()
+		}
+		if err := writeObservations(hc.BodyWriter(), head, page, after); err != nil {
+			// Headers are gone: cut the response so the client sees a
+			// truncated body, never a well-formed partial page.
+			s.Log.Warn("observations stream aborted", "err", err)
+			panic(http.ErrAbortHandler)
+		}
+	}}, nil
+}
+
+// writeObservations writes head as ObservationsBody with the page's rows,
+// buffered in chunks.
+func writeObservations(dst io.Writer, head ObservationsBody, page *query.Page, after *query.Cursor) error {
+	bw := bufio.NewWriterSize(dst, 64<<10)
+	prefix, err := json.Marshal(struct {
+		Window     WindowEcho `json:"window"`
+		Since      time.Time  `json:"since"`
+		Until      time.Time  `json:"until"`
+		Generation string     `json:"generation"`
+		Now        time.Time  `json:"now"`
+	}{head.Window, head.Since, head.Until, head.Generation, head.Now})
+	if err != nil {
+		return err
+	}
+	bw.Write(prefix[:len(prefix)-1]) //nolint:errcheck // bufio keeps the first error for Flush
+	bw.WriteString(`,"rows":[`)      //nolint:errcheck
+	more, next := false, after
+	if page != nil {
+		first := true
+		if err := page.Each(func(row []byte) error {
+			if !first {
+				bw.WriteByte(',') //nolint:errcheck
+			}
+			first = false
+			_, err := bw.Write(row)
+			return err
+		}); err != nil {
+			return err
+		}
+		more, next = page.More(), page.Next()
+	}
+	fmt.Fprintf(bw, `],"more":%t`, more)
+	if next != nil {
+		fmt.Fprintf(bw, `,"next_cursor":%q`, next.String())
+	}
+	bw.WriteByte('}') //nolint:errcheck
+	return bw.Flush()
 }
