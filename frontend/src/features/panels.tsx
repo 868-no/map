@@ -5,6 +5,8 @@ import { useStore } from '../state/store'
 import { formatLocal, formatLogTime, relativeAge } from '../lib/time'
 import { Sparkline } from '../components/Sparkline'
 import { ageColor, lastHeardAge } from '../map/model'
+import { PALETTES } from '../map/palette'
+import { useTheme } from '../theme'
 
 const NR = <span className="nr">not reported in selected period</span>
 
@@ -36,9 +38,10 @@ export function NodeList({ snapshot }: { snapshot: SnapshotView | undefined }) {
   const w = snapshot?.meta.window
   const endMs = w ? Date.parse(w.end) : 0, windowMs = w ? endMs - Date.parse(w.start) : 0
   // Same last-heard colour as the map marker.
+  const stops = PALETTES[useTheme()].ageStops
   const dotStyle = (n: MeshNode) => {
     if (!w || (!n.position && !n.estimate)) return undefined
-    const c = `rgb(${ageColor(lastHeardAge(n, endMs, windowMs)).join(',')})`
+    const c = `rgb(${ageColor(lastHeardAge(n, endMs, windowMs), stops).join(',')})`
     return n.position ? { background: c } : { borderColor: c }
   }
   const row = (n: MeshNode) => (

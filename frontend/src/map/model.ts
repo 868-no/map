@@ -32,10 +32,22 @@ export const AGE_STOPS: [number, number, number][] = [
   [159, 42, 99],
 ]
 
-export function ageColor(age: number): [number, number, number] {
-  const x = Math.min(Math.max(age, 0), 1) * (AGE_STOPS.length - 1)
-  const i = Math.min(Math.floor(x), AGE_STOPS.length - 2), f = x - i
-  const a = AGE_STOPS[i], b = AGE_STOPS[i + 1]
+/**
+ * The same ramp for the light basemap, deeper throughout: the pale newest
+ * yellow all but vanished on it (worst for estimated nodes, drawn as rings).
+ */
+export const AGE_STOPS_LIGHT: [number, number, number][] = [
+  [214, 158, 0],
+  [232, 118, 0],
+  [212, 70, 34],
+  [168, 32, 76],
+  [104, 24, 96],
+]
+
+export function ageColor(age: number, stops: readonly [number, number, number][] = AGE_STOPS): [number, number, number] {
+  const x = Math.min(Math.max(age, 0), 1) * (stops.length - 1)
+  const i = Math.min(Math.floor(x), stops.length - 2), f = x - i
+  const a = stops[i], b = stops[i + 1]
   return [0, 1, 2].map((k) => Math.round(a[k] + (b[k] - a[k]) * f)) as [number, number, number]
 }
 

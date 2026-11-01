@@ -113,6 +113,7 @@ export function meshLayerBuilder(): (input: MeshLayerInput) => Layer[] {
     }),
   )
   const optOutOf = memoLast((placed: PlacedNode[]) => placed.filter((p) => p.node.mqtt_opt_out))
+  const hollowOf = memoLast((placed: PlacedNode[]) => placed.filter((p) => p.kind === 'estimated'))
   const labelsOf = memoLast(labelData)
 
   return ({ placed, links, selection: sel, search, toggles, zoom, clusters, exploded, route, palette: c, regions }) => {
@@ -186,6 +187,20 @@ export function meshLayerBuilder(): (input: MeshLayerInput) => Layer[] {
       )
     }
 
+    // Estimated nodes are hollow rings: a dark halo either side keeps the
+    // ring visible on any basemap (it vanishes into the dark one, harmlessly).
+    const hollow = hollowOf(placed)
+    if (hollow.length) {
+      layers.push(
+        new ScatterplotLayer<PlacedNode>({
+          id: 'nodes-halo', ...UNDER_LABELS, data: hollow, getPosition: (p) => [p.lon, p.lat],
+          radiusUnits: 'pixels', getRadius: (p) => roleRadius(p.node.identity?.role),
+          filled: false, stroked: true, lineWidthUnits: 'pixels', getLineWidth: 4,
+          getLineColor: c.nodeOutline, pickable: false,
+          updateTriggers: { getLineColor: [c] },
+        }),
+      )
+    }
     layers.push(
       new ScatterplotLayer<PlacedNode>({
         id: 'nodes', ...UNDER_LABELS, data: placed, getPosition: (p) => [p.lon, p.lat],
@@ -193,10 +208,10 @@ export function meshLayerBuilder(): (input: MeshLayerInput) => Layer[] {
         // nodes are hollow rings in the same colour.
         radiusUnits: 'pixels', getRadius: (p) => roleRadius(p.node.identity?.role),
         filled: true, stroked: true, lineWidthUnits: 'pixels',
-        getFillColor: (p) => (p.kind === 'estimated' ? [0, 0, 0, 0] : matches(p) ? [...ageColor(p.age), 255] : c.dimmed) as RGBA,
+        getFillColor: (p) => (p.kind === 'estimated' ? [0, 0, 0, 0] : matches(p) ? [...ageColor(p.age, c.ageStops), 255] : c.dimmed) as RGBA,
         getLineColor: (p) =>
           (p.node.id === selId ? c.selected
-            : p.kind === 'estimated' ? (matches(p) ? [...ageColor(p.age), 255] : c.dimmed)
+            : p.kind === 'estimated' ? (matches(p) ? [...ageColor(p.age, c.ageStops), 255] : c.dimmed)
             : p.node.is_gateway ? [...c.gateway, 255] : c.nodeOutline) as RGBA,
         getLineWidth: (p) => (p.node.id === selId ? 3 : p.kind === 'estimated' || p.node.is_gateway ? 2 : 1),
         pickable: true, autoHighlight: true, highlightColor: [...c.gateway, 160],
@@ -213,7 +228,7 @@ export function meshLayerBuilder(): (input: MeshLayerInput) => Layer[] {
           id: 'mqtt-glyphs', ...UNDER_LABELS, data: glyphs, getPosition: ({ p }) => [p.lon, p.lat],
           ...arrowIcons(), getIcon: ({ flow }) => flow, sizeUnits: 'pixels', getSize: ({ p }) => roleRadius(p.node.identity?.role) * 1.5,
           // On the fill when there is one; hollow estimate rings get the ring's colour.
-          getColor: ({ p }) => (!matches(p) ? c.dimmed : p.kind === 'estimated' ? [...ageColor(p.age), 255] : [...glyphInk(ageColor(p.age)), 255]) as RGBA,
+          getColor: ({ p }) => (!matches(p) ? c.dimmed : p.kind === 'estimated' ? [...ageColor(p.age, c.ageStops), 255] : [...glyphInk(ageColor(p.age, c.ageStops)), 255]) as RGBA,
           pickable: false,
           updateTriggers: { getColor: [q, c] },
         }),

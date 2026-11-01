@@ -1,6 +1,8 @@
 import type { SnapshotView } from '../derive/views'
 import { useStore, type Confidence } from '../state/store'
-import { AGE_STOPS, roleRadius } from '../map/model'
+import { roleRadius } from '../map/model'
+import { PALETTES } from '../map/palette'
+import { useTheme } from '../theme'
 import { BASEMAP_GROUPS } from '../map/layers'
 
 const TYPES = ['nodeinfo', 'position', 'telemetry', 'neighborinfo', 'traceroute', 'text', 'routing', 'other']
@@ -101,15 +103,16 @@ function ago(ms: number): string {
 export function Legend({ snapshot }: { snapshot: SnapshotView | undefined }) {
   const w = snapshot?.meta.window
   const windowMs = w ? Date.parse(w.end) - Date.parse(w.start) : 72 * 3600_000
-  const gradient = `linear-gradient(to right, ${AGE_STOPS.map((c) => `rgb(${c.join(',')})`).join(', ')})`
+  const stops = PALETTES[useTheme()].ageStops
+  const gradient = `linear-gradient(to right, ${stops.map((c) => `rgb(${c.join(',')})`).join(', ')})`
   const size = (role: string) => ({ width: roleRadius(role) * 2, height: roleRadius(role) * 2 })
   return (
     <div className="panel legend">
       <h3>Nodes: colour is last heard</h3>
       <div className="age-ramp" style={{ background: gradient }} aria-hidden />
       <div className="age-labels">
-        {AGE_STOPS.map((_, i) => (
-          <span key={i}>{ago((windowMs * i) / (AGE_STOPS.length - 1))}</span>
+        {stops.map((_, i) => (
+          <span key={i}>{ago((windowMs * i) / (stops.length - 1))}</span>
         ))}
       </div>
       <p className="muted">The scale spans the selected window{w?.rolling ? ' (window end = now)' : ''}.</p>
