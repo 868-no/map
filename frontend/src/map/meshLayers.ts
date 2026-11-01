@@ -123,6 +123,8 @@ const glyphsFor = (p: PlacedNode): Glyph[] => {
   const flow = mqttFlow(p.node)
   return [...(flow ? [{ p, flow }] : []), ...(p.node.airborne ? [{ p, flow: 'plane' as const }] : [])]
 }
+/** Places kept per trail before the marker: enough to show which way it goes. */
+const TRAIL_POINTS = 3
 type Trail = { id: string; from: [number, number]; to: [number, number]; alpha: number }
 
 /**
@@ -183,7 +185,8 @@ export function meshLayerBuilder(): (input: MeshLayerInput) => Layer[] {
       if (only && p.node.id !== only) continue
       const t = p.node.track
       if (!t || t.length < 2) continue
-      const pts: [number, number][] = [...t.map((x) => [x.lon, x.lat] as [number, number]), [p.lon, p.lat]]
+      // A direction, not the whole history: the last few places before the marker.
+      const pts: [number, number][] = [...t.slice(-TRAIL_POINTS).map((x) => [x.lon, x.lat] as [number, number]), [p.lon, p.lat]]
       for (let k = 1; k < pts.length; k++) {
         if (pts[k][0] === pts[k - 1][0] && pts[k][1] === pts[k - 1][1]) continue
         segs.push({ id: p.node.id, from: pts[k - 1], to: pts[k], alpha: Math.round(50 + (190 * k) / (pts.length - 1)) })

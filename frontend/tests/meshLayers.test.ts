@@ -71,5 +71,12 @@ describe('mesh layer builder', () => {
     // The estimated node selected: its own.
     expect((byId(build({ ...base, selection: { kind: 'node', id: '!b' } })).uncertainty.data as unknown[]).length).toBe(1)
   })
+
+  it('keeps a position trail short: the last three places, then the marker', () => {
+    const track = Array.from({ length: 6 }, (_, k) => ({ lat: 60 + k * 0.01, lon: 10, at: `t${k}` }))
+    const mover: PlacedNode = { node: { ...node('!m'), moved_at: 't5', track }, kind: 'reported', lon: 10, lat: 60.07, age: 0 }
+    const ls = byId(meshLayerBuilder()({ ...base, placed: [mover], toggles: { ...base.toggles, trails: true } }))
+    expect((ls.trails.data as unknown[]).length).toBe(3)
+  })
 })
 
