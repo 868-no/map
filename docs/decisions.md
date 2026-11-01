@@ -614,3 +614,7 @@ Operator request: a per-router statistic of how much traffic it is expected to r
 - **Shown:** node panel, "Relaying": seen of expected and the share, the median for routers of its role (when at least 3 have 10 or more expected packets), its witnesses, and how much rests on its own uplinks rather than inferred receptions. Under 10 expected packets it says too few to judge.
 - On 2026-11-01 (3 days): ROUTER median 14 %. Gråkallen 72 % (787 of 1100) stands out on top. VenesSol-A was seen relaying 0 of 20 despite two witnesses, and NVE1308 and R-OSL-GREFSENKOLLE 8 %, which is worth a look.
 
+## D-079 One accuracy circle while a node is selected (2026-11-01)
+
+Operator request. With "Position accuracy" switched on, every estimated node shows its circle only while nothing is selected. Selecting a node shows only that node's circle (its estimate's uncertainty, the precision of a coarse reported position, or its narrowed error, D-077), whether the layer is on or not.
+

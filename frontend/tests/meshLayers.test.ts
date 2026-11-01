@@ -40,8 +40,8 @@ describe('mesh layer builder', () => {
     const b = byId(build({ ...base, links: [{ ...link }] }))
     expect(b['links-other'].data).not.toBe(a['links-other'].data)
     expect(b.uncertainty.data).toBe(a.uncertainty.data)
-    const c = byId(build({ ...base, links: [{ ...link }], selection: { kind: 'node', id: '!a' } }))
-    expect(c.uncertainty.data).not.toBe(b.uncertainty.data) // the selected node's circle
+    const c = byId(build({ ...base, links: [{ ...link }], selection: { kind: 'node', id: '!b' } }))
+    expect(c.uncertainty.data).not.toBe(b.uncertainty.data) // only the selected node's circle now
     expect(c['links-other'].updateTriggers).toEqual(b['links-other'].updateTriggers) // a node selection leaves links alone
   })
 
@@ -60,6 +60,16 @@ describe('mesh layer builder', () => {
     const on = { ...base.toggles, trails: true }
     expect('trails' in byId(build({ ...base, placed: [...placed, mover], toggles: on, selection: { kind: 'node', id: '!a' } }))).toBe(false)
     expect((byId(build({ ...base, placed: [...placed, mover], toggles: on, selection: { kind: 'node', id: '!m' } })).trails.data as unknown[]).length).toBe(2)
+  })
+
+  it('shows only the selected node\'s accuracy circle when one is selected', () => {
+    const build = meshLayerBuilder()
+    // Switched on (base) with nothing selected: the estimated node's circle.
+    expect((byId(build(base)).uncertainty.data as unknown[]).length).toBe(1)
+    // Another node selected: its circle only, here none (no coarse position).
+    expect('uncertainty' in byId(build({ ...base, selection: { kind: 'node', id: '!a' } }))).toBe(false)
+    // The estimated node selected: its own.
+    expect((byId(build({ ...base, selection: { kind: 'node', id: '!b' } })).uncertainty.data as unknown[]).length).toBe(1)
   })
 })
 

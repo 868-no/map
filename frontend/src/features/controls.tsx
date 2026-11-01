@@ -39,7 +39,7 @@ export function LayersPanel() {
       {check('Inferred links', t.inferred, (v) => setT({ inferred: v }),
         'Dashed router or client links supported only by a relay\'s last-hop byte, resolved to a single node by radio range and confirmed links. Low confidence: never directly measured. Needs router or client links switched on.', !t.infraLinks && !t.otherLinks)}
       {check('Position accuracy', t.uncertainty, (v) => setT({ uncertainty: v }),
-        'A circle around each estimated position: the area the node is likely within, from the positioned nodes that heard it directly. The selected node\'s circle is always shown; for a coarse reported position it shows how far off that position may be.')}
+        'A circle around each estimated position: the area the node is likely within, from the positioned nodes that heard it directly. With a node selected, only its circle is shown, switched on or not; for a coarse reported position it shows how far off that position may be.')}
       {check('Node names', t.labels, (v) => setT({ labels: v }),
         'Each node\'s short name from its latest NodeInfo in the selected window, or the last 4 hex digits of its ID. Shown from zoom 10. Names that would overlap are grouped (“+N”) and fan out when hovered.')}
       {check('Trails', t.trails, (v) => setT({ trails: v }),

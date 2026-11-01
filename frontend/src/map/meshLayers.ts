@@ -131,13 +131,14 @@ type Trail = { id: string; from: [number, number]; to: [number, number]; alpha: 
  */
 export function meshLayerBuilder(): (input: MeshLayerInput) => Layer[] {
   // Accuracy circles: estimate uncertainty for all estimated nodes when
-  // switched on; for the selected node always, including the precision
-  // cell of a coarse reported position.
+  // switched on and nothing is selected; with a node selected, only its own,
+  // always, including the precision cell of a coarse reported position.
   const circlesOf = memoLast((placed: PlacedNode[], all: boolean, selId: string | null) => {
     const out: Circle[] = []
     for (const p of placed) {
       const selected = p.node.id === selId
-      if (p.kind === 'estimated' && (all || selected)) out.push({ pos: [p.lon, p.lat], r: p.radiusM ?? 2000, est: true })
+      // With a node selected, only its circle; otherwise every estimate's when switched on.
+      if (p.kind === 'estimated' && (selected || (all && !selId))) out.push({ pos: [p.lon, p.lat], r: p.radiusM ?? 2000, est: true })
       else if (selected && (p.node.refined || p.node.position?.precision_known)) {
         const r = p.node.refined?.radius_m ?? precisionErrorM(p.node.position!.precision_bits ?? 32, p.lat)
         if (r > 0) out.push({ pos: [p.lon, p.lat], r, est: false })
