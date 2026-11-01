@@ -625,3 +625,7 @@ Operator request: a way to share a permanent link to a node.
 - **Share link** (node panel, beside the id): the phone's share sheet on touch devices, otherwise copied to the clipboard ("Link copied").
 - **Address bar:** the selected node is part of the URL (`node=`), alongside the window and filters as before, and leaves it when the selection is cleared.
 
+## D-081 One shadow system (2026-11-01)
+
+Operator request: apply drop shadows consistently. Only the rail and panel islands had one; banners and hover tooltips had none, and the map's zoom and fit controls kept MapLibre's thin grey outline. Two elevation tokens are now the only drop shadows: `--elev-island` (the rail and the panel) and `--elev-float` (banners, tooltips, map control groups, which also get the islands' border colour). Labels lying on the map (scale, coordinates, credits) stay flat. Both use the theme's `--shadow` colour, stronger on the dark basemap.
+

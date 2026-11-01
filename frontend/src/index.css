@@ -80,7 +80,11 @@ button[aria-pressed='true'], button[aria-selected='true'] { background: var(--pr
 .boot.error { color: var(--err); }
 
 /* overflow: hidden clips the collapsed time bar, which is translated below the viewport. */
-.app { position: relative; display: grid; grid-template-rows: auto 1fr; height: 100%; overflow: hidden; --rail: 64px; --dock: 380px; --gap: 10px; --island-r: 12px; }
+.app { position: relative; display: grid; grid-template-rows: auto 1fr; height: 100%; overflow: hidden; --rail: 64px; --dock: 380px; --gap: 10px; --island-r: 12px;
+  /* Elevation, the only drop shadows (D-081): islands (the rail, the panel)
+     and small floating elements (banners, tooltips, map controls). Labels
+     lying on the map (scale, coordinates, credits) stay flat. */
+  --elev-island: 0 8px 24px var(--shadow); --elev-float: 0 2px 8px var(--shadow); }
 .topbar { position: relative; z-index: 10; display: flex; align-items: center; gap: 16px; padding: 6px 12px; border-bottom: 1px solid var(--line); background: var(--panel); min-height: 40px; }
 .topbar h1 { font-size: 16px; margin: 0; letter-spacing: 0.02em; white-space: nowrap; }
 /* Wordmark: the band (868 MHz) in the accent colour, the domain muted. */
@@ -96,7 +100,7 @@ button[aria-pressed='true'], button[aria-selected='true'] { background: var(--pr
 /* The tool rail (D-066) and its panel float over the map as islands
    (D-071): rounded cards inset from the edges, the map running beneath. */
 .rail { position: absolute; top: var(--gap); right: var(--gap); width: var(--rail); box-sizing: border-box; display: flex; flex-direction: column; gap: 2px; padding: 6px 4px;
-  border: 1px solid var(--line); border-radius: var(--island-r); background: var(--overlay-strong); backdrop-filter: blur(8px); box-shadow: 0 8px 24px var(--shadow); z-index: 9; }
+  border: 1px solid var(--line); border-radius: var(--island-r); background: var(--overlay-strong); backdrop-filter: blur(8px); box-shadow: var(--elev-island); z-index: 9; }
 .rail-btn { position: relative; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 7px 2px 5px; border: 1px solid transparent; border-radius: 6px; background: none; color: var(--muted); }
 .rail-btn:hover { color: var(--text); background: var(--panel2); }
 .rail-btn[aria-pressed='true'] { color: var(--accent); background: var(--pressed); border-color: var(--line); }
@@ -105,7 +109,7 @@ button[aria-pressed='true'], button[aria-selected='true'] { background: var(--pr
 /* The open panel overlays the map beside the rail (no resize); map controls
    on the right move clear of it. */
 .dock { position: absolute; top: var(--gap); right: calc(var(--rail) + 2 * var(--gap)); max-height: calc(100% - 2 * var(--gap)); width: var(--dock); z-index: 7; overflow: hidden;
-  border: 1px solid var(--line); border-radius: var(--island-r); background: var(--overlay-strong); backdrop-filter: blur(8px); box-shadow: 0 8px 24px var(--shadow); display: flex; flex-direction: column; min-height: 0; }
+  border: 1px solid var(--line); border-radius: var(--island-r); background: var(--overlay-strong); backdrop-filter: blur(8px); box-shadow: var(--elev-island); display: flex; flex-direction: column; min-height: 0; }
 .dock[hidden] { display: none; }
 .dock-head { display: flex; align-items: center; gap: 8px; padding: 8px 8px 8px 12px; border-bottom: 1px solid var(--line); }
 .dock-head h2 { flex: 1; margin: 0; font-size: 13px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); }
@@ -134,9 +138,9 @@ button[aria-pressed='true'], button[aria-selected='true'] { background: var(--pr
 .attribution { position: absolute; right: 0; bottom: 0; font-size: 11px; background: var(--overlay); padding: 2px 6px; color: var(--muted); }
 .attribution a { color: var(--muted); }
 .coords { position: absolute; bottom: 28px; right: 10px; font: 12px ui-monospace, monospace; color: var(--muted); background: var(--overlay); padding: 2px 6px; border-radius: 4px; }
-.tooltip { position: absolute; pointer-events: none; background: var(--tooltip); border: 1px solid var(--line); padding: 4px 8px; border-radius: 4px; font-size: 12px; max-width: 320px; z-index: 5; }
+.tooltip { position: absolute; pointer-events: none; background: var(--tooltip); border: 1px solid var(--line); box-shadow: var(--elev-float); padding: 4px 8px; border-radius: 4px; font-size: 12px; max-width: 320px; z-index: 5; }
 .banners { position: absolute; left: 50px; top: 10px; right: calc(var(--rail) + 3 * var(--gap)); display: flex; flex-direction: column; gap: 6px; pointer-events: none; }
-.banner { pointer-events: auto; align-self: flex-start; background: var(--overlay-strong); border: 1px solid var(--line); border-left: 3px solid var(--accent); padding: 6px 10px; border-radius: 4px; font-size: 13px; }
+.banner { pointer-events: auto; align-self: flex-start; background: var(--overlay-strong); border: 1px solid var(--line); border-left: 3px solid var(--accent); box-shadow: var(--elev-float); padding: 6px 10px; border-radius: 4px; font-size: 13px; }
 .banner.error { border-left-color: var(--err); }
 .banner.hist { border-left-color: var(--orange); }
 
@@ -247,7 +251,7 @@ table.hear th, table.hear td { text-align: left; padding: 2px 4px; border-bottom
 
 .maplibregl-ctrl-attrib { background: var(--overlay) !important; color: var(--muted) !important; }
 .maplibregl-ctrl-attrib a { color: var(--muted) !important; }
-.maplibregl-ctrl-group { background: var(--panel2) !important; }
+.maplibregl-ctrl-group { background: var(--panel2) !important; box-shadow: var(--elev-float) !important; border: 1px solid var(--line); }
 .maplibregl-ctrl-group button .maplibregl-ctrl-icon { filter: var(--ctrl-icon-filter); }
 .maplibregl-ctrl-scale { background: var(--overlay) !important; color: var(--muted) !important; border-color: var(--muted) !important; }
 
