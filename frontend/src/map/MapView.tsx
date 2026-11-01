@@ -157,11 +157,23 @@ export default function MapView({ caps, snapshot, onPositions }: Props) {
   const reach = useMemo((): ReachGeom | null => {
     if (!reachOpt || !selectedNode || !reachQ.data || reachQ.data.origin !== selectedNode) return null
     const shown = reachQ.data.nodes.filter((n) => n.need <= reachOpt.hops)
+    const byId = new Map(reachQ.data.nodes.map((n) => [n.id, n]))
     return {
       reached: new Set([selectedNode, ...shown.map((n) => n.id)]),
+      // Each placed node from the nearest placed transmitter up its chain:
+      // relays without a position are skipped, and the line is dashed there.
       segments: shown.flatMap((n) => {
-        const a = pos.get(n.via), b = pos.get(n.id)
-        return a && b ? [{ from: a, to: b, need: n.need, free: !!n.free }] : []
+        const b = pos.get(n.id)
+        if (!b) return []
+        let via = n.via, gap = false
+        for (let i = 0; via !== selectedNode && !pos.has(via) && i < 8; i++) {
+          const up = byId.get(via)
+          if (!up) break
+          via = up.via
+          gap = true
+        }
+        const a = pos.get(via)
+        return a ? [{ from: a, to: b, need: n.need, free: !gap && !!n.free, gap }] : []
       }),
     }
   }, [reachOpt, selectedNode, reachQ.data, pos])

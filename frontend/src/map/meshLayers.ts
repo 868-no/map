@@ -32,7 +32,7 @@ export interface MeshLayerInput {
 
 /** Reach paths up to the chosen hop limit, and the nodes they reach. */
 export interface ReachGeom {
-  segments: { from: [number, number]; to: [number, number]; need: number; free: boolean }[]
+  segments: { from: [number, number]; to: [number, number]; need: number; free: boolean; gap: boolean }[] // gap: across relays without a position
   reached: Set<string> // ids, the originator included
 }
 
@@ -142,6 +142,7 @@ export function meshLayerBuilder(): (input: MeshLayerInput) => Layer[] {
     return out
   })
   const routeParts = memoLast((route: RouteGeom[]) => ({ solid: route.filter((r) => !r.dashed), dashed: route.filter((r) => r.dashed) }))
+  const reachParts = memoLast((segs: ReachGeom['segments']) => ({ solid: segs.filter((r) => !r.gap), gaps: segs.filter((r) => r.gap) }))
   const glyphsOf = memoLast((placed: PlacedNode[]) =>
     placed.flatMap((p): Glyph[] => {
       const flow = mqttFlow(p.node)
@@ -236,10 +237,16 @@ export function meshLayerBuilder(): (input: MeshLayerInput) => Layer[] {
     // from the transmitter it hears, coloured by the hop limit that reaches it.
     if (reach) {
       const ramp = (n: number) => [...c.reach[Math.min(n, c.reach.length - 1)], 230] as RGBA
+      const parts = reachParts(reach.segments)
       layers.push(
         new LineLayer<ReachGeom['segments'][number]>({
-          id: 'reach', ...UNDER_LABELS, data: reach.segments, getSourcePosition: (r) => r.from, getTargetPosition: (r) => r.to,
+          id: 'reach', ...UNDER_LABELS, data: parts.solid, getSourcePosition: (r) => r.from, getTargetPosition: (r) => r.to,
           widthUnits: 'pixels', getWidth: 2.5, getColor: (r) => ramp(r.need), pickable: false,
+          updateTriggers: { getColor: [c] },
+        }),
+        new PathLayer<ReachGeom['segments'][number], PathStyleExtensionProps<ReachGeom['segments'][number]>>({
+          id: 'reach-gaps', ...UNDER_LABELS, data: parts.gaps, getPath: (r) => [r.from, r.to], widthUnits: 'pixels', getWidth: 2.5,
+          getColor: (r) => ramp(r.need), getDashArray: [4, 3], dashJustified: true, extensions: [dashExt], pickable: false,
           updateTriggers: { getColor: [c] },
         }),
         new IconLayer<ReachGeom['segments'][number]>({

@@ -435,6 +435,19 @@ test('the reach simulator counts nodes per hop limit and draws the reach on the 
   await reach.getByLabel('Show on the map').check()
   await expect.poll(async () => (await layers()).reach ?? 0).toBeGreaterThan(0)
   expect(Object.entries(await layers()).some(([k, n]) => k.startsWith('links-') && n > 0)).toBe(false) // reach replaces the links
+  // Every drawn path leads back to the node, dashed across relays without a position.
+  const orphans = await page.evaluate((origin) => {
+    const ls = (window as unknown as { __meshmap: Hook }).__meshmap.layers()
+    const segs = ls.filter((l) => l.id === 'reach' || l.id === 'reach-gaps').flatMap((l) => l.data as { from: number[]; to: number[] }[])
+    const o = (ls.find((l) => l.id === 'nodes')!.data as { lon: number; lat: number; node: { id: string } }[]).find((n) => n.node.id === origin)!
+    const reached = new Set([`${o.lon},${o.lat}`])
+    for (let grew = true; grew; ) {
+      grew = false
+      for (const sg of segs) if (reached.has(sg.from.join(',')) && !reached.has(sg.to.join(','))) { reached.add(sg.to.join(',')); grew = true }
+    }
+    return segs.filter((sg) => !reached.has(sg.from.join(','))).length
+  }, id)
+  expect(orphans).toBe(0)
   await page.waitForTimeout(1500) // the camera flew to the node when it was selected
   await docShot(page, 'reach.png')
   await reach.getByLabel('Show on the map').uncheck()

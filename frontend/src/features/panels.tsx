@@ -460,7 +460,7 @@ function ReachSection({ id, name }: { id: string; name: (id: string) => string }
       </label>
       <p className="muted reach-caveat">
         Built from the radio links seen in the selected period, in the direction they were heard; each relay spends a hop unless it
-        relays for free over a 0-cost link (gold chevrons). Links never observed are missing, and intermittent ones count as always there.
+        relays for free over a 0-cost link (gold chevrons). Dashed lines skip relays that have no position on the map. Links never observed are missing, and intermittent ones count as always there.
         {r && r.nodes.length > 0 && shown && <> Nearest relays: {[...new Set(r.nodes.filter((n) => n.need === 1).map((n) => n.via))].slice(0, 3).map(name).join(', ')}.</>}
       </p>
     </section>

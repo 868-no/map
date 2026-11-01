@@ -147,7 +147,7 @@ export function Legend({ snapshot }: { snapshot: SnapshotView | undefined }) {
         <li><span className="ln other thin" /> Client: at least one end has another role (or none reported)</li>
         <li><span className="ln mqtt" /> Internet (dotted green): not radio; the packet crossed an MQTT broker (a traceroute hop recorded at exactly 0 dB)</li>
         <li><span className="chev" aria-hidden>›</span> 0-cost (gold chevron, pointing at the receiver): it relays what it hears from the sender without spending a hop. One direction only; the other may cost a hop.</li>
-        <li>Reach (node details): links are replaced by the paths a packet takes, coloured by the hop limit that gets it there; nodes it cannot reach are dimmed.</li>
+        <li>Reach (node details): links are replaced by the paths a packet takes, coloured by the hop limit that gets it there (dashed across relays without a position); nodes it cannot reach are dimmed.</li>
       </ul>
       <h3>Link confidence</h3>
       <ul>

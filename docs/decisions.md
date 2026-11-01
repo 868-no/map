@@ -552,6 +552,7 @@ Operator idea: when a node is selected, simulate its reach at different hop limi
 - **Panel** (node details, "Reach"): a 0–7 slider starting at the hop limit the node's own packets used, the nodes reached at that limit, how many each step adds, and how many came through 0-cost links. "Show on the map" replaces the links with the reach paths up to the chosen limit, coloured by hop, and dims the nodes it does not reach; a new selection or a packet route clears it.
 - **Caveat, stated in the panel:** only links observed in the window count. Intermittent links count as always there, and links never seen are missing, so the result sketches the mesh as observed rather than predicting coverage.
 - Engine view `reach` (argument: node id, with `|internet` to follow MQTT links).
+- **Unplaced relays** (fix, 2026-11-01): a path through a relay with no position on the map used to lose its segment, leaving the rest of the chain floating unattached (seen on !8278b930: 26 of 44 segments). Each placed node is now drawn from the nearest placed transmitter up its chain, dashed where relays were skipped, and an e2e test checks that every drawn path leads back to the node.
 
 ## D-070 No private traffic (2026-11-01)
 
