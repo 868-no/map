@@ -3,7 +3,7 @@
 // panel's button again, its close button or Escape closes it.
 import type { ReactNode } from 'react'
 
-export type PanelId = 'nodes' | 'details' | 'filters' | 'layers' | 'legend' | 'settings'
+export type PanelId = 'nodes' | 'details' | 'period' | 'filters' | 'layers' | 'legend' | 'settings'
 
 const ICON_PROPS = { viewBox: '0 0 20 20', width: 20, height: 20, 'aria-hidden': true, fill: 'none', stroke: 'currentColor', strokeWidth: 1.6, strokeLinecap: 'round', strokeLinejoin: 'round' } as const
 
@@ -13,6 +13,9 @@ const ICONS: Record<PanelId, ReactNode> = {
   ),
   details: (
     <svg {...ICON_PROPS}><circle cx="10" cy="10" r="7.2" /><path d="M10 9v5" /><circle cx="10" cy="6.4" r="0.6" fill="currentColor" /></svg>
+  ),
+  period: (
+    <svg {...ICON_PROPS}><circle cx="10" cy="10" r="7.2" /><path d="M10 5.8V10l2.8 1.8" /></svg>
   ),
   filters: <svg {...ICON_PROPS}><path d="M3 4h14l-5.5 6.5v5L8.5 17v-6.5L3 4Z" /></svg>,
   layers: (
@@ -29,6 +32,7 @@ const ICONS: Record<PanelId, ReactNode> = {
 export const PANELS: { id: PanelId; label: string; hint: string }[] = [
   { id: 'nodes', label: 'Nodes', hint: 'Find a node by name or ID' },
   { id: 'details', label: 'Details', hint: 'The selected node or link (closing it clears the selection)' },
+  { id: 'period', label: 'Period', hint: 'The time window: its length, start and end' },
   { id: 'filters', label: 'Filters', hint: 'Which observations and links count' },
   { id: 'layers', label: 'Layers', hint: 'What the map shows' },
   { id: 'legend', label: 'Legend', hint: 'What the colours, sizes and lines mean' },
@@ -51,9 +55,7 @@ export function Rail({ open, onToggle, badges }: { open: PanelId | null; onToggl
   }
   return (
     <nav className="rail" aria-label="Controls">
-      {PANELS.filter((p) => p.id !== 'settings').map(button)}
-      <span className="rail-spacer" />
-      {button(PANELS.find((p) => p.id === 'settings')!)}
+      {PANELS.map(button)}
     </nav>
   )
 }

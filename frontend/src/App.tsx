@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import MapView from './map/MapView'
 import { setPingPositions } from './map/pings'
-import Timeline from './timeline/Timeline'
+import { LiveIndicator, PeriodPanel } from './timeline/Timeline'
 import { usePwa } from './pwa'
 import { EdgePanel, NodeList, NodePanel } from './features/panels'
 import { activeFilters, FilterPanel, LayersPanel, Legend } from './features/controls'
@@ -123,12 +123,14 @@ export default function App() {
           </span>
         )}
         {snap.isFetching && <span className="spinner" aria-label="Updating" />}
+        <LiveIndicator caps={caps.data} retention={retention.data} snapshot={snap.data} liveOK={liveOK} onOpen={() => togglePanel('period')} />
       </header>
       <main className={`main${panel ? '' : ' panel-closed'}`}>
         <MapView caps={caps.data} snapshot={snap.data} onPositions={onPositions} />
         <Dock open={panel} onClose={closePanel}>
           {panel === 'nodes' && <NodeList snapshot={snap.data} />}
           {panel === 'details' && (sel?.kind === 'node' ? <NodePanel id={sel.id} snapshot={snap.data} /> : linkSel ? <EdgePanel a={linkSel.src} b={linkSel.dst} mqtt={!!linkSel.mqtt} snapshot={snap.data} /> : <div className="panel muted">Select a node or link on the map, or find one under Nodes.</div>)}
+          {panel === 'period' && <PeriodPanel caps={caps.data} retention={retention.data} snapshot={snap.data} traffic={traffic.data} />}
           {panel === 'filters' && <FilterPanel snapshot={snap.data} />}
           {panel === 'layers' && <LayersPanel />}
           {panel === 'legend' && <Legend snapshot={snap.data} />}
@@ -149,7 +151,6 @@ export default function App() {
           {notice && <div className="banner" role="status" onClick={() => setNotice(null)}>{notice} (click to dismiss)</div>}
         </div>
       </main>
-      <Timeline caps={caps.data} retention={retention.data} snapshot={snap.data} traffic={traffic.data} liveOK={liveOK} />
     </div>
   )
 }

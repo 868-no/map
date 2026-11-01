@@ -529,3 +529,10 @@ Operator request: filters and the legend did not belong in the node sidebar, and
 - **Details is the selection:** selecting a node or link opens Details (and a selection that opened it closes it again when cleared); closing Details any way clears the selection. Keeping a node selected behind a closed panel left its links filtered with nothing on screen to say why, and clicking the same node again did not reopen it.
 - **Filters:** the rail button shows how many filters differ from the defaults, and the panel has a Reset.
 
+## D-067 The period on the rail, the live indicator in the header (2026-11-01)
+
+Operator request: move the period selector from the bottom bar into the rail's panel, put the live indicator at the top right of the header, and keep Settings with the other tools rather than apart at the foot of the rail.
+- **Period panel** (rail, between Details and Filters): window length presets, start and end, the time zone, sliding the window through retention (◀ slider ▶), and the window's traffic strip. Everything the bottom bar held was about the period, so the bar is gone and the map reaches the bottom edge.
+- **Header, top right:** LIVE, LIVE (paused) or HISTORICAL with the window's length; clicking it opens the Period panel. "Return to live" sits beside it while a fixed window is shown.
+- **Rail order:** Nodes, Details, Period, Filters, Layers, Legend, Settings.
+

@@ -110,6 +110,7 @@ test('default rolling 3-day window, presets and node details', async ({ page }) 
   await ready(page)
   await expect(page.locator('.badge')).toContainText('LIVE')
   await expect.poll(() => snapshots.some((u) => u.includes('duration=72h'))).toBe(true)
+  await showPanel(page, 'Period')
   await page.getByRole('button', { name: '24h', exact: true }).click()
   await expect.poll(() => snapshots.some((u) => u.includes('duration=24h'))).toBe(true)
   await expect(page).toHaveURL(/duration=24h/)
@@ -163,6 +164,8 @@ test('API payloads never carry envelopes, ciphertext or message bodies', async (
 
 test('slide the window back, then return to live', async ({ page }) => {
   await ready(page)
+  await page.locator('.live-indicator .badge').click() // the header's indicator opens the Period panel (D-067)
+  await expect(page.getByRole('complementary', { name: 'Period' })).toBeVisible()
   await page.getByRole('button', { name: 'Move window back' }).click()
   await expect(page.locator('.badge')).toContainText('HISTORICAL')
   await expect(page).toHaveURL(/start=.*end=/)
@@ -178,7 +181,7 @@ test('rejects nothing silently: invalid URL windows fall back, mobile layout wor
   await expect(page.locator('#dock')).toBeHidden()
   await openPanel(page)
   await expect(page.locator('#dock')).toBeVisible()
-  await expect(page.locator('.timeline')).toBeVisible()
+  await expect(page.locator('.live-indicator')).toBeVisible()
   await expect(page.locator('.node-row').first()).toBeVisible()
   await page.getByRole('button', { name: 'Fit to data' }).click()
   await page.waitForTimeout(1500)
@@ -191,7 +194,9 @@ test('legend explains role sizes and a last-heard scale that follows the window'
   await showPanel(page, 'Legend')
   await expect(page.locator('.age-labels')).toContainText('72 h before')
   await expect(page.locator('.legend')).toContainText('ROUTER_LATE')
+  await showPanel(page, 'Period')
   await page.getByRole('button', { name: '24h', exact: true }).click()
+  await showPanel(page, 'Legend')
   await expect(page.locator('.age-labels')).toContainText('24 h before')
 })
 
@@ -279,21 +284,15 @@ test('starts fitted to the data, and clicking empty map clears the selection', a
   await expect(page.locator('.node-panel')).toHaveCount(0)
 })
 
-test('panel and time bar overlay the map; the time bar collapses to its first row', async ({ page }) => {
+test('panels overlay the map without resizing it, and the map reaches the bottom edge', async ({ page }) => {
   await ready(page)
   await page.waitForTimeout(1000)
-  const canvas = () => page.evaluate(() => { const c = (window as unknown as { __meshmap: { map: { getCanvas: () => HTMLCanvasElement } } }).__meshmap.map.getCanvas(); return [c.clientWidth, c.clientHeight] })
+  const canvas = () => page.evaluate(() => { const c = (window as unknown as { __meshmap: { map: { getCanvas: () => HTMLCanvasElement } } }).__meshmap.map.getCanvas(); const r = c.getBoundingClientRect(); return [r.width, r.height, Math.round(r.bottom)] })
   const size = await canvas()
-  await page.mouse.move(600, 300)
-  const slider = page.getByRole('slider', { name: 'Window start' })
-  const vh = page.viewportSize()!.height
-  await expect.poll(async () => (await slider.boundingBox())!.y).toBeGreaterThanOrEqual(vh - 2) // lower rows tucked away
-  await expect(page.getByRole('button', { name: '24h', exact: true })).toBeInViewport()
-  // The tucked-away part must not make the page scroll.
+  expect(size[2]).toBe(page.viewportSize()!.height) // no bar along the bottom (D-067)
   expect(await page.evaluate(() => document.scrollingElement!.scrollHeight - document.scrollingElement!.clientHeight)).toBe(0)
-  await page.locator('.timeline').hover()
-  await expect.poll(async () => (await slider.boundingBox())!.y).toBeLessThan(vh - 20)
-  await openPanel(page)
+  await showPanel(page, 'Period')
+  await expect(page.getByRole('slider', { name: 'Window start' })).toBeInViewport()
   expect(await canvas()).toEqual(size)
 })
 
