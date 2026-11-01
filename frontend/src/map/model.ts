@@ -50,6 +50,27 @@ export function precisionErrorM(bits: number, lat: number): number {
   return Math.hypot(half, half * Math.cos((lat * Math.PI) / 180))
 }
 
+/** Which way a node moves packets between the mesh and MQTT (D-054). */
+export type MqttFlow = 'up' | 'down' | 'both'
+export const MQTT_GLYPH: Record<MqttFlow, string> = { up: '↑', down: '↓', both: '↕' }
+/** The same arrows as solid shapes (24x24), drawn on the map as tinted icons: fonts differ too much. */
+export const MQTT_ARROW: Record<MqttFlow, string> = {
+  up: 'M12 2 20 11h-5v11H9V11H4z',
+  down: 'M12 22 4 13h5V2h6v11h5z',
+  both: 'M12 1 19 8h-4.5v8H19l-7 7-7-7h4.5V8H5z',
+}
+
+export function mqttFlow(n: MeshNode): MqttFlow | undefined {
+  const up = n.is_gateway, down = !!n.mqtt_downlink
+  return up && down ? 'both' : up ? 'up' : down ? 'down' : undefined
+}
+
+/** Ink for a glyph on a marker filled with rgb: dark on light fills, light on dark ones. */
+export function glyphInk(rgb: readonly number[]): [number, number, number] {
+  const lum = (0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2]) / 255
+  return lum > 0.55 ? [14, 17, 22] : [250, 250, 248]
+}
+
 /** Infrastructure roles: links between two of these are infrastructure links. */
 export function isInfraRole(role: string | undefined): boolean {
   return role === 'ROUTER' || role === 'ROUTER_LATE'

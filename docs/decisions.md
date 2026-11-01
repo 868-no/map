@@ -418,3 +418,12 @@ Operator feedback: the GitHub link, privacy, license, Layers and the side panel 
 ## D-053 Link animations for all traffic again (2026-11-01)
 
 Operator request. This reverses the unicast-only part of D-047: every ping again animates a line to each placed direct receiver, broadcast or not, as in D-042. The engine's `unicast` flag on transmissions was removed with it. The link layers still start switched off.
+
+## D-054 Uplink and downlink glyphs in node markers (2026-11-01)
+
+Operator request, after traceroutes from JimCKF to Oftenåsen kept showing a roughly 75 km first hop from Bringebærpai to tms4_c0ae or tms_base, and none of JimCKF's packets were ever uplinked from the north. The TMS operator confirmed MQTT downlink was enabled on both gateways. They took the request from the broker and transmitted it in the north. Downlinked packets carry `via_mqtt`, which gateways never uplink, so the flag never reaches us.
+- **Uplink (↑):** the node uplinked a reception in the window (`is_gateway`).
+- **Downlink (↓):** traceroutes record the SNR each hop received at, and a packet taken from MQTT has no radio reception, so it reads exactly 0 dB. Genuine readings round to 0 dB too: 1–11% of a node's traceroutes in seven days of data (Gråkallen 24 of 787, Bringebærpai 5 of 448). The three downlinking TMS gateways were at 52–79%. A node is flagged when at least 3 distinct in-window traceroutes reached it at exactly 0 dB, making up at least 25% of those recording an SNR at it. Being a gateway is not required: a node can downlink without uplinking. The engine reports the evidence as `mqtt_downlink {zero_snr, traceroutes}`, shown in the node panel.
+- **Both (↕):** both apply.
+- **Drawing:** the glyph is a tinted arrow icon centred in the marker: dark on light fills, light on dark ones, and the ring's colour on hollow estimate markers. The icons are drawn once onto a canvas atlas. Font arrows varied too much between systems, and deck.gl fetches icon URLs, which the CSP's `connect-src 'self'` rejects for `data:` URLs.
+- **Not changed:** the 0 dB hops still count as radio links in the links layer.

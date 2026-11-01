@@ -118,7 +118,9 @@ export function Legend({ snapshot }: { snapshot: SnapshotBody | undefined }) {
       <h3>Node markers</h3>
       <ul>
         <li><span className="dot rep" /> Reported position (from an in-window Position packet or map report)</li>
-        <li><span className="dot rep gwring" /> MQTT gateway</li>
+        <li><span className="dot rep gwring glyph">↑</span> MQTT gateway: uplinks what it hears to the broker</li>
+        <li><span className="dot rep glyph">↓</span> Probably downlinks: transmits packets it takes from the broker (its traceroute hops read exactly 0 dB, as packets from MQTT do)</li>
+        <li><span className="dot rep gwring glyph">↕</span> Both uplinks and downlinks</li>
         <li><span className="dot rep optout" /> Red ring: did not allow MQTT uplink; reached us through another gateway, so the name is withheld</li>
         <li><span className="dot est" /> Estimated location — translucent circle is the uncertainty</li>
         <li>Selecting a node shows its accuracy circle (estimate uncertainty, or the precision of a coarse reported position) and only its links.</li>

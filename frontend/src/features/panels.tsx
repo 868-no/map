@@ -113,7 +113,12 @@ export function NodePanel({ id, snapshot }: { id: string; snapshot: SnapshotBody
       <h2>{d.identity?.long_name || d.id}</h2>
       <p className="muted">
         {d.id} · #{d.num} {d.status === 'referenced' && <span className="tag">referenced only — not directly observed</span>}
-        {d.is_gateway && <span className="tag gw">MQTT gateway</span>}
+        {d.is_gateway && <span className="tag gw" title="Uplinks the packets it hears to the MQTT broker">↑ MQTT gateway</span>}
+        {d.mqtt_downlink && (
+          <span className="tag gw" title={`Probably transmits packets it takes from the MQTT broker: ${d.mqtt_downlink.zero_snr} of ${d.mqtt_downlink.traceroutes} traceroutes reached it at exactly 0 dB, the reading a packet from MQTT gets`}>
+            ↓ MQTT downlink (probable)
+          </span>
+        )}
       </p>
       {d.mqtt_opt_out && (
         <p className="opt-out-note">This node did not allow MQTT uplink, but some of its packets reached us through another gateway. Its name and NodeInfo are not stored.</p>

@@ -87,6 +87,7 @@ export interface MeshNode {
   mqtt_opt_out?: boolean // sent packets without OK-to-MQTT through another gateway: unnamed
   estimate?: Estimate // approximate location from in-window links; never a reported position
   estimate_note?: string // why an unpositioned node has no estimate
+  mqtt_downlink?: { zero_snr: number; traceroutes: number } // probably transmits packets from MQTT (D-054)
 }
 
 /** Directed src -> dst: dst heard src. */

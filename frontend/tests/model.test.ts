@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ageColor, AGE_STOPS, filterEdges, isInfraRole, LOW_ZOOM_LINKS, precisionErrorM, visibleLinks, lastHeardAge, linkGeometry, placeNodes, roleRadius } from '../src/map/model'
+import { ageColor, AGE_STOPS, filterEdges, glyphInk, isInfraRole, mqttFlow, LOW_ZOOM_LINKS, precisionErrorM, visibleLinks, lastHeardAge, linkGeometry, placeNodes, roleRadius } from '../src/map/model'
 import { defaultFilters, defaultToggles } from '../src/state/store'
 
 const node = (id: string, extra: object = {}) => ({ id, num: parseInt(id.slice(1), 16), status: 'observed', packets: 1, receptions: 1, gateway_receptions: 0, is_gateway: false,
@@ -74,5 +74,20 @@ describe('map view model', () => {
     expect(visibleLinks(ls, { selectedNode: null, zoom: 12, bounds: [9.9, 59.9, 10.3, 60.1] })).toHaveLength(2)
     const many = Array.from({ length: LOW_ZOOM_LINKS + 5 }, (_, i) => mk(`!${i}`, `!x${i}`, 10, 10.1))
     expect(visibleLinks(many, { selectedNode: null, zoom: 6, bounds: null })).toHaveLength(LOW_ZOOM_LINKS)
+  })
+})
+
+describe('MQTT direction glyphs (D-054)', () => {
+  const node = (is_gateway: boolean, down: boolean) =>
+    ({ id: '!1', num: 1, status: 'observed', packets: 0, receptions: 0, gateway_receptions: 0, is_gateway, signatures: { verified: 0, unsigned: 0, unverifiable: 0, not_applicable: 0 }, ...(down ? { mqtt_downlink: { zero_snr: 3, traceroutes: 4 } } : {}) }) as Parameters<typeof mqttFlow>[0]
+  it('marks uplink, downlink, both or neither', () => {
+    expect(mqttFlow(node(true, false))).toBe('up')
+    expect(mqttFlow(node(false, true))).toBe('down')
+    expect(mqttFlow(node(true, true))).toBe('both')
+    expect(mqttFlow(node(false, false))).toBeUndefined()
+  })
+  it('inks dark on the newest (light) fill and light on the oldest (dark) one', () => {
+    expect(glyphInk(AGE_STOPS[0])[0]).toBeLessThan(50)
+    expect(glyphInk(AGE_STOPS[AGE_STOPS.length - 1])[0]).toBeGreaterThan(200)
   })
 })

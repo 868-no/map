@@ -1,10 +1,10 @@
 // The static mesh layers: accuracy circles, links, nodes and node names.
 // Rebuilt when data, filters, selection or zoom change; pings animate on top.
-import { LineLayer, PathLayer, ScatterplotLayer, TextLayer } from '@deck.gl/layers'
+import { IconLayer, LineLayer, PathLayer, ScatterplotLayer, TextLayer } from '@deck.gl/layers'
 import type { PathStyleExtensionProps } from '@deck.gl/extensions'
 import type { Layer } from '@deck.gl/core'
 import type { Selection, Toggles } from '../state/store'
-import { ageColor, CONFIDENCE_ALPHA, LINK_WIDTH, OPT_OUT_RING, ROUTE_COLOR, precisionErrorM, roleRadius, type LinkGeom, type PlacedNode } from './model'
+import { ageColor, CONFIDENCE_ALPHA, glyphInk, LINK_WIDTH, MQTT_ARROW, mqttFlow, type MqttFlow, OPT_OUT_RING, ROUTE_COLOR, precisionErrorM, roleRadius, type LinkGeom, type PlacedNode } from './model'
 import { dashExt, UNDER_LABELS, type RGBA } from './deckShared'
 import { labelData, type Cluster, type LabelDatum } from './labels'
 import type { RouteSegment } from '../api/views'
@@ -28,6 +28,29 @@ export interface RouteGeom {
   to: [number, number]
   dashed: boolean // nodes between the two ends are missing
   seg: RouteSegment
+}
+
+// The arrows as one mask atlas (white shapes, tinted per node by getColor),
+// drawn once on a canvas: deck.gl would fetch icon URLs, which the CSP's
+// connect-src does not allow for data: URLs.
+const ICON_PX = 64
+const FLOWS = Object.keys(MQTT_ARROW) as MqttFlow[]
+let arrowAtlas: HTMLCanvasElement | undefined
+function arrowIcons() {
+  if (!arrowAtlas) {
+    arrowAtlas = document.createElement('canvas')
+    arrowAtlas.width = ICON_PX * FLOWS.length
+    arrowAtlas.height = ICON_PX
+    const g = arrowAtlas.getContext('2d')!
+    g.fillStyle = '#fff'
+    FLOWS.forEach((f, k) => {
+      g.setTransform(ICON_PX / 24, 0, 0, ICON_PX / 24, k * ICON_PX, 0)
+      g.fill(new Path2D(MQTT_ARROW[f]))
+    })
+  }
+  const mapping = Object.fromEntries(FLOWS.map((f, k) => [f, { x: k * ICON_PX, y: 0, width: ICON_PX, height: ICON_PX, mask: true }]))
+  // Image props accept a canvas at runtime (converted to a texture); the typings list only string | Texture.
+  return { iconAtlas: arrowAtlas as unknown as string, iconMapping: mapping }
 }
 
 export function buildMeshLayers({ placed, links, selection: sel, search, toggles, zoom, clusters, exploded, route, palette: c }: MeshLayerInput): Layer[] {
@@ -114,6 +137,25 @@ export function buildMeshLayers({ placed, links, selection: sel, search, toggles
       updateTriggers: { getFillColor: [q, c], getLineColor: [sel, q, c], getLineWidth: [sel] },
     }),
   )
+
+  // MQTT direction inside the marker: ↑ uplinks (gateway), ↓ probably
+  // downlinks (traceroutes reach it at exactly 0 dB), ↕ both (D-054).
+  const mqtt = placed.flatMap((p) => {
+    const flow = mqttFlow(p.node)
+    return flow ? [{ p, flow }] : []
+  })
+  if (mqtt.length) {
+    layers.push(
+      new IconLayer<(typeof mqtt)[number]>({
+        id: 'mqtt-glyphs', ...UNDER_LABELS, data: mqtt, getPosition: ({ p }) => [p.lon, p.lat],
+        ...arrowIcons(), getIcon: ({ flow }) => flow, sizeUnits: 'pixels', getSize: ({ p }) => roleRadius(p.node.identity?.role) * 1.5,
+        // On the fill when there is one; hollow estimate rings get the ring's colour.
+        getColor: ({ p }) => (!matches(p) ? c.dimmed : p.kind === 'estimated' ? [...ageColor(p.age), 255] : [...glyphInk(ageColor(p.age)), 255]) as RGBA,
+        pickable: false,
+        updateTriggers: { getColor: [q, c] },
+      }),
+    )
+  }
 
   // Nodes that did not allow MQTT uplink (their packets reached us through
   // another gateway): always ringed in red, never named (D-032).
