@@ -80,6 +80,10 @@ function useWindowQuery<T extends { meta: ViewMeta }>(kind: ViewKind, node?: str
     // TanStack's NonFunctionGuard<T> cannot be expressed for a generic T.
     placeholderData: ((prev: T | undefined, prevQuery: Query<T, Error, T, Key> | undefined) => safePlaceholder<T>(prev, prevQuery, key)) as never,
     staleTime: 5_000,
+    // Every live rebuild is a new key: keeping old ones (5 min by default)
+    // would hold dozens of dead parsed views. The observer still keeps the
+    // previous result for placeholderData after its query is dropped.
+    gcTime: win.live ? 0 : 5 * 60_000,
     retry: 1,
   })
 }

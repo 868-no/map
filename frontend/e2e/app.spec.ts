@@ -363,7 +363,7 @@ test('the map flies to a selected node once, not again when data refreshes', asy
   await page.locator('.node-row').first().click()
   await expect(page.locator('.node-panel h2')).toBeVisible()
   await page.waitForTimeout(1500) // the fly-to
-  // Move away; live rows keep rebuilding the views (every few seconds).
+  // Move away; live rows keep rebuilding the views (at most 15 s apart for the default 72 h).
   await page.evaluate(() => (window as unknown as { __meshmap: { map: { jumpTo: (o: object) => void } } }).__meshmap.map.jumpTo({ center: [5.0, 58.0], zoom: 7 }))
   await page.waitForTimeout(20_000)
   const c = await page.evaluate(() => (window as unknown as { __meshmap: { map: { getCenter: () => { lng: number; lat: number } } } }).__meshmap.map.getCenter())

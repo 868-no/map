@@ -6,7 +6,8 @@
 import init, { Engine } from '../engine/pkg/engine.js'
 import { openPersistence, HOUR_MS, type Persistence } from './persist'
 import { RowStore, type Backend, type Fetched, type Synced, type WindowReq } from './rowStore'
-import { debounce } from './debounce'
+import { debounce, rebuildDelay } from './debounce'
+import { cursorMs, rangeEnd, sliceBounds } from './slices'
 import type { Request, Response, Transmission, ViewRequest } from './protocol'
 import { ViewError, type ViewMeta } from './views'
 
@@ -76,12 +77,8 @@ async function fetchRange(params: URLSearchParams): Promise<Fetched<number>> {
     while (meta.more) meta = JSON.parse(engine.stage(await page({ ...extra, cursor: meta.next_cursor ?? '' }), batch)) as Meta
   }
   if (first.more) {
-    // The cursor is "<unix µs>.<id>": the rest starts at that instant.
-    const lo = Math.floor(Number((first.next_cursor ?? '0').split('.')[0]) / 1000)
-    const until = params.get('until')
-    const hi = Math.min(Date.parse(first.window.end), until ? Date.parse(until) : Infinity)
-    const step = Math.max(Math.ceil((hi - lo) / SLICES), 1)
-    const bounds = Array.from({ length: SLICES + 1 }, (_, k) => Math.min(lo + k * step, hi))
+    // The rest starts at the first page's cursor instant.
+    const bounds = sliceBounds(cursorMs(first.next_cursor), rangeEnd(first.window.end, params.get('until')), SLICES)
     const iso = (ms: number) => new Date(ms).toISOString()
     await Promise.all(
       bounds.slice(0, -1).map(async (b, k) => {
@@ -172,11 +169,15 @@ function bounds(win: WindowReq, s: Synced, offline: boolean): { start: number; e
   return { start: end - win.durationH * 3_600_000, end }
 }
 
-// Rebuild notices are debounced: views rebuild once the stream pauses for
-// 2 s, and at least every 5 s while it keeps flowing. Pings do not wait.
-export const REBUILD_QUIET_MS = 2000
-export const REBUILD_MAX_MS = 5000
-const changed = debounce(() => self.postMessage({ type: 'changed' } satisfies Response), REBUILD_QUIET_MS, REBUILD_MAX_MS)
+// Rebuild notices are debounced: views rebuild once the stream pauses, and
+// at least every so often while it keeps flowing; both scale with the
+// rolling window's length (rebuildDelay). Pings do not wait.
+let liveHours: number | null = null // of the window last requested
+const changed = debounce(
+  () => self.postMessage({ type: 'changed' } satisfies Response),
+  () => rebuildDelay(liveHours).quietMs,
+  () => rebuildDelay(liveHours).maxMs,
+)
 
 /** Live rows from the stream: merged, plus ping attribution for those the page wants animated. */
 function liveRows(rows: unknown[], ping: number[]) {
@@ -217,6 +218,7 @@ function remember(key: string, revision: string, make: () => string): string {
 
 async function view(req: ViewRequest): Promise<{ body: string; offline: boolean }> {
   await inited
+  liveHours = req.win.live ? req.win.durationH : null
   const { synced: sy, offline } = await synced(req.win, req.epoch)
   const { start, end } = bounds(req.win, sy, offline)
   const f = { channels: req.filters.channels, brokers: req.filters.brokers, types: req.filters.types }
