@@ -3,6 +3,7 @@
 # inside the pinned Rust image, so the host needs only Docker.
 #   scripts/wasm.sh            release build + wasm-bindgen
 #   scripts/wasm.sh test       cargo test (native)
+#   UPDATE_GOLDEN=1 scripts/wasm.sh test   re-record tests/fixtures/mesh-12h/engine.json
 set -euo pipefail
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 image="${RUST_IMAGE:-rust:1.99.1-slim-bookworm}"
@@ -11,7 +12,7 @@ tty_flag=()
 [ -t 1 ] && tty_flag=(-t)
 run() {
   docker run --rm "${tty_flag[@]}" -u "$(id -u):$(id -g)" \
-    -e CARGO_HOME=/cache/cargo -e CARGO_TARGET_DIR=/cache/target -e HOME=/tmp \
+    -e CARGO_HOME=/cache/cargo -e CARGO_TARGET_DIR=/cache/target -e HOME=/tmp -e UPDATE_GOLDEN="${UPDATE_GOLDEN:-}" \
     -v meshmap-rust-cache:/cache -v "$repo":/src -w /src/frontend/engine "$image" sh -c "$1"
 }
 docker run --rm -v meshmap-rust-cache:/cache "$image" sh -c "mkdir -p /cache/cargo /cache/target && chown -R $(id -u):$(id -g) /cache"

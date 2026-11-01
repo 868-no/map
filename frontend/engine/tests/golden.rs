@@ -107,7 +107,7 @@ fn engine_matches_its_recorded_views() {
         "routes": per(&mut e, "route", &mut ROUTES.iter().copied()),
     });
     let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/mesh-12h/engine.json");
-    if std::env::var_os("UPDATE_GOLDEN").is_some() {
+    if std::env::var_os("UPDATE_GOLDEN").is_some_and(|v| !v.is_empty()) {
         std::fs::write(path, serde_json::to_string_pretty(&got).unwrap() + "\n").unwrap();
         return;
     }

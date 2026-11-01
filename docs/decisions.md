@@ -41,6 +41,7 @@ Recorded in Plan §9: traceroute placeholders, traceroute logical key, public ke
 ## D-007 Additional index (2026-10-31)
 
 `packet_log_type_time_idx (packet_type, observed_at DESC)` added beyond spec §5: snapshot queries select NodeInfo/Position/evidence rows by type inside a window. To be confirmed or dropped by the M5 benchmark together with the BRIN index.
+- (Since D-041 there are no snapshot queries; the index now serves the identity rebuild at startup. The BRIN index was dropped in D-056.)
 
 ## D-008 NeighborInfo node_id mismatch (2026-10-31)
 
@@ -77,6 +78,7 @@ Distinct receptions — different gateway, relay ("last hop"), hop count, RF met
 
 - Omitting both `start` and `end` selects the rolling live window `[now − duration, now)` (`duration` default 72 h), with `now` floored to `LIVE_QUANTUM` so clients share boundaries and cache entries. Giving only one bound is an error. Every response echoes the effective window and a `revision`.
 - `revision` = `d{decode_version}.c{config_rev}.r{retention_rev}.m{max id in window}`. Any new row inside the window, any retention deletion, or a configuration change produces a new revision and therefore a new cache key; stale entries are never served. `config_rev` hashes channel/policy settings and reveals nothing about keys.
+- (Superseded by D-041: the result cache and the retention revision are gone. `/observations` reports `generation` = `d{decode_version}.r{obs_row_version}.c{config_rev}`, and the server caches nothing.)
 - (Replay cursors and the replay endpoint were removed; see D-020.)
 - `/api/v1/stream` (SSE) accepts only the rolling window (fixed windows are rejected with 422 before the stream opens). Heartbeats every 15 s carry the current window bounds so clients evict aged-out evidence without new packets.
 - Whole-table bounds in `/api/v1/retention` (earliest/latest observation) are operational metadata, not mesh-derived state.
@@ -84,6 +86,8 @@ Distinct receptions — different gateway, relay ("last hop"), hop count, RF met
 - The huma docs UI is disabled (it loads JavaScript from a CDN); the OpenAPI document is served at `/api/openapi.yaml`/`.json` and committed as `docs/api-openapi.yaml` (contract test).
 
 ## D-015 Topology inference rules (2026-10-31)
+
+(Since D-040/D-041 these rules live in the browser engine, `frontend/engine/src/graph.rs`; `internal/graph`, `internal/query/edges.go` and `graph.ResolveRelay` are gone. The rules themselves stand.)
 
 Implemented in `internal/graph` (pure) and `internal/query/edges.go` (in-window evidence loading):
 - **NeighborInfo** entry "A hears B" → `B → A`, reported float SNR unchanged; one sample per logical NeighborInfo packet regardless of how many gateways uplinked it. Reports whose `node_id` differs from the sender are rejected at ingest (D-008).
@@ -94,6 +98,8 @@ Implemented in `internal/graph` (pure) and `internal/query/edges.go` (in-window 
 - Verified on the demo mesh: every derived edge corresponds to a real simulated RF link; colliding relay bytes never resolve.
 
 ## D-016 Geolocation estimator (2026-10-31)
+
+(Since D-040/D-041 the estimator runs in the browser engine, `frontend/engine/src/geo.rs`; `internal/geo` keeps only its settings.)
 
 `internal/geo`: targets are nodes without an in-window reported position (never refining coarse public positions). Anchors: in-window positions with known precision ≥ `GEOLOCATION_MIN_PRECISION_BITS` (default 15 since D-025; was 20), not in `GEOLOCATION_EXCLUDE_NODE_IDS` (excluded nodes are neither anchors nor targets). Measurements: edges with NeighborInfo/traceroute/direct-RF evidence (relay-only links excluded). Gates: ≥ 3 anchors, ≥ 5 samples, pairwise spacing ≥ 200 m, spread ≥ 500 m, minor/major axis ≥ 0.2 (non-collinear), outlier anchors > 150 km from the median dropped.
 - Uncalibrated (default): SNR-weighted centroid of anchors, `quality: very_low`, radius = max(mean anchor distance, 2 km). Honest meaning: "somewhere among these anchors".
@@ -106,9 +112,9 @@ MapLibre GL JS 6.x (6.14.0) breaks label rendering when deck.gl 9.4 is interleav
 
 ## D-018 Frontend scope choices (2026-10-31)
 
-- Plan §4.1 listed Radix UI, uPlot and comlink workers. The UI uses native, labelled HTML controls (buttons, range/datetime inputs, `role` attributes) instead of Radix; sparklines and the traffic strip are small SVGs instead of uPlot; no Web Workers yet — client transforms are linear passes over server-bounded payloads (≤ 5 000 nodes, ≤ 20 000 edges). Add workers if M5 profiling shows main-thread hotspots.
+- Plan §4.1 listed Radix UI, uPlot and comlink workers. The UI uses native, labelled HTML controls (buttons, range/datetime inputs, `role` attributes) instead of Radix; sparklines and the traffic strip are small SVGs instead of uPlot; no Web Workers yet — client transforms are linear passes over server-bounded payloads (≤ 5 000 nodes, ≤ 20 000 edges). Add workers if M5 profiling shows main-thread hotspots. (Superseded: views are derived in a Web Worker since D-031, by a WebAssembly engine since D-040.)
 - Labels: mesh layers are interleaved beneath the basemap's label layers (`beforeId: labels-start`), so place, peak and road names stay readable over nodes and links.
-- While a new window loads, the previous result is shown only when it cannot leak data (same rolling window moving forward); otherwise a loading state is shown. Responses whose echoed window differs from the request are discarded.
+- While a new window loads, the previous result is shown only when it cannot leak data (same rolling window moving forward); otherwise a loading state is shown. Responses whose echoed window differs from the request are discarded. (Removed in D-058: the worker answers each request by id, so a mismatch cannot happen.)
 - (Pulse animation replaced by radar pings; see D-023.)
 - Map glyphs: OpenMapTiles fonts v2.0 (Noto Sans Regular/Bold, SIL OFL), downloaded at image build time and checksum-verified; one font per text stack because the static glyph server cannot combine stacks.
 
@@ -223,9 +229,11 @@ Operator request: cache static assets and tiles, make as much as possible work o
 - Service workers and installation require HTTPS in production (localhost is exempt); see operations.
 - Playwright blocks service workers by default (request interception cannot see worker fetches); `e2e/pwa.spec.ts` opts in to check the manifest, icons, headers, offline reload with the same nodes, and that no tile is in any worker cache.
 
-## D-031 Views derived in the browser (2026-10-31)
+## D-031 Views derived in the browser (2026-10-31; partly superseded by D-038, D-040, D-041)
 
 Operator decision: the backend should be a packet log; processing belongs in the frontend. The server-side views stay in place for now, in case the change is reverted.
+
+(Later changes: paging is by an `(observed_at, id)` cursor, not `after` (D-038); the TypeScript ports were replaced by the WebAssembly engine (D-040); the server views, the parity test and `?derive=server` were removed (D-041); live refreshes come from the stream (D-033).)
 - **New endpoint** `GET /api/v1/observations`: the decoded rows of a window, in id order, paged (`after`, `limit` ≤ 20 000). Same window validation as every view; `since`/`until` only narrow the bounds (they are clamped to the window, never widen it). Each row carries compact keys and only public decoded RF fields: header fields, radio metadata, signature status, and the port fields the views use (NodeInfo identity, position, device telemetry, NeighborInfo, traceroute). Never envelope bytes, payload bodies, public keys or MQTT topics. `generation` (decoder + configuration) tells the browser when its copy is stale. `Cache-Control: no-store`; the service worker does not store it.
 - **Derivation worker** (`frontend/src/derive/`): a Web Worker holds the rows for one contiguous time range and builds snapshot, traffic and node detail with the same output shapes as the API. It ports `query`, `graph` and `geo` one to one. A rolling window only fetches rows since the last sync (with a 2-minute overlap for late commits); a fixed window that overlaps what is held fetches only the missing ends. Rows older than 8 days before the newest window are dropped, and the copy is capped at 750 000 rows. Live refreshes run every 10 s (30 s for server views).
 - **IndexedDB** keeps the copy across reloads, so a reload fetches only new rows, and offline the window is built from what is held. This replaces the offline API copies for these views.
@@ -272,7 +280,7 @@ Operator request: the selected node's panel shows its packets, built by the deri
   - it appears in a traceroute's recorded route (`route` for requests, `route_back` for replies).
 
   The uplinking gateway appends itself to the route it reports. That trailing entry only received the copy and is not counted (found on real data: a CLIENT_MUTE gateway was credited with 135 relays).
-- With `?derive=server` only the own log is available (from the node detail's recent packets).
+- (`?derive=server`, which offered only the own log, was removed in D-041.)
 - A last-hop byte equal to the uplinking gateway's own low byte is the gateway itself: it is ignored everywhere (links, this log, pings) instead of resolving to another node sharing that byte (4 of 4,245 relayed receptions on 2026-10-31).
 - Limitation: a unique last-hop byte match can still name the wrong node when the true relay was not seen in the window. On 2026-10-31, one CLIENT_MUTE node (which never rebroadcasts) was credited with 2 relays this way.
 
@@ -294,7 +302,7 @@ Operator request. Selecting a packet in the log draws its routing graph and hide
 
 ## D-039 Browser performance and structure (2026-10-31)
 
-- **One relay resolver.** The ping animation used its own copy of relay-byte resolution, separate from the worker's, and the two had drifted. It now uses `derive/graph.ts` with the same context the links were built from (`contextFromSnapshot`). `ZERO_COST_ROLES` moved there too, so `derive/` no longer imports from `map/`.
+- **One relay resolver.** The ping animation used its own copy of relay-byte resolution, separate from the worker's, and the two had drifted. It now uses `derive/graph.ts` with the same context the links were built from (`contextFromSnapshot`). `ZERO_COST_ROLES` moved there too, so `derive/` no longer imports from `map/`. (Since D-040 the one resolver is the engine's, `frontend/engine/src/graph.rs`.)
 - **One snapshot per rebuild.** A rolling window ended at the clock, so every view requested in one rebuild (snapshot, traffic, packet log, route) had a slightly different window and rebuilt the snapshot itself. The window now ends just after the newest row held (or at the last sync, at least once a minute), so the requests share one memoised snapshot.
 - **Live merges append.** Each streamed batch copied and re-sorted the whole row store. Rows that belong at the end, nearly all of them, are now appended in place.
 - **Batched IndexedDB writes.** Live rows were written in one transaction per batch, several a second. They are now batched (2 s quiet, 5 s at most); large fetched batches, trims, resets and coverage updates flush immediately, in order.
@@ -303,7 +311,7 @@ Operator request. Selecting a packet in the log draws its routing graph and hide
 ## D-040 A WebAssembly engine for the browser's hot paths (2026-10-31)
 
 Operator request: rewrite the client's hot paths in something that compiles to WebAssembly. **Rust** (`frontend/engine`, crates serde, serde_json and wasm-bindgen, pinned): no garbage collector, a small module (617 kB, 194 kB compressed), and mature tooling. The toolchain runs in a pinned Docker image (`scripts/wasm.sh`; the web image has its own Rust stage).
-- **What moved:** the row store, snapshot (nodes, links, relay resolution, location estimates, counts), traffic, node detail, packet log, packet route, and live ping attribution. The TypeScript ports were removed. Views keep their shapes (now typed by hand in `src/api/views.ts`).
+- **What moved:** the row store, snapshot (nodes, links, relay resolution, location estimates, counts), traffic, node detail, packet log, packet route, and live ping attribution. The TypeScript ports were removed. Views keep their shapes (now typed by hand in `src/derive/views.ts`, D-058).
 - **Rows never become JavaScript objects.** The worker stages each raw `/observations` page in the engine (staged batches let a fresh start still discard them), merges streamed rows as JSON text, and gets views back as JSON text. Those go to the page as transferred UTF-8 bytes rather than a structured clone of a large object graph. Strings are interned and packet keys stored as integers; the engine indexes relay candidates by low byte.
 - **Fetching:** after a range's first page, the rest is split into four time slices fetched in parallel into one batch.
 - **Persistence:** hourly gzip-compressed chunks in the API's row format (IndexedDB v2); only changed hours are rewritten. The coverage record is written after the rows it describes, so a reload never believes it holds rows it does not.
@@ -353,7 +361,7 @@ Measured, left to the operator: serving a full 72 h window at reference density 
 ## D-046 Stored row encodings (2026-10-31)
 
 Operator decision on the D-045 item: extra data may be stored next to the original packet data, but no tables of derived data that go stale when logic changes. `packet_log` gains two columns:
-- `obs_row`: the row exactly as `/observations` serves it, minus its id, which COPY assigns (`ingest.EncodeTail`; `WithID` adds the id back). Written on insert.
+- `obs_row`: the row exactly as `/observations` serves it, minus its id, which the insert assigns (`obsrow.EncodeTail`, formerly in `ingest`; `WithID` adds the id back). Written on insert.
 - `obs_row_version`: the `ObsRowVersion` it was built with.
 
 Pages select `obs_row` only when its version is current, and `decoded_metadata` only when it is not. Rows without a current encoding are built per request as before. At startup, `serve` rebuilds missing or outdated encodings in the background, newest first, 2000 rows per transaction (`FOR UPDATE SKIP LOCKED`, so replicas don't collide). A logic change only needs the `ObsRowVersion` bump it already required. `also_via` updates don't touch it, since `also_via` is not in the row.
@@ -435,3 +443,46 @@ Operator request: traceroute hops that went over MQTT are flagged, drawn in a di
 - **Engine:** `graph::split_mqtt` moves those samples out before relay resolution. MQTT edges (`mqtt: true`) carry no SNR or RSSI statistics and say why in `reason`. They are appended after the radio edges and excluded from position estimates, relay-byte resolution and the link count. A pair can have both a radio edge and an MQTT edge; on 2026-11-01, tms_base–Marsteinsvola had 74 radio samples and 3 MQTT hops.
 - **Rules:** the CLIENT_MUTE relay rule and this split are now `views::Rules`. The golden test switches both off (`silent_rule`, `mqtt_links`) to compare with the retired server views.
 - **Map:** a new switch, "MQTT links (dotted)", off by default like the radio link layers. The lines are dotted green beneath the radio links, one per node pair, in both themes. The link panel is titled "MQTT link" and explains it is not radio. The node panel's link list tags these links MQTT, and a selection remembers which kind of link was picked.
+
+## D-056 Monthly partitions and one row per reception (2026-11-01)
+
+From the third review. Retention deleted expired rows in chunks and then vacuumed the whole table, and nothing in the schema stopped a batch from being stored twice when its commit succeeded but the writer saw an error and retried.
+- **Partitions:** `packet_log` is range-partitioned by calendar month (UTC) of `observed_at`, one partition per month (`packet_log_pYYYYMM`). It is still the only application table; partitions are not counted as tables. Retention drops months that end before the cutoff, then deletes the remaining expired rows in the month the cutoff falls in and vacuums only that partition. `storage.EnsurePartitions` creates partitions: at startup (last month to two months ahead), on each maintenance run, and from `InsertBatch` whenever a batch reaches a month this process has not seen (so imports, benchmarks and tests with old timestamps just work).
+- **Ids:** PostgreSQL 16 has no identity columns on partitioned tables, so `id` takes its default from the sequence `packet_log_id_seq`. The primary key is `(id, observed_at)`, since every unique index must include the partition key.
+- **One row per reception:** a unique index on `(observation_key, observed_at)` replaces the plain dedupe index. Inserts COPY into a per-connection staging table, then `INSERT … ON CONFLICT DO NOTHING RETURNING id`; rows already present return their existing ids, so a retried batch gets the ids of its first attempt. This also removed the `max(id)` read before every batch.
+- **Migration:** startup converts a schema-1 table in one transaction under the schema lock. It renames the old table, creates the partitioned one, copies every row with its id (keeping the first of any duplicate receptions), moves the sequence past them and drops the old table. The dev database's 17,160 rows took under a second. The schema version is now `meshmap-schema:2`.
+- **BRIN index dropped:** it was never scanned (`pg_stat_user_indexes`), and dropping partitions replaces the range pruning it was meant for.
+- `decoded_metadata`, `envelope_bytes` and `obs_row` stay. They hold the same packet three ways on purpose: the envelope re-decodes after decoder changes, the metadata rebuilds `obs_row` after logic changes (D-046) and feeds identities and provenance, and `obs_row` is what pages serve.
+
+## D-057 Streamed /observations pages (2026-11-01)
+
+The handler built each page in memory as a list of pre-encoded rows, and huma then validated and compacted every row again while encoding the response. On live data, about 85 % of a page's server time went there.
+- Rows are now written from the database cursor straight to the response in 64 KiB chunks (`query.Page`). The JSON document is the same, and so is the declared schema (`ObservationsBody` on the operation). The query starts before anything is written, so errors up to the first row still get a proper status. A failure mid-page aborts the connection, and the browser sees a truncated body, never a well-formed partial page.
+- Rows whose `obs_row` is current are read as `id`, `observed_at` and that encoding only. The other columns come back only for rows that still need rebuilding.
+- Measured on the dev stack (one 7-day page, 17,162 rows, 7.3 MB, about 1 MB with zstd): time to first byte went from about 170 ms to about 5 ms, and the whole response takes about 90 ms through Caddy with zstd.
+
+## D-058 Browser memory, cadence and structure (2026-11-01)
+
+From the third review:
+- **Live rebuild cadence scales with window length.** Rebuild notices from streamed rows wait for a 2 s pause (5 s at most) for rolling windows up to 6 h, a 10 s pause (15 s at most) from 24 h, and scale linearly in between. Fixed windows use 2 s / 5 s. Pings are never delayed.
+- **No dead live views in memory.** Every live rebuild is a new React Query key. Live-window queries now use `gcTime` 0 instead of the default 5 minutes, which kept dozens of parsed views. The previous view stays as placeholder until the new one lands. Fixed windows keep 5 minutes, where revisiting a node is a real cache hit.
+- **Incremental IndexedDB persistence (store version 3).** Closed or back-filled hours are one gzip chunk each, as before. The open hour gets append-only deltas under `[hour, seq]` in a `deltas` store: rows since the last flush, with a 10-minute overlap. They are compacted into the hour's chunk when the hour closes, after 60 deltas, or on the next load. Version 2 chunks and coverage are kept on upgrade.
+- **No HTTP emulation in the derivation worker** (follows D-031/D-041). Worker failures are typed (`not_found`, `bad_request`, `unavailable`, `upstream`, `internal`) instead of fake 400/404/503 statuses. A view's `meta` holds only `window` and `data_until` (the newest instant the browser's copy covers, shown in the offline banner). The stale-window guard was removed, since responses are matched to requests by id. View types live in `src/derive/views.ts` (`SnapshotView`, `TrafficView`, `NodeView`, `ViewMeta`).
+- **Mesh layer data is memoised.** Each deck.gl layer's data array is kept while its inputs are unchanged. Selection, search and theme changes only recolour, through `updateTriggers`. The icon mapping is a module constant. The cursor coordinate readout bypasses React state, so mouse moves no longer re-render the map component.
+- The live-stream wiring moved from `App.tsx` into `useLiveStream` (`src/state/live.ts`). The packet log and the selected-link lookup are memoised.
+
+## D-059 API limits and shutdown (2026-11-01)
+
+From the third review:
+- **Limits are configuration** (`API_RATE_PER_SECOND`, `API_RATE_BURST`, `API_REQUEST_TIMEOUT`, `API_STREAMS_PER_CLIENT`, `API_STREAMS_TOTAL`, `API_READS_PER_CLIENT`, `API_READ_SLOTS`; defaults 20/s, 60, 20 s, 4, 2000, 4, 8). A client is an IPv4 address or an IPv6 /64, since one subscriber line usually holds a whole /64. Each client may run at most `API_READS_PER_CLIENT` `/observations` reads at once. Its extra reads wait up to 5 s, then get 429, so one client cannot take every read slot (the browser runs four in parallel). Live streams are capped overall as well as per client.
+- **Shutdown is bounded.** The batch writer retried a failing insert forever, so a shutdown during a database outage lasted until Docker killed the process. After shutdown begins, it now retries for at most 10 s (`DrainTimeout`), then records the rows as a `shutdown_db_unavailable` gap and counts them as dropped. MQTT input stops first, then open live streams are closed, so HTTP shutdown no longer waits its full 10 s for SSE clients.
+- **No processing timeout.** It was checked after `Process` had finished, then threw a valid result away. `Process` is bounded by its key-attempt budget.
+- **Row format package.** `ObsRow`, its encoding (`EncodeTail`, `WithID`) and `Version` moved from `ingest` to `internal/obsrow`, which storage, query, API and ingest import. Type names keep the `Obs` prefix because they name the OpenAPI schemas.
+
+## D-060 Engine structure and a second golden (2026-11-01)
+
+From the third review:
+- **Modules:** the engine's views moved from one 1,050-line `views.rs` into `frontend/engine/src/views/` (filters, node, downlinks, edges, snapshot, estimate, traffic, detail), re-exported from `views` so paths are unchanged.
+- **Shared work:** one snapshot rebuild computes the traceroute hop samples once, for both downlink detection (D-054) and links (D-055). The views of one rebuild share the filtered window's rows (cached as indices into the store, by window, filters and store version). The store keeps its newest id up to date instead of scanning the window, and relay resolution computes each node pair's distance once. Together these save about 4 % of a rebuild, which `build_snapshot` dominates.
+- **Second golden:** `tests/fixtures/mesh-12h/engine.json` locks the engine's own output with default options and engine-only fields, for every view kind: snapshot, traffic, a filtered snapshot, 10 node panels, 4 packet logs and 4 packet routes. It includes MQTT edges and downlink flags. The first golden (`expected.json`) still compares against the retired server views with the newer rules switched off. Re-record with `UPDATE_GOLDEN=1 scripts/wasm.sh test` only after an intended behaviour change.
+

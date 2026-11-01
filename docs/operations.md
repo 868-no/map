@@ -16,7 +16,7 @@ The map is at `http://<host>:${WEB_PORT:-8080}`. Only the `web` service publishe
 [`deploy/compose.production.yaml`](../deploy/compose.production.yaml) runs the published images with all configuration in the Compose file: no `.env`, no `./secrets`. Broker and channel configuration go in the `MQTT_BROKERS` and `CHANNEL_KEYS` environment variables, as the same YAML as the files (when set, they replace `MQTT_BROKERS_CONFIG` and `CHANNEL_KEYS_CONFIG`). Secrets are written as `${POSTGRES_PASSWORD}`, `${MQTT_USERNAME}` and `${MQTT_PASSWORD}` and filled in from the stack's environment. Check it with:
 
 ```sh
-docker compose -f compose.production.yaml run --rm backend check-config
+docker compose -f deploy/compose.production.yaml run --rm backend check-config
 ```
 
 Env values are visible to anyone who can run `docker inspect` on the host; use the file-based configuration if that matters.
@@ -81,7 +81,7 @@ Public by default. For basic auth, create `deploy/caddy-auth/basic.caddy` (see t
 
 - `GET /health/live`: process up.
 - `GET /health/ready`: database, schema version, Redis (degraded when unreachable; dedupe falls back to a database lookup), ingest writer and queue, broker connection states, and the last retention run (time, deleted rows, table size).
-- Prometheus metrics at `backend:9100/metrics` (compose network only), or on `/metrics` with `PUBLIC_METRICS_ENABLED=true`. Key series:
+- Prometheus metrics at `backend:9100/metrics` (compose network only). `PUBLIC_METRICS_ENABLED=true` also serves them on the backend's HTTP port (`backend:8000/metrics`); the `web` service does not proxy that path, so publishing them needs your own reverse-proxy route (protect it). Key series:
   - `meshmap_mqtt_received_total`, `meshmap_mqtt_connected`
   - `meshmap_ingest_accepted_total{packet_type,signature_status}`, `meshmap_ingest_rejected_total{category}` (includes `not_ok_to_mqtt_nodeinfo`: NodeInfo withheld because the sender did not allow MQTT uplink, and `map_report_invalid`)
   - `meshmap_ingest_dropped_total{reason}` (queue full = data loss window)
@@ -92,9 +92,13 @@ Public by default. For basic auth, create `deploy/caddy-auth/basic.caddy` (see t
 
 MQTT delivers Meshtastic traffic at QoS 0, so senders cannot be slowed. If PostgreSQL is unavailable, the writer retries with backoff while the bounded queue (`INGEST_QUEUE_SIZE`, default 20 000 messages, several minutes at 100 msg/s) absorbs input. Beyond that, messages are dropped and counted (`reason="queue_full"`). Broker disconnections lose whatever the broker does not retain. The map shows what this service observed, not complete history.
 
+## Upgrading to schema 2 (monthly partitions)
+
+The first start of a version with D-056 converts `packet_log` to a partitioned table, in one transaction under the schema lock: the old table is copied with its ids and dropped, and `/health/ready` reports `meshmap-schema:2` afterwards. It needs free disk space for a second copy of the table while it runs, and takes roughly as long as copying the table (the dev database's 17 000 rows took under a second; plan for minutes per few million rows). Take a backup first (see below). Older binaries cannot start against schema 2; to roll back, restore the backup.
+
 ## Retention
 
-The `maintenance` service deletes rows older than `RETENTION_MONTHS` (default 6 calendar months, clamped at month ends) daily at 03:00 UTC, and at startup if a run is overdue. It deletes in 5 000-row transactions under a PostgreSQL advisory lock, then runs `VACUUM (ANALYZE)`, stores the run's status (shown in `/health/ready`) and notifies open browser sessions. Run it manually with `docker compose run --rm maintenance maintenance --once`.
+`packet_log` is partitioned by calendar month (D-056). The `maintenance` service removes rows older than `RETENTION_MONTHS` (default 6 calendar months, clamped at month ends) daily at 03:00 UTC, and at startup if a run is overdue. Under a PostgreSQL advisory lock it drops the partitions of months that end before the cutoff, deletes the remaining expired rows of the cutoff's month in 5 000-row transactions, runs `VACUUM (ANALYZE)` on that partition only, creates partitions for the next two months, stores the run's status (shown in `/health/ready`) and notifies open browser sessions. Run it manually with `docker compose run --rm maintenance maintenance --once`.
 
 ## Backup and restore
 

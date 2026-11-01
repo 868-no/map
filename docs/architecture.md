@@ -16,17 +16,18 @@
 │                                                               · live publish     │
 │  identity index (in memory, rebuilt from packet_log)                             │
 │                                                                                  │
-│  HTTP API (huma, OpenAPI 3.1): capabilities, retention, observations (paged     │
-│  decoded rows), stream (SSE: every new row) · health · metrics                  │
+│  HTTP API (huma, OpenAPI 3.1): capabilities, retention, observations (paged,    │
+│  streamed rows), stream (SSE: every new row) · health · metrics                 │
 │  query layer: every SQL via window.Predicate                                    │
 └───────────────┬───────────────────────────────┬──────────────────────────────────┘
                 │                               │
         PostgreSQL 16                     Redis 7 (ephemeral)
-        packet_log (only table)           dedupe keys, live pub/sub,
-                ▲                         maintenance status
+        packet_log (only table,           dedupe keys, live pub/sub,
+        monthly partitions)               maintenance status
+                ▲
                 │
    maintenance (meshmap maintenance)
-   daily retention under advisory lock
+   daily retention under advisory lock (drops whole months)
 
 ┌──────────── web (Caddy) :WEB_PORT ────────────┐
 │  /            React app (MapLibre + deck.gl)  │
@@ -43,21 +44,21 @@ Compose network: only `web` publishes a port. `backend:9100` serves Prometheus m
 
 ## Data model
 
-One application table, `packet_log` (`backend/internal/storage/schema.sql`): one row per accepted gateway reception. The row is append-mostly; only `decoded_metadata.also_via` (broker provenance, D-013) and the stored row encoding below are ever updated. Keys:
+One application table, `packet_log` (`backend/internal/storage/schema.sql`): one row per accepted gateway reception, range-partitioned by calendar month of `observed_at` (D-056). Partitions are created ahead by `storage.EnsurePartitions` and dropped whole by retention. The row is append-mostly; only `decoded_metadata.also_via` (broker provenance, D-013) and the stored row encoding below are ever updated. Keys:
 
 - `logical_packet_key`: the RF packet (sender, packet id, destination, channel, port, canonical payload — payload excluded for traceroutes, which every hop rewrites).
-- `observation_key`: one gateway's reception (logical key + gateway + receive metadata + payload hash). Unique per row in practice; it is the dedupe key.
+- `observation_key`: one gateway's reception (logical key + gateway + receive metadata + payload hash). It is the dedupe key; a unique index on `(observation_key, observed_at)` makes a retried batch store nothing twice (D-056).
 - `observed_at`: server receive time, the only time used for windows.
 
 `decoded_metadata` holds minimal, sanitised typed data (NodeInfo incl. public key, position, telemetry, neighbours, traceroute route/SNR, reception provenance). Message bodies are never decoded into it. `envelope_bytes` keeps the raw envelope for re-decoding and audits; it is never returned by the API. For text messages that envelope still holds the message: encrypted with its channel key, or in plain text when a gateway uplinked it decrypted (the privacy policy says so).
 
-`obs_row` holds the row exactly as `/observations` serves it (minus its id), and `obs_row_version` the `ObsRowVersion` it was built with (D-046). Pages use it when the version is current and build the row from the other columns when it is not. At startup `serve` rebuilds missing or outdated encodings in the background, newest first. It is a cache of the row's own data, not derived state across rows.
+`obs_row` holds the row exactly as `/observations` serves it (minus its id), and `obs_row_version` the `obsrow.Version` it was built with (D-046). Pages use it when the version is current and build the row from the other columns when it is not. At startup `serve` rebuilds missing or outdated encodings in the background, newest first. It is a cache of the row's own data, not derived state across rows.
 
 ## Time isolation
 
-`internal/window` is the single definition of the interval `[start, end)`. All window-scoped SQL is built by `query.where()`, which starts with `window.Predicate`; a test fails if any other code compares `observed_at` (allowlist: ingestion dedupe fallback and the retention delete). `/observations` returns exactly the rows inside the interval; the `cursor` only positions within it (D-038).
+`internal/window` is the single definition of the interval `[start, end)`. All window-scoped SQL is built by `query.where()`, which starts with `window.Predicate`; a test fails if any other code compares `observed_at` (allowlist: ingestion dedupe fallback and the retention delete). `/observations` returns exactly the rows inside the interval; the `cursor` only positions within it (D-038). Pages are streamed from the database cursor, never collected in memory (D-057).
 
-The browser's engine computes node identity, positions, telemetry, links, estimates, counts and traffic buckets from the rows inside the selected window only; its isolation test covers the derived fields (D-041). `/observations` reports a `generation` (decoder version, `ObsRowVersion` and configuration hash); a browser holding rows of another generation discards them and refetches. The server keeps no cache of results.
+The browser's engine computes node identity, positions, telemetry, links, estimates, counts and traffic buckets from the rows inside the selected window only; its isolation test covers the derived fields (D-041). `/observations` reports a `generation` (decoder version, `obsrow.Version` and configuration hash); a browser holding rows of another generation discards them and refetches. The server keeps no cache of results.
 
 ## Trust model
 
@@ -77,14 +78,16 @@ backend/
   internal/protocol       topic + envelope parsing; ports/ payload decoders; pb/ generated bindings
   internal/security       PSK, AES-CTR, AES-CCM, XEdDSA, signature policy, keyring
   internal/ingest         Process (pure), pipeline (queue, workers, writer, dedupe, provenance)
+  internal/obsrow         the row format clients receive (/observations, live stream, obs_row)
   internal/identity       in-memory authoritative key index (rebuilt from packet_log)
-  internal/storage        schema, COPY batches, ingestion lookups, stored row encodings (D-046)
+  internal/storage        schema and migration, monthly partitions, batch inserts, ingestion lookups,
+                          stored row encodings (D-046)
   internal/window         window semantics, retention cutoff
-  internal/query          /observations paging (window-scoped SQL)
+  internal/query          streamed /observations pages (window-scoped SQL)
   internal/geo            location-estimate settings (the estimator runs in the browser)
   internal/cache          Redis wrapper (dedupe, live pub/sub, maintenance status)
-  internal/api            huma handlers, SSE hub, health, rate limits, client IP
-  internal/maintenance    retention runner
+  internal/api            huma handlers, SSE hub, health, per-client limits, client IP
+  internal/maintenance    retention runner (drops expired months, trims the boundary month)
   internal/observability  logging and Prometheus metrics
   internal/demo           simulator, scenarios, demo publisher
   test/integration        Postgres/Redis/Mosquitto integration tests
@@ -92,8 +95,10 @@ backend/
 frontend/                 React + MapLibre GL 5 + deck.gl 9 (Vite); e2e/ Playwright
   engine/                 Rust → WebAssembly: row store, links, location estimates, traffic,
                           node details, packet logs and routes, ping attribution (D-040)
-  src/derive/             Web Worker: sync and coverage, IndexedDB chunks, drives the engine
-web/                      Caddyfile, dark OpenMapTiles style, image build (fonts)
+  src/derive/             Web Worker: sync and coverage, IndexedDB chunks and deltas, drives the engine;
+                          view types (views.ts)
+  src/state/              store, window queries, live stream (live.ts)
+web/                      Caddyfile, dark and light OpenMapTiles styles, image build (fonts)
 basemap/                  basemap service image: Planetiler + run.sh (builds and refreshes basemap.pmtiles)
 deploy/                   compose.production.yaml, Mosquitto config for the demo, caddy-auth snippets
 scripts/                  go.sh, node.sh, wasm.sh, integration.sh, bench.sh, basemap_import.sh

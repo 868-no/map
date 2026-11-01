@@ -37,7 +37,7 @@ These figures predate stored row encodings (D-046), which roughly halved whole-w
 - The engine builds a snapshot **8× (72 h) to 17× (168 h) faster** than the TypeScript implementation, in about a third of the memory. Loading costs the same as `JSON.parse` alone, and no JavaScript objects are created for rows.
 - Engine memory is measured with page-sized loads (20 000 rows, as the app feeds it). WebAssembly memory never shrinks, so loading one huge string at once reserves more (286 / 604 MiB in that test).
 - All of this runs in the worker. The page's only cost per view is decoding and parsing the transferred JSON (7.5 MiB snapshot: about 26 ms).
-- Live updates rebuild the whole snapshot, debounced to at most every 5 s (2 s quiet). At 0.2–0.4 s off the main thread, incremental aggregation would add a lot of complexity for little benefit at reference density; revisit if meshes grow well beyond it.
+- Live updates rebuild the whole snapshot, debounced by window length: 2 s quiet / 5 s at most up to 6 h, 10 s / 15 s from 24 h (D-058). At 0.2–0.4 s off the main thread, incremental aggregation would add a lot of complexity for little benefit at reference density; revisit if meshes grow well beyond it.
 
 ## Browser (Playwright, headless Chromium, software WebGL via SwiftShader, no GPU)
 
@@ -53,5 +53,10 @@ The heap target (< 250 MiB) is met with a large margin; the browser never holds 
 ## Observations and follow-ups
 
 - The engine's row representation could shrink further (about 560 bytes per row held, including the id index and vector growth); not needed at reference density.
-- `packet_log_time_idx` serves every `/observations` page. The BRIN index costs little and speeds retention deletes; keep it. The two indexes that only served the retired server views were dropped (D-045); every remaining index serves a named query (see the comments in `schema.sql`).
+- `packet_log_time_idx` serves every `/observations` page. The BRIN index was dropped in D-056: it was never scanned, and retention now drops whole monthly partitions. The two indexes that only served the retired server views were dropped (D-045); every remaining index serves a named query (see the comments in `schema.sql`).
 - The JS heap figure excludes WebAssembly memory (see the derivation table).
+
+## Streamed pages (2026-11-01, dev stack, live data)
+
+One 7-day `/observations` page of 17 162 rows (7.3 MB, 1.0 MB with zstd), through Caddy, after D-057: time to first byte about 5 ms (it was about 170 ms when the page was built in memory), whole response 60–65 ms uncompressed and 80–100 ms with zstd. Engine rebuild of all five views on the same data (native, D-060): 20.4 → 19.6 ms.
+

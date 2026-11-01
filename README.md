@@ -92,7 +92,7 @@ Health at `/health/ready`, metrics at `backend:9100/metrics`. Retention runs dai
 
 ## License
 
-[GNU General Public License v3.0](LICENSE) (`GPL-3.0-only`). The backend's protocol code is generated from [Meshtastic's protobuf definitions](https://github.com/meshtastic/protobufs), which are GPL-3.0, so the whole project is too. Distributing it, including serving the frontend to visitors' browsers, means offering the corresponding source: the map links to the source it was built from (set `SOURCE_URL` when building the web image of a modified version). Third-party components, fonts and map data, and their licenses: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+[GNU General Public License v3.0](LICENSE) (`GPL-3.0-only`). The backend's protocol code is generated from [Meshtastic's protobuf definitions](https://github.com/meshtastic/protobufs), which are GPL-3.0, so the whole project is too. Distributing it, including serving the frontend to visitors' browsers, means offering the corresponding source: the map links to the source it was built from (set `SOURCE_URL` in `.env` before building the web image of a modified version). Third-party components, fonts and map data, and their licenses: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 Map data © OpenStreetMap contributors, © OpenMapTiles.
 
