@@ -1,23 +1,16 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
-import { subscribeLive } from './api/client'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import MapView from './map/MapView'
-import { addTransmission, clearPings, painting, pingWanted, setPingPositions } from './map/pings'
+import { setPingPositions } from './map/pings'
 import Timeline from './timeline/Timeline'
 import { usePwa } from './pwa'
 import { EdgePanel, NodeList, NodePanel } from './features/panels'
 import { FilterPanel, LayersPanel, Legend } from './features/controls'
 import { AppMenu } from './features/menu'
-import { useCapabilities, useLiveEpoch, useRetention, useSnapshot, useTraffic } from './state/data'
-import { initDerive, onTransmissions, sendLiveRows } from './derive/client'
-import { apiParams, defaultFilters, fromQuery, toQuery, useStore, type Filters } from './state/store'
-import type { ObsRow } from './api/types'
+import { useCapabilities, useRetention, useSnapshot, useTraffic } from './state/data'
+import { useLiveStream } from './state/live'
+import { initDerive } from './derive/client'
+import { fromQuery, toQuery, useStore } from './state/store'
 import { applyTheme, useTheme } from './theme'
-
-/** A live row passes the view filters (the stream itself is unfiltered). */
-function passes(r: ObsRow, f: Filters): boolean {
-  return (!f.channels.length || (r.c != null && f.channels.includes(r.c))) && (!f.brokers.length || f.brokers.includes(r.b)) && (!f.types.length || f.types.includes(r.y))
-}
 
 type Tab = 'nodes' | 'details' | 'filters' | 'legend'
 
@@ -26,13 +19,11 @@ export default function App() {
   const retention = useRetention()
   const snap = useSnapshot()
   const traffic = useTraffic()
-  const qc = useQueryClient()
   const win = useStore((s) => s.win)
   const filters = useStore((s) => s.filters)
   const selection = useStore((s) => s.selection)
   const [tab, setTab] = useState<Tab>('nodes')
   const { online, servedOffline, canInstall, install } = usePwa()
-  const [liveOK, setLiveOK] = useState(true)
   const [notice, setNotice] = useState<string | null>(null)
   const geo = useRef<Map<string, [number, number]>>(new Map())
   const theme = useTheme()
@@ -58,8 +49,7 @@ export default function App() {
     geo.current = pos
     setPingPositions(pos) // pings follow the markers as estimates move
   }, [])
-  // The worker attributes live rows to transmissions; the animation places them.
-  useEffect(() => onTransmissions((ts) => ts.forEach((t) => addTransmission(t, geo.current))), [])
+  const liveOK = useLiveStream(geo, setNotice)
 
   // The derivation worker applies the operator's geolocation settings.
   useEffect(() => {
@@ -98,58 +88,6 @@ export default function App() {
     setPanelOpen((o) => !o)
   }
 
-  // Live updates for the rolling window only. The stream carries every new
-  // row (unfiltered: the browser's copy needs them all); filters apply here.
-  const bump = useLiveEpoch((s) => s.bump)
-  const filtersRef = useRef(filters)
-  filtersRef.current = filters
-  useEffect(() => {
-    if (!win.live) return
-    const params = apiParams({ win, filters: defaultFilters })
-    let lastRefresh = Date.now() // the views were just loaded
-    let wasLive = true
-    let clockOffset = 0 // server time minus local time, from heartbeats
-    const unsub = subscribeLive(params, {
-      onHeartbeat: (h) => {
-        clockOffset = Date.parse(h.now) - Date.now()
-        // Every row arrives over the stream; this sync only fills gaps the
-        // stream might have left (and slides an idle window), once a minute.
-        if (Date.now() - lastRefresh > 60_000) {
-          lastRefresh = Date.now()
-          bump(h.window.end)
-        }
-      },
-      onDelta: (events) => {
-        const rows = events.flatMap((e) => (e.row ? [e.row] : []))
-        const f = filtersRef.current
-        const now = Date.now() + clockOffset
-        // Pings: radio traffic only (not a node's own map report), passing the
-        // filters, recent, and only while someone is watching: the tab is
-        // visible and actually being painted (D-034, D-048).
-        const ping = rows.flatMap((r, k) => (r.y !== 'mapreport' && passes(r, f) && pingWanted(r.t, now, document.hidden || !painting()) ? [k] : []))
-        sendLiveRows(rows, ping)
-      },
-      onStatus: (ok, reason) => {
-        setLiveOK(ok)
-        // Back after an interruption, or the server dropped events for us
-        // (too slow): fetch whatever the stream missed.
-        if (ok && (!wasLive || reason === 'lagged')) {
-          lastRefresh = Date.now()
-          bump(`reconnect:${Date.now()}`)
-        }
-        wasLive = ok
-      },
-      onRetention: () => {
-        setNotice('Old data was removed by retention; views refreshed.')
-        qc.invalidateQueries()
-      },
-    })
-    return () => {
-      unsub()
-      clearPings()
-    }
-  }, [win, bump, qc])
-
   // Fixed windows that fall out of retention while open: notify and clamp.
   useEffect(() => {
     if (win.live || !win.start || !retention.data) return
@@ -161,12 +99,17 @@ export default function App() {
     }
   }, [retention.data, win])
 
+  // A selected link is the node pair; either direction may be missing.
+  const edges = snap.data?.edges
+  const linkSel = useMemo(
+    () => (selection?.kind === 'edge' && (edges ?? []).some((e) => !!e.mqtt === !!selection.mqtt && ((e.src === selection.src && e.dst === selection.dst) || (e.src === selection.dst && e.dst === selection.src))) ? selection : undefined),
+    [selection, edges],
+  )
+
   if (caps.isLoading) return <div className="boot">Loading…</div>
   if (caps.error || !caps.data) return <div className="boot error">Backend unavailable: {String(caps.error)}</div>
 
   const sel = selection
-  // A selected link is the node pair; either direction may be missing.
-  const linkSel = sel?.kind === 'edge' && (snap.data?.edges ?? []).some((e) => !!e.mqtt === !!sel.mqtt && ((e.src === sel.src && e.dst === sel.dst) || (e.src === sel.dst && e.dst === sel.src))) ? sel : undefined
   const counts = snap.data?.counts
   const empty = snap.data && counts && counts.packets === 0 && (snap.data.nodes ?? []).length === 0
 

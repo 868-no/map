@@ -232,10 +232,16 @@ function PacketLogs({ id, names, positioned }: { id: string; names: Map<string, 
     | { kind: 'own'; hops?: number; signature: string }
     | { kind: 'relayed'; origin: string; evidence: ('relay_byte' | 'traceroute')[] }
   )
-  const entries: Entry[] = [
-    ...own.map((p) => ({ ...p, kind: 'own' as const })),
-    ...(withRelayed ? relayed.map((p) => ({ ...p, kind: 'relayed' as const, gateways: p.gateways.length })) : []),
-  ].sort((a, b) => Date.parse(b.at) - Date.parse(a.at))
+  // Newest first; times parsed once per log, not inside the comparator on every render.
+  const data = log.data
+  const entries = useMemo(() => {
+    const all: Entry[] = [
+      ...(data?.own ?? []).map((p) => ({ ...p, kind: 'own' as const })),
+      ...(withRelayed ? (data?.relayed ?? []).map((p) => ({ ...p, kind: 'relayed' as const, gateways: p.gateways.length })) : []),
+    ]
+    const ms = new Map(all.map((e) => [e, Date.parse(e.at)]))
+    return all.sort((a, b) => ms.get(b)! - ms.get(a)!)
+  }, [data, withRelayed])
   return (
     <>
       <div className="log-head">
