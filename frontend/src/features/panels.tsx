@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { Edge, MeshNode, Radio, SnapshotView } from '../derive/views'
 import { useNodeDetail, usePacketLog, usePacketRoute, useReach } from '../state/data'
-import { useStore } from '../state/store'
+import { nodeLink, useStore } from '../state/store'
 import { formatLocal, formatLogTime, relativeAge } from '../lib/time'
 import { Sparkline } from '../components/Sparkline'
 import { ageColor, lastHeardAge } from '../map/model'
@@ -138,7 +138,8 @@ export function NodePanel({ id, snapshot }: { id: string; snapshot: SnapshotView
     <div className="panel node-panel">
       <h2>{d.identity?.long_name || d.id}</h2>
       <p className="muted">
-        {d.id} · #{d.num} {d.status === 'referenced' && <span className="tag">referenced only — not directly observed</span>}
+        {d.id} · #{d.num} <ShareNode id={d.id} name={d.identity?.long_name || d.id} />{' '}
+        {d.status === 'referenced' && <span className="tag">referenced only — not directly observed</span>}
         {d.is_gateway && <span className="tag gw" title="Uplinks the packets it hears to the MQTT broker">↑ MQTT gateway</span>}
         {d.mqtt_downlink && (
           <span className="tag gw" title={`Probably transmits packets it takes from the MQTT broker: ${d.mqtt_downlink.zero_snr} of ${d.mqtt_downlink.traceroutes} traceroutes reached it at exactly 0 dB, the reading a packet from MQTT gets`}>
@@ -529,6 +530,35 @@ function RelayingSection({ node, snapshot }: { node: MeshNode | undefined; snaps
         </>
       )}
     </section>
+  )
+}
+
+/**
+ * A permanent link to the node (D-080): the node alone, so it keeps working
+ * whatever window or filters the viewer had. The phone's share sheet when
+ * there is one, otherwise copied to the clipboard.
+ */
+function ShareNode({ id, name }: { id: string; name: string }) {
+  const [state, setState] = useState<'idle' | 'copied' | 'failed'>('idle')
+  const share = async () => {
+    const url = nodeLink(id)
+    try {
+      if (navigator.share && window.matchMedia?.('(pointer: coarse)').matches) {
+        await navigator.share({ title: `${name} on 868.no Map`, url })
+        return
+      }
+      await navigator.clipboard.writeText(url)
+      setState('copied')
+    } catch (e) {
+      if ((e as Error).name === 'AbortError') return // the share sheet was dismissed
+      setState('failed')
+    }
+    setTimeout(() => setState('idle'), 2500)
+  }
+  return (
+    <button className="linkish share-link" onClick={() => void share()} title={`Copy a permanent link to this node: ${nodeLink(id)}`}>
+      {state === 'copied' ? 'Link copied' : state === 'failed' ? 'Could not copy' : 'Share link'}
+    </button>
   )
 }
 

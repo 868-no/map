@@ -484,3 +484,22 @@ test('reset clears stored settings and data, then reloads', async ({ page }) => 
   await showPanel(page, 'Settings')
   await expect(page.getByRole('complementary', { name: 'Settings' }).getByLabel('Auto')).toBeChecked()
 })
+
+// D-080: a permanent link opens the node; Share link copies it.
+test('a node link opens that node, and Share link copies a permanent one', async ({ page, context }) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write'])
+  await ready(page)
+  // A placed node to link to.
+  await page.waitForFunction(() => ((window as unknown as { __meshmap: Hook }).__meshmap.layers().find((l) => l.id === 'nodes')?.data.length ?? 0) > 0, null, { timeout: 30_000 })
+  const id = await page.evaluate(() => ((window as unknown as { __meshmap: Hook }).__meshmap.layers().find((l) => l.id === 'nodes')!.data[0] as { node: { id: string } }).node.id)
+  await page.goto(`/?node=${id}`)
+  await expect(page.locator('.node-panel')).toContainText(id, { timeout: 30_000 })
+  await expect(page.getByRole('button', { name: 'Details', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  await page.getByRole('button', { name: 'Share link' }).click()
+  await expect(page.getByRole('button', { name: 'Link copied' })).toBeVisible()
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(`${new URL(page.url()).origin}/?node=${id}`)
+  // The address bar follows the selection.
+  await expect(page).toHaveURL(new RegExp(`node=(%21|!)${id.slice(1)}`))
+  await page.getByRole('button', { name: 'Close details' }).click()
+  await expect(page).not.toHaveURL(/node=/)
+})

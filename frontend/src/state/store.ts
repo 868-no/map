@@ -114,8 +114,17 @@ export const useStore = create<Store>((set) => ({
 
 // ---- URL sync: the window and filters are shareable links ----
 
-export function toQuery(s: Pick<Store, 'win' | 'filters'>): URLSearchParams {
+/** A node id as the URL carries it (`!` and 8 hex digits). */
+const NODE_ID = /^![0-9a-f]{8}$/
+
+/** A link to a node that stays valid: the node alone, no window or filters (D-080). */
+export function nodeLink(id: string, origin = window.location.origin): string {
+  return `${origin}/?node=${id}`
+}
+
+export function toQuery(s: Pick<Store, 'win' | 'filters'> & { selection?: Selection }): URLSearchParams {
   const q = new URLSearchParams()
+  if (s.selection?.kind === 'node') q.set('node', s.selection.id)
   if (s.win.live) {
     if (s.win.durationH !== 72) q.set('duration', `${s.win.durationH}h`)
   } else if (s.win.start && s.win.end) {
@@ -128,8 +137,10 @@ export function toQuery(s: Pick<Store, 'win' | 'filters'>): URLSearchParams {
   return q
 }
 
-export function fromQuery(q: URLSearchParams): Partial<Pick<Store, 'win' | 'filters'>> {
-  const out: Partial<Pick<Store, 'win' | 'filters'>> = {}
+export function fromQuery(q: URLSearchParams): Partial<Pick<Store, 'win' | 'filters' | 'selection'>> {
+  const out: Partial<Pick<Store, 'win' | 'filters' | 'selection'>> = {}
+  const node = q.get('node')?.toLowerCase()
+  if (node && NODE_ID.test(node)) out.selection = { kind: 'node', id: node }
   const start = q.get('start'), end = q.get('end'), dur = q.get('duration')
   if (start && end && !Number.isNaN(Date.parse(start)) && !Number.isNaN(Date.parse(end))) {
     out.win = { live: false, durationH: 72, start, end }

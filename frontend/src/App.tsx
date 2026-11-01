@@ -43,10 +43,10 @@ export default function App() {
     useStore.setState((s) => ({ ...s, ...init }))
   }, [])
   useEffect(() => {
-    const q = toQuery({ win, filters }).toString()
+    const q = toQuery({ win, filters, selection }).toString()
     const url = q ? `?${q}` : window.location.pathname
     if (url !== window.location.search) window.history.replaceState(null, '', url)
-  }, [win, filters])
+  }, [win, filters, selection])
 
   // One panel at a time, beside the tool rail; all start closed. Selecting a
   // node or link opens Details; if the selection opened it, clearing the

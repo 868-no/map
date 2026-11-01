@@ -618,3 +618,10 @@ Operator request: a per-router statistic of how much traffic it is expected to r
 
 Operator request. With "Position accuracy" switched on, every estimated node shows its circle only while nothing is selected. Selecting a node shows only that node's circle (its estimate's uncertainty, the precision of a coarse reported position, or its narrowed error, D-077), whether the layer is on or not.
 
+## D-080 Permanent links to nodes (2026-11-01)
+
+Operator request: a way to share a permanent link to a node.
+- **Link:** `/?node=!xxxxxxxx`, the node alone, without the window or filters, so it keeps working later. Opening it selects the node, opens Details and flies to it once it is placed. An id that is not `!` plus 8 hex digits is ignored. A node absent from the current window shows the panel's "no data in the selected window".
+- **Share link** (node panel, beside the id): the phone's share sheet on touch devices, otherwise copied to the clipboard ("Link copied").
+- **Address bar:** the selected node is part of the URL (`node=`), alongside the window and filters as before, and leaves it when the selection is cleared.
+
