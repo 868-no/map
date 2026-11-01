@@ -42,6 +42,7 @@ func inspectCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			kr.DefaultFallback = true // like serve's default
 			store := memIDs{}
 			o := ingest.Options{Keyring: kr, Identities: store, KeyBudget: 4, AcceptRetained: func(string) bool { return false }}
 			if twoPass {

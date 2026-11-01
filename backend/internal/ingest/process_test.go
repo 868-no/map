@@ -346,3 +346,35 @@ func TestMapReport(t *testing.T) {
 		t.Fatalf("mismatched publisher: %v", err)
 	}
 }
+
+// D-065: a channel that is not configured is tried with the public default
+// key under the topic's channel name, unless the fallback is off; a channel
+// with a custom key still fails.
+func TestProcessDefaultKeyFallback(t *testing.T) {
+	p := pkt{from: 0xae609008, id: 77, to: 0xffffffff, gw: "!ae609008", data: posData(t), hopStart: 3, hopLimit: 3, snr: 4, rssi: -90}
+	const topic = "msh/EU_868/NO/Trøndelag/2/e/Custom/!ae609008"
+	b := envelope(t, p, security.DefaultPSK[:], security.ModeCTR, "Custom")
+	o := opts(t, longFast)
+	if _, err := Process(msg(topic, b), o); Category(err) != "no_key" {
+		t.Fatalf("fallback off: %v, want no_key", err)
+	}
+	o.Keyring.DefaultFallback = true
+	obs, err := Process(msg(topic, b), o)
+	if err != nil {
+		t.Fatalf("fallback on: %v", err)
+	}
+	if obs.Channel != "Custom" || obs.PacketType != "position" {
+		t.Fatalf("decoded %q on %q", obs.PacketType, obs.Channel)
+	}
+	// AEAD channels with the default key too.
+	bc := envelope(t, p, security.DefaultPSK[:], security.ModeCCM, "Custom")
+	if obs, err := Process(msg(topic, bc), o); err != nil || obs.PacketType != "position" {
+		t.Fatalf("ccm fallback: %v", err)
+	}
+	secret := make([]byte, 32)
+	secret[0] = 9
+	bs := envelope(t, p, secret, security.ModeCTR, "Custom")
+	if _, err := Process(msg(topic, bs), o); err == nil {
+		t.Fatal("a custom-key channel must not decode with the default key")
+	}
+}

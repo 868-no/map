@@ -256,6 +256,7 @@ func serveCmd() *cobra.Command {
 				if err != nil {
 					return err
 				}
+				kr.DefaultFallback = c.Env.DefaultKeyFallback
 				ids := identity.New(func(ctx context.Context) ([]storage.IdentityRow, error) {
 					return storage.VerifiedIdentities(ctx, pool, nil)
 				}, log)

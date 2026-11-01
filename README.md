@@ -34,7 +34,8 @@ The `basemap` service starts too and downloads several GB of OpenStreetMap data 
 ```sh
 mkdir -p secrets && cp config/examples/*.yaml secrets/
 # edit secrets/mqtt-brokers.yaml  (several brokers: TLS/CA, credentials, client id, topic filters, v5 or v311)
-# edit secrets/channel-keys.yaml  (several channels: name, mode ctr|ccm, PSKs current-first for rotation)
+# edit secrets/channel-keys.yaml  (several channels: name, mode ctr|ccm, PSKs current-first for rotation;
+#                                  unlisted channels are tried with the default key)
 # .env: DEMO_MODE=false, strong POSTGRES_PASSWORD
 docker compose run --rm backend check-config     # redacted summary or readable errors
 docker compose up -d --build

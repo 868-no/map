@@ -1,6 +1,9 @@
 # Copy to ./secrets/channel-keys.yaml. Channel PSKs are symmetric channel keys,
 # not node public keys. List the current key first, then previous keys kept
 # during a rotation. Fake values only (AQ== is the public default key).
+# Channels not listed here are still tried with the default key under their
+# topic name (DEFAULT_KEY_FALLBACK=true, the default), so list default-key
+# channels only to scope them to brokers or set accept_plaintext.
 channels:
   - name: LongFast
     broker_ids: ["*"]

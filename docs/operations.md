@@ -47,7 +47,8 @@ Pin a version tag or `sha-…` in production (`compose.production.yaml` takes it
 ## Configuration files
 
 - `secrets/mqtt-brokers.yaml`: a list of brokers, each with `id`, `host`, `port`, `protocol` (v5/v311), `tls` (enabled, ca_file, server_name), `username`, `password` or `password_file`, `client_id` and `topics` (filter, qos 0/1). Set `accept_retained: false` (the default) so retained messages never fabricate current activity.
-- `secrets/channel-keys.yaml`: a list of channels, each with `name`, `broker_ids` (`*` for all), `mode` (`ctr`, or `ccm` for firmware 2.8.1+ AEAD channels), `psks` (current key first, then previous keys during rotation; base64, or `hex:`; `AQ==` is the public default key) and `accept_plaintext` (default true for configured channels).
+- `secrets/channel-keys.yaml`: a list of channels, each with `name`, `broker_ids` (`*` for all), `mode` (`ctr`, or `ccm` for firmware 2.8.1+ AEAD channels), `psks` (current key first, then previous keys during rotation; base64, or `hex:`; `AQ==` is the public default key) and `accept_plaintext` (default true for configured channels). List as many channels as you like; a channel name may also appear more than once with different `broker_ids`.
+- Channels that are not listed are tried with the public default key (`AQ==`, CTR and CCM) under the channel name in the topic, so default-key channels with any name decode without configuration (D-065). The packet's channel byte (a hash of name and key) must match, so channels with their own key stay undecoded (`no_key`). Set `DEFAULT_KEY_FALLBACK=false` to decode only listed channels.
 - Key rotation: add the new key first and keep the old one until no traffic uses it, then restart `backend`. The configuration hash is part of the `generation` that `/observations` reports, so browsers discard the rows they hold and refetch.
 - Optional: `GEOLOCATION_CALIBRATION` is the path to a YAML file with `default: {p0_dbm, path_loss_exponent}` for calibrated RF location estimates (D-016). All other settings are environment variables; see `.env.example` and `backend/internal/config/config.go`.
 
@@ -116,7 +117,7 @@ Only `packet_log` matters; Redis is ephemeral and rebuilds itself. After a resto
 | Symptom | Check |
 | --- | --- |
 | Map is grey/empty | `docker compose logs basemap` (the first build takes a while); `data/basemap/basemap.pmtiles` (or the `basemap` volume with `compose.production.yaml`) exists; `curl -r 0-99 localhost:8080/tiles/basemap.pmtiles` returns 206 |
-| No nodes | `/health/ready` broker states; rejection metrics (`no_key` → missing channel key; `retained_ignored`; `topic_json`) |
+| No nodes | `/health/ready` broker states; rejection metrics (`no_key` → no listed key and not the default key; `retained_ignored`; `topic_json`) |
 | Many `decrypt_failed` | Wrong PSK for that channel name, or a CCM channel configured as `ctr` |
 | `sig_invalid` rejections | Forged or corrupted signed packets; expected to be rare on real traffic |
 | Live badge “paused” | Redis down in API-only mode (`serve --no-ingest`), or SSE blocked by a proxy (disable buffering) |

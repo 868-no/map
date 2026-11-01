@@ -64,9 +64,12 @@ type Env struct {
 	IngestQueueSize     int           `env:"INGEST_QUEUE_SIZE" envDefault:"20000"`
 	WriterBatchSize     int           `env:"WRITER_BATCH_SIZE" envDefault:"500"`
 	KeyAttemptBudget    int           `env:"KEY_ATTEMPT_BUDGET" envDefault:"4"`
-	LogLevel            string        `env:"LOG_LEVEL" envDefault:"info"`
-	BrokersConfig       string        `env:"MQTT_BROKERS_CONFIG" envDefault:"/run/secrets/mqtt-brokers.yaml"`
-	ChannelsConfig      string        `env:"CHANNEL_KEYS_CONFIG" envDefault:"/run/secrets/channel-keys.yaml"`
+	// Try the public default key (AQ==) for channels not in the channel
+	// keys configuration (D-065).
+	DefaultKeyFallback bool   `env:"DEFAULT_KEY_FALLBACK" envDefault:"true"`
+	LogLevel           string `env:"LOG_LEVEL" envDefault:"info"`
+	BrokersConfig      string `env:"MQTT_BROKERS_CONFIG" envDefault:"/run/secrets/mqtt-brokers.yaml"`
+	ChannelsConfig     string `env:"CHANNEL_KEYS_CONFIG" envDefault:"/run/secrets/channel-keys.yaml"`
 	// The same YAML documents inline, for deployments configured entirely in
 	// the Compose file. When set they replace the files above. Never logged.
 	BrokersYAML    string `env:"MQTT_BROKERS"`
@@ -385,6 +388,7 @@ func (c *Config) Revision() string {
 	for _, ch := range c.Channels {
 		fmt.Fprintf(h, "%s|%v|%s|%v|%v\n", ch.Name, ch.BrokerIDs, ch.Mode, ch.PSKs, ch.AcceptPlaintext)
 	}
+	fmt.Fprintf(h, "fallback=%v|", c.Env.DefaultKeyFallback)
 	fmt.Fprintf(h, "%s|%d|%d|%v", c.Env.SignaturePolicy, c.Env.RetentionMonths, c.Env.GeolocationMinPrec, c.Env.GeolocationExclude)
 	return hex.EncodeToString(h.Sum(nil))[:12]
 }
@@ -406,6 +410,11 @@ func (c *Config) Summary() string {
 	for _, ch := range c.Channels {
 		mode, _ := security.ParseMode(ch.Mode)
 		fmt.Fprintf(&b, "  - %s mode=%s keys=%d brokers=%v\n", ch.Name, mode, len(ch.PSKs), ch.BrokerIDs)
+	}
+	if c.Env.DefaultKeyFallback {
+		b.WriteString("other channels: the public default key is tried\n")
+	} else {
+		b.WriteString("other channels: not decoded (DEFAULT_KEY_FALLBACK=false)\n")
 	}
 	return b.String()
 }

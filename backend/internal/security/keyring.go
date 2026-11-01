@@ -1,6 +1,9 @@
 package security
 
-import "slices"
+import (
+	"slices"
+	"strings"
+)
 
 // ChannelConfig is one configured channel with one or more PSKs (current
 // key first, then historical keys kept for rotation).
@@ -18,12 +21,17 @@ type Keyring struct {
 	keys      []Key
 	brokers   [][]string // parallel to keys
 	plaintext map[string][]string
+	named     map[string]bool // configured channel names
+	// DefaultFallback tries the public default key (AQ==) for channels that
+	// are not configured, under the channel name the topic gives (D-065).
+	DefaultFallback bool
 }
 
 // NewKeyring resolves all configured PSKs, failing on any invalid entry.
 func NewKeyring(chs []ChannelConfig) (*Keyring, error) {
-	kr := &Keyring{plaintext: map[string][]string{}}
+	kr := &Keyring{plaintext: map[string][]string{}, named: map[string]bool{}}
 	for _, ch := range chs {
+		kr.named[ch.Name] = true
 		for i, psk := range ch.PSKs {
 			k, err := NewKey(ch.Name, labelFor(ch.Name, i), psk, ch.Mode)
 			if err != nil {
@@ -65,8 +73,28 @@ func (kr *Keyring) Candidates(broker, topicChannel string, hash uint8, budget in
 		}
 	}
 	out := append(named, other...)
+	if len(named) == 0 && kr.DefaultFallback && !kr.named[topicChannel] {
+		out = append(out, defaultKeys(topicChannel, hash)...)
+	}
 	if len(out) > budget {
 		out = out[:budget]
+	}
+	return out
+}
+
+// defaultKeys are the default key in each mode under the topic's channel
+// name, kept only when the packet's channel hash matches (hash of name and
+// key: a channel with a custom key almost never passes). Derived per packet,
+// never cached: topic names are chosen by whoever publishes.
+func defaultKeys(channel string, hash uint8) []Key {
+	if channel == "" || strings.EqualFold(channel, "PKI") || len(channel) > 32 {
+		return nil
+	}
+	var out []Key
+	for _, m := range []Mode{ModeCTR, ModeCCM} {
+		if k, err := NewKey(channel, channel+"#default", "AQ==", m); err == nil && k.hash == hash {
+			out = append(out, k)
+		}
 	}
 	return out
 }
