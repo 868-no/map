@@ -512,7 +512,7 @@ Operator request: track which channels nodes are on, and use what gateways hear 
 - **Radio groups:** nodes that hear each other share modem settings (preset or custom parameters, and frequency slot). Direct receptions, NeighborInfo entries and traceroute hops join nodes into groups. Relay bytes are too uncertain, and traceroute hops at exactly 0 dB may be MQTT (D-054), so neither counts. A downlinked packet can still pass for a direct reception (D-054), which is one reason the panel reports conflicts rather than hiding them.
 - **Preset, strongest evidence first:** its own map report confirmed by `has_default_channel` (D-063); confirmed reports of its radio group (all agreeing; otherwise "conflict", with the presets and counts); a channel it was heard on with a preset's default name; the default channel names most of its group was heard on. The last two are hints only, since a secondary channel can carry such a name on any preset. The panel's tooltip names the nodes the evidence rests on.
 - On 2026-11-01: Oladalen 326 9ad8 reports Long Fast without a default channel, but shares a 16-node radio group with Venes 1fc6, whose confirmed report says Narrow Fast. A_Aur_client and its gateway form a separate Long Fast mesh. NT Motorklubb's primary channel is "Custom"; with no radio contact, its preset stays unknown.
-- **Limit:** only channels we can decrypt are stored. Uplinks on channels with unknown keys are rejected as `no_key` before storage, so those channels are seen only through map reports' primary channels. D-065 adds the default key for unlisted channel names.
+- **Limit:** only channels we can decrypt are stored. Uplinks on channels with unknown keys are rejected as `no_key` before storage, so those channels are seen only through map reports' primary channels. D-065 adds the default key for unlisted channel names. Storing those receptions with only their unencrypted header was offered and declined by the operator (2026-11-01): private traffic is not stored, not even its headers.
 
 ## D-065 The default key for unlisted channels (2026-11-01)
 
@@ -552,4 +552,8 @@ Operator idea: when a node is selected, simulate its reach at different hop limi
 - **Panel** (node details, "Reach"): a 0–7 slider starting at the hop limit the node's own packets used, the nodes reached at that limit, how many each step adds, and how many came through 0-cost links. "Show on the map" replaces the links with the reach paths up to the chosen limit, coloured by hop, and dims the nodes it does not reach; a new selection or a packet route clears it.
 - **Caveat, stated in the panel:** only links observed in the window count. Intermittent links count as always there, and links never seen are missing, so the result sketches the mesh as observed rather than predicting coverage.
 - Engine view `reach` (argument: node id, with `|internet` to follow MQTT links).
+
+## D-070 No private traffic (2026-11-01)
+
+Operator decision: receptions we cannot decrypt are not stored, not even their unencrypted headers (sender, destination, gateway, channel name, hops, signal). Ingest keeps rejecting them as `no_key`. Only channels with a configured key, or the public default key (D-065), are stored. Channels with private keys are seen only as the primary channel names nodes report about themselves in map reports (D-064).
 
