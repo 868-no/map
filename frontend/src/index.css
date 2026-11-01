@@ -96,7 +96,11 @@ button[aria-pressed='true'], button[aria-selected='true'] { background: var(--pr
 .brand-num { color: var(--accent); font-weight: 800; letter-spacing: 0.01em; font-variant-numeric: tabular-nums; }
 .brand-tld { color: var(--muted); font-weight: 600; }
 .brand-map { font-weight: 600; }
-.counters { color: var(--muted); font-size: 12px; line-height: 1.35; }
+.counters { color: var(--muted); font-size: 12px; line-height: 1.35; font-variant-numeric: tabular-nums; }
+/* A count still loading: a faint bar about as wide as a typical value. */
+.counter-ph { display: inline-block; height: 0.8em; vertical-align: -0.05em; border-radius: 3px; background: var(--line); animation: counter-ph 1.2s ease-in-out infinite alternate; }
+@keyframes counter-ph { from { opacity: 0.5; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .counter-ph { animation: none; } }
 .spinner { width: 12px; height: 12px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 

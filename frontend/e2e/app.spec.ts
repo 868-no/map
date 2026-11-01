@@ -314,7 +314,7 @@ test('every layer switch explains its data in a tooltip', async ({ page }) => {
 test('live rows from the stream update the views without fetching', async ({ page }) => {
   test.setTimeout(120_000)
   await ready(page)
-  await expect(page.locator('.counters')).toContainText('packets')
+  await expect(page.locator('.counters')).toContainText(/\d+ packets/)
   const packets = async () => Number(/(\d+) packets/.exec((await page.locator('.counters').textContent()) ?? '')?.[1] ?? 0)
   await page.waitForTimeout(2000) // initial sync settled
   const fetches: string[] = []

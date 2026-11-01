@@ -8,6 +8,7 @@ import { activeFilters, FilterPanel, LayersPanel, Legend } from './features/cont
 import { SettingsPanel } from './features/menu'
 import { Dock, Rail, type PanelId } from './features/rail'
 import { useCapabilities, useRetention, useSnapshot, useTraffic } from './state/data'
+import type { Counts } from './derive/views'
 import { useLiveStream } from './state/live'
 import { initDerive } from './derive/client'
 import { fromQuery, toQuery, useStore } from './state/store'
@@ -140,11 +141,7 @@ export default function App() {
             <LiveIndicator caps={caps.data} retention={retention.data} snapshot={snap.data} liveOK={liveOK} onOpen={() => togglePanel('period')} />
             {snap.isFetching && <span className="spinner" aria-label="Updating" />}
           </div>
-          {counts && (
-            <span className="counters" aria-live="polite">
-              {counts.nodes} nodes · {counts.referenced} referenced · {counts.positioned} positioned · {counts.estimated} estimated · {counts.edges} links · {counts.packets} packets / {counts.receptions} receptions
-            </span>
-          )}
+          <Counters counts={counts} />
         </header>
         <MapView caps={caps.data} snapshot={snap.data} onPositions={onPositions} />
         <Dock open={panel} onClose={closePanel}>
@@ -172,5 +169,25 @@ export default function App() {
         </div>
       </main>
     </div>
+  )
+}
+
+// Header counters. Until the first snapshot arrives, each number is a
+// placeholder bar about as wide as a typical value, so the header keeps
+// roughly its final size instead of growing when the counts load.
+const COUNTERS: ['packets' | 'receptions' | 'nodes' | 'referenced' | 'positioned' | 'estimated' | 'edges', string, number][] = [
+  ['nodes', ' nodes · ', 3], ['referenced', ' referenced · ', 3], ['positioned', ' positioned · ', 3], ['estimated', ' estimated · ', 2],
+  ['edges', ' links · ', 4], ['packets', ' packets / ', 4], ['receptions', ' receptions', 5],
+]
+function Counters({ counts }: { counts?: Counts }) {
+  return (
+    <span className="counters" aria-live="polite" aria-busy={!counts}>
+      {COUNTERS.map(([k, label, digits]) => (
+        <span key={k}>
+          {counts ? counts[k] : <span className="counter-ph" style={{ width: `${digits}ch` }} aria-hidden />}
+          {label}
+        </span>
+      ))}
+    </span>
   )
 }
