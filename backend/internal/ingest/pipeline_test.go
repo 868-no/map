@@ -239,3 +239,30 @@ func TestShutdownDuringOutageIsBounded(t *testing.T) {
 		t.Fatalf("gaps %+v", g)
 	}
 }
+
+// Copies of a committed reception arriving from two other brokers at once
+// both end up as provenance, even when one arrives while the other is
+// briefly claimed for the committed-check (it used to be dropped with that
+// claim; seen as a flaky TestPipelineLateCrossBrokerProvenance in CI).
+func TestConcurrentLateCopiesKeepProvenance(t *testing.T) {
+	p, _ := newTestPipeline(t, &memSink{}, 10)
+	for i := 0; i < 3000; i++ {
+		var k [16]byte
+		k[0], k[1] = byte(i), byte(i>>8)
+		p.recent.add(k, 1, []string{"a"}, time.Now())
+		var wg sync.WaitGroup
+		for _, b := range []string{"b", "c"} {
+			wg.Add(1)
+			go func() { defer wg.Done(); p.claim(Observation{ObservationKey: k, BrokerID: b}) }()
+		}
+		wg.Wait()
+		p.pendMu.Lock()
+		got := append([]string(nil), p.pending[1]...)
+		p.pending = map[int64][]string{}
+		p.pendMu.Unlock()
+		slices.Sort(got)
+		if !slices.Equal(got, []string{"b", "c"}) {
+			t.Fatalf("iteration %d: provenance %v, want [b c]", i, got)
+		}
+	}
+}

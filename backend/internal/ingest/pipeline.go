@@ -242,10 +242,22 @@ func (p *Pipeline) claim(o Observation) bool {
 	if !found {
 		return true
 	}
-	p.release(k)
+	// Copies from other brokers that arrived while this one was briefly in
+	// flight (during the lookup above) were recorded against the claim;
+	// they belong to the committed row too, not dropped with the claim.
+	p.inflightMu.Lock()
+	others := p.alsoVia[k]
+	delete(p.inflight, k)
+	delete(p.alsoVia, k)
+	p.inflightMu.Unlock()
 	cross := p.recent.addBroker(k, o.BrokerID)
 	if cross && id > 0 {
 		p.queueProvenance(id, o.BrokerID)
+	}
+	for _, b := range others {
+		if p.recent.addBroker(k, b) && id > 0 {
+			p.queueProvenance(id, b)
+		}
 	}
 	p.duplicate(cross, o.BrokerID)
 	return false
@@ -266,13 +278,6 @@ func (p *Pipeline) queueProvenance(id int64, broker string) {
 	if !slices.Contains(p.pending[id], broker) {
 		p.pending[id] = append(p.pending[id], broker)
 	}
-}
-
-func (p *Pipeline) release(k [16]byte) {
-	p.inflightMu.Lock()
-	delete(p.inflight, k)
-	delete(p.alsoVia, k)
-	p.inflightMu.Unlock()
 }
 
 // takeAlsoVia copies recorded broker provenance into a batch before each
