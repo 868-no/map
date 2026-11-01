@@ -70,8 +70,12 @@ export function NodeList({ snapshot }: { snapshot: SnapshotView | undefined }) {
 /** "NARROW_FAST" -> "Narrow Fast" */
 const presetName = (p: string) => p.toLowerCase().split('_').map((w) => w[0].toUpperCase() + w.slice(1)).join(' ')
 
-/** Region and LoRa preset: the node's own map report if any, else what the topics and channel names allow. */
-function radioSummary(r: Radio | undefined): { region: string; preset: string } {
+/**
+ * Region and LoRa preset. Region: the node's own map report if any, else
+ * what its topics allow. Preset: the engine's inference (D-064), strongest
+ * evidence first; a map report's preset counts only when confirmed.
+ */
+function radioSummary(r: Radio | undefined, name: (id: string) => string): { region: string; preset: string; presetNote: string } {
   const heard = r?.heard_as ?? []
   let region = 'unknown'
   if (r?.reported?.region) region = `${r.reported.region} (its own map report)`
@@ -85,21 +89,34 @@ function radioSummary(r: Radio | undefined): { region: string; preset: string } 
         : `conflicting topics: ${[...new Set(sets.map((r) => r.join(' or ')))].join(' / ')}`
     }
   }
+  const p = r?.preset
+  const via = (p?.via ?? []).map(name).join(', ')
+  const others = (n: number) => `${n} other node${n === 1 ? '' : 's'}`
   let preset = 'unknown'
-  const rep = r?.reported
-  if (rep?.modem_preset && rep.preset_confirmed) preset = `${presetName(rep.modem_preset)} (its own map report)`
-  else {
-    if (heard.length) {
-      const named = [...new Set(heard.flatMap((h) => (h.preset ? [presetName(h.preset)] : [])))]
-      const custom = [...new Set(heard.flatMap((h) => (!h.preset && h.channel ? [`"${h.channel}"`] : [])))]
-      const parts = [...named, ...(custom.length ? [`unknown (channel ${custom.join(', ')})`] : [])]
-      if (parts.length) preset = parts.join(', ')
+  let presetNote = 'No evidence in the selected period: no confirmed map report, no default channel name, and no radio contact with a node that has either.'
+  if (p?.basis === 'conflict') {
+    preset = `conflicting: ${(p.conflict ?? []).map(([q, n]) => `${presetName(q)} (${n})`).join(', ')}`
+    presetNote = 'Nodes it shares radio contact with report different confirmed presets. Nodes that hear each other must share radio settings, so one of the links or reports is misleading (for example a downlinked packet that looked like a direct reception).'
+  } else if (p?.preset) {
+    const q = presetName(p.preset)
+    if (p.basis === 'map_report') {
+      preset = `${q} (its own map report)`
+      presetNote = 'Its own map report, confirmed by its default channel: firmware reports a preset as in use only then.'
+    } else if (p.basis === 'radio_contact') {
+      preset = `${q} (radio contact)`
+      presetNote = `It shares radio settings with ${others(p.group)} it hears or is heard by, directly or through them; confirmed map reports from ${via} put that group on ${q} (or identical custom settings).`
+    } else if (p.basis === 'channel_name') {
+      preset = `probably ${q} (channel name)`
+      presetNote = `It was heard on a channel with ${q}'s default name. Only a hint: a secondary channel can carry that name on any preset.`
+    } else {
+      preset = `probably ${q} (radio contact, channel names)`
+      presetNote = `It shares radio settings with ${others(p.group)}, among them ${via}, heard on channels with ${q}'s default name. Only a hint: no confirmed map report in the group.`
     }
-    // Firmware reports its stored preset even when a custom modem config is
-    // in use; without a default channel to confirm it, it is only a hint.
-    if (rep?.modem_preset) preset += ` — its map report says ${presetName(rep.modem_preset)}, but without a default channel that may be a stored preset under a custom modem config`
   }
-  return { region, preset }
+  const rep = r?.reported
+  // Firmware reports its stored preset even under a custom modem config.
+  if (rep?.modem_preset && !rep.preset_confirmed) presetNote += ` Its map report says ${presetName(rep.modem_preset)}, but without a default channel that may be a stored preset under a custom modem config.`
+  return { region, preset, presetNote }
 }
 
 export function NodePanel({ id, snapshot }: { id: string; snapshot: SnapshotView | undefined }) {
@@ -115,6 +132,7 @@ export function NodePanel({ id, snapshot }: { id: string; snapshot: SnapshotView
   if (!data) return null
   const d = data
   const est = snapNode?.estimate
+  const radio = radioSummary(d.radio, (n) => names.get(n) ?? n)
   return (
     <div className="panel node-panel">
       <button className="close" onClick={() => select(null)} aria-label="Close details">×</button>
@@ -169,8 +187,18 @@ export function NodePanel({ id, snapshot }: { id: string; snapshot: SnapshotView
             </>
           )}
         </dd>
-        <dt>Region</dt><dd>{radioSummary(d.radio).region}</dd>
-        <dt title="From the channel name it was heard on, when that is a preset's default name">LoRa preset</dt><dd>{radioSummary(d.radio).preset}</dd>
+        <dt>Region</dt><dd>{radio.region}</dd>
+        <dt>LoRa preset</dt><dd title={radio.presetNote}>{radio.preset}</dd>
+        <dt>Channels</dt>
+        <dd>
+          {d.radio?.channels?.length
+            ? d.radio.channels.map((c, k) => (
+                <span key={c.name} title={[c.primary && 'Its primary channel (its own map report).', c.sent && `${c.sent} of its packets uplinked on it.`, c.uplinked && `Uplinked ${c.uplinked} receptions on it as a gateway.`].filter(Boolean).join(' ')}>
+                  {k > 0 && ', '}{c.name}{c.primary && ' (primary)'}
+                </span>
+              ))
+            : NR}
+        </dd>
         <dt>Seen in window</dt><dd>{d.first_seen ? `${formatLocal(d.first_seen)} → ${formatLocal(d.last_seen)} (${relativeAge(d.last_seen, now)})` : NR}</dd>
         <dt>Traffic</dt><dd>{d.packets} unique packets · {d.receptions} receptions · uplinked {d.gateway_receptions} as gateway</dd>
         <dt>Signatures</dt>

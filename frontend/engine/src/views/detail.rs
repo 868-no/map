@@ -113,7 +113,9 @@ pub fn build_node_detail(rows: &[&Row], num: u32, i: &Interner) -> Option<NodeDe
     if let Some(r) = latest_by(&own, is_device_telemetry, |r| r.src).get(&num) {
         n.telemetry = Some(telemetry_of(r));
     }
-    let radio = crate::radio::radio(&own, i);
+    let mut radio = crate::radio::radio(&own, i);
+    radio.channels = crate::channels::channel_use(num, rows, i);
+    radio.preset = crate::channels::preset_guess(num, rows, i);
     let mut d = NodeDetail { node: n, positions: vec![], telemetry_series: vec![], heard_by: vec![], heard: vec![], recent_packets: vec![], truncated: false, radio };
     if first == i64::MAX {
         if !referenced(rows).contains(&num) {

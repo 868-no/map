@@ -85,6 +85,12 @@ pub struct Radio {
     pub heard_as: Vec<HeardAs>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub reported: Option<Reported>,
+    /// Channels it was seen on (D-064).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub channels: Vec<crate::channels::ChannelUse>,
+    /// Its modem preset as far as the window shows (D-064).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub preset: Option<crate::channels::PresetGuess>,
 }
 
 /// own: the window's rows originated by the node. Map reports are the
@@ -125,7 +131,7 @@ pub fn radio(own: &[&Row], i: &Interner) -> Radio {
         let m = r.map_report().unwrap();
         Reported { region: i.s(m.region).to_string(), modem_preset: i.s(m.preset).to_string(), preset_confirmed: m.default_channel, at: iso(r.t) }
     });
-    Radio { heard_as, reported }
+    Radio { heard_as, reported, ..Default::default() }
 }
 
 #[cfg(test)]

@@ -34,7 +34,19 @@
       "packets": 0,
       "positions": [],
       "radio": {
-        "heard_as": []
+        "heard_as": [],
+        "preset": {
+          "basis": "radio_contact_channel_name",
+          "group": 88,
+          "preset": "NARROW_FAST",
+          "via": [
+            "!301bf60c",
+            "!bfa97d12",
+            "!0177ae02",
+            "!02eb8e7c",
+            "!04677cab"
+          ]
+        }
       },
       "recent_packets": [],
       "receptions": 0,
@@ -866,7 +878,19 @@
       "packets": 5,
       "positions": [],
       "radio": {
-        "heard_as": []
+        "channels": [
+          {
+            "name": "NarrowFast",
+            "sent": 5,
+            "uplinked": 522
+          }
+        ],
+        "heard_as": [],
+        "preset": {
+          "basis": "channel_name",
+          "group": 88,
+          "preset": "NARROW_FAST"
+        }
       },
       "recent_packets": [
         {
@@ -1568,7 +1592,20 @@
         }
       ],
       "radio": {
-        "heard_as": []
+        "channels": [
+          {
+            "name": "NarrowFast",
+            "primary": true,
+            "sent": 8,
+            "uplinked": 474
+          }
+        ],
+        "heard_as": [],
+        "preset": {
+          "basis": "channel_name",
+          "group": 54,
+          "preset": "NARROW_FAST"
+        }
       },
       "recent_packets": [
         {
@@ -2407,7 +2444,19 @@
         }
       ],
       "radio": {
-        "heard_as": []
+        "channels": [
+          {
+            "name": "NarrowFast",
+            "sent": 64,
+            "uplinked": 316
+          }
+        ],
+        "heard_as": [],
+        "preset": {
+          "basis": "channel_name",
+          "group": 88,
+          "preset": "NARROW_FAST"
+        }
       },
       "recent_packets": [
         {
@@ -3775,7 +3824,19 @@
         }
       ],
       "radio": {
-        "heard_as": []
+        "channels": [
+          {
+            "name": "NarrowFast",
+            "sent": 5,
+            "uplinked": 528
+          }
+        ],
+        "heard_as": [],
+        "preset": {
+          "basis": "channel_name",
+          "group": 54,
+          "preset": "NARROW_FAST"
+        }
       },
       "recent_packets": [
         {
@@ -4603,7 +4664,19 @@
       "packets": 187,
       "positions": [],
       "radio": {
-        "heard_as": []
+        "channels": [
+          {
+            "name": "NarrowFast",
+            "sent": 187,
+            "uplinked": 283
+          }
+        ],
+        "heard_as": [],
+        "preset": {
+          "basis": "channel_name",
+          "group": 88,
+          "preset": "NARROW_FAST"
+        }
       },
       "recent_packets": [
         {
@@ -6434,7 +6507,19 @@
         }
       ],
       "radio": {
-        "heard_as": []
+        "channels": [
+          {
+            "name": "NarrowFast",
+            "sent": 57,
+            "uplinked": 478
+          }
+        ],
+        "heard_as": [],
+        "preset": {
+          "basis": "channel_name",
+          "group": 54,
+          "preset": "NARROW_FAST"
+        }
       },
       "recent_packets": [
         {
@@ -8045,7 +8130,19 @@
         }
       ],
       "radio": {
-        "heard_as": []
+        "channels": [
+          {
+            "name": "NarrowFast",
+            "sent": 153,
+            "uplinked": 680
+          }
+        ],
+        "heard_as": [],
+        "preset": {
+          "basis": "channel_name",
+          "group": 88,
+          "preset": "NARROW_FAST"
+        }
       },
       "recent_packets": [
         {
@@ -9901,7 +9998,19 @@
         }
       ],
       "radio": {
-        "heard_as": []
+        "channels": [
+          {
+            "name": "NarrowFast",
+            "sent": 21,
+            "uplinked": 515
+          }
+        ],
+        "heard_as": [],
+        "preset": {
+          "basis": "channel_name",
+          "group": 54,
+          "preset": "NARROW_FAST"
+        }
       },
       "recent_packets": [
         {

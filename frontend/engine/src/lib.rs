@@ -3,6 +3,7 @@
 //! rows, persisted chunks) and asks for views as JSON text; rows never become
 //! JavaScript objects.
 
+pub mod channels;
 pub mod geo;
 pub mod graph;
 pub mod packets;

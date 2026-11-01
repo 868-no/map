@@ -180,6 +180,24 @@ export interface Radio {
   // The node's own map report. preset_confirmed: a default channel proves the preset is in use;
   // otherwise it may be a stale value under a custom modem config.
   reported?: { region?: string; modem_preset?: string; preset_confirmed?: boolean; at: string }
+  channels?: ChannelUse[] // channels it was seen on (D-064)
+  preset?: PresetGuess // its modem preset as far as the window shows (D-064)
+}
+
+export interface ChannelUse {
+  name: string
+  sent: number // its own packets uplinked on this channel
+  uplinked: number // others' receptions it uplinked on this channel, as a gateway
+  primary?: boolean // its primary channel, from its own map report
+}
+
+/** Nodes that hear each other share modem settings: a radio group shares one preset. */
+export interface PresetGuess {
+  preset?: string // absent on conflict
+  basis: 'map_report' | 'radio_contact' | 'channel_name' | 'radio_contact_channel_name' | 'conflict'
+  via?: string[] // up to five node ids the evidence rests on
+  group: number // other nodes in its radio group
+  conflict?: [string, number][] // presets and how many group members each
 }
 
 export interface NodeView extends MeshNode {
