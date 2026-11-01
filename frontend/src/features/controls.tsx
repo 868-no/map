@@ -1,5 +1,5 @@
 import type { SnapshotView } from '../derive/views'
-import { useStore, type Confidence } from '../state/store'
+import { defaultFilters, useStore, type Confidence, type Filters } from '../state/store'
 import { roleRadius } from '../map/model'
 import { PALETTES } from '../map/palette'
 import { useTheme } from '../theme'
@@ -12,8 +12,13 @@ function toggle(list: string[], v: string): string[] {
   return list.includes(v) ? list.filter((x) => x !== v) : [...list, v]
 }
 
+/** How many filters differ from the defaults (the Filters button's badge). */
+export function activeFilters(f: Filters): number {
+  return [f.positionedOnly, f.evidence.length > 0 && f.evidence.length < EVIDENCE.length, f.minConfidence !== 'low', f.types.length > 0, f.channels.length > 0, f.brokers.length > 0].filter(Boolean).length
+}
+
 /** Map layer switches: mesh overlays and basemap groups. */
-export function LayersPanel({ id, onClose }: { id: string; onClose: () => void }) {
+export function LayersPanel() {
   const t = useStore((s) => s.toggles)
   const setT = useStore((s) => s.setToggles)
   // Each switch explains its data in a tooltip (title) shown on hover.
@@ -23,8 +28,7 @@ export function LayersPanel({ id, onClose }: { id: string; onClose: () => void }
     </label>
   )
   return (
-    <div id={id} className="popover layers-panel" role="dialog" aria-label="Map layers" onKeyDown={(e) => e.key === 'Escape' && onClose()}>
-      <button className="close" onClick={onClose} aria-label="Close layers">×</button>
+    <div className="panel layers-panel">
       <h3>Mesh</h3>
       {check('Router links', t.infraLinks, (v) => setT({ infraLinks: v }),
         'Radio links between two nodes that both announce the ROUTER or ROUTER_LATE role in the selected window. Thick blue lines, one per node pair. Each is backed by evidence from the window: NeighborInfo, a traceroute hop, a direct gateway reception, or a relay\'s last-hop byte resolved to a single node. Internet links are never included.')}
@@ -52,11 +56,15 @@ export function FilterPanel({ snapshot }: { snapshot: SnapshotView | undefined }
   const f = useStore((s) => s.filters)
   const set = useStore((s) => s.setFilters)
   const brokers = [...new Set((snapshot?.nodes ?? []).flatMap((n) => n.brokers ?? []))].sort()
+  const n = activeFilters(f)
   return (
     <div className="panel">
+      <p className="muted filter-head">
+        {n ? `${n} filter${n === 1 ? '' : 's'} active.` : 'Everything in the window counts.'}{' '}
+        {n > 0 && <button className="linkish" onClick={() => set(defaultFilters)}>Reset</button>}
+      </p>
       <h3>Nodes</h3>
       <label><input type="checkbox" checked={f.positionedOnly} onChange={(e) => set({ positionedOnly: e.target.checked })} /> Only nodes with reported positions</label>
-      <p className="muted">Map layers (links, labels, place names…) are under Layers on the map.</p>
 
       <h3>Link evidence</h3>
       {EVIDENCE.map(([k, label]) => (
@@ -79,7 +87,7 @@ export function FilterPanel({ snapshot }: { snapshot: SnapshotView | undefined }
         ))}
       </div>
       <h3>Channel</h3>
-      <input type="text" placeholder="e.g. NarrowFast (comma-separated)" defaultValue={f.channels.join(',')} onBlur={(e) => set({ channels: e.target.value.split(',').map((x) => x.trim()).filter(Boolean) })} />
+      <input key={f.channels.join(',')} type="text" aria-label="Channels" placeholder="e.g. NarrowFast (comma-separated)" defaultValue={f.channels.join(',')} onBlur={(e) => set({ channels: e.target.value.split(',').map((x) => x.trim()).filter(Boolean) })} />
       {brokers.length > 0 && (
         <>
           <h3>Broker</h3>

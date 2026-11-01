@@ -49,7 +49,7 @@ test('close-together names collapse, and fan out on hover and selection', async 
   await expect.poll(async () => (await labels(page)).texts).toEqual(['BRAV +2', 'FARX'])
 
   // Select one of them: the cluster stays open while it is selected.
-  await page.getByRole('button', { name: 'Nodes & details' }).click()
+  await page.getByRole('button', { name: 'Nodes', exact: true }).click()
   await page.locator('.node-row', { hasText: 'ALFA' }).click()
   await expect.poll(async () => (await labels(page)).texts, { timeout: 10_000 }).toEqual(['ALFA', 'BRAV', 'CHAR', 'FARX'])
   await page.mouse.move(5, 300)

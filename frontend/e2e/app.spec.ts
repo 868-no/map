@@ -16,10 +16,12 @@ async function ready(page: Page) {
   await page.waitForFunction(() => !!(window as unknown as { __meshmap?: unknown }).__meshmap, null, { timeout: 30_000 })
 }
 
-async function openPanel(page: Page) {
-  const b = page.getByRole('button', { name: 'Nodes & details' })
-  if (await b.isVisible()) await b.click()
+/** Open a tool-rail panel (D-066), unless it is already open. */
+async function showPanel(page: Page, name: string) {
+  const b = page.getByRole('button', { name, exact: true })
+  if ((await b.getAttribute('aria-pressed')) !== 'true') await b.click()
 }
+const openPanel = (page: Page) => showPanel(page, 'Nodes')
 
 async function viewAt(page: Page, lat: number, lon: number, zoom: number): Promise<Labels> {
   await page.evaluate(([lat, lon, zoom]) => (window as unknown as { __meshmap: { map: { jumpTo: (o: object) => void } } }).__meshmap.map.jumpTo({ center: [lon, lat], zoom }), [lat, lon, zoom])
@@ -47,8 +49,8 @@ test('follows the browser theme, and a chosen theme overrides it from the first 
   await expect.poll(() => mapBg(page)).toBe('#f3f1ec')
   await expect(page.locator('.topbar h1')).toHaveText('868.no Map')
 
-  await page.getByRole('button', { name: 'Menu' }).click()
-  await page.getByRole('dialog', { name: 'Menu' }).getByLabel('Dark').check()
+  await showPanel(page, 'Settings')
+  await page.getByRole('complementary', { name: 'Settings' }).getByLabel('Dark').check()
   await expect.poll(() => pageBg(page)).toBe('rgb(14, 17, 22)')
   await expect.poll(() => mapBg(page)).toBe('#0e1116')
 
@@ -58,15 +60,15 @@ test('follows the browser theme, and a chosen theme overrides it from the first 
   expect(await page.evaluate(() => document.documentElement.dataset.theme)).toBe('dark')
 
   await page.waitForFunction(() => !!(window as unknown as { __meshmap?: unknown }).__meshmap, null, { timeout: 30_000 })
-  await page.getByRole('button', { name: 'Menu' }).click()
-  await page.getByRole('dialog', { name: 'Menu' }).getByLabel('Auto').check()
+  await showPanel(page, 'Settings')
+  await page.getByRole('complementary', { name: 'Settings' }).getByLabel('Auto').check()
   await expect.poll(() => pageBg(page)).toBe('rgb(246, 247, 249)')
   await expect.poll(() => mapBg(page)).toBe('#f3f1ec')
 })
 
 async function showLayers(page: Page, names: string[]) {
-  await page.getByRole('button', { name: 'Layers' }).click()
-  const panel = page.getByRole('dialog', { name: 'Map layers' })
+  await showPanel(page, 'Layers')
+  const panel = page.getByRole('complementary', { name: 'Layers' })
   for (const n of names) await panel.getByLabel(n).check()
   await page.getByRole('button', { name: 'Close layers' }).click()
 }
@@ -173,9 +175,9 @@ test('rejects nothing silently: invalid URL windows fall back, mobile layout wor
   await page.goto('/?start=garbage&end=nope')
   await expect(page.locator('.badge')).toContainText('LIVE')
   await page.setViewportSize({ width: 390, height: 844 })
-  await expect(page.locator('.sidebar')).toBeHidden()
+  await expect(page.locator('#dock')).toBeHidden()
   await openPanel(page)
-  await expect(page.locator('.sidebar')).toBeVisible()
+  await expect(page.locator('#dock')).toBeVisible()
   await expect(page.locator('.timeline')).toBeVisible()
   await expect(page.locator('.node-row').first()).toBeVisible()
   await page.getByRole('button', { name: 'Fit to data' }).click()
@@ -186,7 +188,7 @@ test('rejects nothing silently: invalid URL windows fall back, mobile layout wor
 test('legend explains role sizes and a last-heard scale that follows the window', async ({ page }) => {
   await ready(page)
   await openPanel(page)
-  await page.getByRole('tab', { name: 'Legend' }).click()
+  await showPanel(page, 'Legend')
   await expect(page.locator('.age-labels')).toContainText('72 h before')
   await expect(page.locator('.legend')).toContainText('ROUTER_LATE')
   await page.getByRole('button', { name: '24h', exact: true }).click()
@@ -220,14 +222,15 @@ test('selecting a node shows only its links, and accuracy circles only for it', 
   await expect.poll(async () => (await layerData()).links.some(([a, b]) => a !== id && b !== id)).toBe(true)
 })
 
-test('side panel is hidden until something is selected, and hides again when the selection closes', async ({ page }) => {
+test('the panel is closed until something is selected, and closes again when the selection closes', async ({ page }) => {
   await ready(page)
-  await expect(page.locator('#sidebar')).toBeHidden()
+  await expect(page.locator('#dock')).toBeHidden()
   await openPanel(page)
-  await expect(page.locator('#sidebar')).toBeVisible()
+  await expect(page.locator('#dock')).toBeVisible()
   await page.locator('.node-row').first().click()
-  await page.getByRole('button', { name: 'Hide panel' }).click()
-  await expect(page.locator('#sidebar')).toBeHidden()
+  await expect(page.getByRole('button', { name: 'Details', exact: true })).toHaveAttribute('aria-pressed', 'true')
+  await page.getByRole('button', { name: 'Details', exact: true }).click() // its rail button closes it, and clears the selection
+  await expect(page.locator('#dock')).toBeHidden()
   // Select a node on the map itself: the panel opens on Details, and closing the details hides it again.
   await page.waitForFunction(() => {
     const l = (window as unknown as { __meshmap: Hook }).__meshmap.layers()
@@ -249,10 +252,10 @@ test('side panel is hidden until something is selected, and hides again when the
   await expect.poll(async () => (await page.locator('.tooltip').isVisible()) || (await page.evaluate(() =>
     (window as unknown as { __meshmap: Hook }).__meshmap.layers().some((l) => l.id === 'label-leaders')))).toBe(true)
   await page.mouse.click(box.x + pt.x, box.y + pt.y)
-  await expect(page.locator('#sidebar')).toBeVisible()
-  await expect(page.getByRole('tab', { name: 'Details' })).toHaveAttribute('aria-selected', 'true')
+  await expect(page.locator('#dock')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Details', exact: true })).toHaveAttribute('aria-pressed', 'true')
   await page.getByRole('button', { name: 'Close details' }).click()
-  await expect(page.locator('#sidebar')).toBeHidden()
+  await expect(page.locator('#dock')).toBeHidden()
 })
 
 test('starts fitted to the data, and clicking empty map clears the selection', async ({ page }) => {
@@ -296,8 +299,8 @@ test('panel and time bar overlay the map; the time bar collapses to its first ro
 
 test('every layer switch explains its data in a tooltip', async ({ page }) => {
   await ready(page)
-  await page.getByRole('button', { name: 'Layers' }).click()
-  const titles = await page.getByRole('dialog', { name: 'Map layers' }).locator('label').evaluateAll((ls) => ls.map((l) => l.getAttribute('title') ?? ''))
+  await showPanel(page, 'Layers')
+  const titles = await page.getByRole('complementary', { name: 'Layers' }).locator('label').evaluateAll((ls) => ls.map((l) => l.getAttribute('title') ?? ''))
   expect(titles.length).toBeGreaterThan(10)
   for (const t of titles) expect(t.length).toBeGreaterThan(20)
 })
@@ -326,7 +329,7 @@ test('the packet log combines own and relayed packets, and draws a packet route 
   // A node that relayed something, so the toggle changes the list.
   const rows = page.locator('.node-row')
   for (let i = 0; i < 15; i++) {
-    await page.getByRole('tab', { name: 'Nodes' }).click()
+    await showPanel(page, 'Nodes')
     await rows.nth(i).click()
     await expect(page.getByRole('heading', { name: /^Packet log/ })).toBeVisible()
     if (i === 0) await expect(toggle).not.toBeChecked() // own packets only by default
@@ -389,4 +392,24 @@ test('the regions layer draws the five landsdeler, names them at overview zooms 
   await viewAt(page, 63.43, 10.4, 10)
   await expect.poll(async () => Object.keys(await layers())).toContain('regions')
   expect('region-labels' in (await layers())).toBe(false)
+})
+
+// D-066: every control panel sits on the tool rail; active filters show as a badge there.
+test('the tool rail opens one panel at a time and counts active filters', async ({ page }) => {
+  await ready(page)
+  const filters = page.getByRole('button', { name: 'Filters', exact: true })
+  await expect(filters.locator('.rail-badge')).toHaveCount(0)
+  await showPanel(page, 'Filters')
+  const panel = page.getByRole('complementary', { name: 'Filters' })
+  await panel.getByRole('button', { name: 'position' }).click()
+  await panel.getByLabel('Only nodes with reported positions').check()
+  await expect(filters.locator('.rail-badge')).toHaveText('2')
+  await expect(page).toHaveURL(/type=position/)
+  await panel.getByRole('button', { name: 'Reset' }).click()
+  await expect(filters.locator('.rail-badge')).toHaveCount(0)
+  // Another rail button swaps the panel; pressing the open one closes it.
+  await showPanel(page, 'Legend')
+  await expect(page.getByRole('complementary', { name: 'Legend' })).toBeVisible()
+  await page.getByRole('button', { name: 'Legend', exact: true }).click()
+  await expect(page.locator('#dock')).toBeHidden()
 })

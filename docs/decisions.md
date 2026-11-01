@@ -415,7 +415,7 @@ Operator request. This reverses the spec's dark-only design.
 - **Privacy policy:** a static page, `/privacy.html`, linked from the attribution bar. It is readable without the app and linkable. `privacy.js` fills in this deployment's operator (`OPERATOR_NAME`, `OPERATOR_CONTACT`, new in capabilities), retention, geolocation and tile source. What it says about visitors was checked against the code: IPs are held only in the rate limiter's memory, dropped after 10 idle minutes, and never logged; the Caddy image keeps no access log; there are no cookies; browser storage holds settings, data and the app shell. The service worker used to cache every navigation as `/index.html`, which would have stored the policy as the offline app; precached pages are now cached under their own path.
 - **Found while writing it:** "message bodies are never stored" was only true of `decoded_metadata`. `envelope_bytes` keeps the raw envelope: encrypted text messages, readable with the public default key, and plain text from gateways that uplink decrypted packets. The policy and `architecture.md` now say so; whether to keep it is the operator's decision.
 
-## D-052 One home for app controls (2026-11-01)
+## D-052 One home for app controls (2026-11-01; superseded by D-066)
 
 Operator feedback: the GitHub link, privacy, license, Layers and the side panel toggle were scattered over the top bar, the map and its credit line, and Theme had ended up among the map layers. Now:
 - **Top bar, right:** every app control sits together. Layers (map layers only), the side panel toggle (Nodes & details / Hide panel), and a menu (☰). Each has an icon and a label; phones show the icons only.
@@ -520,4 +520,12 @@ Operator request: several channel/key sets (already supported: any number of cha
 - **Fallback:** a packet on a channel name with no configured keys is tried with the default key in CTR and CCM mode, under the channel name its topic gives. Only keys whose channel hash (name and key combined) matches the packet's channel byte are tried, so a channel with its own key almost never gets a decryption attempt, and a mismatch is rejected as before. Configured channel names, and PKI, never fall back. Keys are derived per packet and not cached, since anyone who can publish chooses the topic names. It stays within the key-attempt budget.
 - **Switch:** `DEFAULT_KEY_FALLBACK` (default true). It is part of the configuration revision, so the data generation changes with it.
 - Such channels are default-key channels, readable by anyone with a Meshtastic radio, so decoding them adds nothing that is not already public. With it, channels like "Custom", "OWLCHAT" and "Hopland" seen in map reports (D-064) contribute receptions, links and channel membership whenever their users keep the default key.
+
+## D-066 A tool rail for every control (2026-11-01)
+
+Operator request: filters and the legend did not belong in the node sidebar, and the top-right buttons felt wrong. Of three layouts offered (split by purpose, one "Map" popover, a tool rail), the operator chose a tool rail, on the right, replacing the sidebar, the Layers popover and the ☰ menu with one control panel.
+- **Rail:** a full-height column on the right edge with Nodes, Details, Filters, Layers, Legend and, at the foot, Settings (theme, install, source code, license, privacy). Icons carry short labels, which narrow screens drop, keeping them as accessible names and tooltips. It has its own grid column, so the map and the time bar never sit beneath it. The top bar keeps only the wordmark and the counters.
+- **Panel:** one at a time, docked beside the rail over the map (the map never resizes; on phones a bottom sheet). Its header names it and closes it. Pressing the open panel's button again, or Escape (unless typing in a field), closes it too.
+- **Details is the selection:** selecting a node or link opens Details (and a selection that opened it closes it again when cleared); closing Details any way clears the selection. Keeping a node selected behind a closed panel left its links filtered with nothing on screen to say why, and clicking the same node again did not reopen it.
+- **Filters:** the rail button shows how many filters differ from the defaults, and the panel has a Reset.
 

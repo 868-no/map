@@ -27,7 +27,7 @@ test('works offline with the last data received, and never stores tiles in the w
   await expect.poll(() => page.evaluate(async () => !!(await navigator.serviceWorker.getRegistration())?.active), { timeout: 30_000 }).toBe(true)
   await page.reload() // now controlled by the service worker
   await expect.poll(() => page.evaluate(() => !!navigator.serviceWorker.controller)).toBe(true)
-  await page.getByRole('button', { name: 'Nodes & details' }).click()
+  await page.getByRole('button', { name: 'Nodes', exact: true }).click()
   await expect(page.locator('.node-row').first()).toBeVisible()
   const names = await page.locator('.node-row .nm').allTextContents()
   // The worker saves its rows to IndexedDB in the background; go offline once saved.
@@ -54,7 +54,7 @@ test('works offline with the last data received, and never stores tiles in the w
   await page.reload()
   await expect(page.locator('.topbar h1')).toHaveText('868.no Map')
   await expect(page.getByRole('status').filter({ hasText: 'Offline' })).toBeVisible()
-  await page.getByRole('button', { name: 'Nodes & details' }).click()
+  await page.getByRole('button', { name: 'Nodes', exact: true }).click()
   await expect(page.locator('.node-row').first()).toBeVisible()
   expect(await page.locator('.node-row .nm').allTextContents()).toEqual(names)
 

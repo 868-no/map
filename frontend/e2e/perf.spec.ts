@@ -23,7 +23,7 @@ for (const [N, E] of [[0, 0], [2000, 20000]] as const) test(`rendering ${N} node
   await page.waitForFunction(() => !!(window as unknown as { __meshmap?: unknown }).__meshmap)
   await expect(page.locator('.counters')).toContainText(`${E} links`)
   if (N > 0) {
-    await page.getByRole('button', { name: 'Nodes & details' }).click() // the side panel starts hidden
+    await page.getByRole('button', { name: 'Nodes', exact: true }).click() // the side panel starts hidden
     await expect(page.locator('.node-row').first()).toBeVisible()
   }
   await page.waitForTimeout(3000)

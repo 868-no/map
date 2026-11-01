@@ -4,15 +4,14 @@ import { setPingPositions } from './map/pings'
 import Timeline from './timeline/Timeline'
 import { usePwa } from './pwa'
 import { EdgePanel, NodeList, NodePanel } from './features/panels'
-import { FilterPanel, LayersPanel, Legend } from './features/controls'
-import { AppMenu } from './features/menu'
+import { activeFilters, FilterPanel, LayersPanel, Legend } from './features/controls'
+import { SettingsPanel } from './features/menu'
+import { Dock, Rail, type PanelId } from './features/rail'
 import { useCapabilities, useRetention, useSnapshot, useTraffic } from './state/data'
 import { useLiveStream } from './state/live'
 import { initDerive } from './derive/client'
 import { fromQuery, toQuery, useStore } from './state/store'
 import { applyTheme, useTheme } from './theme'
-
-type Tab = 'nodes' | 'details' | 'filters' | 'legend'
 
 export default function App() {
   const caps = useCapabilities()
@@ -22,29 +21,11 @@ export default function App() {
   const win = useStore((s) => s.win)
   const filters = useStore((s) => s.filters)
   const selection = useStore((s) => s.selection)
-  const [tab, setTab] = useState<Tab>('nodes')
   const { online, servedOffline, canInstall, install } = usePwa()
   const [notice, setNotice] = useState<string | null>(null)
   const geo = useRef<Map<string, [number, number]>>(new Map())
   const theme = useTheme()
   useEffect(() => applyTheme(theme), [theme])
-  // One top-bar popover at a time; Escape or a click elsewhere closes it.
-  const [popover, setPopover] = useState<'layers' | 'menu' | null>(null)
-  const actions = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    if (!popover) return
-    const away = (e: Event) => {
-      if (!actions.current?.contains(e.target as Node)) setPopover(null)
-    }
-    const esc = (e: KeyboardEvent) => e.key === 'Escape' && setPopover(null)
-    document.addEventListener('pointerdown', away)
-    document.addEventListener('keydown', esc)
-    return () => {
-      document.removeEventListener('pointerdown', away)
-      document.removeEventListener('keydown', esc)
-    }
-  }, [popover])
-  const toggleOpen = (p: 'layers' | 'menu') => setPopover((o) => (o === p ? null : p))
   const onPositions = useCallback((pos: Map<string, [number, number]>) => {
     geo.current = pos
     setPingPositions(pos) // pings follow the markers as estimates move
@@ -67,26 +48,43 @@ export default function App() {
     if (url !== window.location.search) window.history.replaceState(null, '', url)
   }, [win, filters])
 
-  // The sidebar starts hidden. Selecting a node or link opens it on Details;
-  // if the selection opened it, clearing the selection hides it again.
-  const [panelOpen, setPanelOpen] = useState(false)
+  // One panel at a time, beside the tool rail; all start closed. Selecting a
+  // node or link opens Details; if the selection opened it, clearing the
+  // selection closes it again (D-066).
+  const [panel, setPanel] = useState<PanelId | null>(null)
   const autoOpened = useRef(false)
   useEffect(() => {
     if (selection) {
-      setTab('details')
-      setPanelOpen((open) => {
-        if (!open) autoOpened.current = true
-        return true
+      setPanel((p) => {
+        if (p !== 'details') autoOpened.current = p === null
+        return 'details'
       })
     } else if (autoOpened.current) {
       autoOpened.current = false
-      setPanelOpen(false)
+      setPanel((p) => (p === 'details' ? null : p))
     }
   }, [selection])
-  const togglePanel = () => {
+  // Details shows the selection: closing it (its button, ×, Escape) clears it.
+  const closePanel = () => {
     autoOpened.current = false
-    setPanelOpen((o) => !o)
+    if (panel === 'details' && useStore.getState().selection) useStore.getState().select(null)
+    setPanel(null)
   }
+  const togglePanel = (p: PanelId) => {
+    if (p === panel) return closePanel()
+    autoOpened.current = false
+    setPanel(p)
+  }
+  // Escape closes the panel, except while typing in a field.
+  useEffect(() => {
+    if (!panel) return
+    const esc = (e: KeyboardEvent) => {
+      const t = e.target as HTMLElement
+      if (e.key === 'Escape' && !(t instanceof HTMLInputElement && t.type === 'text') && !(t instanceof HTMLTextAreaElement)) closePanel()
+    }
+    document.addEventListener('keydown', esc)
+    return () => document.removeEventListener('keydown', esc)
+  }, [panel]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Fixed windows that fall out of retention while open: notify and clamp.
   useEffect(() => {
@@ -125,39 +123,18 @@ export default function App() {
           </span>
         )}
         {snap.isFetching && <span className="spinner" aria-label="Updating" />}
-        <div className="topbar-actions" ref={actions}>
-          <button aria-expanded={popover === 'layers'} aria-controls="layers-panel" aria-label="Layers" onClick={() => toggleOpen('layers')} title="Choose what the map shows">
-            <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round"><path d="M10 3 2.5 7 10 11l7.5-4L10 3Z" /><path d="m2.5 10.5 7.5 4 7.5-4" /><path d="m2.5 14 7.5 4 7.5-4" /></svg>
-            <span className="btn-label">Layers</span>
-          </button>
-          <button className="panel-toggle" aria-expanded={panelOpen} aria-controls="sidebar" aria-label={panelOpen ? 'Hide panel' : 'Nodes & details'} onClick={togglePanel} title={panelOpen ? 'Hide the side panel' : 'Show nodes, details, filters and legend'}>
-            <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.6"><rect x="2.5" y="3.5" width="15" height="13" rx="2" /><path d="M12.5 3.5v13" /></svg>
-            <span className="btn-label">{panelOpen ? 'Hide panel' : 'Nodes & details'}</span>
-          </button>
-          <button className="icon-btn" aria-expanded={popover === 'menu'} aria-controls="app-menu" aria-label="Menu" onClick={() => toggleOpen('menu')} title="Theme, install, source code, license and privacy">
-            <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M3.5 5.5h13M3.5 10h13M3.5 14.5h13" /></svg>
-          </button>
-          {popover === 'layers' && <LayersPanel id="layers-panel" onClose={() => setPopover(null)} />}
-          {popover === 'menu' && <AppMenu id="app-menu" onClose={() => setPopover(null)} canInstall={canInstall} install={install} />}
-        </div>
       </header>
-      <main className={`main${panelOpen ? '' : ' panel-closed'}`}>
+      <main className={`main${panel ? '' : ' panel-closed'}`}>
         <MapView caps={caps.data} snapshot={snap.data} onPositions={onPositions} />
-        <aside id="sidebar" className="sidebar" aria-label="Details" hidden={!panelOpen}>
-          <nav className="tabs" role="tablist">
-            {(['nodes', 'details', 'filters', 'legend'] as Tab[]).map((t) => (
-              <button key={t} role="tab" aria-selected={tab === t} onClick={() => setTab(t)}>
-                {t[0].toUpperCase() + t.slice(1)}
-              </button>
-            ))}
-          </nav>
-          <div className="tab-body">
-            {tab === 'nodes' && <NodeList snapshot={snap.data} />}
-            {tab === 'details' && (sel?.kind === 'node' ? <NodePanel id={sel.id} snapshot={snap.data} /> : linkSel ? <EdgePanel a={linkSel.src} b={linkSel.dst} mqtt={!!linkSel.mqtt} snapshot={snap.data} /> : <div className="panel muted">Select a node or link on the map or in the list.</div>)}
-            {tab === 'filters' && <FilterPanel snapshot={snap.data} />}
-            {tab === 'legend' && <Legend snapshot={snap.data} />}
-          </div>
-        </aside>
+        <Dock open={panel} onClose={closePanel}>
+          {panel === 'nodes' && <NodeList snapshot={snap.data} />}
+          {panel === 'details' && (sel?.kind === 'node' ? <NodePanel id={sel.id} snapshot={snap.data} /> : linkSel ? <EdgePanel a={linkSel.src} b={linkSel.dst} mqtt={!!linkSel.mqtt} snapshot={snap.data} /> : <div className="panel muted">Select a node or link on the map, or find one under Nodes.</div>)}
+          {panel === 'filters' && <FilterPanel snapshot={snap.data} />}
+          {panel === 'layers' && <LayersPanel />}
+          {panel === 'legend' && <Legend snapshot={snap.data} />}
+          {panel === 'settings' && <SettingsPanel canInstall={canInstall} install={install} />}
+        </Dock>
+        <Rail open={panel} onToggle={togglePanel} badges={{ filters: activeFilters(filters) }} />
         <div className="banners">
           {(!online || servedOffline) && (
             <div className="banner hist" role="status">

@@ -1,17 +1,17 @@
-// The app menu (top bar, ☰): display settings, installing the app, and what
-// the site is: source code, license and privacy policy.
+// The Settings panel (tool rail, D-066): display settings, installing the
+// app, and what the site is: source code, license and privacy policy.
 import { useStore } from '../state/store'
 import type { ThemeChoice } from '../theme'
 import { LICENSE_HREF, PRIVACY_URL, SOURCE_HREF, SOURCE_REVISION } from '../links'
 
 const THEMES: [ThemeChoice, string][] = [['system', 'Auto'], ['light', 'Light'], ['dark', 'Dark']]
 
-export function AppMenu({ id, onClose, canInstall, install }: { id: string; onClose: () => void; canInstall: boolean; install: () => void }) {
+export function SettingsPanel({ canInstall, install }: { canInstall: boolean; install: () => void }) {
   const theme = useStore((s) => s.toggles.theme)
   const setT = useStore((s) => s.setToggles)
+  const id = 'settings'
   return (
-    <div id={id} className="popover menu" role="dialog" aria-label="Menu" onKeyDown={(e) => e.key === 'Escape' && onClose()}>
-      <button className="close" onClick={onClose} aria-label="Close menu">×</button>
+    <div className="panel settings">
       <h3 id={`${id}-theme`}>Theme</h3>
       <div className="segmented" role="radiogroup" aria-labelledby={`${id}-theme`}>
         {THEMES.map(([v, label]) => (
@@ -24,7 +24,7 @@ export function AppMenu({ id, onClose, canInstall, install }: { id: string; onCl
       {canInstall && (
         <>
           <h3>App</h3>
-          <button className="menu-item" onClick={() => { install(); onClose() }}>Install 868.no Map on this device</button>
+          <button className="menu-item" onClick={install}>Install 868.no Map on this device</button>
         </>
       )}
       <h3>About</h3>

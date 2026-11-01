@@ -135,7 +135,6 @@ export function NodePanel({ id, snapshot }: { id: string; snapshot: SnapshotView
   const radio = radioSummary(d.radio, (n) => names.get(n) ?? n)
   return (
     <div className="panel node-panel">
-      <button className="close" onClick={() => select(null)} aria-label="Close details">×</button>
       <h2>{d.identity?.long_name || d.id}</h2>
       <p className="muted">
         {d.id} · #{d.num} {d.status === 'referenced' && <span className="tag">referenced only — not directly observed</span>}
@@ -381,7 +380,6 @@ export function EdgePanel({ a, b, mqtt = false, snapshot }: { a: string; b: stri
   }
   return (
     <div className="panel">
-      <button className="close" onClick={() => select(null)} aria-label="Close details">×</button>
       <h2>{mqtt ? 'Internet link' : 'Link'}</h2>
       <p>
         <button className="linkish" onClick={() => select({ kind: 'node', id: a })}>{name(a)}</button> ↔{' '}

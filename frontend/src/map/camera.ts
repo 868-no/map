@@ -1,5 +1,5 @@
 // Camera behaviour: fit to data (also once at start), fly to a selected node,
-// and keep framed content clear of the side panel that overlays the map.
+// and keep framed content clear of the panel that overlays the map.
 import { useCallback, useEffect, useRef, type RefObject } from 'react'
 import * as maplibregl from 'maplibre-gl'
 import type { Capabilities } from '../api/types'
@@ -7,9 +7,9 @@ import type { Selection } from '../state/store'
 
 type LngLat = [number, number]
 
-/** Pixels of the map covered by the side panel (right edge, or bottom sheet). */
+/** Pixels of the map covered by the open panel (right edge, or bottom sheet). */
 function covered(container: HTMLElement | null): { right: number; bottom: number } {
-  const panel = document.getElementById('sidebar')
+  const panel = document.getElementById('dock')
   if (!panel || panel.hidden || !container) return { right: 0, bottom: 0 }
   const a = container.getBoundingClientRect(), b = panel.getBoundingClientRect()
   return b.top <= a.top + 1 ? { right: Math.max(0, a.right - b.left), bottom: 0 } : { right: 0, bottom: Math.max(0, a.bottom - b.top) }
