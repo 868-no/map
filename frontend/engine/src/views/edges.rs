@@ -33,7 +33,9 @@ pub fn traceroute_hops(rows: &[&Row]) -> Vec<Sample> {
 /// their reported positions, and the roles that can rebroadcast.
 /// `hops`: traceroute_hops of the rows.
 /// `downlinkers`: probable downlinking nodes, whose 0 dB traceroute hops become MQTT links (None: off).
-pub fn build_edges(rows: &[&Row], hops: &[Sample], known: &[u32], pos: FxMap<u32, LatLon>, silent: FxSet<u32>, downlinkers: Option<&FxSet<u32>>) -> (EdgeResult, RelayContext) {
+/// `moved`: when nodes last moved (D-073); radio evidence from before either end's move is dropped.
+pub fn build_edges(rows: &[&Row], hops: &[Sample], known: &[u32], pos: FxMap<u32, LatLon>, silent: FxSet<u32>, downlinkers: Option<&FxSet<u32>>, moved: &FxMap<u32, i64>) -> (EdgeResult, RelayContext) {
+    let current = |s: &Sample| moved.get(&s.src).is_none_or(|&t| s.t >= t) && moved.get(&s.dst).is_none_or(|&t| s.t >= t);
     let mut samples: Vec<Sample> = Vec::new();
     // A. NeighborInfo: neighbour -> reporter, the first copy of each logical packet.
     let mut first_nb: Vec<&Row> = Vec::new();
@@ -80,12 +82,18 @@ pub fn build_edges(rows: &[&Row], hops: &[Sample], known: &[u32], pos: FxMap<u32
             pending.push((s, (r.relay.unwrap_or(0) & 0xff) as u8, r.src, r.gw.unwrap()));
         }
     }
+    samples.retain(|s| current(s));
     let confirmed: Vec<(u32, u32)> = samples.iter().filter(|s| s.ev != Ev::RelayHint).map(|s| (s.src, s.dst)).collect();
     let ctx = RelayContext::new(known.iter().copied(), pos, confirmed, silent);
     let (mut ambiguous, mut unmatched) = (0, 0);
     for (s, hint, origin, gw) in pending {
         match ctx.resolve(hint, origin, gw) {
-            Some(Ok(n)) => samples.push(Sample { src: n, ev: Ev::RelayHint, ..s }),
+            Some(Ok(n)) => {
+                let s = Sample { src: n, ev: Ev::RelayHint, ..s };
+                if current(&s) {
+                    samples.push(s)
+                }
+            }
             Some(Err(())) => ambiguous += 1,
             None => unmatched += 1,
         }

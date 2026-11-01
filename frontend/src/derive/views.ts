@@ -98,6 +98,9 @@ export interface MeshNode {
   estimate?: Estimate // approximate location from in-window links; never a reported position
   estimate_note?: string // why an unpositioned node has no estimate
   mqtt_downlink?: { zero_snr: number; traceroutes: number } // probably transmits packets from MQTT (D-054)
+  moved_at?: string // last moved more than a few hundred metres: links use only later evidence (D-073)
+  track?: { lat: number; lon: number; alt?: number; at: string }[] // its positions in time order, newest last, when it moved
+  airborne?: boolean // moving and reporting more than 750 m above sea level
 }
 
 /** Directed src -> dst: dst heard src. */
@@ -265,6 +268,7 @@ export interface RouteSegment {
 }
 
 export interface PacketRoute {
+  at: string // when it was first heard: where moved nodes were then (D-073)
   meta: ViewMeta
   origin: string
   type: string

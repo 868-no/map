@@ -146,6 +146,8 @@ pub struct PacketRoute {
     pub origin: String,
     #[serde(rename = "type")]
     pub ty: String,
+    /// When it was first heard: where moved nodes were then (D-073).
+    pub at: String,
     pub segments: Vec<RouteSegment>,
     pub receptions: usize,
 }
@@ -154,7 +156,7 @@ pub struct PacketRoute {
 /// Segments are transmitter -> receiver; dashed where nodes are missing.
 pub fn packet_route(rows: &[&Row], ctx: &RelayContext, roles: &FxMap<u32, String>, i: &Interner) -> PacketRoute {
     let Some(first) = rows.first() else {
-        return PacketRoute { origin: String::new(), ty: String::new(), segments: vec![], receptions: 0 };
+        return PacketRoute { origin: String::new(), ty: String::new(), at: String::new(), segments: vec![], receptions: 0 };
     };
     let origin = first.src;
     let mut order: Vec<(u32, u32)> = Vec::new();
@@ -217,6 +219,7 @@ pub fn packet_route(rows: &[&Row], ctx: &RelayContext, roles: &FxMap<u32, String
     PacketRoute {
         origin: node_id(origin),
         ty: i.s(first.ty).to_string(),
+        at: iso(rows.iter().map(|r| r.t).min().unwrap_or(first.t)),
         segments: order.into_iter().map(|(a, b)| {
             let (dashed, why) = segs[&(a, b)];
             RouteSegment { a: node_id(a), b: node_id(b), dashed, why }

@@ -97,6 +97,16 @@ pub struct Node {
     pub estimate_note: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mqtt_downlink: Option<Downlink>,
+    /// When it last moved more than a few hundred metres (D-073): links use
+    /// only evidence from after that.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub moved_at: Option<String>,
+    /// Its positions in time order, newest last, when it moved (D-073).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub track: Option<Vec<crate::movement::TrackPoint>>,
+    /// Moving and reporting more than 750 m above sea level (D-073).
+    #[serde(skip_serializing_if = "is_false")]
+    pub airborne: bool,
     #[serde(skip)]
     pub(super) first: i64,
     #[serde(skip)]
@@ -106,11 +116,18 @@ pub struct Node {
 }
 
 impl Node {
+    /// Its movement (D-073); call after its position is set.
+    pub(super) fn set_movement(&mut self, m: &crate::movement::Movement) {
+        self.moved_at = Some(iso(m.moved_at));
+        self.track = Some(m.track.clone());
+        self.airborne = self.position.as_ref().and_then(|p| p.alt).is_some_and(|a| a > crate::movement::AIRBORNE_M);
+    }
+
     pub(super) fn new(n: u32) -> Self {
         Node {
             id: node_id(n), num: n, status: "observed", identity: None, position: None, telemetry: None, first_seen: None, last_seen: None,
             packets: 0, receptions: 0, gateway_receptions: 0, is_gateway: false, signatures: Signatures::default(), brokers: None,
-            mqtt_opt_out: false, estimate: None, estimate_note: None, mqtt_downlink: None, first: i64::MAX, last: i64::MIN, pos: None,
+            mqtt_opt_out: false, estimate: None, estimate_note: None, mqtt_downlink: None, moved_at: None, track: None, airborne: false, first: i64::MAX, last: i64::MIN, pos: None,
         }
     }
 }

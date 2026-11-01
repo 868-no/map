@@ -7,7 +7,7 @@ import type { Capabilities } from '../api/types'
 import type { Edge, SnapshotView } from '../derive/views'
 import { useStore } from '../state/store'
 import { applyStylePaint, loadStyle, registerPMTiles } from './style'
-import { bridgeRoute, filterEdges, linkGeometry, placeNodes, visibleLinks, type LinkGeom, type PlacedNode } from './model'
+import { bridgeRoute, positionAt, filterEdges, linkGeometry, placeNodes, visibleLinks, type LinkGeom, type PlacedNode } from './model'
 import { frameArrived, pingCount } from './pings'
 import { BASEMAP_GROUPS } from './layers'
 import { meshLayerBuilder, type ReachGeom, type RouteGeom } from './meshLayers'
@@ -19,6 +19,14 @@ import { installTestHook } from './testHook'
 import { useTheme, type Theme } from '../theme'
 import { PALETTES } from './palette'
 import { useRegions } from './regions'
+
+/** Mainland Norway, Lindesnes to Nordkapp and Utsira to Grense Jakobselv. */
+const NORWAY_BOUNDS: [[number, number], [number, number]] = [[4.5, 57.9], [31.2, 71.25]]
+/** Room around the country; on the right, for the floating tool rail. */
+const startPadding = () => {
+  const narrow = window.innerWidth <= 560
+  return { top: 16, bottom: 16, left: 16, right: narrow ? 64 : 92 }
+}
 
 
 
@@ -65,8 +73,9 @@ export default function MapView({ caps, snapshot, onPositions }: Props) {
         const map = new maplibregl.Map({
           container: container.current,
           style,
-          center: [caps.map.lon, caps.map.lat],
-          zoom: caps.map.zoom,
+          // All of Norway in view at start, clear of the tool rail (D-074).
+          bounds: NORWAY_BOUNDS,
+          fitBoundsOptions: { padding: startPadding() },
           // Built-in attribution renders provider HTML through MapLibre's
           // DOM.sanitize (GHSA-jrc7-96c5-q579 in <= 6.4.0); render static credit instead.
           attributionControl: false,
@@ -144,10 +153,26 @@ export default function MapView({ caps, snapshot, onPositions }: Props) {
   // A packet's route replaces every link while it is drawn.
   const routeLp = useStore((s) => s.route)
   const routeQ = usePacketRoute(routeLp)
-  const route = useMemo(() => {
-    if (!routeLp) return null
-    return bridgeRoute(routeQ.data?.segments ?? [], pos)
-  }, [routeLp, routeQ.data, pos])
+  // Moved nodes are drawn where they were when the packet was heard, with a
+  // ring there and a dashed line to where they are now (D-073).
+  const nodeById = useMemo(() => new Map((snapshot?.nodes ?? []).map((n) => [n.id, n])), [snapshot])
+  const { route, routeGhosts } = useMemo(() => {
+    if (!routeLp) return { route: null, routeGhosts: [] }
+    const segs = routeQ.data?.segments ?? []
+    const at = routeQ.data?.at ? Date.parse(routeQ.data.at) : NaN
+    const where = new Map(pos)
+    const routeGhosts: { then: [number, number]; now: [number, number] }[] = []
+    for (const id of new Set(segs.flatMap((g) => [g.a, g.b]))) {
+      const track = nodeById.get(id)?.track, now = pos.get(id)
+      if (!track?.length || !now || Number.isNaN(at)) continue
+      const then = positionAt(track, at)
+      if (then[0] !== now[0] || then[1] !== now[1]) {
+        where.set(id, then)
+        routeGhosts.push({ then, now })
+      }
+    }
+    return { route: bridgeRoute(segs, where), routeGhosts }
+  }, [routeLp, routeQ.data, pos, nodeById])
   // The selected node's simulated reach (D-069) replaces the links too.
   const reachOpt = useStore((s) => s.reach)
   const reachQ = useReach(reachOpt ? selectedNode : null, reachOpt?.internet ?? false)
@@ -198,8 +223,8 @@ export default function MapView({ caps, snapshot, onPositions }: Props) {
   const [buildMeshLayers] = useState(meshLayerBuilder)
   const regions = useRegions(toggles.regions)
   const baseLayers = useMemo(
-    () => buildMeshLayers({ placed, links: shownLinks, selection, search, toggles, zoom, clusters, exploded, route, palette, regions, reach }),
-    [buildMeshLayers, placed, shownLinks, selection, search, toggles, zoom, clusters, exploded, route, palette, regions, reach],
+    () => buildMeshLayers({ placed, links: shownLinks, selection, search, toggles, zoom, clusters, exploded, route, routeGhosts, palette, regions, reach }),
+    [buildMeshLayers, placed, shownLinks, selection, search, toggles, zoom, clusters, exploded, route, routeGhosts, palette, regions, reach],
   )
 
   // Animation loop: runs only while pings are alive (~30 fps), then settles
@@ -255,7 +280,7 @@ export default function MapView({ caps, snapshot, onPositions }: Props) {
           if (c && c.members.length > 1) return setHover(null) // its names are fanned out: a tooltip would cover them
           const n = o.node
           const name = n.identity?.long_name ?? n.id
-          setHover({ x: info.x, y: info.y, text: `${name}${o.kind === 'estimated' ? ' — estimated location' : ''}${n.mqtt_opt_out ? ' — did not allow MQTT uplink; name withheld' : ''}` })
+          setHover({ x: info.x, y: info.y, text: `${name}${o.kind === 'estimated' ? ' — estimated location' : ''}${n.airborne ? ' — airborne' : n.moved_at ? ' — moving' : ''}${n.mqtt_opt_out ? ' — did not allow MQTT uplink; name withheld' : ''}` })
         } else {
           const dir = (e: Edge | undefined, from: string, to: string) => (e ? `${from} → ${to}: ${e.confidence}, ${e.samples} samples${e.zero_cost?.likely ? ', 0-cost' : ''}` : `${from} → ${to}: no evidence`)
           setHover({ x: info.x, y: info.y, text: `${o.mqtt ? 'Over the internet (MQTT), not radio — ' : ''}${dir(o.ab, o.a, o.b)} · ${dir(o.ba, o.b, o.a)}` })
@@ -273,7 +298,7 @@ export default function MapView({ caps, snapshot, onPositions }: Props) {
   }, [ready, select])
 
   const routeFrame = useMemo(() => (routeLp && route?.length ? { key: routeLp, points: route.flatMap((r) => [r.from, r.to]) } : null), [routeLp, route])
-  const { fit } = useCamera(mapRef, container, { ready, pos, selection, caps, route: routeFrame })
+  const { fit } = useCamera(mapRef, container, { pos, selection, route: routeFrame })
 
   return (
     <div className="map-wrap">

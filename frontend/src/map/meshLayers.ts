@@ -8,7 +8,7 @@ import { IconLayer, LineLayer, PathLayer, ScatterplotLayer, TextLayer } from '@d
 import type { PathStyleExtensionProps } from '@deck.gl/extensions'
 import type { Layer } from '@deck.gl/core'
 import type { Selection, Toggles } from '../state/store'
-import { ageColor, CONFIDENCE_ALPHA, glyphInk, LINK_WIDTH, MQTT_ARROW, mqttFlow, type MqttFlow, OPT_OUT_RING, ROUTE_COLOR, precisionErrorM, roleRadius, type LinkGeom, type PlacedNode } from './model'
+import { ageColor, CONFIDENCE_ALPHA, glyphInk, LINK_WIDTH, MQTT_ARROW, mqttFlow, PLANE, type MqttFlow, OPT_OUT_RING, ROUTE_COLOR, precisionErrorM, roleRadius, type LinkGeom, type PlacedNode } from './model'
 import { dashExt, UNDER_LABELS, type RGBA } from './deckShared'
 import { labelData, toPixels, type Cluster } from './labels'
 import { stackLevels } from './stacking'
@@ -26,6 +26,7 @@ export interface MeshLayerInput {
   clusters: Cluster[] // label clusters at this zoom
   exploded: Set<string> // cluster ids shown fanned out
   route?: RouteGeom[] | null // a packet's route, drawn instead of links
+  routeGhosts?: { then: [number, number]; now: [number, number] }[] // moved nodes on the route: where they were, and are (D-073)
   palette: MapPalette // colours for the current theme
   regions?: RegionCollection | null // landsdeler, drawn beneath everything else
   reach?: ReachGeom | null // the selected node's simulated reach, drawn instead of links (D-069)
@@ -52,7 +53,9 @@ export interface RouteGeom {
 // connect-src does not allow for data: URLs. The mapping is a constant so
 // getIcon is not invalidated on every rebuild.
 const ICON_PX = 64
-const FLOWS = Object.keys(MQTT_ARROW) as MqttFlow[]
+// The MQTT arrows inside markers, and the airplane badge beside airborne ones (D-073).
+const ICON_PATHS: Record<MqttFlow | 'plane', string> = { ...MQTT_ARROW, plane: PLANE }
+const FLOWS = Object.keys(ICON_PATHS) as (MqttFlow | 'plane')[]
 const ICON_MAPPING = Object.fromEntries(FLOWS.map((f, k) => [f, { x: k * ICON_PX, y: 0, width: ICON_PX, height: ICON_PX, mask: true }]))
 const FONT_SETTINGS = { sdf: true, fontSize: 64, buffer: 16, radius: 16 }
 // A right-pointing chevron, rotated per link toward its free end (D-068).
@@ -62,7 +65,8 @@ function chevronIcon() {
   if (!chevronAtlas) {
     chevronAtlas = document.createElement('canvas')
     chevronAtlas.width = chevronAtlas.height = ICON_PX
-    const g = chevronAtlas.getContext('2d')!
+    const g = chevronAtlas.getContext('2d')
+    if (!g) return { iconAtlas: chevronAtlas as unknown as string, iconMapping: CHEVRON_MAPPING } // no canvas (tests)
     g.strokeStyle = '#fff'
     g.lineWidth = ICON_PX * 0.16
     g.lineCap = g.lineJoin = 'round'
@@ -87,11 +91,12 @@ function arrowIcons() {
     arrowAtlas = document.createElement('canvas')
     arrowAtlas.width = ICON_PX * FLOWS.length
     arrowAtlas.height = ICON_PX
-    const g = arrowAtlas.getContext('2d')!
+    const g = arrowAtlas.getContext('2d')
+    if (!g) return { iconAtlas: arrowAtlas as unknown as string, iconMapping: ICON_MAPPING } // no canvas (tests)
     g.fillStyle = '#fff'
     FLOWS.forEach((f, k) => {
       g.setTransform(ICON_PX / 24, 0, 0, ICON_PX / 24, k * ICON_PX, 0)
-      g.fill(new Path2D(MQTT_ARROW[f]))
+      g.fill(new Path2D(ICON_PATHS[f]))
     })
   }
   // Image props accept a canvas at runtime (converted to a texture); the typings list only string | Texture.
@@ -112,7 +117,13 @@ export function memoLast<A extends unknown[], R>(fn: (...a: A) => R): (...a: A) 
 }
 
 type Circle = { pos: [number, number]; r: number; est: boolean }
-type Glyph = { p: PlacedNode; flow: MqttFlow }
+type Glyph = { p: PlacedNode; flow: MqttFlow | 'plane' }
+/** A node's glyphs: its MQTT arrow, and the airplane badge when airborne. */
+const glyphsFor = (p: PlacedNode): Glyph[] => {
+  const flow = mqttFlow(p.node)
+  return [...(flow ? [{ p, flow }] : []), ...(p.node.airborne ? [{ p, flow: 'plane' as const }] : [])]
+}
+type Trail = { from: [number, number]; to: [number, number]; alpha: number }
 
 /**
  * A mesh layer builder with its own memo of data arrays. Keep one per map
@@ -149,20 +160,34 @@ export function meshLayerBuilder(): (input: MeshLayerInput) => Layer[] {
   const stackOf = memoLast((placed: PlacedNode[], zoom: number) => {
     const levels = stackLevels(placed.map((p) => {
       const [x, y] = toPixels(p.lon, p.lat, zoom)
-      return { x, y, r: roleRadius(p.node.identity?.role) + 2, glyph: !!mqttFlow(p.node) }
+      return { x, y, r: roleRadius(p.node.identity?.role) + 2, glyph: glyphsFor(p).length > 0 }
     }))
     const top = Math.max(0, ...levels)
     const markers: PlacedNode[][] = Array.from({ length: top + 1 }, () => [])
     const glyphs: Glyph[][] = Array.from({ length: top + 1 }, () => [])
     placed.forEach((p, k) => {
       markers[levels[k]].push(p)
-      const flow = mqttFlow(p.node)
-      if (flow) glyphs[levels[k]].push({ p, flow })
+      glyphs[levels[k]].push(...glyphsFor(p))
     })
     return { markers, glyphs }
   })
   const optOutOf = memoLast((placed: PlacedNode[]) => placed.filter((p) => p.node.mqtt_opt_out))
   const hollowOf = memoLast((placed: PlacedNode[]) => placed.filter((p) => p.kind === 'estimated'))
+  // Trails behind moving nodes (D-073): segments between consecutive
+  // positions, fading towards the oldest, ending at the marker.
+  const trailsOf = memoLast((placed: PlacedNode[]) => {
+    const segs: Trail[] = []
+    for (const p of placed) {
+      const t = p.node.track
+      if (!t || t.length < 2) continue
+      const pts: [number, number][] = [...t.map((x) => [x.lon, x.lat] as [number, number]), [p.lon, p.lat]]
+      for (let k = 1; k < pts.length; k++) {
+        if (pts[k][0] === pts[k - 1][0] && pts[k][1] === pts[k - 1][1]) continue
+        segs.push({ from: pts[k - 1], to: pts[k], alpha: Math.round(50 + (190 * k) / (pts.length - 1)) })
+      }
+    }
+    return { segs, chevrons: segs.map((s) => ({ ...chevron(s.from, s.to), alpha: s.alpha })) }
+  })
   const chevronsOf = memoLast((links: LinkGeom[]) =>
     links.flatMap((g): Chevron[] => {
       if (g.mqtt) return []
@@ -175,7 +200,7 @@ export function meshLayerBuilder(): (input: MeshLayerInput) => Layer[] {
   )
   const labelsOf = memoLast(labelData)
 
-  return ({ placed, links, selection: sel, search, toggles, zoom, clusters, exploded, route, palette: c, regions, reach }) => {
+  return ({ placed, links, selection: sel, search, toggles, zoom, clusters, exploded, route, routeGhosts, palette: c, regions, reach }) => {
     const q = search.trim().toLowerCase()
     // Search and reach both dim the nodes they leave out.
     const matches = (p: PlacedNode) =>
@@ -233,6 +258,25 @@ export function meshLayerBuilder(): (input: MeshLayerInput) => Layer[] {
       )
     }
 
+    // Where moving nodes have been, and which way they went (D-073).
+    if (toggles.trails) {
+      const trails = trailsOf(placed)
+      if (trails.segs.length) {
+        layers.push(
+          new LineLayer<Trail>({
+            id: 'trails', ...UNDER_LABELS, data: trails.segs, getSourcePosition: (s) => s.from, getTargetPosition: (s) => s.to,
+            widthUnits: 'pixels', getWidth: 2, getColor: (s) => [...c.trail, s.alpha] as RGBA, pickable: false,
+            updateTriggers: { getColor: [c] },
+          }),
+          new IconLayer<Chevron & { alpha: number }>({
+            id: 'trail-arrows', ...UNDER_LABELS, data: trails.chevrons, getPosition: (h) => h.pos, getAngle: (h) => h.angle,
+            ...chevronIcon(), getIcon: () => 'chevron', sizeUnits: 'pixels', getSize: 12, getColor: (h) => [...c.trail, h.alpha] as RGBA,
+            pickable: false, updateTriggers: { getColor: [c] },
+          }),
+        )
+      }
+    }
+
     // 0-cost directions on the drawn radio links (D-068).
     const chevrons = chevronsOf(links)
     if (chevrons.length) {
@@ -284,6 +328,23 @@ export function meshLayerBuilder(): (input: MeshLayerInput) => Layer[] {
       )
     }
 
+    // Moved nodes on a drawn route: a ring where they were when the packet
+    // was heard, dashed to their marker now (D-073).
+    if (route && routeGhosts?.length) {
+      layers.push(
+        new PathLayer<{ then: [number, number]; now: [number, number] }, PathStyleExtensionProps<{ then: [number, number]; now: [number, number] }>>({
+          id: 'route-moved-path', ...UNDER_LABELS, data: routeGhosts, getPath: (g) => [g.then, g.now], widthUnits: 'pixels', getWidth: 1.5,
+          getColor: [...c.trail, 170], getDashArray: [2, 3], dashJustified: true, extensions: [dashExt], pickable: false,
+          updateTriggers: { getColor: [c] },
+        }),
+        new ScatterplotLayer<{ then: [number, number]; now: [number, number] }>({
+          id: 'route-moved', ...UNDER_LABELS, data: routeGhosts, getPosition: (g) => g.then, radiusUnits: 'pixels', getRadius: 7,
+          filled: false, stroked: true, lineWidthUnits: 'pixels', getLineWidth: 2, getLineColor: [...c.trail, 230], pickable: false,
+          updateTriggers: { getLineColor: [c] },
+        }),
+      )
+    }
+
     // Estimated nodes are hollow rings: a dark halo either side keeps the
     // ring visible on any basemap (it vanishes into the dark one, harmlessly).
     const hollow = hollowOf(placed)
@@ -316,9 +377,12 @@ export function meshLayerBuilder(): (input: MeshLayerInput) => Layer[] {
     // downlinks (traceroutes reach it at exactly 0 dB), ↕ both (D-054).
     const glyph = {
       ...UNDER_LABELS, getPosition: ({ p }: Glyph) => [p.lon, p.lat] as [number, number],
-      getIcon: ({ flow }: Glyph) => flow, sizeUnits: 'pixels' as const, getSize: ({ p }: Glyph) => roleRadius(p.node.identity?.role) * 1.5,
+      getIcon: ({ flow }: Glyph) => flow, sizeUnits: 'pixels' as const,
+      getSize: ({ p, flow }: Glyph) => (flow === 'plane' ? 15 : roleRadius(p.node.identity?.role) * 1.5),
+      // The airplane sits on the marker's top-right edge, clear of the arrow inside.
+      getPixelOffset: ({ p, flow }: Glyph) => (flow === 'plane' ? [roleRadius(p.node.identity?.role) + 3, -(roleRadius(p.node.identity?.role) + 3)] : [0, 0]) as [number, number],
       // On the fill when there is one; hollow estimate rings get the ring's colour.
-      getColor: ({ p }: Glyph) => (!matches(p) ? c.dimmed : p.kind === 'estimated' ? [...ageColor(p.age, c.ageStops), 255] : [...glyphInk(ageColor(p.age, c.ageStops)), 255]) as RGBA,
+      getColor: ({ p, flow }: Glyph) => (!matches(p) ? c.dimmed : flow === 'plane' ? [...c.trail, 255] : p.kind === 'estimated' ? [...ageColor(p.age, c.ageStops), 255] : [...glyphInk(ageColor(p.age, c.ageStops)), 255]) as RGBA,
       pickable: false,
       updateTriggers: { getColor: [q, c, reach] },
     }

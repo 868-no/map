@@ -5,6 +5,7 @@
 
 pub mod channels;
 pub mod geo;
+pub mod movement;
 pub mod graph;
 pub mod packets;
 pub mod radio;
@@ -45,6 +46,10 @@ struct Options {
     /// compare with the old server views).
     #[serde(default = "yes")]
     mqtt_links: bool,
+    /// Drop link evidence from before a node's latest move (default on; off
+    /// only to compare with the old server views) (D-073).
+    #[serde(default = "yes")]
+    move_rule: bool,
 }
 
 fn yes() -> bool {
@@ -131,7 +136,7 @@ impl Engine {
         Engine::default()
     }
 
-    /// {geo: capabilities.geolocation, silent_rule?: bool, mqtt_links?: bool}
+    /// {geo: capabilities.geolocation, silent_rule?: bool, mqtt_links?: bool, move_rule?: bool}
     pub fn set_options(&mut self, options: &str) -> Result<(), JsError> {
         let o: Options = serde_json::from_str(options).map_err(err)?;
         if let Some(g) = o.geo {
@@ -142,7 +147,7 @@ impl Engine {
                 params: g.params,
             };
         }
-        self.rules = Rules { silent: o.silent_rule, mqtt_links: o.mqtt_links };
+        self.rules = Rules { silent: o.silent_rule, mqtt_links: o.mqtt_links, moves: o.move_rule };
         self.built = None;
         Ok(())
     }

@@ -44,4 +44,18 @@ describe('mesh layer builder', () => {
     expect(c.uncertainty.data).not.toBe(b.uncertainty.data) // the selected node's circle
     expect(c['links-other'].updateTriggers).toEqual(b['links-other'].updateTriggers) // a node selection leaves links alone
   })
+
+  it('draws a fading trail with arrows behind a moving node, and a plane badge when airborne (D-073)', () => {
+    const track = [{ lat: 60.2, lon: 10.2, at: 't0' }, { lat: 60.25, lon: 10.25, at: 't1' }]
+    const mover: PlacedNode = { node: { ...node('!m'), moved_at: 't1', track, airborne: true }, kind: 'reported', lon: 10.3, lat: 60.3, age: 0 }
+    const build = meshLayerBuilder()
+    const ls = byId(build({ ...base, placed: [...placed, mover] }))
+    const trail = ls.trails.data as { alpha: number }[]
+    expect(trail).toHaveLength(2) // two positions, then on to the marker
+    expect(trail[1].alpha).toBeGreaterThan(trail[0].alpha) // fading towards the oldest
+    expect((ls['trail-arrows'].data as unknown[]).length).toBe(2)
+    expect((ls['mqtt-glyphs'].data as { flow: string }[]).map((g) => g.flow)).toEqual(['plane'])
+    expect('trails' in byId(build({ ...base, placed: [...placed, mover], toggles: { ...base.toggles, trails: false } }))).toBe(false)
+  })
 })
+

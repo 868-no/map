@@ -75,6 +75,11 @@ export default function App() {
     autoOpened.current = false
     setPanel(p)
   }
+  // Closing the Nodes panel clears its search (and the dimming it causes);
+  // a node picked from it opens Details and keeps the search for going back.
+  useEffect(() => {
+    if (panel !== 'nodes' && panel !== 'details' && useStore.getState().search) useStore.getState().setSearch('')
+  }, [panel])
   // Escape closes the panel, except while typing in a field.
   useEffect(() => {
     if (!panel) return

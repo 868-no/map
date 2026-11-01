@@ -72,6 +72,9 @@ export const MQTT_ARROW: Record<MqttFlow, string> = {
   both: 'M12 1 19 8h-4.5v8H19l-7 7-7-7h4.5V8H5z',
 }
 
+/** An aircraft (24x24), the badge on airborne nodes (D-073). */
+export const PLANE = 'M11 1.5h2l1 7.5 8.5 4.5v2.2L14 13.5l-.6 5.3 2.6 2v1.7L12 21.4l-4 1.1v-1.7l2.6-2-.6-5.3-8.5 2.2v-2.2L10 9z'
+
 export function mqttFlow(n: MeshNode): MqttFlow | undefined {
   const up = n.is_gateway, down = !!n.mqtt_downlink
   return up && down ? 'both' : up ? 'up' : down ? 'down' : undefined
@@ -228,3 +231,11 @@ export function bridgeRoute(segs: RouteSegment[], pos: Map<string, [number, numb
   }
   return out
 }
+
+/** Where a moving node was at `at` (ms): its last track point by then, else its first (D-073). */
+export function positionAt(track: { lat: number; lon: number; at: string }[], at: number): [number, number] {
+  let p = track[0]
+  for (const x of track) if (Date.parse(x.at) <= at) p = x
+  return [p.lon, p.lat]
+}
+

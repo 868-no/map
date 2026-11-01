@@ -1,8 +1,7 @@
-// Camera behaviour: fit to data (also once at start), fly to a selected node,
+// Camera behaviour: fit to data (on request), fly to a selected node,
 // and keep framed content clear of the panel that overlays the map.
 import { useCallback, useEffect, useRef, type RefObject } from 'react'
 import * as maplibregl from 'maplibre-gl'
-import type { Capabilities } from '../api/types'
 import type { Selection } from '../state/store'
 
 type LngLat = [number, number]
@@ -19,7 +18,7 @@ function covered(container: HTMLElement | null): { right: number; bottom: number
 export function useCamera(
   mapRef: RefObject<maplibregl.Map | null>,
   container: RefObject<HTMLDivElement | null>,
-  { ready, pos, selection, caps, route }: { ready: boolean; pos: Map<string, LngLat>; selection: Selection; caps: Capabilities; route: { key: string; points: LngLat[] } | null },
+  { pos, selection, route }: { pos: Map<string, LngLat>; selection: Selection; route: { key: string; points: LngLat[] } | null },
 ): { fit: (duration?: number) => void } {
   const fit = useCallback(
     (duration = 600) => {
@@ -32,18 +31,6 @@ export function useCamera(
     },
     [mapRef, container, pos],
   )
-
-  // Start at "fit to data" once the first positions arrive, unless the view
-  // already moved away from the configured start (e.g. the viewer panned).
-  const autoFitted = useRef(false)
-  useEffect(() => {
-    const map = mapRef.current
-    if (!ready || !map || autoFitted.current || pos.size === 0) return
-    autoFitted.current = true
-    const c = map.getCenter()
-    const untouched = Math.abs(c.lng - caps.map.lon) < 1e-6 && Math.abs(c.lat - caps.map.lat) < 1e-6 && Math.abs(map.getZoom() - caps.map.zoom) < 1e-6
-    if (untouched) fit(0)
-  }, [ready, pos, fit, mapRef, caps])
 
   // Fly to a selected node once per selection, centred in the area the side
   // panel leaves free. Positions refresh as live data arrives; that must not

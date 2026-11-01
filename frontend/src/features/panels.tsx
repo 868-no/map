@@ -127,6 +127,7 @@ export function NodePanel({ id, snapshot }: { id: string; snapshot: SnapshotView
   const edges = useMemo(() => (snapshot?.edges ?? []).filter((e) => e.src === id || e.dst === id), [snapshot, id])
   const names = useMemo(() => new Map((snapshot?.nodes ?? []).map((n) => [n.id, nodeName(n, n.id)])), [snapshot])
   const positioned = useMemo(() => new Set((snapshot?.nodes ?? []).filter((n) => n.position || n.estimate).map((n) => n.id)), [snapshot])
+  const moved = useMemo(() => new Set((snapshot?.nodes ?? []).filter((n) => n.moved_at).map((n) => n.id)), [snapshot])
   if (isLoading) return <div className="panel">Loading {id}…</div>
   if (error) return <div className="panel">No data for {id} in the selected window.</div>
   if (!data) return null
@@ -186,6 +187,15 @@ export function NodePanel({ id, snapshot }: { id: string; snapshot: SnapshotView
             </>
           )}
         </dd>
+        {d.moved_at && (
+          <>
+            <dt title="It moved more than a few hundred metres beyond what its position precision explains (D-073)">Moving</dt>
+            <dd>
+              last moved {formatLocal(d.moved_at)} · {d.track?.length ?? 0} places in the window{d.airborne && <> · <span className="tag">✈ airborne</span></>}
+              <br /><small className="muted">Its links count only evidence from after that move.</small>
+            </dd>
+          </>
+        )}
         <dt>Region</dt><dd>{radio.region}</dd>
         <dt>LoRa preset</dt><dd title={radio.presetNote}>{radio.preset}</dd>
         <dt>Channels</dt>
@@ -250,14 +260,14 @@ export function NodePanel({ id, snapshot }: { id: string; snapshot: SnapshotView
           </table>
         </>
       )}
-      <PacketLogs id={id} names={names} positioned={positioned} />
+      <PacketLogs id={id} names={names} positioned={positioned} moved={moved} />
       <p className="muted">Message contents are never stored or shown.</p>
     </div>
   )
 }
 
 /** The selected node's packets in the window: its own, and others' it relayed. */
-function PacketLogs({ id, names, positioned }: { id: string; names: Map<string, string>; positioned: Set<string> }) {
+function PacketLogs({ id, names, positioned, moved }: { id: string; names: Map<string, string>; positioned: Set<string>; moved: Set<string> }) {
   const select = useStore((s) => s.select)
   const route = useStore((s) => s.route)
   const showRoute = useStore((s) => s.showRoute)
@@ -296,7 +306,7 @@ function PacketLogs({ id, names, positioned }: { id: string; names: Map<string, 
         </label>
       </div>
       {log.isLoading && <p className="muted">Loading…</p>}
-      <RouteNote positioned={positioned} name={(n) => names.get(n) ?? n} />
+      <RouteNote positioned={positioned} moved={moved} name={(n) => names.get(n) ?? n} />
       <p className="muted small">Select a packet to draw its route on the map.</p>
       <table className="hear pkt-log" aria-label="Packet log">
         <colgroup><col style={{ width: 60 }} /><col /><col style={{ width: 92 }} /><col /><col style={{ width: 70 }} /><col style={{ width: 30 }} /></colgroup>
@@ -324,18 +334,21 @@ function PacketLogs({ id, names, positioned }: { id: string; names: Map<string, 
 }
 
 /** What the drawn route shows, and what it cannot. */
-function RouteNote({ positioned, name }: { positioned: Set<string>; name: (id: string) => string }) {
+function RouteNote({ positioned, moved, name }: { positioned: Set<string>; moved: Set<string>; name: (id: string) => string }) {
   const lp = useStore((s) => s.route)
   const showRoute = useStore((s) => s.showRoute)
   const r = usePacketRoute(lp)
   if (!lp) return null
   const segs = r.data?.segments ?? []
   const dashed = segs.filter((g) => g.dashed).length
-  const unplaced = [...new Set(segs.flatMap((g) => [g.a, g.b]))].filter((n) => !positioned.has(n))
+  const nodes = [...new Set(segs.flatMap((g) => [g.a, g.b]))]
+  const unplaced = nodes.filter((n) => !positioned.has(n))
+  const movers = nodes.filter((n) => moved.has(n))
   return (
     <p className="route-note">
       Route on the map: {segs.length} segment{segs.length === 1 ? '' : 's'}{dashed ? `, ${dashed} dashed (nodes missing)` : ''}
-      {unplaced.length ? `; ${unplaced.map(name).join(', ')} ${unplaced.length === 1 ? 'has' : 'have'} no position, so the route is dashed across ${unplaced.length === 1 ? 'it' : 'them'}` : ''}. Links are hidden meanwhile.{' '}
+      {unplaced.length ? `; ${unplaced.map(name).join(', ')} ${unplaced.length === 1 ? 'has' : 'have'} no position, so the route is dashed across ${unplaced.length === 1 ? 'it' : 'them'}` : ''}.
+      {movers.length > 0 && ` ${movers.map(name).join(', ')} moved during the window: drawn where ${movers.length === 1 ? 'it was' : 'they were'} when this packet was heard (ring), dashed to where ${movers.length === 1 ? 'it is' : 'they are'} now.`} Links are hidden meanwhile.{' '}
       <button className="linkish" onClick={() => showRoute(null)}>Clear route</button>
     </p>
   )

@@ -573,3 +573,21 @@ Reported: uplink and downlink glyphs (D-054) rendered above markers they did not
 - **Stacking levels** (`map/stacking.ts`), from the markers' screen positions at the current zoom: in draw order, a node takes the highest level among the earlier nodes it overlaps, one higher when that node has a glyph. Each level's glyphs follow its markers, and markers of higher levels are drawn again above them (`nodes-over-N`, not pickable). The complete, pickable `nodes` layer is unchanged. Overlaps are found on a grid, so it stays linear; it is recomputed when the zoom changes.
 - At zoom 10.5 on 2026-11-01: 36 glyphs on the base level, 11 markers redrawn above them and 2 glyphs on the next level.
 
+## D-073 Moving nodes: links reset, trails, airborne (2026-11-01)
+
+Operator requests: invalidate a node's links when it moves more than a few hundred metres; show an airplane on nodes reporting more than 750 m; draw a trail behind moving nodes; mark moved nodes on a packet's route.
+- **Moving:** a node's reported positions (Position packets and map reports) in time order, one point per distinct place. It moved when two consecutive points lie more than 300 m apart plus 1.5 times both positions' worst-case precision error. A position truncated to 13 bits can jump a whole cell (several km) while the node stands still, so coarse positions need a bigger jump. The latest such jump is when its current place began (`moved_at`).
+- **Links:** radio evidence (NeighborInfo, traceroute hops, direct and relayed receptions) from before either end's latest move is dropped before links are built, so relay resolution and estimates use only current links too. It is an engine rule (`move_rule`), switched off only for the golden comparison with the retired server views. On the 12-hour fixture it removed 10 of 616 links.
+- **Trails:** moving nodes carry `track` (up to 100 points). The map draws it fading towards the oldest point, with chevrons pointing the way it went, ending at the marker ("Trails" in Layers, on by default). The node panel says when it last moved.
+- **Airborne:** reported altitude is above sea level, and on 2026-11-01 six of the seven nodes above 750 m were fixed mountain sites (Blåkampen 1614 m, Blenuten 1214 m and others). The seventh, TBS1, had GPS noise from −490 to 11 214 m. So the operator chose: above 750 m **and** moving. The badge is an airplane on the marker's top-right edge, clear of the MQTT arrow inside it.
+- **Packet routes:** a route view now carries when the packet was first heard (`at`). Moved nodes on it are drawn where they were then (their last track point by that time), with a ring there and a dashed line to their marker now; the route note names them.
+- TBS1's noisy GPS makes it count as moving (48 places in three days), so its links reset often. The rule follows the data; the trail makes the noise visible.
+
+## D-074 Start on Norway (2026-11-01)
+
+Operator request: no fit to the data when the page loads; center on Norway with the whole country in view. The map opens on mainland Norway's bounds (Lindesnes to Nordkapp, Utsira to Grense Jakobselv), padded clear of the floating tool rail, and stays there as data arrives. "Fit to data" remains a button. The operator's DEFAULT_MAP_* settings no longer set the start view.
+
+## D-075 Closing Nodes clears its search (2026-11-01)
+
+Operator request. The search (and the dimming of nodes it causes) is cleared when the panel closes or another rail panel replaces it. Picking a node from the results opens Details and keeps the search, so going back to Nodes shows the same results.
+

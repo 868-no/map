@@ -263,15 +263,17 @@ test('the panel is closed until something is selected, and closes again when the
   await expect(page.locator('#dock')).toBeHidden()
 })
 
-test('starts fitted to the data, and clicking empty map clears the selection', async ({ page }) => {
+test('starts with all of Norway in view, and clicking empty map clears the selection', async ({ page }) => {
   await page.goto('/')
   await page.waitForFunction(() => !!(window as unknown as { __meshmap?: unknown }).__meshmap)
-  const view = () => page.evaluate(() => {
-    const m = (window as unknown as { __meshmap: { map: { getZoom: () => number; getCenter: () => { lng: number; lat: number } } } }).__meshmap.map
-    return { z: m.getZoom(), c: m.getCenter() }
+  // D-074: Lindesnes, Utsira, Nordkapp and Grense Jakobselv are all on screen, and stay so as data arrives.
+  const inView = () => page.evaluate(() => {
+    const b = (window as unknown as { __meshmap: { map: { getBounds: () => { contains: (p: [number, number]) => boolean } } } }).__meshmap.map.getBounds()
+    return ([[7.05, 57.98], [4.88, 59.3], [25.78, 71.17], [30.8, 69.8]] as [number, number][]).every((p) => b.contains(p))
   })
-  const caps = await (await page.request.get('/api/v1/capabilities')).json()
-  await expect.poll(async () => Math.abs((await view()).z - caps.map.zoom) > 1e-3 || Math.abs((await view()).c.lat - caps.map.lat) > 1e-3, { timeout: 30_000 }).toBe(true)
+  expect(await inView()).toBe(true)
+  await page.waitForTimeout(3000)
+  expect(await inView()).toBe(true) // no fit to the data once it loads
   // Select a node from the list, then click empty sea far from any node.
   await openPanel(page)
   await page.locator('.node-row').first().click()
@@ -453,3 +455,13 @@ test('the reach simulator counts nodes per hop limit and draws the reach on the 
   await reach.getByLabel('Show on the map').uncheck()
   await expect.poll(async () => 'reach' in (await layers())).toBe(false)
 })
+
+test('closing the Nodes panel clears its search', async ({ page }) => {
+  await ready(page)
+  await openPanel(page)
+  await page.getByPlaceholder(/Search/).fill('zz-no-such-node')
+  await page.getByRole('button', { name: 'Close nodes' }).click()
+  await openPanel(page)
+  await expect(page.getByPlaceholder(/Search/)).toHaveValue('')
+})
+

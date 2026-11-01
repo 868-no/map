@@ -75,11 +75,12 @@ pub fn is_silent_role(role: &str) -> bool {
 pub struct Rules {
     pub silent: bool,     // roles that never rebroadcast are no relay candidates
     pub mqtt_links: bool, // 0 dB traceroute hops are MQTT links, not radio (D-055)
+    pub moves: bool,      // links use only evidence from after either end's latest move (D-073)
 }
 
 impl Default for Rules {
     fn default() -> Self {
-        Rules { silent: true, mqtt_links: true }
+        Rules { silent: true, mqtt_links: true, moves: true }
     }
 }
 
@@ -153,7 +154,15 @@ pub fn build_snapshot(rows: &[&Row], i: &Interner, g: &GeoOptions, rules: Rules)
     let roles: FxMap<u32, String> = nodes.iter().filter_map(|(&n, x)| x.identity.as_ref().filter(|id| !id.role.is_empty()).map(|id| (n, id.role.clone()))).collect();
     let silent: FxSet<u32> = if rules.silent { roles.iter().filter(|(_, r)| is_silent_role(r)).map(|(&n, _)| n).collect() } else { set() };
     let downlinkers: FxSet<u32> = nodes.iter().filter(|(_, x)| x.mqtt_downlink.is_some()).map(|(&n, _)| n).collect();
-    let (mut er, ctx) = build_edges(rows, &hops, &known, pos, silent, rules.mqtt_links.then_some(&downlinkers));
+    // Nodes that moved (D-073): their trails, and links only from after the move.
+    let moves = crate::movement::movements(rows);
+    for (n, m) in &moves {
+        if let Some(x) = nodes.get_mut(n) {
+            x.set_movement(m);
+        }
+    }
+    let moved: FxMap<u32, i64> = if rules.moves { moves.iter().map(|(&n, m)| (n, m.moved_at)).collect() } else { map() };
+    let (mut er, ctx) = build_edges(rows, &hops, &known, pos, silent, rules.mqtt_links.then_some(&downlinkers), &moved);
     // Directional 0-cost evidence on radio links (D-068).
     let hears: FxSet<(u32, u32)> = er.edges.iter().filter(|e| !e.mqtt).map(|e| (e.src_num, e.dst_num)).collect();
     let mut zc = crate::zerocost::detect(rows, &ctx, &hears, &roles);

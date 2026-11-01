@@ -30,6 +30,7 @@ export interface MapPalette {
   regionFillAlpha: number
   ageStops: [number, number, number][] // node colour by last heard (model.ts)
   zeroCost: RGB // chevrons on 0-cost links (D-068)
+  trail: RGB // trails behind moving nodes, and the airplane badge (D-073)
   reach: RGB[] // reach paths by hop limit needed, 0..7 (D-069)
 }
 
@@ -58,6 +59,7 @@ export const PALETTES: Record<Theme, MapPalette> = {
     regionFillAlpha: 38,
     ageStops: AGE_STOPS,
     zeroCost: [255, 214, 90],
+    trail: [225, 232, 240],
     reach: [[95, 225, 140], [205, 232, 85], [255, 196, 70], [255, 135, 65], [240, 85, 95], [215, 90, 205], [150, 115, 255], [110, 170, 255]],
   },
   light: {
@@ -82,6 +84,7 @@ export const PALETTES: Record<Theme, MapPalette> = {
     regionFillAlpha: 40,
     ageStops: AGE_STOPS_LIGHT,
     zeroCost: [176, 118, 0],
+    trail: [40, 46, 56],
     reach: [[20, 150, 70], [125, 150, 0], [205, 135, 0], [220, 85, 20], [200, 35, 55], [170, 40, 160], [100, 60, 210], [30, 110, 210]],
   },
 }

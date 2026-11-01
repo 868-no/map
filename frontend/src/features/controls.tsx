@@ -42,6 +42,8 @@ export function LayersPanel() {
         'A circle around each estimated position: the area the node is likely within, from the positioned nodes that heard it directly. The selected node\'s circle is always shown; for a coarse reported position it shows how far off that position may be.')}
       {check('Node names', t.labels, (v) => setT({ labels: v }),
         'Each node\'s short name from its latest NodeInfo in the selected window, or the last 4 hex digits of its ID. Shown from zoom 10. Names that would overlap are grouped (“+N”) and fan out when hovered.')}
+      {check('Trails', t.trails, (v) => setT({ trails: v }),
+        'Where moving nodes have been in the selected window: a line through their reported positions, fading towards the oldest, with chevrons pointing the way they went. A node counts as moving once two positions lie further apart than a few hundred metres plus what their precision explains; its links then use only evidence from after its latest move.')}
       {check('Traffic', t.animation, (v) => setT({ animation: v }),
         'Live radar pings: each ring is one radio transmission, growing until it encloses the nodes known to have heard it directly, while a bright line travels to each of those nodes, arriving with the ring. Blue: first broadcast by the originating node; amber: rebroadcast by a relay. The ring fades outward, matching the signal strength measured at each receiver. Live window only; off by default when the system asks for reduced motion.')}
       <h3>Map</h3>
@@ -140,6 +142,8 @@ export function Legend({ snapshot }: { snapshot: SnapshotView | undefined }) {
         <li><span className="dot est" /> Estimated location — translucent circle is the uncertainty</li>
         <li>Selecting a node shows its accuracy circle (estimate uncertainty, or the precision of a coarse reported position) and only its links.</li>
         <li><span className="dot unp" /> No position: listed under “Without position”</li>
+        <li><span className="chev" aria-hidden>✈</span> Airborne: moving and reporting more than 750 m above sea level (fixed mountain sites never get it)</li>
+        <li><span className="chev" aria-hidden>›</span> Trail: where a moving node has been, fading towards the oldest position, chevrons pointing the way it went. A move resets its links.</li>
       </ul>
       <h3>Links (one line per node pair)</h3>
       <ul>
