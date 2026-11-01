@@ -16,12 +16,12 @@ describe('ping animation', () => {
   beforeEach(() => clearPings())
   const pos = new Map<string, [number, number]>([[A, [10, 63]], [B, [10.2, 63]], [GW, [10.1, 63]]])
   const AB = distanceM([10, 63], [10.2, 63]), AG = distanceM([10, 63], [10.1, 63])
-  const tx = (rx?: string) => ({ key: `p|${A}`, tx: A, rx, rebroadcast: false, unicast: true })
-  it('animates links only for unicast packets; a broadcast shows just the ring', () => {
-    addTransmission({ ...tx(B), unicast: false }, pos, 0)
+  const tx = (rx?: string) => ({ key: `p|${A}`, tx: A, rx, rebroadcast: false })
+  it('animates a link to each receiver, broadcast or not', () => {
+    addTransmission(tx(B), pos, 0)
     const { rings, trails } = activePings(PING_GROW / 2)
     expect(rings).toHaveLength(1)
-    expect(trails).toHaveLength(0)
+    expect(trails).toHaveLength(1)
   })
   it('grows to the farthest direct receiver, lingers, then fades away', () => {
     addTransmission(tx(GW), pos, 0)
@@ -117,7 +117,7 @@ describe('ping animation', () => {
     expect(near).toBeGreaterThan(far)
   })
   it('skips transmitters without a position', () => {
-    addTransmission({ key: `p|${C}`, tx: C, rx: GW, rebroadcast: true, unicast: true }, pos, 0)
+    addTransmission({ key: `p|${C}`, tx: C, rx: GW, rebroadcast: true }, pos, 0)
     expect(activePings(1).rings).toHaveLength(0)
   })
 })
@@ -139,8 +139,8 @@ describe('rebroadcast ordering', () => {
   const pos = new Map<string, [number, number]>([[A, [10, 63]], [C, [10.2, 63]], [GW, [10.3, 63]]])
   const ring = (now: number, center: [number, number]) => rawPings(now, Z).rings.find((r) => r.center[0] === center[0])
   it('a relay does not ping before the originator\'s ring reaches it', () => {
-    addTransmission({ key: `p|${A}`, tx: A, rx: C, rebroadcast: false, unicast: true }, pos, 0)
-    addTransmission({ key: `p|${C}`, tx: C, rx: GW, rebroadcast: true, unicast: true }, pos, 10)
+    addTransmission({ key: `p|${A}`, tx: A, rx: C, rebroadcast: false }, pos, 0)
+    addTransmission({ key: `p|${C}`, tx: C, rx: GW, rebroadcast: true }, pos, 10)
     expect(ring(100, [10.2, 63])).toBeUndefined() // still waiting
     let t = 100
     while (!ring(t, [10.2, 63]) && t < PING_GROW * 2) t += 20
@@ -148,18 +148,18 @@ describe('rebroadcast ordering', () => {
     expect(ring(t, [10.2, 63])!.radiusPx).toBeLessThan(MIN_RING_PX) // just starting
   })
   it('without upstream information the relay pings immediately', () => {
-    addTransmission({ key: `p|${C}`, tx: C, rx: GW, rebroadcast: true, unicast: true }, pos, 0)
+    addTransmission({ key: `p|${C}`, tx: C, rx: GW, rebroadcast: true }, pos, 0)
     expect(ring(100, [10.2, 63])).toBeDefined()
   })
   it('starts at the latest when the upstream ping is gone', () => {
-    addTransmission({ key: `p|${A}`, tx: A, rx: C, rebroadcast: false, unicast: true }, pos, 0)
-    addTransmission({ key: `p|${C}`, tx: C, rx: GW, rebroadcast: true, unicast: true }, pos, 0)
+    addTransmission({ key: `p|${A}`, tx: A, rx: C, rebroadcast: false }, pos, 0)
+    addTransmission({ key: `p|${C}`, tx: C, rx: GW, rebroadcast: true }, pos, 0)
     const end = PING_GROW + PING_LINGER + PING_FADE
     expect(ring(end + 10, [10.2, 63])).toBeDefined()
   })
   it('after a pause without frames, waiting relays do not all start at once', () => {
-    addTransmission({ key: `p|${A}`, tx: A, rx: C, rebroadcast: false, unicast: true }, pos, 0)
-    addTransmission({ key: `p|${C}`, tx: C, rx: GW, rebroadcast: true, unicast: true }, pos, 0)
+    addTransmission({ key: `p|${A}`, tx: A, rx: C, rebroadcast: false }, pos, 0)
+    addTransmission({ key: `p|${C}`, tx: C, rx: GW, rebroadcast: true }, pos, 0)
     expect(rawPings(3 * PING_COLLECT, Z).rings).toHaveLength(0)
   })
 })
@@ -187,7 +187,7 @@ describe('pingWanted', () => {
 
 describe('pings follow the markers drawn now', () => {
   beforeEach(() => clearPings())
-  const tx = (rx?: string) => ({ key: `q|${A}`, tx: A, rx, rebroadcast: false, unicast: true })
+  const tx = (rx?: string) => ({ key: `q|${A}`, tx: A, rx, rebroadcast: false })
   it('a receiver whose estimate moves is followed; one no longer drawn is dropped', async () => {
     const { setPingPositions } = await import('../src/map/pings')
     const at = new Map<string, [number, number]>([[A, [10, 63]], [B, [10.2, 63]], [GW, [10.1, 63]]])

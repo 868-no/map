@@ -363,7 +363,7 @@ Measured on 190k synthetic rows over 3 days (16 CPUs, idle):
 - Postgres spends about 0.1 s per page; the rest is scanning, transfer and HTTP.
 - Encodings add 68 MB to a 285 MB table; rebuilding all of them took 20 s.
 
-## D-047 Link animations only for unicast; links off by default (2026-10-31)
+## D-047 Link animations only for unicast; links off by default (2026-10-31; animation part reverted by D-053)
 
 Operator request. Both link layers (infrastructure and other links) now start switched off. The stored-toggles key was bumped to v5, so earlier saved choices reset once. A ping's link animation (D-042) now runs only for packets addressed to one node. Broadcasts show only the radar ring. The engine marks each transmission `unicast` when the row's destination is set and is neither 0 nor broadcast (0xffffffff).
 
@@ -414,3 +414,7 @@ Operator feedback: the GitHub link, privacy, license, Layers and the side panel 
 - **Menu:** Theme (Auto, Light, Dark; Auto follows the browser), Install app when the browser offers it, and About links: source code on GitHub (at the built commit), license (GNU GPL v3) and privacy policy. It also shows the version.
 - **Popovers:** Layers and the menu drop from the top bar over the map and the side panel. Only one is open at a time, and Escape or a click elsewhere closes it.
 - **Map:** keeps only map controls (zoom, fit, scale). Its credit line is back to the required OpenMapTiles and OpenStreetMap credits.
+
+## D-053 Link animations for all traffic again (2026-11-01)
+
+Operator request. This reverses the unicast-only part of D-047: every ping again animates a line to each placed direct receiver, broadcast or not, as in D-042. The engine's `unicast` flag on transmissions was removed with it. The link layers still start switched off.

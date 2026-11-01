@@ -27,9 +27,9 @@ async function receive(page: Page, dest?: number) {
 }
 const frame = (page: Page) => page.evaluate(() => (window as unknown as { __meshmap: Hook }).__meshmap.pingFrame())
 
-// A unicast reception becomes a ring around the transmitter and an animated
-// link to the receiver, the link's head riding the ring's edge (D-042, D-047).
-test('a unicast reception pings, and its link animates toward the receiver', async ({ page }) => {
+// A reception becomes a ring around the transmitter and an animated link to
+// the receiver, the link's head riding the ring's edge (D-042, D-053).
+test('a reception pings, and its link animates toward the receiver', async ({ page }) => {
   await receive(page, GW)
   const mid = await frame(page)
   await docShot(page, 'ping-link.png')
@@ -41,10 +41,10 @@ test('a unicast reception pings, and its link animates toward the receiver', asy
   await expect.poll(async () => (await frame(page)).trails[0], { timeout: 5000 }).toBe(1)
 })
 
-// A broadcast shows only the ring (D-047).
-test('a broadcast reception pings without a link animation', async ({ page }) => {
+// Broadcasts animate their links too (D-053).
+test('a broadcast reception pings, and its link animates too', async ({ page }) => {
   await receive(page)
   const mid = await frame(page)
   expect(mid.rings).toBe(1)
-  expect(mid.trails).toHaveLength(0)
+  expect(mid.trails).toHaveLength(1)
 })

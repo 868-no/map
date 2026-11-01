@@ -21,7 +21,6 @@ interface Ping {
   center: LngLat
   born: number
   rebroadcast: boolean
-  unicast: boolean // addressed to one node: its links animate too; broadcasts show only the ring
   heard: boolean // has at least one placeable direct receiver
   heardAt: number
   receivers: Map<string, { pos: LngLat; dist: number; strength?: number; reachedAt?: number }>
@@ -121,7 +120,7 @@ export function addTransmission(t: Transmission, pos: Map<string, LngLat>, now =
     const s = seen.get(t.key)
     if (s !== undefined && now - s < SEEN_TTL) return
     if (pings.size >= MAX_PINGS) pings.delete(pings.keys().next().value!) // drop the oldest under heavy traffic
-    p = { tx: t.tx, center, born: now, rebroadcast: t.rebroadcast, unicast: t.unicast, heard: false, heardAt: 0, receivers: new Map(), from: 0, to: 0, growStart: now, settled: now + PING_GROW }
+    p = { tx: t.tx, center, born: now, rebroadcast: t.rebroadcast, heard: false, heardAt: 0, receivers: new Map(), from: 0, to: 0, growStart: now, settled: now + PING_GROW }
     // Who did this transmitter hear the packet from? If that ping is on the
     // map, start only when its ring arrives here.
     const lp = packetOf(t.key)
@@ -266,7 +265,7 @@ export function activePings(now: number, zoom: number): { rings: Ring[]; blips: 
       for (const rx of p.receivers.values()) {
         if (rx.reachedAt === undefined && px >= rx.dist / mpp) rx.reachedAt = now
         // The link grows with the ring: its head is on the ring's edge until the ring reaches the receiver.
-        if (p.unicast && rx.dist > 0) {
+        if (rx.dist > 0) {
           const progress = Math.min(px / (rx.dist / mpp), 1)
           trails.push({ from: p.center, to: rx.pos, tip: along(p.center, rx.pos, progress), progress, alpha, rebroadcast: p.rebroadcast })
         }

@@ -5,7 +5,7 @@ use serde::Serialize;
 
 use crate::graph::{zero_cost_role, RelayContext};
 use crate::row::{Interner, Row};
-use crate::util::{iso, key_hex, map, node_id, set, FxMap, FxSet, BROADCAST};
+use crate::util::{iso, key_hex, map, node_id, set, FxMap, FxSet};
 use crate::views::dest;
 
 pub const MAX_LOG: usize = 200;
@@ -237,7 +237,6 @@ pub struct Transmission {
     pub rebroadcast: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub strength: Option<f64>, // 0..1 signal at rx, when rx is the reporting gateway
-    pub unicast: bool, // addressed to one node (not broadcast): the page also animates its links
 }
 
 /// Measured signal to 0..1: SNR -20..+10 dB, else RSSI -130..-70 dBm.
@@ -255,15 +254,6 @@ pub fn signal_strength(snr: Option<f64>, rssi: Option<i32>) -> Option<f64> {
 /// - Hop count 1 with a resolved relay whose known role cannot receive at zero
 ///   cost: that relay heard the originator directly.
 pub fn transmissions(r: &Row, ctx: &RelayContext, roles: &FxMap<u32, String>) -> Vec<Transmission> {
-    let unicast = r.dst.is_some_and(|d| d != 0 && d != BROADCAST);
-    let mut out = attributed(r, ctx, roles);
-    for t in &mut out {
-        t.unicast = unicast;
-    }
-    out
-}
-
-fn attributed(r: &Row, ctx: &RelayContext, roles: &FxMap<u32, String>) -> Vec<Transmission> {
     let lp = key_hex(r.lp);
     let key = |tx: u32| format!("{lp}|{}", node_id(tx));
     let strength = signal_strength(r.snr, r.rssi);
@@ -282,11 +272,11 @@ fn attributed(r: &Row, ctx: &RelayContext, roles: &FxMap<u32, String>) -> Vec<Tr
                 break; // the last node only received
             }
             let rx = chain.get(k + 1).copied().flatten();
-            out.push(Transmission { key: key(tx), tx: node_id(tx), rx: rx.map(node_id), rebroadcast: k > 0, strength: rx.filter(|&x| Some(x) == r.gw).and(strength), unicast: false });
+            out.push(Transmission { key: key(tx), tx: node_id(tx), rx: rx.map(node_id), rebroadcast: k > 0, strength: rx.filter(|&x| Some(x) == r.gw).and(strength) });
         }
         return out;
     }
-    let first = |rx: Option<u32>, s: Option<f64>| Transmission { key: key(r.src), tx: node_id(r.src), rx: rx.map(node_id), rebroadcast: false, strength: s, unicast: false };
+    let first = |rx: Option<u32>, s: Option<f64>| Transmission { key: key(r.src), tx: node_id(r.src), rx: rx.map(node_id), rebroadcast: false, strength: s };
     let Some(gw) = r.gw else { return vec![first(None, None)] };
     if gw == r.src {
         return vec![first(None, None)];
@@ -301,7 +291,7 @@ fn attributed(r: &Row, ctx: &RelayContext, roles: &FxMap<u32, String>) -> Vec<Tr
     let heard_origin = r.hops() == Some(1) && roles.get(&relay).is_some_and(|ro| !ro.is_empty() && !zero_cost_role(ro));
     vec![
         first(heard_origin.then_some(relay), None),
-        Transmission { key: key(relay), tx: node_id(relay), rx: Some(node_id(gw)), rebroadcast: true, strength, unicast: false },
+        Transmission { key: key(relay), tx: node_id(relay), rx: Some(node_id(gw)), rebroadcast: true, strength },
     ]
 }
 
@@ -350,9 +340,6 @@ mod tests {
         let t = transmissions(&Row { dr: true, ..row(A, GW) }, &ctx(&[A, GW], &[]), &map());
         assert_eq!(pairs(&t), vec![(id(A), Some(id(GW)))]);
         assert!(!t[0].rebroadcast);
-        assert!(!t[0].unicast, "no destination: broadcast");
-        let to = |d: u32| transmissions(&Row { dr: true, dst: Some(d), ..row(A, GW) }, &ctx(&[A, GW], &[]), &map())[0].unicast;
-        assert!(to(GW) && !to(BROADCAST));
         assert_eq!(t[0].key, format!("{:016x}|{}", 0xabc, id(A)));
         assert_eq!(pairs(&transmissions(&hops(row(A, GW), 0), &ctx(&[A, GW], &[]), &map())), vec![(id(A), Some(id(GW)))]);
         // A gateway uplinking its own packet: a first broadcast with no known receiver.
