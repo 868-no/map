@@ -36,7 +36,9 @@ export function startLon(width: number, zoom: number): number {
 /** Room around the country; on the right, for the floating tool rail. */
 const startPadding = (width = window.innerWidth) => {
   const narrow = width <= 560
-  return { top: 16, bottom: 16, left: 16, right: narrow ? 64 : 92 }
+  // Below the floating header (D-082).
+  const head = document.getElementById('topbar')?.offsetHeight ?? 50
+  return { top: head + 24, bottom: 16, left: 16, right: narrow ? 64 : 92 }
 }
 
 

@@ -6,13 +6,15 @@ import type { Selection } from '../state/store'
 
 type LngLat = [number, number]
 
-/** Pixels of the map covered by the open panel (right edge, or bottom sheet). */
-function covered(container: HTMLElement | null): { right: number; bottom: number } {
+/** Pixels of the map covered by the floating header (top) and the open panel (right edge, or bottom sheet). */
+function covered(container: HTMLElement | null): { top: number; right: number; bottom: number } {
+  const head = document.getElementById('topbar')
+  const top = head && container ? Math.max(0, head.getBoundingClientRect().bottom - container.getBoundingClientRect().top) : 0
   const panel = document.getElementById('dock')
-  if (!panel || panel.hidden || !container) return { right: 0, bottom: 0 }
+  if (!panel || panel.hidden || !container) return { top, right: 0, bottom: 0 }
   const a = container.getBoundingClientRect(), b = panel.getBoundingClientRect()
   // The side panel is narrow; the phone's bottom card spans most of the width.
-  return b.width < a.width * 0.6 ? { right: Math.max(0, a.right - b.left), bottom: 0 } : { right: 0, bottom: Math.max(0, a.bottom - b.top) }
+  return b.width < a.width * 0.6 ? { top, right: Math.max(0, a.right - b.left), bottom: 0 } : { top, right: 0, bottom: Math.max(0, a.bottom - b.top) }
 }
 
 export function useCamera(
@@ -27,7 +29,7 @@ export function useCamera(
       const b = new maplibregl.LngLatBounds()
       pos.forEach((p) => b.extend(p))
       const c = covered(container.current)
-      map.fitBounds(b, { padding: { top: 60, left: 60, right: 60 + c.right, bottom: 60 + c.bottom }, maxZoom: 12, duration })
+      map.fitBounds(b, { padding: { top: 30 + c.top, left: 60, right: 60 + c.right, bottom: 60 + c.bottom }, maxZoom: 12, duration })
     },
     [mapRef, container, pos],
   )
@@ -50,7 +52,7 @@ export function useCamera(
     requestAnimationFrame(() => {
       if (flownTo.current !== id) return
       const c = covered(container.current)
-      mapRef.current?.easeTo({ center: p, zoom: Math.max(mapRef.current.getZoom(), 10), duration: 600, offset: [-c.right / 2, -c.bottom / 2] })
+      mapRef.current?.easeTo({ center: p, zoom: Math.max(mapRef.current.getZoom(), 10), duration: 600, offset: [-c.right / 2, (c.top - c.bottom) / 2] })
     })
   }, [selection, pos, mapRef, container])
 
@@ -67,7 +69,7 @@ export function useCamera(
     const b = new maplibregl.LngLatBounds()
     route.points.forEach((p) => b.extend(p))
     const c = covered(container.current)
-    map.fitBounds(b, { padding: { top: 80, left: 80, right: 80 + c.right, bottom: 80 + c.bottom }, maxZoom: 13, duration: 600 })
+    map.fitBounds(b, { padding: { top: 40 + c.top, left: 80, right: 80 + c.right, bottom: 80 + c.bottom }, maxZoom: 13, duration: 600 })
   }, [route, mapRef, container])
 
   return { fit }

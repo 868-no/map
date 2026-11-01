@@ -629,3 +629,10 @@ Operator request: a way to share a permanent link to a node.
 
 Operator request: apply drop shadows consistently. Only the rail and panel islands had one; banners and hover tooltips had none, and the map's zoom and fit controls kept MapLibre's thin grey outline. Two elevation tokens are now the only drop shadows: `--elev-island` (the rail and the panel) and `--elev-float` (banners, tooltips, map control groups, which also get the islands' border colour). Labels lying on the map (scale, coordinates, credits) stay flat. Both use the theme's `--shadow` colour, stronger on the dark basemap.
 
+## D-082 The header as an island; corner labels stay put (2026-11-01)
+
+Operator requests: make the header a floating island too; and stop the coordinates and map credits moving when a tool panel opens.
+- **Header island:** the wordmark, the live indicator (and the updating spinner) on one line and the counters below, in a rounded card at the top left with the islands' border, blur and shadow (D-071, D-081). The map runs to the top edge. The card leaves room for the rail, and for the panel when one is open; on phones the counters are hidden as before.
+- **Below it:** MapLibre's zoom buttons, the fit control and the banners sit under the card. Its height is measured and published as `--head-h`. Fitting to data, flying to a node, framing a packet route and the start view on Norway (D-074) keep content clear of it as they do of the panel.
+- **Corner labels:** the coordinates readout and the map credits stay in the bottom-right corner whatever opens. A panel may cover them partly, by the operator's choice.
+

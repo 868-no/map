@@ -80,19 +80,23 @@ button[aria-pressed='true'], button[aria-selected='true'] { background: var(--pr
 .boot.error { color: var(--err); }
 
 /* overflow: hidden clips the collapsed time bar, which is translated below the viewport. */
-.app { position: relative; display: grid; grid-template-rows: auto 1fr; height: 100%; overflow: hidden; --rail: 64px; --dock: 380px; --gap: 10px; --island-r: 12px;
+.app { position: relative; display: grid; grid-template-rows: 1fr; height: 100%; overflow: hidden; --head-h: 52px; --rail: 64px; --dock: 380px; --gap: 10px; --island-r: 12px;
   /* Elevation, the only drop shadows (D-081): islands (the rail, the panel)
      and small floating elements (banners, tooltips, map controls). Labels
      lying on the map (scale, coordinates, credits) stay flat. */
   --elev-island: 0 8px 24px var(--shadow); --elev-float: 0 2px 8px var(--shadow); }
-.topbar { position: relative; z-index: 10; display: flex; align-items: center; gap: 16px; padding: 6px 12px; border-bottom: 1px solid var(--line); background: var(--panel); min-height: 40px; }
+.topbar { position: absolute; top: var(--gap); left: var(--gap); z-index: 10; display: flex; flex-direction: column; gap: 2px; padding: 7px 12px;
+  max-width: calc(100% - var(--rail) - 4 * var(--gap)); box-sizing: border-box;
+  border: 1px solid var(--line); border-radius: var(--island-r); background: var(--overlay-strong); backdrop-filter: blur(8px); box-shadow: var(--elev-island); }
+.main:not(.panel-closed) .topbar { max-width: calc(100% - var(--rail) - var(--dock) - 5 * var(--gap)); }
+.topbar-row { display: flex; align-items: center; gap: 12px; }
 .topbar h1 { font-size: 16px; margin: 0; letter-spacing: 0.02em; white-space: nowrap; }
 /* Wordmark: the band (868 MHz) in the accent colour, the domain muted. */
 .brand { font-weight: 600; }
 .brand-num { color: var(--accent); font-weight: 800; letter-spacing: 0.01em; font-variant-numeric: tabular-nums; }
 .brand-tld { color: var(--muted); font-weight: 600; }
 .brand-map { font-weight: 600; }
-.counters { color: var(--muted); font-size: 13px; }
+.counters { color: var(--muted); font-size: 12px; line-height: 1.35; }
 .spinner { width: 12px; height: 12px; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
 
@@ -106,8 +110,8 @@ button[aria-pressed='true'], button[aria-selected='true'] { background: var(--pr
 .rail-btn[aria-pressed='true'] { color: var(--accent); background: var(--pressed); border-color: var(--line); }
 .rail-label { font-size: 10.5px; line-height: 1; letter-spacing: 0.01em; }
 .rail-badge { position: absolute; top: 3px; right: 6px; min-width: 15px; height: 15px; padding: 0 4px; border-radius: 8px; background: var(--accent); color: var(--bg); font-size: 10px; font-weight: 700; line-height: 15px; text-align: center; }
-/* The open panel overlays the map beside the rail (no resize); map controls
-   on the right move clear of it. */
+/* The open panel overlays the map beside the rail (no resize). The
+   coordinates and credits stay in the bottom-right corner, beneath it if need be (D-082). */
 .dock { position: absolute; top: var(--gap); right: calc(var(--rail) + 2 * var(--gap)); max-height: calc(100% - 2 * var(--gap)); width: var(--dock); z-index: 7; overflow: hidden;
   border: 1px solid var(--line); border-radius: var(--island-r); background: var(--overlay-strong); backdrop-filter: blur(8px); box-shadow: var(--elev-island); display: flex; flex-direction: column; min-height: 0; }
 .dock[hidden] { display: none; }
@@ -115,8 +119,6 @@ button[aria-pressed='true'], button[aria-selected='true'] { background: var(--pr
 .dock-head h2 { flex: 1; margin: 0; font-size: 13px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); }
 .dock-head .close { position: static; }
 .dock-body { overflow: auto; min-height: 0; flex: 1 1 auto; } /* the island fits its content, scrolling past the bottom */
-.main:not(.panel-closed) .coords { right: calc(var(--rail) + var(--dock) + 4 * var(--gap)); }
-.main:not(.panel-closed) .attribution { right: calc(var(--rail) + var(--dock) + 3 * var(--gap)); }
 .filter-head { margin-top: 0; }
 .segmented { display: flex; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
 .segmented label { position: relative; flex: 1; margin: 0; text-align: center; cursor: pointer; }
@@ -132,14 +134,14 @@ button[aria-pressed='true'], button[aria-selected='true'] { background: var(--pr
 .map-wrap { position: relative; min-height: 0; }
 .map { position: absolute; inset: 0; }
 /* Sits under MapLibre's zoom buttons (top-left), styled as one of them. */
-.fit-ctrl { position: absolute; top: 78px; left: 10px; margin: 0 !important; z-index: 2; }
+.fit-ctrl { position: absolute; top: calc(var(--head-h) + 2 * var(--gap) + 68px); left: 10px; margin: 0 !important; z-index: 2; }
 .fit-ctrl button { display: grid; place-items: center; color: var(--text); border: none; border-radius: 4px; padding: 0; width: 29px; height: 29px; background: transparent; }
 .fit-ctrl button:disabled { opacity: 0.35; }
 .attribution { position: absolute; right: 0; bottom: 0; font-size: 11px; background: var(--overlay); padding: 2px 6px; color: var(--muted); }
 .attribution a { color: var(--muted); }
 .coords { position: absolute; bottom: 28px; right: 10px; font: 12px ui-monospace, monospace; color: var(--muted); background: var(--overlay); padding: 2px 6px; border-radius: 4px; }
 .tooltip { position: absolute; pointer-events: none; background: var(--tooltip); border: 1px solid var(--line); box-shadow: var(--elev-float); padding: 4px 8px; border-radius: 4px; font-size: 12px; max-width: 320px; z-index: 5; }
-.banners { position: absolute; left: 50px; top: 10px; right: calc(var(--rail) + 3 * var(--gap)); display: flex; flex-direction: column; gap: 6px; pointer-events: none; }
+.banners { position: absolute; left: 50px; top: calc(var(--head-h) + 2 * var(--gap)); right: calc(var(--rail) + 3 * var(--gap)); display: flex; flex-direction: column; gap: 6px; pointer-events: none; }
 .banner { pointer-events: auto; align-self: flex-start; background: var(--overlay-strong); border: 1px solid var(--line); border-left: 3px solid var(--accent); box-shadow: var(--elev-float); padding: 6px 10px; border-radius: 4px; font-size: 13px; }
 .banner.error { border-left-color: var(--err); }
 .banner.hist { border-left-color: var(--orange); }
@@ -224,7 +226,7 @@ table.hear th, table.hear td { text-align: left; padding: 2px 4px; border-bottom
 .sig-unsigned, .sig-not-applicable { color: var(--muted); }
 
 /* Header, top right: live, paused or historical (D-067); opens the Period panel. */
-.live-indicator { margin-left: auto; display: flex; gap: 6px; align-items: center; }
+.live-indicator { display: flex; gap: 6px; align-items: center; }
 .live-indicator .badge { border: 0; cursor: pointer; }
 .live-indicator .badge:hover { filter: brightness(1.15); }
 .badge-span { opacity: 0.75; font-weight: 500; margin-left: 2px; }
@@ -260,8 +262,6 @@ table.hear th, table.hear td { text-align: left; padding: 2px 4px; border-bottom
   /* Bottom sheet over the map. */
   .app { --gap: 8px; }
   .dock { top: auto; bottom: var(--gap); left: var(--gap); width: auto; max-height: 50vh; }
-  .main:not(.panel-closed) .coords { right: 10px; bottom: calc(50vh + 2 * var(--gap) + 28px); }
-  .main:not(.panel-closed) .attribution { right: 0; bottom: calc(50vh + 2 * var(--gap)); }
   .banners, .main:not(.panel-closed) .banners { right: calc(var(--rail) + 3 * var(--gap)); left: 10px; }
   .counters { display: none; }
 }
@@ -291,3 +291,6 @@ table.hear th, table.hear td { text-align: left; padding: 2px 4px; border-bottom
 button.danger { border-color: var(--err); color: var(--err); }
 button.danger:hover { background: var(--err); color: var(--bg); }
 .refined { margin-top: 4px; color: var(--accent); }
+/* MapLibre's top-left controls (zoom) sit below the floating header (D-082). */
+.maplibregl-ctrl-top-left { top: calc(var(--head-h) + var(--gap)); }
+

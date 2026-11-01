@@ -37,6 +37,18 @@ export default function App() {
     if (caps.data) initDerive(caps.data)
   }, [caps.data])
 
+  // The floating header's height, for the map controls and banners below it.
+  const topbar = useRef<HTMLElement>(null)
+  useEffect(() => {
+    const el = topbar.current
+    if (!el) return
+    const set = () => (el.closest('.app') as HTMLElement | null)?.style.setProperty('--head-h', `${el.offsetHeight}px`)
+    set()
+    const ro = new ResizeObserver(set)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [caps.data]) // the header exists once the app has loaded
+
   // URL <-> state (shareable links; back/forward).
   useEffect(() => {
     const init = fromQuery(new URLSearchParams(window.location.search))
@@ -118,19 +130,22 @@ export default function App() {
 
   return (
     <div className="app">
-      <header className="topbar">
-        <h1 className="brand" aria-label="868.no Map">
-          <span className="brand-num">868</span><span className="brand-tld">.no</span> <span className="brand-map">Map</span>
-        </h1>
-        {counts && (
-          <span className="counters" aria-live="polite">
-            {counts.nodes} nodes · {counts.referenced} referenced · {counts.positioned} positioned · {counts.estimated} estimated · {counts.edges} links · {counts.packets} packets / {counts.receptions} receptions
-          </span>
-        )}
-        {snap.isFetching && <span className="spinner" aria-label="Updating" />}
-        <LiveIndicator caps={caps.data} retention={retention.data} snapshot={snap.data} liveOK={liveOK} onOpen={() => togglePanel('period')} />
-      </header>
       <main className={`main${panel ? '' : ' panel-closed'}`}>
+        {/* The header floats over the map as an island too (D-082). */}
+        <header id="topbar" className="topbar" ref={topbar}>
+          <div className="topbar-row">
+            <h1 className="brand" aria-label="868.no Map">
+              <span className="brand-num">868</span><span className="brand-tld">.no</span> <span className="brand-map">Map</span>
+            </h1>
+            <LiveIndicator caps={caps.data} retention={retention.data} snapshot={snap.data} liveOK={liveOK} onOpen={() => togglePanel('period')} />
+            {snap.isFetching && <span className="spinner" aria-label="Updating" />}
+          </div>
+          {counts && (
+            <span className="counters" aria-live="polite">
+              {counts.nodes} nodes · {counts.referenced} referenced · {counts.positioned} positioned · {counts.estimated} estimated · {counts.edges} links · {counts.packets} packets / {counts.receptions} receptions
+            </span>
+          )}
+        </header>
         <MapView caps={caps.data} snapshot={snap.data} onPositions={onPositions} />
         <Dock open={panel} onClose={closePanel}>
           {panel === 'nodes' && <NodeList snapshot={snap.data} />}
