@@ -116,6 +116,23 @@ export interface Edge {
   first_at: string
   last_at: string
   mqtt?: boolean // carried over MQTT, not radio: traceroute hops recorded at exactly 0 dB (D-055)
+  zero_cost?: ZeroCost // hop-limit evidence that dst relays what it hears from src for free (D-068)
+}
+
+/** Packets dst rebroadcast with src's hop limit (free) or one less (spent). Directional. */
+export interface ZeroCost {
+  free: number
+  spent: number
+  likely: boolean // enough consistent evidence to call the link 0-cost
+}
+
+/** How far a node's packets reach at each hop limit (D-069). */
+export interface ReachView {
+  meta: ViewMeta
+  origin: string
+  hop_start?: number // the hop limit its own packets were sent with
+  internet: boolean // internet (MQTT) links were followed too
+  nodes: { id: string; need: number; via: string; free?: boolean }[] // need: smallest hop limit that reaches it
 }
 
 export interface Counts {

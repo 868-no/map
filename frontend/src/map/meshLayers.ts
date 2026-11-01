@@ -27,7 +27,17 @@ export interface MeshLayerInput {
   route?: RouteGeom[] | null // a packet's route, drawn instead of links
   palette: MapPalette // colours for the current theme
   regions?: RegionCollection | null // landsdeler, drawn beneath everything else
+  reach?: ReachGeom | null // the selected node's simulated reach, drawn instead of links (D-069)
 }
+
+/** Reach paths up to the chosen hop limit, and the nodes they reach. */
+export interface ReachGeom {
+  segments: { from: [number, number]; to: [number, number]; need: number; free: boolean }[]
+  reached: Set<string> // ids, the originator included
+}
+
+/** A 0-cost direction on a drawn link: a chevron near the end that relays for free. */
+type Chevron = { pos: [number, number]; angle: number }
 
 export interface RouteGeom {
   from: [number, number]
@@ -44,6 +54,32 @@ const ICON_PX = 64
 const FLOWS = Object.keys(MQTT_ARROW) as MqttFlow[]
 const ICON_MAPPING = Object.fromEntries(FLOWS.map((f, k) => [f, { x: k * ICON_PX, y: 0, width: ICON_PX, height: ICON_PX, mask: true }]))
 const FONT_SETTINGS = { sdf: true, fontSize: 64, buffer: 16, radius: 16 }
+// A right-pointing chevron, rotated per link toward its free end (D-068).
+const CHEVRON_MAPPING = { chevron: { x: 0, y: 0, width: ICON_PX, height: ICON_PX, mask: true } }
+let chevronAtlas: HTMLCanvasElement | undefined
+function chevronIcon() {
+  if (!chevronAtlas) {
+    chevronAtlas = document.createElement('canvas')
+    chevronAtlas.width = chevronAtlas.height = ICON_PX
+    const g = chevronAtlas.getContext('2d')!
+    g.strokeStyle = '#fff'
+    g.lineWidth = ICON_PX * 0.16
+    g.lineCap = g.lineJoin = 'round'
+    g.beginPath()
+    g.moveTo(ICON_PX * 0.32, ICON_PX * 0.18)
+    g.lineTo(ICON_PX * 0.68, ICON_PX * 0.5)
+    g.lineTo(ICON_PX * 0.32, ICON_PX * 0.82)
+    g.stroke()
+  }
+  return { iconAtlas: chevronAtlas as unknown as string, iconMapping: CHEVRON_MAPPING }
+}
+const mercY = (lat: number) => Math.log(Math.tan(Math.PI / 4 + (lat * Math.PI) / 360))
+/** Chevron 65 % of the way from transmitter to the receiver that relays it for free. */
+function chevron(from: [number, number], to: [number, number]): Chevron {
+  const f = 0.65
+  const angle = (Math.atan2(mercY(to[1]) - mercY(from[1]), ((to[0] - from[0]) * Math.PI) / 180) * 180) / Math.PI
+  return { pos: [from[0] + (to[0] - from[0]) * f, from[1] + (to[1] - from[1]) * f], angle }
+}
 let arrowAtlas: HTMLCanvasElement | undefined
 function arrowIcons() {
   if (!arrowAtlas) {
@@ -114,12 +150,24 @@ export function meshLayerBuilder(): (input: MeshLayerInput) => Layer[] {
   )
   const optOutOf = memoLast((placed: PlacedNode[]) => placed.filter((p) => p.node.mqtt_opt_out))
   const hollowOf = memoLast((placed: PlacedNode[]) => placed.filter((p) => p.kind === 'estimated'))
+  const chevronsOf = memoLast((links: LinkGeom[]) =>
+    links.flatMap((g): Chevron[] => {
+      if (g.mqtt) return []
+      const [p0, p1] = [g.path[0], g.path[g.path.length - 1]]
+      const out: Chevron[] = []
+      if (g.ab?.zero_cost?.likely) out.push(chevron(g.ab.src === g.a ? p0 : p1, g.ab.src === g.a ? p1 : p0))
+      if (g.ba?.zero_cost?.likely) out.push(chevron(g.ba.src === g.a ? p0 : p1, g.ba.src === g.a ? p1 : p0))
+      return out
+    }),
+  )
   const labelsOf = memoLast(labelData)
 
-  return ({ placed, links, selection: sel, search, toggles, zoom, clusters, exploded, route, palette: c, regions }) => {
+  return ({ placed, links, selection: sel, search, toggles, zoom, clusters, exploded, route, palette: c, regions, reach }) => {
     const q = search.trim().toLowerCase()
+    // Search and reach both dim the nodes they leave out.
     const matches = (p: PlacedNode) =>
-      !q || p.node.id.includes(q) || (p.node.identity?.long_name ?? '').toLowerCase().includes(q) || (p.node.identity?.short_name ?? '').toLowerCase().includes(q)
+      (!reach || reach.reached.has(p.node.id)) &&
+      (!q || p.node.id.includes(q) || (p.node.identity?.long_name ?? '').toLowerCase().includes(q) || (p.node.identity?.short_name ?? '').toLowerCase().includes(q))
     const selId = sel?.kind === 'node' ? sel.id : null
     // Stable string keys for updateTriggers: a node selection does not recolour links, nor a link selection nodes.
     const selLink = sel?.kind === 'edge' ? `${sel.src}|${sel.dst}|${!!sel.mqtt}` : ''
@@ -172,6 +220,36 @@ export function meshLayerBuilder(): (input: MeshLayerInput) => Layer[] {
       )
     }
 
+    // 0-cost directions on the drawn radio links (D-068).
+    const chevrons = chevronsOf(links)
+    if (chevrons.length) {
+      layers.push(
+        new IconLayer<Chevron>({
+          id: 'zero-cost', ...UNDER_LABELS, data: chevrons, getPosition: (h) => h.pos, getAngle: (h) => h.angle,
+          ...chevronIcon(), getIcon: () => 'chevron', sizeUnits: 'pixels', getSize: 17, getColor: [...c.zeroCost, 255],
+          pickable: false, updateTriggers: { getColor: [c] },
+        }),
+      )
+    }
+
+    // The selected node's reach (D-069), instead of links: each reached node
+    // from the transmitter it hears, coloured by the hop limit that reaches it.
+    if (reach) {
+      const ramp = (n: number) => [...c.reach[Math.min(n, c.reach.length - 1)], 230] as RGBA
+      layers.push(
+        new LineLayer<ReachGeom['segments'][number]>({
+          id: 'reach', ...UNDER_LABELS, data: reach.segments, getSourcePosition: (r) => r.from, getTargetPosition: (r) => r.to,
+          widthUnits: 'pixels', getWidth: 2.5, getColor: (r) => ramp(r.need), pickable: false,
+          updateTriggers: { getColor: [c] },
+        }),
+        new IconLayer<ReachGeom['segments'][number]>({
+          id: 'reach-free', ...UNDER_LABELS, data: reach.segments.filter((r) => r.free), getPosition: (r) => chevron(r.from, r.to).pos,
+          getAngle: (r) => chevron(r.from, r.to).angle, ...chevronIcon(), getIcon: () => 'chevron', sizeUnits: 'pixels', getSize: 14,
+          getColor: [...c.zeroCost, 255], pickable: false, updateTriggers: { getColor: [c] },
+        }),
+      )
+    }
+
     if (route) {
       // Solid where both nodes of a hop are known; dashed across missing nodes.
       const parts = routeParts(route)
@@ -215,7 +293,7 @@ export function meshLayerBuilder(): (input: MeshLayerInput) => Layer[] {
             : p.node.is_gateway ? [...c.gateway, 255] : c.nodeOutline) as RGBA,
         getLineWidth: (p) => (p.node.id === selId ? 3 : p.kind === 'estimated' || p.node.is_gateway ? 2 : 1),
         pickable: true, autoHighlight: true, highlightColor: [...c.gateway, 160],
-        updateTriggers: { getFillColor: [q, c], getLineColor: [selId, q, c], getLineWidth: [selId] },
+        updateTriggers: { getFillColor: [q, c, reach], getLineColor: [selId, q, c, reach], getLineWidth: [selId] },
       }),
     )
 
@@ -230,7 +308,7 @@ export function meshLayerBuilder(): (input: MeshLayerInput) => Layer[] {
           // On the fill when there is one; hollow estimate rings get the ring's colour.
           getColor: ({ p }) => (!matches(p) ? c.dimmed : p.kind === 'estimated' ? [...ageColor(p.age, c.ageStops), 255] : [...glyphInk(ageColor(p.age, c.ageStops)), 255]) as RGBA,
           pickable: false,
-          updateTriggers: { getColor: [q, c] },
+          updateTriggers: { getColor: [q, c, reach] },
         }),
       )
     }

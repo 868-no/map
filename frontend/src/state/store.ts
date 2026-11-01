@@ -26,6 +26,12 @@ export interface Toggles {
   basemap: Record<BasemapGroup, boolean>
 }
 
+/** Reach simulation settings: the hop limit to show, and whether internet links count. */
+export interface Reach {
+  hops: number
+  internet: boolean
+}
+
 export type Selection = { kind: 'node'; id: string } | { kind: 'edge'; src: string; dst: string; mqtt?: boolean } | null
 
 export interface WindowState {
@@ -41,6 +47,7 @@ interface Store {
   toggles: Toggles
   selection: Selection
   route: string | null // logical key of the packet whose route is drawn
+  reach: Reach | null // the selected node's simulated reach, drawn on the map (D-069)
   search: string
   setLive: (durationH?: number) => void
   setFixed: (start: string, end: string) => void
@@ -48,6 +55,7 @@ interface Store {
   setToggles: (t: Partial<Omit<Toggles, 'basemap'>> & { basemap?: Partial<Toggles['basemap']> }) => void
   select: (s: Selection) => void
   showRoute: (lp: string | null) => void
+  setReach: (r: Reach | null) => void
   setSearch: (s: string) => void
 }
 
@@ -83,6 +91,7 @@ export const useStore = create<Store>((set) => ({
   toggles: typeof window === 'undefined' ? defaultToggles : loadToggles(),
   selection: null,
   route: null,
+  reach: null,
   search: '',
   setLive: (durationH) =>
     set((s) => ({ win: { live: true, durationH: durationH ?? s.win.durationH, start: null, end: null } })),
@@ -96,8 +105,9 @@ export const useStore = create<Store>((set) => ({
       return { toggles }
     }),
   // A drawn packet route belongs to the selected node: any new selection clears it.
-  select: (selection) => set({ selection, route: null }),
-  showRoute: (route) => set({ route }),
+  select: (selection) => set({ selection, route: null, reach: null }),
+  showRoute: (route) => set({ route, reach: null }),
+  setReach: (reach) => set({ reach, route: null }),
   setSearch: (search) => set({ search }),
 }))
 

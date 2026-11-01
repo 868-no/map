@@ -1,6 +1,6 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { Edge, MeshNode, Radio, SnapshotView } from '../derive/views'
-import { useNodeDetail, usePacketLog, usePacketRoute } from '../state/data'
+import { useNodeDetail, usePacketLog, usePacketRoute, useReach } from '../state/data'
 import { useStore } from '../state/store'
 import { formatLocal, formatLogTime, relativeAge } from '../lib/time'
 import { Sparkline } from '../components/Sparkline'
@@ -213,6 +213,7 @@ export function NodePanel({ id, snapshot }: { id: string; snapshot: SnapshotView
           <Sparkline label="Channel utilisation %" points={(d.telemetry_series ?? []).map((s) => [Date.parse(s.at), s.ch_util ?? null])} />
         </div>
       )}
+      <ReachSection key={d.id} id={d.id} name={(n) => names.get(n) ?? n} />
       <h3>Links in window ({edges.length})</h3>
       <ul className="links">
         {edges.map((e) => (
@@ -366,6 +367,15 @@ export function EdgePanel({ a, b, mqtt = false, snapshot }: { a: string; b: stri
         </>
       )}
       <dt>In window</dt><dd>{formatLocal(e.first_at)} → {formatLocal(e.last_at)}</dd>
+      {e.zero_cost && (
+        <>
+          <dt title="Firmware lets a router relay what it hears from a favourite router without spending a hop (0-cost). Found from the hop limits gateways saw before and after this hop.">0-cost</dt>
+          <dd>
+            {e.zero_cost.likely ? <span className="conf conf-zero">0-cost</span> : 'not established'}{' '}
+            {name(e.dst)} relayed {e.zero_cost.free} packet{e.zero_cost.free === 1 ? '' : 's'} from {name(e.src)} without spending a hop{e.zero_cost.spent ? `, and spent one on ${e.zero_cost.spent}` : ''}.
+          </dd>
+        </>
+      )}
     </dl>
   )
   const direction = (src: string, dst: string) => {
@@ -398,3 +408,62 @@ export function EdgePanel({ a, b, mqtt = false, snapshot }: { a: string; b: stri
     </div>
   )
 }
+
+const MAX_HOPS = 7
+
+/**
+ * Reach simulator (D-069): how many nodes the selected node's packets reach
+ * at each hop limit, from the links seen in the window, 0-cost links
+ * included (D-068). Optionally drawn on the map instead of the links.
+ */
+function ReachSection({ id, name }: { id: string; name: (id: string) => string }) {
+  const shown = useStore((s) => s.reach)
+  const setReach = useStore((s) => s.setReach)
+  const [internet, setInternet] = useState(false)
+  const q = useReach(id, internet)
+  const r = q.data?.origin === id ? q.data : undefined
+  const [hops, setHops] = useState<number | null>(null)
+  const h = hops ?? r?.hop_start ?? 3
+  const ramp = PALETTES[useTheme()].reach
+  // Keep the map in step while it is shown.
+  useEffect(() => {
+    if (shown && (shown.hops !== h || shown.internet !== internet)) setReach({ hops: h, internet })
+  }, [h, internet, shown, setReach])
+  const per = Array.from({ length: MAX_HOPS + 1 }, (_, k) => (r?.nodes ?? []).filter((n) => n.need === k).length)
+  const total = per.slice(0, h + 1).reduce((a, b) => a + b, 0)
+  const all = per.reduce((a, b) => a + b, 0)
+  const free = (r?.nodes ?? []).filter((n) => n.free && n.need <= h).length
+  return (
+    <section className="reach">
+      <h3 title="How far this node's packets get at each hop limit, following the radio links seen in the selected period">Reach</h3>
+      <label className="reach-slider">
+        <span>Max hops</span>
+        <input type="range" min={0} max={MAX_HOPS} step={1} value={h} aria-label="Max hops" onChange={(e) => setHops(+e.target.value)} />
+        <b>{h}</b>
+      </label>
+      <p className="muted reach-note">
+        {r?.hop_start !== undefined ? <>Its packets use {r.hop_start}. </> : null}
+        {q.isLoading ? 'Working it out…' : <>Reaches <b>{total}</b> node{total === 1 ? '' : 's'} at {h} hop{h === 1 ? '' : 's'}{all > total ? ` (${all} at ${MAX_HOPS})` : ''}.{free ? ` ${free} of them through 0-cost links.` : ''}</>}
+      </p>
+      <div className="reach-steps" role="list" aria-label="Nodes added at each hop limit">
+        {per.map((n, k) => (
+          <button key={k} role="listitem" className={k <= h ? 'on' : undefined} onClick={() => setHops(k)} title={`${n} node${n === 1 ? '' : 's'} need a hop limit of ${k}`}>
+            <span className="swatch" style={{ background: `rgb(${ramp[k].join(',')})` }} />
+            <span className="k">{k}</span>
+            <span className="n">{k === 0 ? n : `+${n}`}</span>
+          </button>
+        ))}
+      </div>
+      <label><input type="checkbox" checked={!!shown} onChange={(e) => setReach(e.target.checked ? { hops: h, internet } : null)} /> Show on the map</label>
+      <label title="Follow internet (MQTT) links too: packets a gateway uplinked and another node downlinked and transmitted">
+        <input type="checkbox" checked={internet} onChange={(e) => setInternet(e.target.checked)} /> Count internet links
+      </label>
+      <p className="muted reach-caveat">
+        Built from the radio links seen in the selected period, in the direction they were heard; each relay spends a hop unless it
+        relays for free over a 0-cost link (gold chevrons). Links never observed are missing, and intermittent ones count as always there.
+        {r && r.nodes.length > 0 && shown && <> Nearest relays: {[...new Set(r.nodes.filter((n) => n.need === 1).map((n) => n.via))].slice(0, 3).map(name).join(', ')}.</>}
+      </p>
+    </section>
+  )
+}
+

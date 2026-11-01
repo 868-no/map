@@ -12,7 +12,7 @@ const EXPECTED: &str = include_str!("fixtures/mesh-12h/expected.json");
 
 /// Times to whole milliseconds (the server kept microseconds), numbers to
 /// 1e-4 as f64, heard lists by node, and engine-only fields (`source`, `radio`,
-/// `mqtt_downlink`) dropped.
+/// `mqtt_downlink`, `zero_cost`) dropped.
 fn normalize(v: &Value) -> Value {
     norm(v, true)
 }
@@ -24,7 +24,7 @@ fn norm(v: &Value, server: bool) -> Value {
         Value::Object(o) => {
             let mut out = serde_json::Map::new();
             for (k, x) in o {
-                if server && (k == "source" || k == "radio" || k == "mqtt_downlink") {
+                if server && (k == "source" || k == "radio" || k == "mqtt_downlink" || k == "zero_cost") {
                     continue;
                 }
                 let mut x = norm(x, server);

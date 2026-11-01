@@ -12046,7 +12046,12 @@
           "n": 313
         },
         "src": "!672f1873",
-        "src_num": 1731139699
+        "src_num": 1731139699,
+        "zero_cost": {
+          "free": 0,
+          "likely": false,
+          "spent": 1
+        }
       },
       {
         "confidence": "high",
@@ -12394,7 +12399,12 @@
           "n": 122
         },
         "src": "!997b0449",
-        "src_num": 2574976073
+        "src_num": 2574976073,
+        "zero_cost": {
+          "free": 7,
+          "likely": true,
+          "spent": 0
+        }
       },
       {
         "confidence": "high",
@@ -12674,7 +12684,12 @@
           "n": 67
         },
         "src": "!997b0449",
-        "src_num": 2574976073
+        "src_num": 2574976073,
+        "zero_cost": {
+          "free": 2,
+          "likely": false,
+          "spent": 0
+        }
       },
       {
         "confidence": "high",
@@ -12950,7 +12965,12 @@
           "n": 44
         },
         "src": "!3385c98f",
-        "src_num": 864405903
+        "src_num": 864405903,
+        "zero_cost": {
+          "free": 0,
+          "likely": false,
+          "spent": 1
+        }
       },
       {
         "confidence": "high",
@@ -13106,7 +13126,12 @@
           "n": 42
         },
         "src": "!bfa97d12",
-        "src_num": 3215555858
+        "src_num": 3215555858,
+        "zero_cost": {
+          "free": 0,
+          "likely": false,
+          "spent": 2
+        }
       },
       {
         "confidence": "high",
@@ -13170,7 +13195,12 @@
           "n": 38
         },
         "src": "!3385c98f",
-        "src_num": 864405903
+        "src_num": 864405903,
+        "zero_cost": {
+          "free": 0,
+          "likely": false,
+          "spent": 5
+        }
       },
       {
         "confidence": "high",
@@ -13386,7 +13416,12 @@
           "n": 34
         },
         "src": "!b1610d41",
-        "src_num": 2975927617
+        "src_num": 2975927617,
+        "zero_cost": {
+          "free": 2,
+          "likely": false,
+          "spent": 0
+        }
       },
       {
         "confidence": "high",
@@ -13442,7 +13477,12 @@
           "n": 33
         },
         "src": "!8a84e409",
-        "src_num": 2323964937
+        "src_num": 2323964937,
+        "zero_cost": {
+          "free": 3,
+          "likely": true,
+          "spent": 0
+        }
       },
       {
         "confidence": "high",
@@ -13526,7 +13566,12 @@
           "n": 32
         },
         "src": "!672f1873",
-        "src_num": 1731139699
+        "src_num": 1731139699,
+        "zero_cost": {
+          "free": 2,
+          "likely": false,
+          "spent": 6
+        }
       },
       {
         "confidence": "high",
@@ -13618,7 +13663,12 @@
           "n": 28
         },
         "src": "!0745f838",
-        "src_num": 122026040
+        "src_num": 122026040,
+        "zero_cost": {
+          "free": 0,
+          "likely": false,
+          "spent": 3
+        }
       },
       {
         "confidence": "high",
@@ -13734,7 +13784,12 @@
           "n": 25
         },
         "src": "!09a7ceb5",
-        "src_num": 161992373
+        "src_num": 161992373,
+        "zero_cost": {
+          "free": 0,
+          "likely": false,
+          "spent": 3
+        }
       },
       {
         "confidence": "high",
@@ -13790,7 +13845,12 @@
           "n": 25
         },
         "src": "!82b4c852",
-        "src_num": 2192885842
+        "src_num": 2192885842,
+        "zero_cost": {
+          "free": 0,
+          "likely": false,
+          "spent": 1
+        }
       },
       {
         "confidence": "high",
@@ -13934,7 +13994,12 @@
           "n": 24
         },
         "src": "!a9339946",
-        "src_num": 2838731078
+        "src_num": 2838731078,
+        "zero_cost": {
+          "free": 3,
+          "likely": true,
+          "spent": 0
+        }
       },
       {
         "confidence": "high",
@@ -14138,7 +14203,12 @@
           "n": 21
         },
         "src": "!edba94c7",
-        "src_num": 3988427975
+        "src_num": 3988427975,
+        "zero_cost": {
+          "free": 1,
+          "likely": false,
+          "spent": 0
+        }
       },
       {
         "confidence": "high",
@@ -14314,7 +14384,12 @@
           "n": 19
         },
         "src": "!0745f838",
-        "src_num": 122026040
+        "src_num": 122026040,
+        "zero_cost": {
+          "free": 0,
+          "likely": false,
+          "spent": 4
+        }
       },
       {
         "confidence": "high",
@@ -14818,7 +14893,12 @@
           "n": 15
         },
         "src": "!1d913813",
-        "src_num": 496056339
+        "src_num": 496056339,
+        "zero_cost": {
+          "free": 6,
+          "likely": true,
+          "spent": 0
+        }
       },
       {
         "confidence": "high",
@@ -14846,7 +14926,12 @@
           "n": 15
         },
         "src": "!1d913813",
-        "src_num": 496056339
+        "src_num": 496056339,
+        "zero_cost": {
+          "free": 0,
+          "likely": false,
+          "spent": 1
+        }
       },
       {
         "confidence": "high",
@@ -14930,7 +15015,12 @@
           "n": 15
         },
         "src": "!a9339946",
-        "src_num": 2838731078
+        "src_num": 2838731078,
+        "zero_cost": {
+          "free": 2,
+          "likely": false,
+          "spent": 1
+        }
       },
       {
         "confidence": "high",
@@ -15438,7 +15528,12 @@
           "n": 11
         },
         "src": "!09a7ceb5",
-        "src_num": 161992373
+        "src_num": 161992373,
+        "zero_cost": {
+          "free": 5,
+          "likely": false,
+          "spent": 6
+        }
       },
       {
         "confidence": "high",
@@ -15726,7 +15821,12 @@
           "n": 10
         },
         "src": "!a9339946",
-        "src_num": 2838731078
+        "src_num": 2838731078,
+        "zero_cost": {
+          "free": 2,
+          "likely": false,
+          "spent": 2
+        }
       },
       {
         "confidence": "high",
@@ -15966,7 +16066,12 @@
           "n": 9
         },
         "src": "!672f1873",
-        "src_num": 1731139699
+        "src_num": 1731139699,
+        "zero_cost": {
+          "free": 8,
+          "likely": true,
+          "spent": 1
+        }
       },
       {
         "confidence": "high",
@@ -16082,7 +16187,12 @@
           "n": 9
         },
         "src": "!997b0449",
-        "src_num": 2574976073
+        "src_num": 2574976073,
+        "zero_cost": {
+          "free": 23,
+          "likely": true,
+          "spent": 3
+        }
       },
       {
         "confidence": "high",
@@ -16442,7 +16552,12 @@
           "n": 8
         },
         "src": "!40cb5898",
-        "src_num": 1087068312
+        "src_num": 1087068312,
+        "zero_cost": {
+          "free": 0,
+          "likely": false,
+          "spent": 1
+        }
       },
       {
         "confidence": "high",
@@ -16530,7 +16645,12 @@
           "n": 8
         },
         "src": "!8a84e409",
-        "src_num": 2323964937
+        "src_num": 2323964937,
+        "zero_cost": {
+          "free": 1,
+          "likely": false,
+          "spent": 0
+        }
       },
       {
         "confidence": "high",
@@ -16586,7 +16706,12 @@
           "n": 8
         },
         "src": "!94ed7591",
-        "src_num": 2498590097
+        "src_num": 2498590097,
+        "zero_cost": {
+          "free": 5,
+          "likely": true,
+          "spent": 0
+        }
       },
       {
         "confidence": "high",
@@ -16646,7 +16771,12 @@
           "n": 8
         },
         "src": "!b1610d41",
-        "src_num": 2975927617
+        "src_num": 2975927617,
+        "zero_cost": {
+          "free": 2,
+          "likely": false,
+          "spent": 1
+        }
       },
       {
         "confidence": "high",
@@ -17558,7 +17688,12 @@
           "n": 6
         },
         "src": "!672f1873",
-        "src_num": 1731139699
+        "src_num": 1731139699,
+        "zero_cost": {
+          "free": 1,
+          "likely": false,
+          "spent": 2
+        }
       },
       {
         "confidence": "high",
@@ -17586,7 +17721,12 @@
           "n": 6
         },
         "src": "!672f1873",
-        "src_num": 1731139699
+        "src_num": 1731139699,
+        "zero_cost": {
+          "free": 21,
+          "likely": true,
+          "spent": 1
+        }
       },
       {
         "confidence": "medium",
@@ -18206,7 +18346,12 @@
           "n": 5
         },
         "src": "!40cb5898",
-        "src_num": 1087068312
+        "src_num": 1087068312,
+        "zero_cost": {
+          "free": 0,
+          "likely": false,
+          "spent": 1
+        }
       },
       {
         "confidence": "high",
@@ -18234,7 +18379,12 @@
           "n": 5
         },
         "src": "!4d71933f",
-        "src_num": 1299288895
+        "src_num": 1299288895,
+        "zero_cost": {
+          "free": 6,
+          "likely": false,
+          "spent": 3
+        }
       },
       {
         "confidence": "high",
@@ -18438,7 +18588,12 @@
           "n": 5
         },
         "src": "!94432bf3",
-        "src_num": 2487430131
+        "src_num": 2487430131,
+        "zero_cost": {
+          "free": 0,
+          "likely": false,
+          "spent": 2
+        }
       },
       {
         "confidence": "medium",
@@ -18526,7 +18681,12 @@
           "n": 5
         },
         "src": "!997b0449",
-        "src_num": 2574976073
+        "src_num": 2574976073,
+        "zero_cost": {
+          "free": 2,
+          "likely": false,
+          "spent": 0
+        }
       },
       {
         "confidence": "high",
@@ -18722,7 +18882,12 @@
           "n": 5
         },
         "src": "!bfa97d12",
-        "src_num": 3215555858
+        "src_num": 3215555858,
+        "zero_cost": {
+          "free": 0,
+          "likely": false,
+          "spent": 1
+        }
       },
       {
         "confidence": "high",
@@ -19130,7 +19295,12 @@
           "n": 4
         },
         "src": "!3385c98f",
-        "src_num": 864405903
+        "src_num": 864405903,
+        "zero_cost": {
+          "free": 0,
+          "likely": false,
+          "spent": 7
+        }
       },
       {
         "confidence": "low",
@@ -19566,7 +19736,12 @@
           "n": 4
         },
         "src": "!9b0f4bd5",
-        "src_num": 2601470933
+        "src_num": 2601470933,
+        "zero_cost": {
+          "free": 0,
+          "likely": false,
+          "spent": 1
+        }
       },
       {
         "confidence": "high",
@@ -19774,7 +19949,12 @@
           "n": 4
         },
         "src": "!e0a76739",
-        "src_num": 3769067321
+        "src_num": 3769067321,
+        "zero_cost": {
+          "free": 0,
+          "likely": false,
+          "spent": 1
+        }
       },
       {
         "confidence": "high",
@@ -19918,7 +20098,12 @@
           "n": 4
         },
         "src": "!f6a6fd67",
-        "src_num": 4138138983
+        "src_num": 4138138983,
+        "zero_cost": {
+          "free": 10,
+          "likely": true,
+          "spent": 0
+        }
       },
       {
         "confidence": "high",
@@ -19974,7 +20159,12 @@
           "n": 3
         },
         "src": "!0afeb1cd",
-        "src_num": 184463821
+        "src_num": 184463821,
+        "zero_cost": {
+          "free": 0,
+          "likely": false,
+          "spent": 1
+        }
       },
       {
         "confidence": "high",
@@ -20146,7 +20336,12 @@
           "n": 3
         },
         "src": "!2f349738",
-        "src_num": 791975736
+        "src_num": 791975736,
+        "zero_cost": {
+          "free": 0,
+          "likely": false,
+          "spent": 1
+        }
       },
       {
         "confidence": "high",
@@ -20378,7 +20573,12 @@
           "n": 3
         },
         "src": "!4d71933f",
-        "src_num": 1299288895
+        "src_num": 1299288895,
+        "zero_cost": {
+          "free": 1,
+          "likely": false,
+          "spent": 0
+        }
       },
       {
         "confidence": "high",
@@ -20830,7 +21030,12 @@
           "n": 3
         },
         "src": "!94ed7591",
-        "src_num": 2498590097
+        "src_num": 2498590097,
+        "zero_cost": {
+          "free": 4,
+          "likely": true,
+          "spent": 0
+        }
       },
       {
         "confidence": "high",
@@ -21434,7 +21639,12 @@
           "n": 2
         },
         "src": "!09a7ceb5",
-        "src_num": 161992373
+        "src_num": 161992373,
+        "zero_cost": {
+          "free": 1,
+          "likely": false,
+          "spent": 1
+        }
       },
       {
         "confidence": "high",
@@ -22606,7 +22816,12 @@
           "n": 2
         },
         "src": "!8a84e409",
-        "src_num": 2323964937
+        "src_num": 2323964937,
+        "zero_cost": {
+          "free": 2,
+          "likely": false,
+          "spent": 1
+        }
       },
       {
         "confidence": "high",
@@ -23082,7 +23297,12 @@
           "n": 2
         },
         "src": "!997b0449",
-        "src_num": 2574976073
+        "src_num": 2574976073,
+        "zero_cost": {
+          "free": 0,
+          "likely": false,
+          "spent": 3
+        }
       },
       {
         "confidence": "high",
@@ -23418,7 +23638,12 @@
           "n": 2
         },
         "src": "!bfa97d12",
-        "src_num": 3215555858
+        "src_num": 3215555858,
+        "zero_cost": {
+          "free": 0,
+          "likely": false,
+          "spent": 2
+        }
       },
       {
         "confidence": "high",
@@ -23842,7 +24067,12 @@
           "n": 2
         },
         "src": "!edba94c7",
-        "src_num": 3988427975
+        "src_num": 3988427975,
+        "zero_cost": {
+          "free": 1,
+          "likely": false,
+          "spent": 0
+        }
       },
       {
         "confidence": "medium",
@@ -23986,7 +24216,12 @@
           "n": 2
         },
         "src": "!f6a6fd67",
-        "src_num": 4138138983
+        "src_num": 4138138983,
+        "zero_cost": {
+          "free": 3,
+          "likely": true,
+          "spent": 0
+        }
       },
       {
         "confidence": "high",
@@ -24182,7 +24417,12 @@
           "n": 1
         },
         "src": "!0745f838",
-        "src_num": 122026040
+        "src_num": 122026040,
+        "zero_cost": {
+          "free": 1,
+          "likely": false,
+          "spent": 0
+        }
       },
       {
         "confidence": "high",
@@ -24238,7 +24478,12 @@
           "n": 1
         },
         "src": "!0745f838",
-        "src_num": 122026040
+        "src_num": 122026040,
+        "zero_cost": {
+          "free": 1,
+          "likely": false,
+          "spent": 0
+        }
       },
       {
         "confidence": "high",
@@ -26126,7 +26371,12 @@
           "n": 1
         },
         "src": "!672f1873",
-        "src_num": 1731139699
+        "src_num": 1731139699,
+        "zero_cost": {
+          "free": 0,
+          "likely": false,
+          "spent": 1
+        }
       },
       {
         "confidence": "high",
@@ -27198,7 +27448,12 @@
           "n": 1
         },
         "src": "!94193c75",
-        "src_num": 2484681845
+        "src_num": 2484681845,
+        "zero_cost": {
+          "free": 1,
+          "likely": false,
+          "spent": 1
+        }
       },
       {
         "confidence": "high",
@@ -27338,7 +27593,12 @@
           "n": 1
         },
         "src": "!94ed7591",
-        "src_num": 2498590097
+        "src_num": 2498590097,
+        "zero_cost": {
+          "free": 0,
+          "likely": false,
+          "spent": 1
+        }
       },
       {
         "confidence": "high",
@@ -29342,7 +29602,12 @@
           "n": 1
         },
         "src": "!f6a6fd67",
-        "src_num": 4138138983
+        "src_num": 4138138983,
+        "zero_cost": {
+          "free": 1,
+          "likely": false,
+          "spent": 1
+        }
       },
       {
         "confidence": "high",
@@ -38383,7 +38648,12 @@
           "n": 112
         },
         "src": "!672f1873",
-        "src_num": 1731139699
+        "src_num": 1731139699,
+        "zero_cost": {
+          "free": 1,
+          "likely": false,
+          "spent": 9
+        }
       },
       {
         "confidence": "low",
@@ -38895,7 +39165,12 @@
           "n": 16
         },
         "src": "!997b0449",
-        "src_num": 2574976073
+        "src_num": 2574976073,
+        "zero_cost": {
+          "free": 1,
+          "likely": false,
+          "spent": 0
+        }
       },
       {
         "confidence": "medium",
@@ -39375,7 +39650,12 @@
           "n": 8
         },
         "src": "!3385c98f",
-        "src_num": 864405903
+        "src_num": 864405903,
+        "zero_cost": {
+          "free": 0,
+          "likely": false,
+          "spent": 2
+        }
       },
       {
         "confidence": "low",
@@ -40559,7 +40839,12 @@
           "n": 3
         },
         "src": "!0745f838",
-        "src_num": 122026040
+        "src_num": 122026040,
+        "zero_cost": {
+          "free": 0,
+          "likely": false,
+          "spent": 1
+        }
       },
       {
         "confidence": "medium",
@@ -40911,7 +41196,12 @@
           "n": 2
         },
         "src": "!9b0f4bd5",
-        "src_num": 2601470933
+        "src_num": 2601470933,
+        "zero_cost": {
+          "free": 0,
+          "likely": false,
+          "spent": 1
+        }
       },
       {
         "confidence": "medium",
@@ -41231,7 +41521,12 @@
           "n": 1
         },
         "src": "!40cb5898",
-        "src_num": 1087068312
+        "src_num": 1087068312,
+        "zero_cost": {
+          "free": 0,
+          "likely": false,
+          "spent": 1
+        }
       },
       {
         "confidence": "low",

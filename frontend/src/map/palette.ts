@@ -29,6 +29,8 @@ export interface MapPalette {
   regions: Record<RegionId, RGB> // landsdel tints (outline, name and faint fill)
   regionFillAlpha: number
   ageStops: [number, number, number][] // node colour by last heard (model.ts)
+  zeroCost: RGB // chevrons on 0-cost links (D-068)
+  reach: RGB[] // reach paths by hop limit needed, 0..7 (D-069)
 }
 
 const toward = (c: RGB, target: number, f: number) => c.map((v) => Math.round(v + (target - v) * f)) as RGB
@@ -55,6 +57,8 @@ export const PALETTES: Record<Theme, MapPalette> = {
     regions: { nord: [129, 161, 255], trondelag: [255, 170, 120], vest: [110, 210, 190], ost: [230, 140, 200], sor: [235, 215, 110] },
     regionFillAlpha: 38,
     ageStops: AGE_STOPS,
+    zeroCost: [255, 214, 90],
+    reach: [[95, 225, 140], [205, 232, 85], [255, 196, 70], [255, 135, 65], [240, 85, 95], [215, 90, 205], [150, 115, 255], [110, 170, 255]],
   },
   light: {
     selected: [20, 24, 30, 255],
@@ -77,5 +81,7 @@ export const PALETTES: Record<Theme, MapPalette> = {
     regions: { nord: [60, 90, 200], trondelag: [196, 98, 36], vest: [16, 132, 112], ost: [168, 58, 138], sor: [150, 120, 10] },
     regionFillAlpha: 40,
     ageStops: AGE_STOPS_LIGHT,
+    zeroCost: [176, 118, 0],
+    reach: [[20, 150, 70], [125, 150, 0], [205, 135, 0], [220, 85, 20], [200, 35, 55], [170, 40, 160], [100, 60, 210], [30, 110, 210]],
   },
 }

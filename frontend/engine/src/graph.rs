@@ -82,6 +82,10 @@ pub struct Edge {
     /// at exactly 0 dB (D-055). Kept apart from radio links.
     #[serde(skip_serializing_if = "is_false")]
     pub mqtt: bool,
+    /// Hop-limit evidence that dst relays what it hears from src without
+    /// spending a hop (D-068); absent without any.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub zero_cost: Option<crate::zerocost::ZeroCost>,
     #[serde(skip)]
     pub first: i64,
     #[serde(skip)]
@@ -172,6 +176,7 @@ pub fn reduce(samples: &[Sample]) -> Vec<Edge> {
                 first_at: iso(a.first),
                 last_at: iso(a.last),
                 mqtt: false,
+                zero_cost: None,
                 first: a.first,
                 last: a.last,
             }

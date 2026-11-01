@@ -153,7 +153,13 @@ pub fn build_snapshot(rows: &[&Row], i: &Interner, g: &GeoOptions, rules: Rules)
     let roles: FxMap<u32, String> = nodes.iter().filter_map(|(&n, x)| x.identity.as_ref().filter(|id| !id.role.is_empty()).map(|id| (n, id.role.clone()))).collect();
     let silent: FxSet<u32> = if rules.silent { roles.iter().filter(|(_, r)| is_silent_role(r)).map(|(&n, _)| n).collect() } else { set() };
     let downlinkers: FxSet<u32> = nodes.iter().filter(|(_, x)| x.mqtt_downlink.is_some()).map(|(&n, _)| n).collect();
-    let (er, ctx) = build_edges(rows, &hops, &known, pos, silent, rules.mqtt_links.then_some(&downlinkers));
+    let (mut er, ctx) = build_edges(rows, &hops, &known, pos, silent, rules.mqtt_links.then_some(&downlinkers));
+    // Directional 0-cost evidence on radio links (D-068).
+    let hears: FxSet<(u32, u32)> = er.edges.iter().filter(|e| !e.mqtt).map(|e| (e.src_num, e.dst_num)).collect();
+    let mut zc = crate::zerocost::detect(rows, &ctx, &hears, &roles);
+    for e in er.edges.iter_mut().filter(|e| !e.mqtt) {
+        e.zero_cost = zc.remove(&(e.src_num, e.dst_num));
+    }
     if g.enabled {
         let radio: Vec<Edge> = er.edges.iter().filter(|e| !e.mqtt).cloned().collect();
         estimate(&mut nodes, &radio, g);

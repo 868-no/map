@@ -536,3 +536,20 @@ Operator request: move the period selector from the bottom bar into the rail's p
 - **Header, top right:** LIVE, LIVE (paused) or HISTORICAL with the window's length; clicking it opens the Period panel. "Return to live" sits beside it while a fixed window is shown.
 - **Rail order:** Nodes, Details, Period, Filters, Layers, Legend, Settings.
 
+## D-068 Directional 0-cost links (2026-11-01)
+
+Operator idea: detect 0-cost links from relayed traffic seen on both ends of a link, keeping in mind that 0-cost is directional.
+- **Firmware rule** (`Router::shouldDecrementHopLimit`): a ROUTER, ROUTER_LATE or CLIENT_BASE relays without spending a hop when the copy it heard came from one of its favourites that has one of those roles. The first hop, heard from the originator, always costs one. Favourites are one node's setting about another, so U → R can be free while R → U costs a hop.
+- **Evidence:** per packet, gateways report the hop limit each transmitter sent: the originator's for direct receptions, the relay's (resolved from the last-hop byte, D-022) for rebroadcasts. For a relay R and a transmitter U that R hears (a directed link), R sending the same hop limit as U counts as a free hop for U → R; one less counts as a spent one. A packet counts only when exactly one transmitter R hears explains its value, and never when U is the originator. Transmitters with conflicting values in one packet are left out, and so are pairs where a known role rules the rule out.
+- **Threshold:** a link is called 0-cost (`zero_cost.likely`) with at least 3 free packets making up at least 80 % of its evidence, since a transmitter no gateway heard can still mislead single packets. Edges carry `zero_cost: {free, spent, likely}` whenever there is any evidence.
+- **Shown as:** a gold chevron on the link near the router that relays for free, pointing at it; a "0-cost" row in that direction of the link panel; ", 0-cost" in the hover text; a legend entry.
+- On the 12-hour fixture: 53 directed links with evidence, 11 likely, all between routers. Examples: Vassfjellet ↔ Gråkallen (23 and 21 free), Gråkallen → Forbordsfjellet, and Frogn → Årvollåsen (6 of 6) while Årvollåsen → Frogn is 6 of 9, below the threshold.
+
+## D-069 Reach simulator (2026-11-01)
+
+Operator idea: when a node is selected, simulate its reach at different hop limits with a slider, to help people choose the value they need.
+- **Model:** a packet leaves with hop limit H. Nodes that hear the originator receive it with H left. A node relays only what it received with more than 0 left, spending a hop, except on a likely 0-cost link (D-068); the first hop always costs. CLIENT_MUTE never relays. Each node gets the smallest H that reaches it, and the transmitter it hears it from, by a shortest-path search over directed links (the receiving end heard the transmitting end). Inferred links stay out, as guesses. Internet links stay out unless "Count internet links" is on.
+- **Panel** (node details, "Reach"): a 0–7 slider starting at the hop limit the node's own packets used, the nodes reached at that limit, how many each step adds, and how many came through 0-cost links. "Show on the map" replaces the links with the reach paths up to the chosen limit, coloured by hop, and dims the nodes it does not reach; a new selection or a packet route clears it.
+- **Caveat, stated in the panel:** only links observed in the window count. Intermittent links count as always there, and links never seen are missing, so the result sketches the mesh as observed rather than predicting coverage.
+- Engine view `reach` (argument: node id, with `|internet` to follow MQTT links).
+

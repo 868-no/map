@@ -10,11 +10,11 @@ import { applyStylePaint, loadStyle, registerPMTiles } from './style'
 import { filterEdges, linkGeometry, placeNodes, visibleLinks, type LinkGeom, type PlacedNode } from './model'
 import { frameArrived, pingCount } from './pings'
 import { BASEMAP_GROUPS } from './layers'
-import { meshLayerBuilder, type RouteGeom } from './meshLayers'
+import { meshLayerBuilder, type ReachGeom, type RouteGeom } from './meshLayers'
 import { buildPingLayers } from './pingLayers'
 import { useCamera } from './camera'
 import { clusterLabels, type Cluster, type LabelDatum } from './labels'
-import { usePacketRoute } from '../state/data'
+import { usePacketRoute, useReach } from '../state/data'
 import { installTestHook } from './testHook'
 import { useTheme, type Theme } from '../theme'
 import { PALETTES } from './palette'
@@ -151,7 +151,21 @@ export default function MapView({ caps, snapshot, onPositions }: Props) {
       return a && b ? [{ from: a, to: b, dashed: g.dashed, seg: g }] : []
     })
   }, [routeLp, routeQ.data, pos])
-  const shownLinks = useMemo(() => (route ? [] : visibleLinks(links, { selectedNode, zoom, bounds })), [route, links, selectedNode, zoom, bounds])
+  // The selected node's simulated reach (D-069) replaces the links too.
+  const reachOpt = useStore((s) => s.reach)
+  const reachQ = useReach(reachOpt ? selectedNode : null, reachOpt?.internet ?? false)
+  const reach = useMemo((): ReachGeom | null => {
+    if (!reachOpt || !selectedNode || !reachQ.data || reachQ.data.origin !== selectedNode) return null
+    const shown = reachQ.data.nodes.filter((n) => n.need <= reachOpt.hops)
+    return {
+      reached: new Set([selectedNode, ...shown.map((n) => n.id)]),
+      segments: shown.flatMap((n) => {
+        const a = pos.get(n.via), b = pos.get(n.id)
+        return a && b ? [{ from: a, to: b, need: n.need, free: !!n.free }] : []
+      }),
+    }
+  }, [reachOpt, selectedNode, reachQ.data, pos])
+  const shownLinks = useMemo(() => (route || reach ? [] : visibleLinks(links, { selectedNode, zoom, bounds })), [route, reach, links, selectedNode, zoom, bounds])
 
   // Name clusters at this zoom. One fans out while hovered (with a short
   // grace period to reach its names) or while one of its nodes is selected.
@@ -175,8 +189,8 @@ export default function MapView({ caps, snapshot, onPositions }: Props) {
   const [buildMeshLayers] = useState(meshLayerBuilder)
   const regions = useRegions(toggles.regions)
   const baseLayers = useMemo(
-    () => buildMeshLayers({ placed, links: shownLinks, selection, search, toggles, zoom, clusters, exploded, route, palette, regions }),
-    [buildMeshLayers, placed, shownLinks, selection, search, toggles, zoom, clusters, exploded, route, palette, regions],
+    () => buildMeshLayers({ placed, links: shownLinks, selection, search, toggles, zoom, clusters, exploded, route, palette, regions, reach }),
+    [buildMeshLayers, placed, shownLinks, selection, search, toggles, zoom, clusters, exploded, route, palette, regions, reach],
   )
 
   // Animation loop: runs only while pings are alive (~30 fps), then settles
@@ -234,7 +248,7 @@ export default function MapView({ caps, snapshot, onPositions }: Props) {
           const name = n.identity?.long_name ?? n.id
           setHover({ x: info.x, y: info.y, text: `${name}${o.kind === 'estimated' ? ' — estimated location' : ''}${n.mqtt_opt_out ? ' — did not allow MQTT uplink; name withheld' : ''}` })
         } else {
-          const dir = (e: Edge | undefined, from: string, to: string) => (e ? `${from} → ${to}: ${e.confidence}, ${e.samples} samples` : `${from} → ${to}: no evidence`)
+          const dir = (e: Edge | undefined, from: string, to: string) => (e ? `${from} → ${to}: ${e.confidence}, ${e.samples} samples${e.zero_cost?.likely ? ', 0-cost' : ''}` : `${from} → ${to}: no evidence`)
           setHover({ x: info.x, y: info.y, text: `${o.mqtt ? 'Over the internet (MQTT), not radio — ' : ''}${dir(o.ab, o.a, o.b)} · ${dir(o.ba, o.b, o.a)}` })
         }
       },

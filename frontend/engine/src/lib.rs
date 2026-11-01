@@ -8,10 +8,12 @@ pub mod geo;
 pub mod graph;
 pub mod packets;
 pub mod radio;
+pub mod reach;
 pub mod row;
 pub mod store;
 pub mod util;
 pub mod views;
+pub mod zerocost;
 
 use serde::Deserialize;
 use wasm_bindgen::prelude::*;
@@ -188,7 +190,7 @@ impl Engine {
         self.store.export(lo as i64, hi as i64, &self.i)
     }
 
-    /// A view as JSON: kind is snapshot, traffic, node, packetlog or route;
+    /// A view as JSON: kind is snapshot, traffic, node, packetlog, route or reach;
     /// arg is the node id (node, packetlog) or packet key (route). "null"
     /// means the node is neither observed nor referenced in the window.
     pub fn view(&mut self, kind: &str, start: f64, end: f64, filters: &str, arg: &str) -> Result<String, JsError> {
@@ -216,6 +218,16 @@ impl Engine {
                 let rows: Vec<&row::Row> = self.rows().into_iter().filter(|r| r.lp == lp).collect();
                 let b = &self.built.as_ref().unwrap().1;
                 Ok(json(&packets::packet_route(&rows, &b.ctx, &b.roles, &self.i)))
+            }
+            "reach" => {
+                // arg: node id, with "|internet" to follow MQTT links too (D-069).
+                let (id, internet) = arg.split_once('|').map_or((arg, false), |(a, b)| (a, b == "internet"));
+                let num = parse_node(id).ok_or_else(|| err("invalid node id"))?;
+                self.build(start, end, filters)?;
+                let b = &self.built.as_ref().unwrap().1;
+                let silent: util::FxSet<u32> = b.roles.iter().filter(|(_, r)| views::is_silent_role(r)).map(|(&n, _)| n).collect();
+                let own: Vec<&row::Row> = self.rows().into_iter().filter(|r| r.src == num).collect();
+                Ok(json(&reach::reach(num, &b.snapshot.edges, &silent, internet, &own)))
             }
             _ => Err(err(format!("unknown view {kind}"))),
         }

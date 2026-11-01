@@ -3,7 +3,7 @@ import type { Capabilities, ObsRow } from '../api/types'
 import type { WindowReq } from './rowStore'
 import type { ViewErrorKind } from './views'
 
-export type ViewKind = 'snapshot' | 'traffic' | 'node' | 'packetlog' | 'route'
+export type ViewKind = 'snapshot' | 'traffic' | 'node' | 'packetlog' | 'route' | 'reach'
 
 export interface ViewRequest {
   type: 'view'
@@ -11,7 +11,7 @@ export interface ViewRequest {
   kind: ViewKind
   win: WindowReq
   filters: { channels: string[]; brokers: string[]; types: string[] }
-  node?: string // node id for kinds 'node' and 'packetlog'; logical packet key for 'route'
+  node?: string // node id for kinds 'node', 'packetlog' and 'reach' (with '|internet' to follow MQTT links); logical packet key for 'route'
   epoch: string // changes when a rolling window should look for new rows
 }
 

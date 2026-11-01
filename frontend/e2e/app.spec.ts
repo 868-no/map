@@ -412,3 +412,31 @@ test('the tool rail opens one panel at a time and counts active filters', async 
   await page.getByRole('button', { name: 'Legend', exact: true }).click()
   await expect(page.locator('#dock')).toBeHidden()
 })
+
+// D-069: a selected node's reach at each hop limit, drawn instead of its links.
+test('the reach simulator counts nodes per hop limit and draws the reach on the map', async ({ page }) => {
+  await withLinks(page)
+  await ready(page)
+  const layers = () => page.evaluate(() => Object.fromEntries((window as unknown as { __meshmap: Hook }).__meshmap.layers().map((l) => [l.id, l.data.length])))
+  // A node with links, so it reaches someone.
+  await expect.poll(async () => (await layers())['links-infra'] ?? 0, { timeout: 30_000 }).toBeGreaterThan(0)
+  const id = await page.evaluate(() => ((window as unknown as { __meshmap: Hook }).__meshmap.layers().find((l) => l.id === 'links-infra')!.data[0] as { a: string }).a)
+  await openPanel(page)
+  await page.getByPlaceholder(/Search/).fill(id)
+  await page.locator('.node-row').first().click()
+  const reach = page.locator('.reach')
+  await expect(reach).toContainText(/Reaches \d+ node/)
+  const slider = reach.getByRole('slider', { name: 'Max hops' })
+  await slider.fill('0')
+  const direct = Number(/Reaches (\d+)/.exec((await reach.textContent()) ?? '')![1])
+  expect(direct).toBeGreaterThan(0) // it has links: someone hears it directly
+  await slider.fill('7')
+  expect(Number(/Reaches (\d+)/.exec((await reach.textContent()) ?? '')![1])).toBeGreaterThanOrEqual(direct)
+  await reach.getByLabel('Show on the map').check()
+  await expect.poll(async () => (await layers()).reach ?? 0).toBeGreaterThan(0)
+  expect(Object.entries(await layers()).some(([k, n]) => k.startsWith('links-') && n > 0)).toBe(false) // reach replaces the links
+  await page.waitForTimeout(1500) // the camera flew to the node when it was selected
+  await docShot(page, 'reach.png')
+  await reach.getByLabel('Show on the map').uncheck()
+  await expect.poll(async () => 'reach' in (await layers())).toBe(false)
+})
