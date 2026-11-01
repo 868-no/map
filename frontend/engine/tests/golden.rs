@@ -1,5 +1,7 @@
 //! The engine against the retired server views, recorded for a real 12-hour
-//! window (tests/fixtures/mesh-12h, D-041).
+//! window (tests/fixtures/mesh-12h, D-041), and against its own recorded
+//! output for that window with default options (engine.json; record it again
+//! with UPDATE_GOLDEN=1 after an intended change).
 
 use serde_json::{json, Value};
 
@@ -12,15 +14,20 @@ const EXPECTED: &str = include_str!("fixtures/mesh-12h/expected.json");
 /// 1e-4 as f64, heard lists by node, and engine-only fields (`source`, `radio`,
 /// `mqtt_downlink`) dropped.
 fn normalize(v: &Value) -> Value {
+    norm(v, true)
+}
+
+/// normalize, keeping the engine-only fields unless `server`.
+fn norm(v: &Value, server: bool) -> Value {
     match v {
-        Value::Array(a) => Value::Array(a.iter().map(normalize).collect()),
+        Value::Array(a) => Value::Array(a.iter().map(|x| norm(x, server)).collect()),
         Value::Object(o) => {
             let mut out = serde_json::Map::new();
             for (k, x) in o {
-                if k == "source" || k == "radio" || k == "mqtt_downlink" {
+                if server && (k == "source" || k == "radio" || k == "mqtt_downlink") {
                     continue;
                 }
-                let mut x = normalize(x);
+                let mut x = norm(x, server);
                 if (k == "heard" || k == "heard_by") && x.is_array() {
                     x.as_array_mut().unwrap().sort_by(|a, b| a["node"].as_str().cmp(&b["node"].as_str()));
                 }
@@ -69,6 +76,51 @@ fn engine_matches_the_recorded_server_views() {
     assert_eq!(nodes.len(), 10);
     for (id, want) in nodes {
         assert_eq!(normalize(&view(&mut e, "node", json!({}), id)), normalize(want), "node {id}");
+    }
+}
+
+/// Nodes whose packet logs are recorded (b161 and 9b0f relayed by relay byte
+/// and traceroute, 1224 sent only, 011e neither) and logical packets whose
+/// routes are (traceroutes relayed by b161, a telemetry packet it relayed,
+/// and a NodeInfo heard by four gateways).
+const LOG_NODES: &[&str] = &["!b1610d41", "!9b0f4bd5", "!1224405f", "!011e7098"];
+const ROUTES: &[&str] = &["5b183f9a5eda8a24", "cfad293b363dece8", "6d56465f5dec6de5", "e57c03ceeb34b221"];
+
+/// Every view kind with default options (CLIENT_MUTE rule and MQTT links on),
+/// engine-only fields kept: locks the engine's current behaviour.
+#[test]
+fn engine_matches_its_recorded_views() {
+    let expected: Value = serde_json::from_str(EXPECTED).unwrap();
+    let mut e = Engine::new();
+    e.set_options(&json!({ "geo": expected["geolocation"] }).to_string()).unwrap();
+    e.add_rows(ROWS, f64::NEG_INFINITY).unwrap();
+    let (s, t) = (millis(expected["window"]["start"].as_str().unwrap()), millis(expected["window"]["end"].as_str().unwrap()));
+    let view = |e: &mut Engine, kind: &str, filters: Value, arg: &str| -> Value { serde_json::from_str(&e.view(kind, s, t, &filters.to_string(), arg).unwrap()).unwrap() };
+    let per = |e: &mut Engine, kind: &str, args: &mut dyn Iterator<Item = &str>| -> Value { Value::Object(args.map(|a| (a.to_string(), view(e, kind, json!({}), a))).collect()) };
+
+    let got = json!({
+        "snapshot": view(&mut e, "snapshot", json!({}), ""),
+        "traffic": view(&mut e, "traffic", json!({}), ""),
+        "snapshot_position_nodeinfo": view(&mut e, "snapshot", json!({"types": ["position", "nodeinfo"]}), ""),
+        "nodes": per(&mut e, "node", &mut expected["nodes"].as_object().unwrap().keys().map(String::as_str)),
+        "packetlogs": per(&mut e, "packetlog", &mut LOG_NODES.iter().copied()),
+        "routes": per(&mut e, "route", &mut ROUTES.iter().copied()),
+    });
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/mesh-12h/engine.json");
+    if std::env::var_os("UPDATE_GOLDEN").is_some() {
+        std::fs::write(path, serde_json::to_string_pretty(&got).unwrap() + "\n").unwrap();
+        return;
+    }
+    let want: Value = serde_json::from_str(&std::fs::read_to_string(path).expect("engine.json (UPDATE_GOLDEN=1 records it)")).unwrap();
+    for k in ["snapshot", "traffic", "snapshot_position_nodeinfo"] {
+        assert_eq!(norm(&got[k], false), norm(&want[k], false), "{k}");
+    }
+    for k in ["nodes", "packetlogs", "routes"] {
+        let (g, w) = (got[k].as_object().unwrap(), want[k].as_object().unwrap());
+        assert_eq!(g.keys().collect::<Vec<_>>(), w.keys().collect::<Vec<_>>(), "{k}");
+        for (a, x) in g {
+            assert_eq!(norm(x, false), norm(&w[a], false), "{k} {a}");
+        }
     }
 }
 
