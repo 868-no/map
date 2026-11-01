@@ -3,7 +3,7 @@
 use serde::Serialize;
 
 use super::estimate::estimate;
-use super::{brokers, build_edges, downlinks, identity_of, is_device_telemetry, is_identity, latest_by, origins, position_of, position_rows, referenced, sig_counts, telemetry_of, traceroute_hops, Node};
+use super::{brokers, build_edges, downlinks, identity_of, identity_of_report, is_device_telemetry, is_identity, is_named_report, latest_by, origins, position_of, position_rows, referenced, sig_counts, telemetry_of, traceroute_hops, Node};
 use crate::geo;
 use crate::graph::{Edge, LatLon, RelayContext};
 use crate::row::{Interner, Row};
@@ -118,6 +118,12 @@ pub fn build_snapshot(rows: &[&Row], i: &Interner, g: &GeoOptions, rules: Rules)
     }
     for (n, r) in latest_by(rows, is_identity, |r| r.src) {
         nodes.entry(n).or_insert_with(|| Node::new(n)).identity = Some(identity_of(r, i));
+    }
+    for (n, r) in latest_by(rows, is_named_report, |r| r.src) {
+        let x = nodes.entry(n).or_insert_with(|| Node::new(n));
+        if x.identity.is_none() {
+            x.identity = Some(identity_of_report(r, i));
+        }
     }
     for (n, r) in position_rows(rows) {
         let x = nodes.entry(n).or_insert_with(|| Node::new(n));

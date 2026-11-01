@@ -2,7 +2,8 @@
 //! heard: the MQTT topic root (region) and the channel name (preset). One
 //! node can be heard on several topics and channel names, because each
 //! gateway uplinks with its own configuration; every combination is listed.
-//! A node's own map report states both exactly.
+//! A node's own map report states the region exactly, and the preset only
+//! when it also reports a default channel (`Reported::preset_confirmed`).
 
 use serde::Serialize;
 
@@ -71,6 +72,11 @@ pub struct Reported {
     pub region: String,
     #[serde(skip_serializing_if = "String::is_empty")]
     pub modem_preset: String,
+    /// The preset is confirmed in use (has_default_channel). Without it the
+    /// node may run a custom modem config: firmware still reports the stored
+    /// preset, LONG_FAST unless changed.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub preset_confirmed: bool,
     pub at: String,
 }
 
@@ -117,7 +123,7 @@ pub fn radio(own: &[&Row], i: &Interner) -> Radio {
     heard_as.sort_by(|a, b| b.receptions.cmp(&a.receptions).then(a.topic.cmp(&b.topic)));
     let reported = latest_report.map(|r| {
         let m = r.map_report().unwrap();
-        Reported { region: i.s(m.region).to_string(), modem_preset: i.s(m.preset).to_string(), at: iso(r.t) }
+        Reported { region: i.s(m.region).to_string(), modem_preset: i.s(m.preset).to_string(), preset_confirmed: m.default_channel, at: iso(r.t) }
     });
     Radio { heard_as, reported }
 }

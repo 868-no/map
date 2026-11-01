@@ -21,6 +21,10 @@ pub struct Identity {
     pub has_public_key: bool,
     pub signature: String,
     pub observed_at: String,
+    /// "mapreport" when the identity comes from the node's own map report
+    /// (no NodeInfo in the window); empty for NodeInfo.
+    #[serde(skip_serializing_if = "str::is_empty")]
+    pub source: &'static str,
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -114,6 +118,11 @@ impl Node {
 pub fn is_identity(r: &Row) -> bool {
     r.ty == ty::NODEINFO && !r.nodeinfo().is_some_and(|n| n.untrusted)
 }
+/// A node's own map report that names it: its identity when the window
+/// holds no NodeInfo from it (nodes heard only through their map reports).
+pub fn is_named_report(r: &Row) -> bool {
+    r.ty == ty::MAPREPORT && r.map_report().is_some_and(|m| m.long_name != 0 || m.short_name != 0)
+}
 pub fn is_position(r: &Row) -> bool {
     (r.ty == ty::POSITION || r.ty == ty::MAPREPORT) && r.pos.is_some()
 }
@@ -132,6 +141,22 @@ pub(super) fn identity_of(r: &Row, i: &Interner) -> Identity {
         has_public_key: n.is_some_and(|n| n.has_public_key),
         signature: i.s(r.sig).to_string(),
         observed_at: iso(r.t),
+        source: "",
+    }
+}
+
+/// The identity a named map report gives (see `is_named_report`).
+pub(super) fn identity_of_report(r: &Row, i: &Interner) -> Identity {
+    let m = r.map_report().unwrap();
+    Identity {
+        long_name: i.s(m.long_name).to_string(),
+        short_name: i.s(m.short_name).to_string(),
+        hw_model: i.s(m.hw_model).to_string(),
+        role: i.s(m.role).to_string(),
+        has_public_key: false, // map reports do not carry it
+        signature: i.s(r.sig).to_string(),
+        observed_at: iso(r.t),
+        source: "mapreport",
     }
 }
 

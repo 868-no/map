@@ -102,11 +102,18 @@ pub struct Traceroute {
     pub snr_back: Vec<Option<f64>>,
 }
 
-/// What a node's own map report says about its radio (interned strings).
+/// What a node's own map report says about itself and its radio (interned
+/// strings). `default_channel` is the only proof the preset is in use:
+/// firmware reports the stored preset even under a custom modem config.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct MapReport {
     pub region: u32,
     pub preset: u32,
+    pub default_channel: bool,
+    pub long_name: u32,
+    pub short_name: u32,
+    pub hw_model: u32,
+    pub role: u32,
 }
 
 /// Port-specific decoded fields (most rows have none).
@@ -250,6 +257,16 @@ struct JMr<'a> {
     region: Cow<'a, str>,
     #[serde(borrow, default, skip_serializing_if = "is_empty")]
     modem_preset: Cow<'a, str>,
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    has_default_channel: bool,
+    #[serde(borrow, default, skip_serializing_if = "is_empty")]
+    long_name: Cow<'a, str>,
+    #[serde(borrow, default, skip_serializing_if = "is_empty")]
+    short_name: Cow<'a, str>,
+    #[serde(borrow, default, skip_serializing_if = "is_empty")]
+    hw_model: Cow<'a, str>,
+    #[serde(borrow, default, skip_serializing_if = "is_empty")]
+    role: Cow<'a, str>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -352,7 +369,15 @@ fn hops(v: Option<Vec<JHop>>) -> Vec<Hop> {
 impl JRow<'_> {
     pub fn into_row(self, i: &mut Interner) -> Row {
         let detail = if let Some(m) = self.mr {
-            Some(Detail::MapReport(MapReport { region: i.id(&m.region), preset: i.id(&m.modem_preset) }))
+            Some(Detail::MapReport(MapReport {
+                region: i.id(&m.region),
+                preset: i.id(&m.modem_preset),
+                default_channel: m.has_default_channel,
+                long_name: i.id(&m.long_name),
+                short_name: i.id(&m.short_name),
+                hw_model: i.id(&m.hw_model),
+                role: i.id(&m.role),
+            }))
         } else if let Some(n) = self.ni {
             Some(Detail::NodeInfo(NodeInfo {
                 long_name: i.id(&n.long_name),
@@ -421,7 +446,17 @@ pub fn to_json<'a>(r: &Row, i: &'a Interner) -> JRow<'a> {
         te: None, nb: None, tr: None, mr: None,
     };
     match r.detail.as_deref() {
-        Some(Detail::MapReport(m)) => j.mr = Some(JMr { region: s(m.region), modem_preset: s(m.preset) }),
+        Some(Detail::MapReport(m)) => {
+            j.mr = Some(JMr {
+                region: s(m.region),
+                modem_preset: s(m.preset),
+                has_default_channel: m.default_channel,
+                long_name: s(m.long_name),
+                short_name: s(m.short_name),
+                hw_model: s(m.hw_model),
+                role: s(m.role),
+            })
+        }
         Some(Detail::NodeInfo(n)) => {
             j.ni = Some(JNi { long_name: s(n.long_name), short_name: s(n.short_name), hw_model: s(n.hw_model), role: s(n.role), has_public_key: n.has_public_key, identity_untrusted: n.untrusted })
         }

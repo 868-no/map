@@ -42,6 +42,7 @@ export interface Identity {
   has_public_key: boolean
   signature: SignatureStatus
   observed_at: string
+  source?: 'mapreport' // from the node's own map report: no NodeInfo in the window
 }
 
 export interface Position {
@@ -176,7 +177,9 @@ export interface HeardAs {
 
 export interface Radio {
   heard_as: HeardAs[]
-  reported?: { region?: string; modem_preset?: string; at: string } // the node's own map report
+  // The node's own map report. preset_confirmed: a default channel proves the preset is in use;
+  // otherwise it may be a stale value under a custom modem config.
+  reported?: { region?: string; modem_preset?: string; preset_confirmed?: boolean; at: string }
 }
 
 export interface NodeView extends MeshNode {

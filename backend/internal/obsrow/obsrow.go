@@ -51,10 +51,18 @@ type ObsRow struct {
 	MapReport    *ObsMapReport    `json:"mr,omitempty"`
 }
 
-// ObsMapReport is what a node's own map report says about its radio.
+// ObsMapReport is what a node's own map report says about itself and its
+// radio. Firmware copies the stored modem preset even when the node uses a
+// custom modem configuration (use_preset off); only HasDefaultChannel, which
+// firmware sets only with use_preset on, confirms the preset is in use.
 type ObsMapReport struct {
-	Region      string `json:"region,omitempty"`
-	ModemPreset string `json:"modem_preset,omitempty"`
+	Region            string `json:"region,omitempty"`
+	ModemPreset       string `json:"modem_preset,omitempty"`
+	HasDefaultChannel bool   `json:"has_default_channel,omitempty" doc:"the node uses a modem preset, the default frequency slot and a channel with the default name and key"`
+	LongName          string `json:"long_name,omitempty"`
+	ShortName         string `json:"short_name,omitempty"`
+	HwModel           string `json:"hw_model,omitempty"`
+	Role              string `json:"role,omitempty"`
 }
 
 type ObsNodeInfo struct {
@@ -135,8 +143,8 @@ type storedMeta struct {
 // New builds them differently. It is part of the generation
 // /observations reports, so browsers holding rows in the old format start
 // over, and stored encodings of an older version are rebuilt (D-046)
-// (2: tp, mr).
-const Version = 2
+// (2: tp, mr; 3: map report identity and has_default_channel).
+const Version = 3
 
 // Fields are the packet_log columns an ObsRow carries.
 type Fields struct {
@@ -175,8 +183,8 @@ func New(f Fields, meta []byte) ObsRow {
 		r.Position = m.Position
 	case "mapreport":
 		r.Position = m.Position
-		if mr := m.MapReport; mr != nil && (mr.Region != "" || mr.ModemPreset != "") {
-			r.MapReport = &ObsMapReport{Region: mr.Region, ModemPreset: mr.ModemPreset}
+		if mr := m.MapReport; mr != nil && *mr != (ObsMapReport{}) {
+			r.MapReport = mr
 		}
 	case "telemetry":
 		if t := m.Telemetry; t != nil {

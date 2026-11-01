@@ -86,12 +86,18 @@ function radioSummary(r: Radio | undefined): { region: string; preset: string } 
     }
   }
   let preset = 'unknown'
-  if (r?.reported?.modem_preset) preset = `${presetName(r.reported.modem_preset)} (its own map report)`
-  else if (heard.length) {
-    const named = [...new Set(heard.flatMap((h) => (h.preset ? [presetName(h.preset)] : [])))]
-    const custom = [...new Set(heard.flatMap((h) => (!h.preset && h.channel ? [`"${h.channel}"`] : [])))]
-    const parts = [...named, ...(custom.length ? [`unknown (channel ${custom.join(', ')})`] : [])]
-    if (parts.length) preset = parts.join(', ')
+  const rep = r?.reported
+  if (rep?.modem_preset && rep.preset_confirmed) preset = `${presetName(rep.modem_preset)} (its own map report)`
+  else {
+    if (heard.length) {
+      const named = [...new Set(heard.flatMap((h) => (h.preset ? [presetName(h.preset)] : [])))]
+      const custom = [...new Set(heard.flatMap((h) => (!h.preset && h.channel ? [`"${h.channel}"`] : [])))]
+      const parts = [...named, ...(custom.length ? [`unknown (channel ${custom.join(', ')})`] : [])]
+      if (parts.length) preset = parts.join(', ')
+    }
+    // Firmware reports its stored preset even when a custom modem config is
+    // in use; without a default channel to confirm it, it is only a hint.
+    if (rep?.modem_preset) preset += ` — its map report says ${presetName(rep.modem_preset)}, but without a default channel that may be a stored preset under a custom modem config`
   }
   return { region, preset }
 }
@@ -130,7 +136,15 @@ export function NodePanel({ id, snapshot }: { id: string; snapshot: SnapshotView
         <dt>Hardware</dt><dd>{d.identity?.hw_model || NR}</dd>
         <dt>Role</dt><dd>{d.identity?.role || NR}</dd>
         <dt>Identity</dt>
-        <dd>{d.identity ? <><SigBadge s={d.identity.signature} /> {d.identity.has_public_key ? 'announces a public key' : 'no public key'} · {formatLocal(d.identity.observed_at)}</> : NR}</dd>
+        <dd>
+          {!d.identity ? NR : d.identity.source === 'mapreport' ? (
+            <span title="No NodeInfo from this node in the selected period: name, hardware and role come from the map report it sends to the MQTT broker itself">
+              from its own map report · {formatLocal(d.identity.observed_at)}
+            </span>
+          ) : (
+            <><SigBadge s={d.identity.signature} /> {d.identity.has_public_key ? 'announces a public key' : 'no public key'} · {formatLocal(d.identity.observed_at)}</>
+          )}
+        </dd>
         <dt>Position</dt>
         <dd>
           {d.position ? (

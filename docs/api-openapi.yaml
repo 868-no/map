@@ -303,9 +303,20 @@ components:
     ObsMapReport:
       additionalProperties: false
       properties:
+        has_default_channel:
+          description: the node uses a modem preset, the default frequency slot and a channel with the default name and key
+          type: boolean
+        hw_model:
+          type: string
+        long_name:
+          type: string
         modem_preset:
           type: string
         region:
+          type: string
+        role:
+          type: string
+        short_name:
           type: string
       type: object
     ObsNeighbor:

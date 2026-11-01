@@ -232,8 +232,14 @@ export interface components {
             unknown?: boolean;
         };
         ObsMapReport: {
+            /** @description the node uses a modem preset, the default frequency slot and a channel with the default name and key */
+            has_default_channel?: boolean;
+            hw_model?: string;
+            long_name?: string;
             modem_preset?: string;
             region?: string;
+            role?: string;
+            short_name?: string;
         };
         ObsNeighbor: {
             /** Format: int32 */

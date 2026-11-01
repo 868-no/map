@@ -2,7 +2,7 @@
 
 use serde::Serialize;
 
-use super::{brokers, dest, downlinks, first_per_reception, identity_of, is_device_telemetry, is_identity, is_position, latest_by, origins, position_of, position_rows, referenced, sig_counts, telemetry_of, traceroute_hops, Node};
+use super::{brokers, dest, downlinks, first_per_reception, identity_of, identity_of_report, is_device_telemetry, is_identity, is_named_report, is_position, latest_by, origins, position_of, position_rows, referenced, sig_counts, telemetry_of, traceroute_hops, Node};
 use crate::graph::{self, Stats};
 use crate::row::{Interner, Row};
 use crate::util::{iso, key_hex, map, node_id, set, FxMap, FxSet};
@@ -104,6 +104,8 @@ pub fn build_node_detail(rows: &[&Row], num: u32, i: &Interner) -> Option<NodeDe
     n.mqtt_downlink = downlinks(&traceroute_hops(rows)).remove(&num);
     if let Some(r) = latest_by(&own, is_identity, |r| r.src).get(&num) {
         n.identity = Some(identity_of(r, i));
+    } else if let Some(r) = latest_by(&own, is_named_report, |r| r.src).get(&num) {
+        n.identity = Some(identity_of_report(r, i));
     }
     if let Some(r) = position_rows(&own).get(&num) {
         n.position = Some(position_of(r, i));
