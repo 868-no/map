@@ -10,7 +10,8 @@ import type { Layer } from '@deck.gl/core'
 import type { Selection, Toggles } from '../state/store'
 import { ageColor, CONFIDENCE_ALPHA, glyphInk, LINK_WIDTH, MQTT_ARROW, mqttFlow, type MqttFlow, OPT_OUT_RING, ROUTE_COLOR, precisionErrorM, roleRadius, type LinkGeom, type PlacedNode } from './model'
 import { dashExt, UNDER_LABELS, type RGBA } from './deckShared'
-import { labelData, type Cluster } from './labels'
+import { labelData, toPixels, type Cluster } from './labels'
+import { stackLevels } from './stacking'
 import type { RouteSegment } from '../derive/views'
 import type { MapPalette } from './palette'
 import { regionLayers, type RegionCollection } from './regions'
@@ -143,12 +144,23 @@ export function meshLayerBuilder(): (input: MeshLayerInput) => Layer[] {
   })
   const routeParts = memoLast((route: RouteGeom[]) => ({ solid: route.filter((r) => !r.dashed), dashed: route.filter((r) => r.dashed) }))
   const reachParts = memoLast((segs: ReachGeom['segments']) => ({ solid: segs.filter((r) => !r.gap), gaps: segs.filter((r) => r.gap) }))
-  const glyphsOf = memoLast((placed: PlacedNode[]) =>
-    placed.flatMap((p): Glyph[] => {
+  // Stacking levels at this zoom (D-072): per level, the markers drawn again
+  // (level > 0) and the glyphs; level 0 markers are the base 'nodes' layer.
+  const stackOf = memoLast((placed: PlacedNode[], zoom: number) => {
+    const levels = stackLevels(placed.map((p) => {
+      const [x, y] = toPixels(p.lon, p.lat, zoom)
+      return { x, y, r: roleRadius(p.node.identity?.role) + 2, glyph: !!mqttFlow(p.node) }
+    }))
+    const top = Math.max(0, ...levels)
+    const markers: PlacedNode[][] = Array.from({ length: top + 1 }, () => [])
+    const glyphs: Glyph[][] = Array.from({ length: top + 1 }, () => [])
+    placed.forEach((p, k) => {
+      markers[levels[k]].push(p)
       const flow = mqttFlow(p.node)
-      return flow ? [{ p, flow }] : []
-    }),
-  )
+      if (flow) glyphs[levels[k]].push({ p, flow })
+    })
+    return { markers, glyphs }
+  })
   const optOutOf = memoLast((placed: PlacedNode[]) => placed.filter((p) => p.node.mqtt_opt_out))
   const hollowOf = memoLast((placed: PlacedNode[]) => placed.filter((p) => p.kind === 'estimated'))
   const chevronsOf = memoLast((links: LinkGeom[]) =>
@@ -286,39 +298,38 @@ export function meshLayerBuilder(): (input: MeshLayerInput) => Layer[] {
         }),
       )
     }
-    layers.push(
-      new ScatterplotLayer<PlacedNode>({
-        id: 'nodes', ...UNDER_LABELS, data: placed, getPosition: (p) => [p.lon, p.lat],
-        // Size by role, fill by last heard (scaled to the window); estimated
-        // nodes are hollow rings in the same colour.
-        radiusUnits: 'pixels', getRadius: (p) => roleRadius(p.node.identity?.role),
-        filled: true, stroked: true, lineWidthUnits: 'pixels',
-        getFillColor: (p) => (p.kind === 'estimated' ? [0, 0, 0, 0] : matches(p) ? [...ageColor(p.age, c.ageStops), 255] : c.dimmed) as RGBA,
-        getLineColor: (p) =>
-          (p.node.id === selId ? c.selected
-            : p.kind === 'estimated' ? (matches(p) ? [...ageColor(p.age, c.ageStops), 255] : c.dimmed)
-            : p.node.is_gateway ? [...c.gateway, 255] : c.nodeOutline) as RGBA,
-        getLineWidth: (p) => (p.node.id === selId ? 3 : p.kind === 'estimated' || p.node.is_gateway ? 2 : 1),
-        pickable: true, autoHighlight: true, highlightColor: [...c.gateway, 160],
-        updateTriggers: { getFillColor: [q, c, reach], getLineColor: [selId, q, c, reach], getLineWidth: [selId] },
-      }),
-    )
-
+    // Size by role, fill by last heard (scaled to the window); estimated
+    // nodes are hollow rings in the same colour.
+    const marker = {
+      ...UNDER_LABELS, getPosition: (p: PlacedNode) => [p.lon, p.lat] as [number, number],
+      radiusUnits: 'pixels' as const, getRadius: (p: PlacedNode) => roleRadius(p.node.identity?.role),
+      filled: true, stroked: true, lineWidthUnits: 'pixels' as const,
+      getFillColor: (p: PlacedNode) => (p.kind === 'estimated' ? [0, 0, 0, 0] : matches(p) ? [...ageColor(p.age, c.ageStops), 255] : c.dimmed) as RGBA,
+      getLineColor: (p: PlacedNode) =>
+        (p.node.id === selId ? c.selected
+          : p.kind === 'estimated' ? (matches(p) ? [...ageColor(p.age, c.ageStops), 255] : c.dimmed)
+          : p.node.is_gateway ? [...c.gateway, 255] : c.nodeOutline) as RGBA,
+      getLineWidth: (p: PlacedNode) => (p.node.id === selId ? 3 : p.kind === 'estimated' || p.node.is_gateway ? 2 : 1),
+      updateTriggers: { getFillColor: [q, c, reach], getLineColor: [selId, q, c, reach], getLineWidth: [selId] },
+    }
     // MQTT direction inside the marker: ↑ uplinks (gateway), ↓ probably
     // downlinks (traceroutes reach it at exactly 0 dB), ↕ both (D-054).
-    const glyphs = glyphsOf(placed)
-    if (glyphs.length) {
-      layers.push(
-        new IconLayer<Glyph>({
-          id: 'mqtt-glyphs', ...UNDER_LABELS, data: glyphs, getPosition: ({ p }) => [p.lon, p.lat],
-          ...arrowIcons(), getIcon: ({ flow }) => flow, sizeUnits: 'pixels', getSize: ({ p }) => roleRadius(p.node.identity?.role) * 1.5,
-          // On the fill when there is one; hollow estimate rings get the ring's colour.
-          getColor: ({ p }) => (!matches(p) ? c.dimmed : p.kind === 'estimated' ? [...ageColor(p.age, c.ageStops), 255] : [...glyphInk(ageColor(p.age, c.ageStops)), 255]) as RGBA,
-          pickable: false,
-          updateTriggers: { getColor: [q, c, reach] },
-        }),
-      )
+    const glyph = {
+      ...UNDER_LABELS, getPosition: ({ p }: Glyph) => [p.lon, p.lat] as [number, number],
+      getIcon: ({ flow }: Glyph) => flow, sizeUnits: 'pixels' as const, getSize: ({ p }: Glyph) => roleRadius(p.node.identity?.role) * 1.5,
+      // On the fill when there is one; hollow estimate rings get the ring's colour.
+      getColor: ({ p }: Glyph) => (!matches(p) ? c.dimmed : p.kind === 'estimated' ? [...ageColor(p.age, c.ageStops), 255] : [...glyphInk(ageColor(p.age, c.ageStops)), 255]) as RGBA,
+      pickable: false,
+      updateTriggers: { getColor: [q, c, reach] },
     }
+    // Every marker, pickable, in one layer; then per stacking level its
+    // glyphs, and the markers of the next level drawn again above them.
+    layers.push(new ScatterplotLayer<PlacedNode>({ id: 'nodes', data: placed, pickable: true, autoHighlight: true, highlightColor: [...c.gateway, 160], ...marker }))
+    const stack = stackOf(placed, zoom)
+    stack.glyphs.forEach((g, level) => {
+      if (level > 0) layers.push(new ScatterplotLayer<PlacedNode>({ id: `nodes-over-${level}`, data: stack.markers[level], pickable: false, ...marker }))
+      if (g.length) layers.push(new IconLayer<Glyph>({ id: level ? `mqtt-glyphs-${level}` : 'mqtt-glyphs', data: g, ...arrowIcons(), ...glyph }))
+    })
 
     // Nodes that did not allow MQTT uplink (their packets reached us through
     // another gateway): always ringed in red, never named (D-032).

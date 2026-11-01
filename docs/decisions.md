@@ -565,3 +565,9 @@ Operator request: make the right-hand sidebar a floating island over the map.
 - The rail is as tall as its buttons. The panel sits beside it, as tall as its content up to the bottom margin, scrolling inside past that. On phones it floats along the bottom, beside the rail, up to half the screen.
 - Banners, the coordinate readout and the credits stay clear of both. The camera keeps framed content clear of the panel, now telling the side panel from the bottom card by width.
 
+## D-072 Glyphs stay with their markers (2026-11-01)
+
+Reported: uplink and downlink glyphs (D-054) rendered above markers they did not belong to. Markers were one layer and glyphs a later one, so every glyph sat above every marker, and a node's glyph showed through the marker of an overlapping node drawn after it.
+- **Stacking levels** (`map/stacking.ts`), from the markers' screen positions at the current zoom: in draw order, a node takes the highest level among the earlier nodes it overlaps, one higher when that node has a glyph. Each level's glyphs follow its markers, and markers of higher levels are drawn again above them (`nodes-over-N`, not pickable). The complete, pickable `nodes` layer is unchanged. Overlaps are found on a grid, so it stays linear; it is recomputed when the zoom changes.
+- At zoom 10.5 on 2026-11-01: 36 glyphs on the base level, 11 markers redrawn above them and 2 glyphs on the next level.
+
