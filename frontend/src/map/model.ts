@@ -109,7 +109,8 @@ export function placeNodes(nodes: MeshNode[], endMs: number, windowMs: number): 
   const unplaced: MeshNode[] = []
   for (const n of nodes) {
     const age = lastHeardAge(n, endMs, windowMs)
-    if (n.position) placed.push({ node: n, kind: 'reported', lon: n.position.lon, lat: n.position.lat, age })
+    // A position narrowed from noisy reports (D-077) places it better than the latest report.
+    if (n.position) placed.push({ node: n, kind: 'reported', lon: n.refined?.lon ?? n.position.lon, lat: n.refined?.lat ?? n.position.lat, age })
     else if (n.estimate) placed.push({ node: n, kind: 'estimated', lon: n.estimate.lon, lat: n.estimate.lat, age, radiusM: n.estimate.uncertainty_radius_m })
     else unplaced.push(n)
   }

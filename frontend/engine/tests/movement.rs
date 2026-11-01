@@ -86,3 +86,57 @@ fn precise_positions_decide_even_with_coarse_map_reports_in_between() {
     assert_eq!(node(&snapshot(rows), M)["moved_at"], "2026-10-31T00:10:00.000Z");
 }
 
+
+// D-077: reports jumping around one place narrow down where the node is.
+const CELL15: f64 = 1e-7 * 131_072.0; // a 15-bit cell, in degrees
+
+#[test]
+fn jitter_across_a_cell_edge_picks_a_cell_but_never_goes_finer_than_shared() {
+    // Reports alternate between two cells either side of an edge, one more often.
+    // Spec §8.7: no narrowing to the edge between them, only the better-supported cell.
+    let (south, north) = (63.40, 63.40 + CELL15);
+    let rows: Vec<Value> = [south, north, south, north, south, south].iter().enumerate().map(|(k, &lat)| pos(k as i64 + 1, k as i64 * 10, lat, 15, None)).collect();
+    let n = node(&snapshot(Value::Array(rows)), M);
+    assert!(n["refined"].is_null(), "the latest report already names that cell at that precision: nothing to add");
+    assert!(n["moved_at"].is_null(), "jitter is not movement");
+    assert!((n["position"]["lat"].as_f64().unwrap() - south).abs() < 1e-9);
+}
+
+#[test]
+fn nested_precisions_narrow_to_the_finest_cell() {
+    // 15-bit positions and coarse 13-bit map reports of the same spot, the latest a coarse one.
+    let rows: Vec<Value> = (0..6).map(|k| pos(k + 1, k * 10, 63.40, if k % 2 == 0 { 15 } else { 13 }, None)).collect();
+    let r = node(&snapshot(Value::Array(rows)), M)["refined"].clone();
+    assert!(r["radius_m"].as_f64().unwrap() < 900.0, "the 15-bit cell, not the 13-bit one: {r}");
+}
+
+#[test]
+fn one_off_noise_is_set_aside_without_false_precision() {
+    // A home cell reported again and again, and scattered one-off readings within a few km.
+    let mut rows: Vec<Value> = (0..7).map(|k| pos(k + 1, k * 8, 63.40, 15, None)).collect();
+    rows.insert(2, pos(20, 15, 63.40 + 2.0 * CELL15, 15, None));
+    rows.insert(5, pos(21, 35, 63.40 - 3.0 * CELL15, 15, None));
+    let n = node(&snapshot(Value::Array(rows)), M);
+    let r = &n["refined"];
+    assert_eq!((r["agree"].as_u64(), r["reports"].as_u64()), (Some(7), Some(9)), "{r}");
+    assert!((r["lat"].as_f64().unwrap() - 63.40).abs() < 1e-9, "the home cell");
+    assert!(r["radius_m"].as_f64().unwrap() > 700.0, "only as sure as the home cell itself: {r}");
+    assert!(n["moved_at"].is_null(), "noise is not movement");
+}
+
+#[test]
+fn noise_beyond_small_jitter_gets_no_false_precision() {
+    // FerretNet on 2026-11-01: a home cell, and cells touching it at opposite
+    // corners (2.6 km apart). No single corner fits them all: the home cell only.
+    let c = 1e-7 * 524_288.0; // 13-bit cell
+    let at = |i: i64, t: i64, dlat: f64, dlon: f64| {
+        json!({"i": i, "t": T0 + t * 60_000, "b": "it", "s": M, "g": G, "y": "position", "l": format!("{i:016x}"), "o": format!("{:016x}", i + 1000),
+            "sg": "unsigned", "sn": 5.0, "hs": 3, "hl": 3, "dr": true, "po": {"lat": 59.899904 + dlat, "lon": 10.8265472 + dlon, "precision_bits": 13, "precision_known": true}})
+    };
+    let rows = json!([at(1, 1, 0.0, 0.0), at(2, 5, c, -c), at(3, 9, c, c), at(4, 13, c, -c), at(5, 17, 0.0, 0.0), at(6, 21, 0.0, 0.0), at(7, 25, 0.0, 0.0)]);
+    let n = node(&snapshot(rows), M);
+    let r = &n["refined"];
+    assert!(r.is_null() || r["radius_m"].as_f64().unwrap() > 3000.0, "no corner claim: {r}");
+    assert!(n["moved_at"].is_null());
+}
+

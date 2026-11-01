@@ -110,7 +110,11 @@ pub fn build_node_detail(rows: &[&Row], num: u32, i: &Interner) -> Option<NodeDe
     if let Some(r) = position_rows(&own).get(&num) {
         n.position = Some(position_of(r, i));
     }
-    if let Some(m) = crate::movement::movements(&own).get(&num) {
+    let anchored = crate::movement::anchors(&own);
+    if let Some(a) = anchored.get(&num) {
+        n.set_anchor(a);
+    }
+    if let Some(m) = crate::movement::movements_except(&own, &anchored).get(&num) {
         n.set_movement(m);
     }
     if let Some(r) = latest_by(&own, is_device_telemetry, |r| r.src).get(&num) {

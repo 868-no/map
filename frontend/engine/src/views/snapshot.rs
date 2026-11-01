@@ -154,8 +154,16 @@ pub fn build_snapshot(rows: &[&Row], i: &Interner, g: &GeoOptions, rules: Rules)
     let roles: FxMap<u32, String> = nodes.iter().filter_map(|(&n, x)| x.identity.as_ref().filter(|id| !id.role.is_empty()).map(|id| (n, id.role.clone()))).collect();
     let silent: FxSet<u32> = if rules.silent { roles.iter().filter(|(_, r)| is_silent_role(r)).map(|(&n, _)| n).collect() } else { set() };
     let downlinkers: FxSet<u32> = nodes.iter().filter(|(_, x)| x.mqtt_downlink.is_some()).map(|(&n, _)| n).collect();
-    // Nodes that moved (D-073): their trails, and links only from after the move.
-    let moves = crate::movement::movements(rows);
+    // Nodes whose reports jump around one place get a narrowed position, and
+    // their jumps are not movement (D-077). Nodes that moved (D-073): their
+    // trails, and links only from after the move.
+    let anchored = if rules.moves { crate::movement::anchors(rows) } else { map() };
+    for (n, a) in &anchored {
+        if let Some(x) = nodes.get_mut(n) {
+            x.set_anchor(a);
+        }
+    }
+    let moves = crate::movement::movements_except(rows, &anchored);
     for (n, m) in &moves {
         if let Some(x) = nodes.get_mut(n) {
             x.set_movement(m);

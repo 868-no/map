@@ -107,6 +107,10 @@ pub struct Node {
     /// Moving and reporting more than 750 m above sea level (D-073).
     #[serde(skip_serializing_if = "is_false")]
     pub airborne: bool,
+    /// Its position narrowed from reports jumping around one place (D-077);
+    /// the map places it here rather than at the latest report.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub refined: Option<crate::movement::Anchor>,
     #[serde(skip)]
     pub(super) first: i64,
     #[serde(skip)]
@@ -117,6 +121,18 @@ pub struct Node {
 
 impl Node {
     /// Its movement (D-073); call after its position is set.
+    /// Its narrowed position (D-077); call after its position is set.
+    pub(super) fn set_anchor(&mut self, a: &crate::movement::Anchor) {
+        if !a.narrowed {
+            return; // the latest report already says as much; it only stops counting as moving
+        }
+        self.refined = Some(a.clone());
+        if let Some(p) = self.pos.as_mut() {
+            p.lat = a.lat;
+            p.lon = a.lon;
+        }
+    }
+
     pub(super) fn set_movement(&mut self, m: &crate::movement::Movement) {
         self.moved_at = Some(iso(m.moved_at));
         self.track = Some(m.track.clone());
@@ -127,7 +143,7 @@ impl Node {
         Node {
             id: node_id(n), num: n, status: "observed", identity: None, position: None, telemetry: None, first_seen: None, last_seen: None,
             packets: 0, receptions: 0, gateway_receptions: 0, is_gateway: false, signatures: Signatures::default(), brokers: None,
-            mqtt_opt_out: false, estimate: None, estimate_note: None, mqtt_downlink: None, moved_at: None, track: None, airborne: false, first: i64::MAX, last: i64::MIN, pos: None,
+            mqtt_opt_out: false, estimate: None, estimate_note: None, mqtt_downlink: None, moved_at: None, track: None, airborne: false, refined: None, first: i64::MAX, last: i64::MIN, pos: None,
         }
     }
 }

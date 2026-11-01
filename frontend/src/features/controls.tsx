@@ -134,7 +134,7 @@ export function Legend({ snapshot }: { snapshot: SnapshotView | undefined }) {
       </ul>
       <h3>Node markers</h3>
       <ul>
-        <li><span className="dot rep" /> Reported position (from an in-window Position packet or map report)</li>
+        <li><span className="dot rep" /> Reported position (from an in-window Position packet or map report). When its reports jump around one place, they are combined into a narrower position.</li>
         <li><span className="dot rep gwring glyph">↑</span> MQTT gateway: uplinks what it hears to the broker</li>
         <li><span className="dot rep glyph">↓</span> Probably downlinks: transmits packets it takes from the broker (its traceroute hops read exactly 0 dB, as packets from MQTT do)</li>
         <li><span className="dot rep gwring glyph">↕</span> Both uplinks and downlinks</li>

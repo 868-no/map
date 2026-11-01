@@ -50,6 +50,115 @@ pub fn move_threshold_m(a: (f64, u32), b: (f64, u32)) -> f64 {
     MOVE_M + PRECISION_SLACK * (precision_error_m(a.1, a.0) + precision_error_m(b.1, b.0))
 }
 
+/// A stationary node whose reports jump around one place (D-077): GPS noise
+/// around a fixed spot, or reports of different precision. The agreeing
+/// reports pick its place, never finer than it shared itself (spec §8.7).
+#[derive(Serialize, Clone, Debug, PartialEq)]
+pub struct Anchor {
+    pub lat: f64,
+    pub lon: f64,
+    /// Worst-case error of the narrowed position.
+    pub radius_m: f64,
+    /// Reports (one per packet) in the window, and how many agree on the place.
+    pub reports: usize,
+    pub agree: usize,
+    /// It tells more than the latest report: a smaller error, or outlying
+    /// reports set aside. Otherwise it only keeps the node from counting as moving.
+    #[serde(skip)]
+    pub narrowed: bool,
+}
+
+/// Reports needed before a node can be anchored.
+pub const ANCHOR_MIN_REPORTS: usize = 5;
+fn err_m(p: &crate::row::Position) -> f64 {
+    if p.known { precision_error_m(p.bits, p.lat) } else { 0.0 }
+}
+
+/// Anchored nodes in `rows` (see `Anchor`).
+pub fn anchors(rows: &[&Row]) -> FxMap<u32, Anchor> {
+    let mut by_node: FxMap<u32, Vec<&Row>> = map();
+    for &r in rows {
+        if (r.ty == ty::POSITION || r.ty == ty::MAPREPORT) && r.pos.is_some() {
+            by_node.entry(r.src).or_default().push(r);
+        }
+    }
+    let mut out = map();
+    for (n, mut rs) in by_node {
+        rs.sort_by_key(|r| (r.t, r.id));
+        // One report per packet, however many gateways heard it.
+        let mut seen = crate::util::set();
+        rs.retain(|r| seen.insert(r.lp));
+        if rs.len() < ANCHOR_MIN_REPORTS {
+            continue;
+        }
+        let pos = |r: &Row| r.pos.unwrap();
+        // The most reported place, and the reports near it.
+        let mut count: FxMap<(u64, u64, u32), usize> = map();
+        for r in &rs {
+            let p = pos(r);
+            *count.entry((p.lat.to_bits(), p.lon.to_bits(), p.bits)).or_default() += 1;
+        }
+        let mode = *count.iter().max_by(|a, b| a.1.cmp(b.1).then(b.0.cmp(a.0))).unwrap().0;
+        let m = rs.iter().map(|r| pos(r)).find(|p| (p.lat.to_bits(), p.lon.to_bits(), p.bits) == mode).unwrap();
+        let near = |p: &crate::row::Position| distance_m(LatLon { lat: m.lat, lon: m.lon }, LatLon { lat: p.lat, lon: p.lon }) <= move_threshold_m((m.lat, m.bits), (p.lat, p.bits));
+        let inliers: Vec<crate::row::Position> = rs.iter().map(|r| pos(r)).filter(near).collect();
+        // Most reports at that place, and at least two of the latest three: it
+        // is home now (a node that has just left is not held back by its past).
+        let recent = rs.iter().rev().take(3).filter(|r| near(&pos(r))).count();
+        if inliers.len() * 2 < rs.len() || recent < 2 {
+            continue;
+        }
+        let (lat, lon, radius_m) = narrow(&inliers, &m);
+        // Never wider than the latest report itself.
+        let last = pos(rs.last().unwrap());
+        // The latest report wins only when it is finer: equally coarse, it may be noise.
+        let (lat, lon, radius_m) = if near(&last) && err_m(&last) < 0.9 * radius_m { (last.lat, last.lon, err_m(&last)) } else { (lat, lon, radius_m) };
+        out.insert(n, Anchor { lat, lon, radius_m, reports: rs.len(), agree: inliers.len(), narrowed: radius_m < 0.9 * err_m(&last) || inliers.len() < rs.len() });
+    }
+    out
+}
+
+/// Where the agreeing reports put the node, and how sure that is.
+fn narrow(inliers: &[crate::row::Position], mode: &crate::row::Position) -> (f64, f64, f64) {
+    let finest = inliers.iter().map(|p| if p.known { p.bits } else { 32 }).max().unwrap_or(32);
+    if finest >= 24 {
+        // Precise readings: their mean, as sure as their spread allows.
+        let fine: Vec<_> = inliers.iter().filter(|p| !p.known || p.bits >= 24).collect();
+        let k = fine.len() as f64;
+        let (lat, lon) = (fine.iter().map(|p| p.lat).sum::<f64>() / k, fine.iter().map(|p| p.lon).sum::<f64>() / k);
+        let rms = (fine.iter().map(|p| distance_m(LatLon { lat, lon }, LatLon { lat: p.lat, lon: p.lon }).powi(2)).sum::<f64>() / k).sqrt();
+        return (lat, lon, (2.0 * rms / k.sqrt()).max(10.0));
+    }
+    // Truncated cells. Spec §8.7: a position shared with reduced precision
+    // keeps that precision, so nothing finer than the node's own finest
+    // report is inferred (no narrowing to an edge or corner between cells).
+    // Among the agreeing reports at the finest precision, the most reported
+    // cell (ties: the latest) is where it is.
+    let finest = inliers.iter().map(|p| p.bits).max().unwrap_or(mode.bits);
+    // (cell, reports, index of its latest report): inliers come in time order.
+    let mut count: Vec<(&crate::row::Position, usize, usize)> = Vec::new();
+    for (k, p) in inliers.iter().enumerate().filter(|(_, p)| p.bits == finest) {
+        match count.iter_mut().find(|(q, _, _)| q.lat == p.lat && q.lon == p.lon) {
+            Some(c) => {
+                c.1 += 1;
+                c.2 = k;
+            }
+            None => count.push((p, 1, k)),
+        }
+    }
+    let best = count.iter().max_by_key(|(_, n, last)| (*n, *last)).map_or(mode, |(p, _, _)| p);
+    (best.lat, best.lon, err_m(best))
+}
+
+/// Nodes that moved within `rows`, with their tracks. Anchored nodes
+/// (`anchors`: home now, with most reports there) are left out: their
+/// readings away from home are noise, not trips.
+pub fn movements_except(rows: &[&Row], anchored: &FxMap<u32, Anchor>) -> FxMap<u32, Movement> {
+    let mut out = movements(rows);
+    out.retain(|n, _| !anchored.contains_key(n));
+    out
+}
+
 /// Nodes that moved within `rows`, with their tracks.
 pub fn movements(rows: &[&Row]) -> FxMap<u32, Movement> {
     let mut by_node: FxMap<u32, Vec<&Row>> = map();
@@ -80,6 +189,16 @@ pub fn movements(rows: &[&Row]) -> FxMap<u32, Movement> {
             Some(b) => pts.iter().copied().filter(|r| r.pos.unwrap().bits == b).collect(),
             None => pts.clone(),
         };
+        // A single reading far from the ones either side, which agree with
+        // each other, is a GPS spike: an excursion needs two reports.
+        let far = |a: &Row, b: &Row| {
+            let (p, q) = (a.pos.unwrap(), b.pos.unwrap());
+            distance_m(LatLon { lat: p.lat, lon: p.lon }, LatLon { lat: q.lat, lon: q.lon }) > move_threshold_m((p.lat, p.bits), (q.lat, q.bits))
+        };
+        let judged: Vec<&Row> = (0..judged.len())
+            .filter(|&k| k == 0 || k + 1 == judged.len() || !(far(judged[k], judged[k - 1]) && far(judged[k], judged[k + 1]) && !far(judged[k - 1], judged[k + 1])))
+            .map(|k| judged[k])
+            .collect();
         let mut moved_at = None;
         let mut reference = judged[0].pos.unwrap();
         for r in &judged[1..] {

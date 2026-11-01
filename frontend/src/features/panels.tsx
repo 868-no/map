@@ -173,6 +173,15 @@ export function NodePanel({ id, snapshot }: { id: string; snapshot: SnapshotView
               <small>
                 {d.position.source === 'mapreport' ? 'from map report · ' : ''}{d.position.precision_known ? `${d.position.precision_bits} precision bits` : 'precision unknown'} · <SigBadge s={d.position.signature} /> · {formatLocal(d.position.observed_at)}
               </small>
+              {d.refined && (
+                <div className="refined" title="Its reports jump around one place: combined, they narrow down where it is. The map places it here (D-077).">
+                  Narrowed to {d.refined.lat.toFixed(5)}, {d.refined.lon.toFixed(5)} ± {d.refined.radius_m < 1000 ? `${Math.round(d.refined.radius_m)} m` : `${(d.refined.radius_m / 1000).toFixed(1)} km`}
+                  <br />
+                  <small>
+                    from {d.refined.agree} of {d.refined.reports} reports{d.refined.agree < d.refined.reports ? `; ${d.refined.reports - d.refined.agree} outlying ones set aside as noise` : ''}
+                  </small>
+                </div>
+              )}
             </>
           ) : est ? (
             <span className="est-note">

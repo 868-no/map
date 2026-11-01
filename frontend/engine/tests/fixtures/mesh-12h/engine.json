@@ -11908,7 +11908,7 @@
         "text": 61,
         "traceroute": 722
       },
-      "edges": 601,
+      "edges": 610,
       "estimated": 15,
       "first_event": "2026-10-31T03:17:03.038Z",
       "last_event": "2026-10-31T15:16:57.913Z",
@@ -11920,7 +11920,7 @@
       "referenced": 110
     },
     "diagnostics": {
-      "relay_ambiguous": 320,
+      "relay_ambiguous": 280,
       "relay_unmatched": 212
     },
     "edges": [
@@ -13235,6 +13235,38 @@
         "src_num": 1855921772
       },
       {
+        "confidence": "medium",
+        "dst": "!699cb4a0",
+        "dst_num": 1771877536,
+        "evidence": {
+          "direct_rf": 9,
+          "neighbor": 0,
+          "relay_hint": 26,
+          "traceroute": 0
+        },
+        "first_at": "2026-10-31T03:57:26.006Z",
+        "inferred": false,
+        "last_at": "2026-10-31T15:08:24.335Z",
+        "reason": "direct gateway RF reception, corroborated by relay hints",
+        "rssi": {
+          "last": -103.0,
+          "max": -102.0,
+          "median": -103.0,
+          "min": -104.0,
+          "n": 35
+        },
+        "samples": 35,
+        "snr": {
+          "last": -1.5,
+          "max": -0.25,
+          "median": -1.5,
+          "min": -9.0,
+          "n": 35
+        },
+        "src": "!2f349738",
+        "src_num": 791975736
+      },
+      {
         "confidence": "low",
         "dst": "!699cb4a0",
         "dst_num": 1771877536,
@@ -14454,6 +14486,38 @@
         },
         "src": "!165e2ef7",
         "src_num": 375271159
+      },
+      {
+        "confidence": "high",
+        "dst": "!b2a114e3",
+        "dst_num": 2996901091,
+        "evidence": {
+          "direct_rf": 0,
+          "neighbor": 0,
+          "relay_hint": 14,
+          "traceroute": 4
+        },
+        "first_at": "2026-10-31T09:43:40.850Z",
+        "inferred": false,
+        "last_at": "2026-10-31T13:22:47.901Z",
+        "reason": "reported by NeighborInfo/traceroute and corroborated by other evidence",
+        "rssi": {
+          "last": -113.0,
+          "max": -113.0,
+          "median": -116.0,
+          "min": -117.0,
+          "n": 14
+        },
+        "samples": 18,
+        "snr": {
+          "last": -5.25,
+          "max": -2.25,
+          "median": -4.0,
+          "min": -6.25,
+          "n": 18
+        },
+        "src": "!2f349738",
+        "src_num": 791975736
       },
       {
         "confidence": "high",
@@ -16369,6 +16433,34 @@
         },
         "src": "!04677cab",
         "src_num": 73890987
+      },
+      {
+        "confidence": "high",
+        "dst": "!2f349738",
+        "dst_num": 791975736,
+        "evidence": {
+          "direct_rf": 0,
+          "neighbor": 0,
+          "relay_hint": 0,
+          "traceroute": 8
+        },
+        "first_at": "2026-10-31T06:30:27.933Z",
+        "inferred": false,
+        "last_at": "2026-10-31T15:08:24.335Z",
+        "reason": "observed traceroute segment",
+        "rssi": {
+          "n": 0
+        },
+        "samples": 8,
+        "snr": {
+          "last": 7.25,
+          "max": 11.0,
+          "median": 9.75,
+          "min": 3.75,
+          "n": 8
+        },
+        "src": "!1d913813",
+        "src_num": 496056339
       },
       {
         "confidence": "high",
@@ -18770,6 +18862,39 @@
       },
       {
         "confidence": "high",
+        "dst": "!2f349738",
+        "dst_num": 791975736,
+        "evidence": {
+          "direct_rf": 0,
+          "neighbor": 0,
+          "relay_hint": 0,
+          "traceroute": 5
+        },
+        "first_at": "2026-10-31T06:24:13.183Z",
+        "inferred": false,
+        "last_at": "2026-10-31T12:53:12.920Z",
+        "reason": "observed traceroute segment",
+        "rssi": {
+          "n": 0
+        },
+        "samples": 5,
+        "snr": {
+          "last": 9.5,
+          "max": 10.25,
+          "median": 9.5,
+          "min": 1.0,
+          "n": 5
+        },
+        "src": "!bfa97d12",
+        "src_num": 3215555858,
+        "zero_cost": {
+          "free": 0,
+          "likely": false,
+          "spent": 1
+        }
+      },
+      {
+        "confidence": "high",
         "dst": "!64e304bd",
         "dst_num": 1692599485,
         "evidence": {
@@ -20191,6 +20316,39 @@
       },
       {
         "confidence": "high",
+        "dst": "!1d913813",
+        "dst_num": 496056339,
+        "evidence": {
+          "direct_rf": 0,
+          "neighbor": 0,
+          "relay_hint": 0,
+          "traceroute": 3
+        },
+        "first_at": "2026-10-31T05:42:11.682Z",
+        "inferred": false,
+        "last_at": "2026-10-31T10:30:24.870Z",
+        "reason": "observed traceroute segment",
+        "rssi": {
+          "n": 0
+        },
+        "samples": 3,
+        "snr": {
+          "last": 6.5,
+          "max": 10.0,
+          "median": 6.5,
+          "min": 4.75,
+          "n": 3
+        },
+        "src": "!2f349738",
+        "src_num": 791975736,
+        "zero_cost": {
+          "free": 0,
+          "likely": false,
+          "spent": 1
+        }
+      },
+      {
+        "confidence": "high",
         "dst": "!94ed7591",
         "dst_num": 2498590097,
         "evidence": {
@@ -20973,6 +21131,34 @@
       },
       {
         "confidence": "high",
+        "dst": "!2f349738",
+        "dst_num": 791975736,
+        "evidence": {
+          "direct_rf": 0,
+          "neighbor": 0,
+          "relay_hint": 0,
+          "traceroute": 3
+        },
+        "first_at": "2026-10-31T05:06:14.199Z",
+        "inferred": false,
+        "last_at": "2026-10-31T10:30:22.735Z",
+        "reason": "observed traceroute segment",
+        "rssi": {
+          "n": 0
+        },
+        "samples": 3,
+        "snr": {
+          "last": 12.0,
+          "max": 12.0,
+          "median": 12.0,
+          "min": 12.0,
+          "n": 3
+        },
+        "src": "!a721aca8",
+        "src_num": 2804001960
+      },
+      {
+        "confidence": "high",
         "dst": "!0745f838",
         "dst_num": 122026040,
         "evidence": {
@@ -21377,6 +21563,34 @@
       },
       {
         "confidence": "high",
+        "dst": "!2f349738",
+        "dst_num": 791975736,
+        "evidence": {
+          "direct_rf": 0,
+          "neighbor": 0,
+          "relay_hint": 0,
+          "traceroute": 2
+        },
+        "first_at": "2026-10-31T06:10:32.354Z",
+        "inferred": false,
+        "last_at": "2026-10-31T11:38:23.288Z",
+        "reason": "observed traceroute segment",
+        "rssi": {
+          "n": 0
+        },
+        "samples": 2,
+        "snr": {
+          "last": -2.75,
+          "max": -2.75,
+          "median": -4.5,
+          "min": -6.25,
+          "n": 2
+        },
+        "src": "!043b2250",
+        "src_num": 70984272
+      },
+      {
+        "confidence": "high",
         "dst": "!997b0449",
         "dst_num": 2574976073,
         "evidence": {
@@ -21631,6 +21845,34 @@
         },
         "src": "!2416f418",
         "src_num": 605484056
+      },
+      {
+        "confidence": "high",
+        "dst": "!bfa97d12",
+        "dst_num": 3215555858,
+        "evidence": {
+          "direct_rf": 0,
+          "neighbor": 0,
+          "relay_hint": 0,
+          "traceroute": 2
+        },
+        "first_at": "2026-10-31T05:42:08.582Z",
+        "inferred": false,
+        "last_at": "2026-10-31T08:49:33.516Z",
+        "reason": "observed traceroute segment",
+        "rssi": {
+          "n": 0
+        },
+        "samples": 2,
+        "snr": {
+          "last": 5.5,
+          "max": 7.25,
+          "median": 6.38,
+          "min": 5.5,
+          "n": 2
+        },
+        "src": "!2f349738",
+        "src_num": 791975736
       },
       {
         "confidence": "high",
@@ -24529,34 +24771,6 @@
       },
       {
         "confidence": "high",
-        "dst": "!2f349738",
-        "dst_num": 791975736,
-        "evidence": {
-          "direct_rf": 0,
-          "neighbor": 0,
-          "relay_hint": 0,
-          "traceroute": 1
-        },
-        "first_at": "2026-10-31T15:08:24.335Z",
-        "inferred": false,
-        "last_at": "2026-10-31T15:08:24.335Z",
-        "reason": "observed traceroute segment",
-        "rssi": {
-          "n": 0
-        },
-        "samples": 1,
-        "snr": {
-          "last": 7.25,
-          "max": 7.25,
-          "median": 7.25,
-          "min": 7.25,
-          "n": 1
-        },
-        "src": "!1d913813",
-        "src_num": 496056339
-      },
-      {
-        "confidence": "high",
         "dst": "!64e26f73",
         "dst_num": 1692561267,
         "evidence": {
@@ -25745,6 +25959,34 @@
       },
       {
         "confidence": "high",
+        "dst": "!2f349738",
+        "dst_num": 791975736,
+        "evidence": {
+          "direct_rf": 0,
+          "neighbor": 0,
+          "relay_hint": 0,
+          "traceroute": 1
+        },
+        "first_at": "2026-10-31T08:49:33.516Z",
+        "inferred": false,
+        "last_at": "2026-10-31T08:49:33.516Z",
+        "reason": "observed traceroute segment",
+        "rssi": {
+          "n": 0
+        },
+        "samples": 1,
+        "snr": {
+          "last": 6.25,
+          "max": 6.25,
+          "median": 6.25,
+          "min": 6.25,
+          "n": 1
+        },
+        "src": "!624a12ac",
+        "src_num": 1649021612
+      },
+      {
+        "confidence": "high",
         "dst": "!6bd22b4f",
         "dst_num": 1808935759,
         "evidence": {
@@ -26139,6 +26381,34 @@
         },
         "src": "!683eec4a",
         "src_num": 1748954186
+      },
+      {
+        "confidence": "high",
+        "dst": "!2f349738",
+        "dst_num": 791975736,
+        "evidence": {
+          "direct_rf": 0,
+          "neighbor": 0,
+          "relay_hint": 0,
+          "traceroute": 1
+        },
+        "first_at": "2026-10-31T05:42:08.582Z",
+        "inferred": false,
+        "last_at": "2026-10-31T05:42:08.582Z",
+        "reason": "observed traceroute segment",
+        "rssi": {
+          "n": 0
+        },
+        "samples": 1,
+        "snr": {
+          "last": -4.5,
+          "max": -4.5,
+          "median": -4.5,
+          "min": -4.5,
+          "n": 1
+        },
+        "src": "!699be574",
+        "src_num": 1771824500
       },
       {
         "confidence": "low",
@@ -30521,6 +30791,13 @@
           "source": "position"
         },
         "receptions": 95,
+        "refined": {
+          "agree": 6,
+          "lat": 59.913830399999995,
+          "lon": 10.7487232,
+          "radius_m": 102.01040814510154,
+          "reports": 6
+        },
         "signatures": {
           "not_applicable": 2,
           "unsigned": 60,
@@ -30662,6 +30939,13 @@
           "source": "position"
         },
         "receptions": 119,
+        "refined": {
+          "agree": 16,
+          "lat": 59.42170576666666,
+          "lon": 10.592433366666668,
+          "radius_m": 10.0,
+          "reports": 16
+        },
         "signatures": {
           "not_applicable": 3,
           "unsigned": 46,
@@ -32452,7 +32736,6 @@
         },
         "is_gateway": false,
         "last_seen": "2026-10-31T14:42:18.906Z",
-        "moved_at": "2026-10-31T14:42:18.906Z",
         "num": 791975736,
         "packets": 15,
         "position": {
@@ -32466,74 +32749,20 @@
           "source": "position"
         },
         "receptions": 34,
+        "refined": {
+          "agree": 7,
+          "lat": 59.9588864,
+          "lon": 10.7413504,
+          "radius_m": 815.8608741906978,
+          "reports": 10
+        },
         "signatures": {
           "not_applicable": 0,
           "unsigned": 15,
           "unverifiable": 0,
           "verified": 9
         },
-        "status": "observed",
-        "track": [
-          {
-            "alt": 187,
-            "at": "2026-10-31T04:37:56.430Z",
-            "lat": 59.9588864,
-            "lon": 10.7413504
-          },
-          {
-            "alt": 187,
-            "at": "2026-10-31T04:38:04.624Z",
-            "lat": 59.9523328,
-            "lon": 10.7216896
-          },
-          {
-            "alt": 2461,
-            "at": "2026-10-31T05:06:48.366Z",
-            "lat": 60.0244224,
-            "lon": 10.715136
-          },
-          {
-            "alt": 230,
-            "at": "2026-10-31T05:11:53.937Z",
-            "lat": 59.9588864,
-            "lon": 10.7413504
-          },
-          {
-            "alt": -303,
-            "at": "2026-10-31T09:41:22.552Z",
-            "lat": 59.9851008,
-            "lon": 10.7413504
-          },
-          {
-            "alt": 214,
-            "at": "2026-10-31T09:46:26.059Z",
-            "lat": 59.9588864,
-            "lon": 10.7413504
-          },
-          {
-            "at": "2026-10-31T14:15:32.087Z",
-            "lat": 59.9719936,
-            "lon": 10.7544576
-          },
-          {
-            "alt": 172,
-            "at": "2026-10-31T14:20:34.435Z",
-            "lat": 59.9588864,
-            "lon": 10.7413504
-          },
-          {
-            "alt": 11214,
-            "at": "2026-10-31T14:37:14.070Z",
-            "lat": 59.8933504,
-            "lon": 10.8986368
-          },
-          {
-            "alt": 179,
-            "at": "2026-10-31T14:42:18.906Z",
-            "lat": 59.9588864,
-            "lon": 10.7413504
-          }
-        ]
+        "status": "observed"
       },
       {
         "brokers": [
@@ -33170,7 +33399,7 @@
           "evidence_from": "2026-10-31T03:55:17.284Z",
           "evidence_to": "2026-10-31T14:39:34.261Z",
           "lat": 59.351,
-          "lon": 10.643,
+          "lon": 10.641,
           "method": "weighted_centroid",
           "quality": "very_low",
           "reasons": [
@@ -36391,7 +36620,7 @@
             "radius includes up to 800 m of anchor position imprecision"
           ],
           "sample_count": 35,
-          "uncertainty_radius_m": 43400.0
+          "uncertainty_radius_m": 43300.0
         },
         "first_seen": "2026-10-31T07:09:58.544Z",
         "gateway_receptions": 0,
@@ -36484,7 +36713,7 @@
         "status": "referenced"
       },
       {
-        "estimate_note": "no confirmed direct links to nodes reporting a position with at least 15-bit precision",
+        "estimate_note": "only 1 positioned anchors with direct links (need 3)",
         "gateway_receptions": 0,
         "id": "!043b2250",
         "is_gateway": false,
@@ -37258,7 +37487,7 @@
         "status": "referenced"
       },
       {
-        "estimate_note": "only 1 positioned anchors with direct links (need 3)",
+        "estimate_note": "only 2 positioned anchors with direct links (need 3)",
         "gateway_receptions": 0,
         "id": "!624a12ac",
         "is_gateway": false,
@@ -38257,7 +38486,7 @@
         "nodeinfo": 591,
         "position": 459
       },
-      "edges": 100,
+      "edges": 102,
       "estimated": 0,
       "first_event": "2026-10-31T03:17:03.038Z",
       "last_event": "2026-10-31T15:16:57.913Z",
@@ -39050,6 +39279,38 @@
         },
         "src": "!3385c98f",
         "src_num": 864405903
+      },
+      {
+        "confidence": "medium",
+        "dst": "!699cb4a0",
+        "dst_num": 1771877536,
+        "evidence": {
+          "direct_rf": 9,
+          "neighbor": 0,
+          "relay_hint": 4,
+          "traceroute": 0
+        },
+        "first_at": "2026-10-31T03:57:26.006Z",
+        "inferred": false,
+        "last_at": "2026-10-31T14:20:34.435Z",
+        "reason": "direct gateway RF reception, corroborated by relay hints",
+        "rssi": {
+          "last": -104.0,
+          "max": -102.0,
+          "median": -102.0,
+          "min": -104.0,
+          "n": 13
+        },
+        "samples": 13,
+        "snr": {
+          "last": -6.5,
+          "max": -0.25,
+          "median": -1.25,
+          "min": -6.5,
+          "n": 13
+        },
+        "src": "!2f349738",
+        "src_num": 791975736
       },
       {
         "confidence": "medium",
@@ -40143,6 +40404,38 @@
         },
         "src": "!206f2414",
         "src_num": 544154644
+      },
+      {
+        "confidence": "low",
+        "dst": "!b2a114e3",
+        "dst_num": 2996901091,
+        "evidence": {
+          "direct_rf": 0,
+          "neighbor": 0,
+          "relay_hint": 4,
+          "traceroute": 0
+        },
+        "first_at": "2026-10-31T09:43:40.850Z",
+        "inferred": true,
+        "last_at": "2026-10-31T12:14:07.326Z",
+        "reason": "inferred from unique relay-node byte; not directly confirmed",
+        "rssi": {
+          "last": -115.0,
+          "max": -114.0,
+          "median": -116.0,
+          "min": -117.0,
+          "n": 4
+        },
+        "samples": 4,
+        "snr": {
+          "last": -5.75,
+          "max": -3.0,
+          "median": -3.75,
+          "min": -5.75,
+          "n": 4
+        },
+        "src": "!2f349738",
+        "src_num": 791975736
       },
       {
         "confidence": "medium",
@@ -42344,6 +42637,13 @@
           "source": "position"
         },
         "receptions": 37,
+        "refined": {
+          "agree": 16,
+          "lat": 59.42170576666666,
+          "lon": 10.592433366666668,
+          "radius_m": 10.0,
+          "reports": 16
+        },
         "signatures": {
           "not_applicable": 0,
           "unsigned": 21,
@@ -42556,7 +42856,6 @@
         },
         "is_gateway": false,
         "last_seen": "2026-10-31T14:42:18.906Z",
-        "moved_at": "2026-10-31T14:42:18.906Z",
         "num": 791975736,
         "packets": 15,
         "position": {
@@ -42570,74 +42869,20 @@
           "source": "position"
         },
         "receptions": 34,
+        "refined": {
+          "agree": 7,
+          "lat": 59.9588864,
+          "lon": 10.7413504,
+          "radius_m": 815.8608741906978,
+          "reports": 10
+        },
         "signatures": {
           "not_applicable": 0,
           "unsigned": 15,
           "unverifiable": 0,
           "verified": 9
         },
-        "status": "observed",
-        "track": [
-          {
-            "alt": 187,
-            "at": "2026-10-31T04:37:56.430Z",
-            "lat": 59.9588864,
-            "lon": 10.7413504
-          },
-          {
-            "alt": 187,
-            "at": "2026-10-31T04:38:04.624Z",
-            "lat": 59.9523328,
-            "lon": 10.7216896
-          },
-          {
-            "alt": 2461,
-            "at": "2026-10-31T05:06:48.366Z",
-            "lat": 60.0244224,
-            "lon": 10.715136
-          },
-          {
-            "alt": 230,
-            "at": "2026-10-31T05:11:53.937Z",
-            "lat": 59.9588864,
-            "lon": 10.7413504
-          },
-          {
-            "alt": -303,
-            "at": "2026-10-31T09:41:22.552Z",
-            "lat": 59.9851008,
-            "lon": 10.7413504
-          },
-          {
-            "alt": 214,
-            "at": "2026-10-31T09:46:26.059Z",
-            "lat": 59.9588864,
-            "lon": 10.7413504
-          },
-          {
-            "at": "2026-10-31T14:15:32.087Z",
-            "lat": 59.9719936,
-            "lon": 10.7544576
-          },
-          {
-            "alt": 172,
-            "at": "2026-10-31T14:20:34.435Z",
-            "lat": 59.9588864,
-            "lon": 10.7413504
-          },
-          {
-            "alt": 11214,
-            "at": "2026-10-31T14:37:14.070Z",
-            "lat": 59.8933504,
-            "lon": 10.8986368
-          },
-          {
-            "alt": 179,
-            "at": "2026-10-31T14:42:18.906Z",
-            "lat": 59.9588864,
-            "lon": 10.7413504
-          }
-        ]
+        "status": "observed"
       },
       {
         "brokers": [
@@ -43082,6 +43327,13 @@
           "source": "position"
         },
         "receptions": 18,
+        "refined": {
+          "agree": 6,
+          "lat": 59.913830399999995,
+          "lon": 10.7487232,
+          "radius_m": 102.01040814510154,
+          "reports": 6
+        },
         "signatures": {
           "not_applicable": 0,
           "unsigned": 10,

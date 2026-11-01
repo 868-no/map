@@ -138,8 +138,8 @@ export function meshLayerBuilder(): (input: MeshLayerInput) => Layer[] {
     for (const p of placed) {
       const selected = p.node.id === selId
       if (p.kind === 'estimated' && (all || selected)) out.push({ pos: [p.lon, p.lat], r: p.radiusM ?? 2000, est: true })
-      else if (selected && p.node.position?.precision_known) {
-        const r = precisionErrorM(p.node.position.precision_bits ?? 32, p.lat)
+      else if (selected && (p.node.refined || p.node.position?.precision_known)) {
+        const r = p.node.refined?.radius_m ?? precisionErrorM(p.node.position!.precision_bits ?? 32, p.lat)
         if (r > 0) out.push({ pos: [p.lon, p.lat], r, est: false })
       }
     }

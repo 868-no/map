@@ -101,6 +101,7 @@ export interface MeshNode {
   moved_at?: string // last moved more than a few hundred metres: links use only later evidence (D-073)
   track?: { lat: number; lon: number; alt?: number; at: string }[] // its positions in time order, newest last, when it moved
   airborne?: boolean // moving and reporting more than 750 m above sea level
+  refined?: { lat: number; lon: number; radius_m: number; reports: number; agree: number } // narrowed from reports jumping around one place (D-077)
 }
 
 /** Directed src -> dst: dst heard src. */
