@@ -18,7 +18,7 @@ use wasm_bindgen::prelude::*;
 use crate::row::{Interner, JRow};
 use crate::store::Store;
 use crate::util::{key64, parse_node};
-use crate::views::{apply_filters, build_node_detail, build_snapshot, build_traffic, bucket_for, Built, Filters, GeoOptions};
+use crate::views::{apply_filters, build_node_detail, build_snapshot, build_traffic, bucket_for, Built, Filters, GeoOptions, Rules};
 
 #[derive(Deserialize)]
 struct GeoSettings {
@@ -38,6 +38,10 @@ struct Options {
     /// candidates (default on; off only to compare with the old server views).
     #[serde(default = "yes")]
     silent_rule: bool,
+    /// Traceroute hops at exactly 0 dB as MQTT links (default on; off only to
+    /// compare with the old server views).
+    #[serde(default = "yes")]
+    mqtt_links: bool,
 }
 
 fn yes() -> bool {
@@ -49,13 +53,13 @@ pub struct Engine {
     i: Interner,
     store: Store,
     geo: GeoOptions,
-    silent_rule: bool,
+    rules: Rules,
     built: Option<((i64, i64, String, u64), Built)>,
 }
 
 impl Default for Engine {
     fn default() -> Self {
-        Engine { i: Interner::default(), store: Store::default(), geo: GeoOptions::default(), silent_rule: true, built: None }
+        Engine { i: Interner::default(), store: Store::default(), geo: GeoOptions::default(), rules: Rules::default(), built: None }
     }
 }
 
@@ -75,7 +79,7 @@ impl Engine {
         if self.built.as_ref().is_none_or(|(k, _)| *k != key) {
             let f: Filters = serde_json::from_str(filters).map_err(err)?;
             let rows = apply_filters(self.store.slice(start, end), &f, &self.i);
-            let b = build_snapshot(&rows, &self.i, &self.geo, self.silent_rule);
+            let b = build_snapshot(&rows, &self.i, &self.geo, self.rules);
             self.built = Some((key, b));
         }
         Ok(&self.built.as_ref().unwrap().1)
@@ -89,7 +93,7 @@ impl Engine {
         Engine::default()
     }
 
-    /// {geo: capabilities.geolocation, silent_rule?: bool}
+    /// {geo: capabilities.geolocation, silent_rule?: bool, mqtt_links?: bool}
     pub fn set_options(&mut self, options: &str) -> Result<(), JsError> {
         let o: Options = serde_json::from_str(options).map_err(err)?;
         if let Some(g) = o.geo {
@@ -100,7 +104,7 @@ impl Engine {
                 params: g.params,
             };
         }
-        self.silent_rule = o.silent_rule;
+        self.rules = Rules { silent: o.silent_rule, mqtt_links: o.mqtt_links };
         self.built = None;
         Ok(())
     }

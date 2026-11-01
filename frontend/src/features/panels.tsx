@@ -173,10 +173,10 @@ export function NodePanel({ id, snapshot }: { id: string; snapshot: SnapshotBody
       <h3>Links in window ({edges.length})</h3>
       <ul className="links">
         {edges.map((e) => (
-          <li key={e.src + e.dst}>
-            <button onClick={() => select({ kind: 'edge', src: e.src, dst: e.dst })}>
+          <li key={e.src + e.dst + (e.mqtt ? 'm' : '')}>
+            <button onClick={() => select({ kind: 'edge', src: e.src, dst: e.dst, mqtt: !!e.mqtt })}>
               {e.src === id ? <>→ {names.get(e.dst) ?? e.dst}</> : <>← {names.get(e.src) ?? e.src}</>}{' '}
-              <span className={`conf conf-${e.confidence}`}>{e.confidence}</span> {e.snr.median !== undefined && e.snr.median !== null && <small>SNR {e.snr.median} dB</small>}
+              {e.mqtt ? <span className="conf conf-mqtt" title="Over MQTT, not radio">MQTT</span> : <span className={`conf conf-${e.confidence}`}>{e.confidence}</span>} {e.snr.median !== undefined && e.snr.median !== null && <small>SNR {e.snr.median} dB</small>}
             </button>
           </li>
         ))}
@@ -291,21 +291,31 @@ function RouteNote({ positioned }: { positioned: Set<string> }) {
   )
 }
 
-export function EdgePanel({ a, b, snapshot }: { a: string; b: string; snapshot: SnapshotBody | undefined }) {
+export function EdgePanel({ a, b, mqtt = false, snapshot }: { a: string; b: string; mqtt?: boolean; snapshot: SnapshotBody | undefined }) {
   const select = useStore((s) => s.select)
   const names = new Map((snapshot?.nodes ?? []).map((n) => [n.id, nodeName(n, n.id)]))
   const name = (id: string) => names.get(id) ?? id
-  const find = (src: string, dst: string) => (snapshot?.edges ?? []).find((e) => e.src === src && e.dst === dst)
+  const find = (src: string, dst: string) => (snapshot?.edges ?? []).find((e) => e.src === src && e.dst === dst && !!e.mqtt === mqtt)
   const stats = (e: Edge) => (
     <dl>
       <dt>Evidence</dt>
       <dd>
         NeighborInfo {e.evidence.neighbor} · traceroute {e.evidence.traceroute} · direct gateway RF {e.evidence.direct_rf} · inferred last hop {e.evidence.relay_hint}
       </dd>
-      <dt>Confidence</dt><dd><span className={`conf conf-${e.confidence}`}>{e.confidence}</span> — {e.reason}{e.inferred && ' (inferred)'}</dd>
+      {e.mqtt ? (
+        <><dt>Why MQTT</dt><dd><span className="conf conf-mqtt">MQTT</span> {e.reason}</dd></>
+      ) : (
+        <><dt>Confidence</dt><dd><span className={`conf conf-${e.confidence}`}>{e.confidence}</span> — {e.reason}{e.inferred && ' (inferred)'}</dd></>
+      )}
       <dt>Samples</dt><dd>{e.samples}</dd>
-      <dt>SNR at receiver</dt><dd>{e.snr.n ? `median ${e.snr.median} dB (min ${e.snr.min}, max ${e.snr.max}, last ${e.snr.last}; n=${e.snr.n})` : '—'}</dd>
-      <dt>RSSI at receiver</dt><dd>{e.rssi.n ? `median ${e.rssi.median} dBm (min ${e.rssi.min}, max ${e.rssi.max}, last ${e.rssi.last}; n=${e.rssi.n})` : 'only measured by gateway receptions'}</dd>
+      {e.mqtt ? (
+        <><dt>Signal</dt><dd>none: not received over radio</dd></>
+      ) : (
+        <>
+          <dt>SNR at receiver</dt><dd>{e.snr.n ? `median ${e.snr.median} dB (min ${e.snr.min}, max ${e.snr.max}, last ${e.snr.last}; n=${e.snr.n})` : '—'}</dd>
+          <dt>RSSI at receiver</dt><dd>{e.rssi.n ? `median ${e.rssi.median} dBm (min ${e.rssi.min}, max ${e.rssi.max}, last ${e.rssi.last}; n=${e.rssi.n})` : 'only measured by gateway receptions'}</dd>
+        </>
+      )}
       <dt>In window</dt><dd>{formatLocal(e.first_at)} → {formatLocal(e.last_at)}</dd>
     </dl>
   )
@@ -314,19 +324,27 @@ export function EdgePanel({ a, b, snapshot }: { a: string; b: string; snapshot: 
     return (
       <section className="direction">
         <h3>{name(src)} → {name(dst)}</h3>
-        {e ? <><p className="muted">{name(dst)} heard {name(src)}.</p>{stats(e)}</> : <p className="muted">No evidence that {name(dst)} heard {name(src)} in this window.</p>}
+        {e ? <><p className="muted">{mqtt ? `${name(dst)} took ${name(src)}'s packets from MQTT.` : `${name(dst)} heard ${name(src)}.`}</p>{stats(e)}</>
+          : <p className="muted">{mqtt ? `No traceroute shows ${name(dst)} taking ${name(src)}'s packets from MQTT in this window.` : `No evidence that ${name(dst)} heard ${name(src)} in this window.`}</p>}
       </section>
     )
   }
   return (
     <div className="panel">
       <button className="close" onClick={() => select(null)} aria-label="Close details">×</button>
-      <h2>Link</h2>
+      <h2>{mqtt ? 'MQTT link' : 'Link'}</h2>
       <p>
         <button className="linkish" onClick={() => select({ kind: 'node', id: a })}>{name(a)}</button> ↔{' '}
         <button className="linkish" onClick={() => select({ kind: 'node', id: b })}>{name(b)}</button>
       </p>
-      <p className="muted">One line on the map per pair. Radio links can be asymmetric, so each direction is measured separately below.</p>
+      {mqtt ? (
+        <p className="muted">
+          Not a radio link. Traceroutes recorded these hops at exactly 0 dB, the reading a packet gets when the receiving node takes it from an MQTT broker (downlink) instead of hearing it over the air.
+          They are kept out of the radio links, link statistics and position estimates.
+        </p>
+      ) : (
+        <p className="muted">One line on the map per pair. Radio links can be asymmetric, so each direction is measured separately below.</p>
+      )}
       {direction(a, b)}
       {direction(b, a)}
     </div>

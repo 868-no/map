@@ -58,7 +58,7 @@ export function buildMeshLayers({ placed, links, selection: sel, search, toggles
   const matches = (p: PlacedNode) =>
     !q || p.node.id.includes(q) || (p.node.identity?.long_name ?? '').toLowerCase().includes(q) || (p.node.identity?.short_name ?? '').toLowerCase().includes(q)
   const isSel = (id: string) => sel?.kind === 'node' && sel.id === id
-  const isSelLink = (g: LinkGeom) => sel?.kind === 'edge' && ((sel.src === g.a && sel.dst === g.b) || (sel.src === g.b && sel.dst === g.a))
+  const isSelLink = (g: LinkGeom) => sel?.kind === 'edge' && !!sel.mqtt === g.mqtt && ((sel.src === g.a && sel.dst === g.b) || (sel.src === g.b && sel.dst === g.a))
   const linkColor = (g: LinkGeom) => (isSelLink(g) ? c.selected : [...(g.infra ? c.linkInfra : c.linkOther), CONFIDENCE_ALPHA[g.confidence] ?? 150]) as RGBA
   const layers: Layer[] = []
 
@@ -86,10 +86,23 @@ export function buildMeshLayers({ placed, links, selection: sel, search, toggles
     )
   }
 
-  // Two link layers per class: other links first (thin, beneath), then
+  // Hops that went over MQTT (D-055): their own dotted layer, beneath the radio links.
+  const mqttLinks = links.filter((g) => g.mqtt)
+  if (mqttLinks.length) {
+    layers.push(
+      new PathLayer<LinkGeom, PathStyleExtensionProps<LinkGeom>>({
+        id: 'links-mqtt', ...UNDER_LABELS, data: mqttLinks, getPath: (g) => g.path, widthUnits: 'pixels', getWidth: 2.5,
+        getColor: (g) => (isSelLink(g) ? c.selected : [...c.linkMqtt, 220]) as RGBA, getDashArray: [1, 2.5], dashJustified: true, extensions: [dashExt],
+        pickable: true, autoHighlight: true, highlightColor: c.highlight,
+        updateTriggers: { getColor: [sel, c] },
+      }),
+    )
+  }
+
+  // Two radio link layers per class: other links first (thin, beneath), then
   // infrastructure links (router <-> router, thicker) on top.
   for (const cls of ['other', 'infra'] as const) {
-    const data = links.filter((g) => g.infra === (cls === 'infra'))
+    const data = links.filter((g) => !g.mqtt && g.infra === (cls === 'infra'))
     layers.push(
       new LineLayer<LinkGeom>({
         id: `links-${cls}`, ...UNDER_LABELS, data: data.filter((g) => !g.inferred),

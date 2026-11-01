@@ -127,9 +127,9 @@ export default function MapView({ caps, snapshot, onPositions }: Props) {
     for (const p of placed) pos.set(p.node.id, [p.lon, p.lat])
     const edges = filterEdges(snapshot?.edges ?? [], filters, toggles)
     const roles = new Map(nodes.map((n) => [n.id, n.identity?.role]))
-    const links = linkGeometry(edges, pos, roles).filter((g) => (g.infra ? toggles.infraLinks : toggles.otherLinks))
+    const links = linkGeometry(edges, pos, roles).filter((g) => (g.mqtt ? toggles.mqttLinks : g.infra ? toggles.infraLinks : toggles.otherLinks))
     return { placed, pos, links }
-  }, [snapshot, filters, toggles.infraLinks, toggles.otherLinks, toggles.inferred, windowEnd, windowMs]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [snapshot, filters, toggles.infraLinks, toggles.otherLinks, toggles.mqttLinks, toggles.inferred, windowEnd, windowMs]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => onPositions(pos), [pos, onPositions])
 
@@ -225,7 +225,7 @@ export default function MapView({ caps, snapshot, onPositions }: Props) {
           setHover({ x: info.x, y: info.y, text: `${name}${o.kind === 'estimated' ? ' — estimated location' : ''}${n.mqtt_opt_out ? ' — did not allow MQTT uplink; name withheld' : ''}` })
         } else {
           const dir = (e: Edge | undefined, from: string, to: string) => (e ? `${from} → ${to}: ${e.confidence}, ${e.samples} samples` : `${from} → ${to}: no evidence`)
-          setHover({ x: info.x, y: info.y, text: `${dir(o.ab, o.a, o.b)} · ${dir(o.ba, o.b, o.a)}` })
+          setHover({ x: info.x, y: info.y, text: `${o.mqtt ? 'Over MQTT, not radio — ' : ''}${dir(o.ab, o.a, o.b)} · ${dir(o.ba, o.b, o.a)}` })
         }
       },
       onClick: (info: PickingInfo) => {
@@ -234,7 +234,7 @@ export default function MapView({ caps, snapshot, onPositions }: Props) {
         if ('seg' in o) return
         if ('label' in o) select({ kind: 'node', id: o.node.node.id })
         else if ('kind' in o) select({ kind: 'node', id: o.node.id })
-        else select({ kind: 'edge', src: o.a, dst: o.b })
+        else select({ kind: 'edge', src: o.a, dst: o.b, mqtt: o.mqtt })
       },
     })
   }, [ready, select])

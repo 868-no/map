@@ -28,6 +28,8 @@ export function LayersPanel({ id, onClose }: { id: string; onClose: () => void }
         'Radio links where both nodes announce the ROUTER or ROUTER_LATE role in this window. Thick blue lines, one per node pair. Each link is backed by NeighborInfo, traceroute, direct gateway reception or a resolved relay byte observed in the selected window.')}
       {check('Other links', t.otherLinks, (v) => setT({ otherLinks: v }),
         'Radio links where at least one node has another role, or announced no role in this window. Thin grey-blue lines, backed by the same in-window evidence as infrastructure links.')}
+      {check('MQTT links (dotted)', t.mqttLinks, (v) => setT({ mqttLinks: v }),
+        'Hops that went over MQTT, not radio: traceroutes recorded them at exactly 0 dB, the reading a packet gets when a node takes it from an MQTT broker (downlink) and transmits it. Dotted green lines. They are never counted as radio links.')}
       {check('Inferred links (dashed)', t.inferred, (v) => setT({ inferred: v }),
         'Links supported only by a relay\'s last-hop byte, resolved to a single node by radio range and confirmed links. Low confidence: never directly measured.', !t.infraLinks && !t.otherLinks)}
       {check('Accuracy circles (always shown for the selected node)', t.uncertainty, (v) => setT({ uncertainty: v }),
@@ -130,6 +132,7 @@ export function Legend({ snapshot }: { snapshot: SnapshotBody | undefined }) {
       <ul>
         <li><span className="ln infra thick" /> Infrastructure: both ends are ROUTER or ROUTER_LATE</li>
         <li><span className="ln other thin" /> Other: at least one end has another role (or none reported)</li>
+        <li><span className="ln mqtt" /> MQTT (dotted green): not radio; a traceroute hop recorded at exactly 0 dB, taken from an MQTT broker</li>
       </ul>
       <h3>Link confidence</h3>
       <ul>

@@ -410,7 +410,8 @@ pub struct EdgeResult {
 
 /// Evidence-backed links. Relay bytes resolve only against known nodes,
 /// their reported positions, and the roles that can rebroadcast.
-pub fn build_edges(rows: &[&Row], known: &[u32], pos: FxMap<u32, LatLon>, silent: FxSet<u32>) -> (EdgeResult, RelayContext) {
+/// `downlinkers`: probable downlinking nodes, whose 0 dB traceroute hops become MQTT links (None: off).
+pub fn build_edges(rows: &[&Row], known: &[u32], pos: FxMap<u32, LatLon>, silent: FxSet<u32>, downlinkers: Option<&FxSet<u32>>) -> (EdgeResult, RelayContext) {
     let mut samples: Vec<Sample> = Vec::new();
     // A. NeighborInfo: neighbour -> reporter, the first copy of each logical packet.
     let mut first_nb: Vec<&Row> = Vec::new();
@@ -446,6 +447,12 @@ pub fn build_edges(rows: &[&Row], known: &[u32], pos: FxMap<u32, LatLon>, silent
             traceroute_samples(r.src, r.dst.unwrap_or(0), t.is_reply, &t.route, &t.snr_towards, &t.route_back, &t.snr_back, r.t, r.lp, &mut samples);
         }
     }
+    // Traceroute hops that went over MQTT are links of their own, never radio
+    // evidence (relay resolution, estimates, link statistics) (D-055).
+    let (mut samples, mqtt) = match downlinkers {
+        Some(d) => graph::split_mqtt(samples, d),
+        None => (samples, vec![]),
+    };
     // C/D. Gateway receptions: zero-hop RF -> source->gateway; relayed with a hint -> resolved after.
     let mut rx = first_per_reception(rows, |r| r.gw.is_some() && (r.dr || (r.rr == ty::RELAYED && r.relay.is_some())) && (r.snr.is_some() || r.rssi.is_some()));
     rx.sort_by_key(|r| r.id);
@@ -471,6 +478,7 @@ pub fn build_edges(rows: &[&Row], known: &[u32], pos: FxMap<u32, LatLon>, silent
     let mut edges = reduce(&samples);
     let truncated = edges.len() > MAX_EDGES;
     edges.truncate(MAX_EDGES);
+    edges.extend(graph::reduce_mqtt(&mqtt));
     (EdgeResult { edges, truncated, ambiguous, unmatched }, ctx)
 }
 
@@ -487,7 +495,21 @@ pub fn is_silent_role(role: &str) -> bool {
 }
 
 /// Time-isolated nodes, links and counts. rows: in-window and filtered.
-pub fn build_snapshot(rows: &[&Row], i: &Interner, g: &GeoOptions, silent_rule: bool) -> Built {
+/// Engine rules added after the server views were recorded (D-041); each can
+/// be switched off to compare with them.
+#[derive(Clone, Copy, Debug)]
+pub struct Rules {
+    pub silent: bool,     // roles that never rebroadcast are no relay candidates
+    pub mqtt_links: bool, // 0 dB traceroute hops are MQTT links, not radio (D-055)
+}
+
+impl Default for Rules {
+    fn default() -> Self {
+        Rules { silent: true, mqtt_links: true }
+    }
+}
+
+pub fn build_snapshot(rows: &[&Row], i: &Interner, g: &GeoOptions, rules: Rules) -> Built {
     let mut nodes: FxMap<u32, Node> = map();
     for (n, o) in origins(rows) {
         let x = nodes.entry(n).or_insert_with(|| Node::new(n));
@@ -548,10 +570,12 @@ pub fn build_snapshot(rows: &[&Row], i: &Interner, g: &GeoOptions, silent_rule: 
     let known: Vec<u32> = nodes.keys().copied().collect();
     let pos: FxMap<u32, LatLon> = nodes.iter().filter_map(|(&n, x)| x.pos.map(|p| (n, LatLon { lat: p.lat, lon: p.lon }))).collect();
     let roles: FxMap<u32, String> = nodes.iter().filter_map(|(&n, x)| x.identity.as_ref().filter(|id| !id.role.is_empty()).map(|id| (n, id.role.clone()))).collect();
-    let silent: FxSet<u32> = if silent_rule { roles.iter().filter(|(_, r)| is_silent_role(r)).map(|(&n, _)| n).collect() } else { set() };
-    let (er, ctx) = build_edges(rows, &known, pos, silent);
+    let silent: FxSet<u32> = if rules.silent { roles.iter().filter(|(_, r)| is_silent_role(r)).map(|(&n, _)| n).collect() } else { set() };
+    let downlinkers: FxSet<u32> = nodes.iter().filter(|(_, x)| x.mqtt_downlink.is_some()).map(|(&n, _)| n).collect();
+    let (er, ctx) = build_edges(rows, &known, pos, silent, rules.mqtt_links.then_some(&downlinkers));
     if g.enabled {
-        estimate(&mut nodes, &er.edges, g);
+        let radio: Vec<Edge> = er.edges.iter().filter(|e| !e.mqtt).cloned().collect();
+        estimate(&mut nodes, &radio, g);
     }
     let mut list: Vec<Node> = nodes.into_values().collect();
     for n in &list {
@@ -567,7 +591,7 @@ pub fn build_snapshot(rows: &[&Row], i: &Interner, g: &GeoOptions, silent_rule: 
             counts.estimated += 1
         }
     }
-    counts.edges = er.edges.len();
+    counts.edges = er.edges.iter().filter(|e| !e.mqtt).count();
     list.sort_by(|a, b| (b.packets + b.gateway_receptions).cmp(&(a.packets + a.gateway_receptions)).then(a.num.cmp(&b.num)));
     if list.len() > MAX_NODES {
         list.truncate(MAX_NODES);

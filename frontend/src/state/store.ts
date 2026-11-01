@@ -16,6 +16,7 @@ export interface Filters {
 export interface Toggles {
   infraLinks: boolean // both ends ROUTER / ROUTER_LATE
   otherLinks: boolean // at least one end has another role
+  mqttLinks: boolean // hops that went over MQTT, not radio (D-055)
   inferred: boolean
   uncertainty: boolean
   animation: boolean
@@ -24,7 +25,7 @@ export interface Toggles {
   basemap: Record<BasemapGroup, boolean>
 }
 
-export type Selection = { kind: 'node'; id: string } | { kind: 'edge'; src: string; dst: string } | null
+export type Selection = { kind: 'node'; id: string } | { kind: 'edge'; src: string; dst: string; mqtt?: boolean } | null
 
 export interface WindowState {
   live: boolean
@@ -52,7 +53,7 @@ interface Store {
 export const defaultFilters: Filters = { channels: [], brokers: [], types: [], evidence: [], minConfidence: 'low', positionedOnly: false }
 const prefersReducedMotion = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
 
-export const defaultToggles: Toggles = { infraLinks: false, otherLinks: false, inferred: true, uncertainty: false, animation: !prefersReducedMotion, labels: true, theme: 'system', basemap: defaultBasemap }
+export const defaultToggles: Toggles = { infraLinks: false, otherLinks: false, mqttLinks: false, inferred: true, uncertainty: false, animation: !prefersReducedMotion, labels: true, theme: 'system', basemap: defaultBasemap }
 
 // Layer choices are a per-viewer convenience kept in browser storage; the
 // map works the same when storage is unavailable.

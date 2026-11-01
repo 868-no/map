@@ -78,6 +78,10 @@ pub struct Edge {
     pub rssi: Stats,
     pub first_at: String,
     pub last_at: String,
+    /// Carried over MQTT, not radio: built only from traceroute hops recorded
+    /// at exactly 0 dB (D-055). Kept apart from radio links.
+    #[serde(skip_serializing_if = "is_false")]
+    pub mqtt: bool,
     #[serde(skip)]
     pub first: i64,
     #[serde(skip)]
@@ -91,6 +95,31 @@ struct Acc {
     rssi: Vec<(i64, f64)>,
     first: i64,
     last: i64,
+}
+
+fn is_false(b: &bool) -> bool {
+    !*b
+}
+
+/// Splits off traceroute hops that went over MQTT: a packet a node took from
+/// a broker (downlink) has no radio reception, so the hop into it records
+/// exactly 0 dB. Only hops into probable downlinking nodes (views::downlinks,
+/// D-054) count: elsewhere a 0 dB reading is a genuine one that rounded to 0
+/// (D-055). Returns (radio, mqtt).
+pub fn split_mqtt(samples: Vec<Sample>, downlinkers: &FxSet<u32>) -> (Vec<Sample>, Vec<Sample>) {
+    samples.into_iter().partition(|s| !(s.ev == Ev::Traceroute && s.snr == Some(0.0) && downlinkers.contains(&s.dst)))
+}
+
+/// MQTT links from split-off samples: marked, with no radio signal statistics.
+pub fn reduce_mqtt(samples: &[Sample]) -> Vec<Edge> {
+    let mut out = reduce(samples);
+    for e in &mut out {
+        e.mqtt = true;
+        e.reason = "traceroute hop recorded at exactly 0 dB: the receiver took the packet from an MQTT broker, not over radio";
+        e.snr = Stats::default();
+        e.rssi = Stats::default();
+    }
+    out
 }
 
 fn invalid(n: u32) -> bool {
@@ -142,6 +171,7 @@ pub fn reduce(samples: &[Sample]) -> Vec<Edge> {
                 rssi: stats(&a.rssi, true),
                 first_at: iso(a.first),
                 last_at: iso(a.last),
+                mqtt: false,
                 first: a.first,
                 last: a.last,
             }
@@ -316,6 +346,26 @@ impl RelayContext {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A traceroute hop src -> dst in traceroute lp, received at snr.
+    fn hop(src: u32, dst: u32, lp: u64, snr: f64) -> Sample {
+        Sample { src, dst, ev: Ev::Traceroute, t: 0, snr: Some(snr), rssi: None, key: SKey::Tr(lp, 0, 0) }
+    }
+
+    #[test]
+    fn zero_db_hops_into_downlinking_nodes_go_over_mqtt() {
+        // 2 downlinks. Its 0 dB hops go over MQTT; its other readings, and 0 dB
+        // readings at 4 (an ordinary node), stay radio.
+        let v = vec![hop(1, 2, 1, 0.0), hop(1, 2, 2, 0.0), hop(1, 2, 2, 0.0), hop(3, 2, 3, 0.0), hop(1, 2, 4, 5.0), hop(3, 4, 5, 0.0)];
+        let (radio, mqtt) = split_mqtt(v, &[2].into_iter().collect());
+        let pairs = |s: &[Sample]| s.iter().map(|x| (x.src, x.dst, x.snr.unwrap())).collect::<Vec<_>>();
+        assert_eq!(pairs(&mqtt), vec![(1, 2, 0.0), (1, 2, 0.0), (1, 2, 0.0), (3, 2, 0.0)]);
+        assert_eq!(pairs(&radio), vec![(1, 2, 5.0), (3, 4, 0.0)]);
+        let e = reduce_mqtt(&mqtt);
+        let bridge = e.iter().find(|x| x.src_num == 1).unwrap();
+        assert!(bridge.mqtt && bridge.snr.n == 0);
+        assert_eq!(bridge.evidence.traceroute, 2, "copies of one traceroute count once");
+    }
 
     fn ctx(known: &[u32], confirmed: &[(u32, u32)]) -> RelayContext {
         RelayContext::new(known.iter().copied(), map(), confirmed.iter().copied(), set())

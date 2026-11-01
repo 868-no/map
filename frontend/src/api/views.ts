@@ -105,6 +105,7 @@ export interface Edge {
   rssi: Stats // dBm at dst (gateway receptions only)
   first_at: string
   last_at: string
+  mqtt?: boolean // carried over MQTT, not radio: traceroute hops recorded at exactly 0 dB (D-055)
 }
 
 export interface Counts {

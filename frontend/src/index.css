@@ -16,6 +16,8 @@
   --err: #f85149;
   --ok: #3fb950;
   --optout: #ff4d4d;
+  --mqtt: #78e68c;
+  --bg-mqtt: #16351f;
   --unpositioned: #555;
   --pressed: #1f3a48;
   --overlay: #0e1116cc; /* small chips over the map */
@@ -48,6 +50,8 @@
   --err: #cf222e;
   --ok: #1a7f37;
   --optout: #e5383b;
+  --mqtt: #148c3c;
+  --bg-mqtt: #dcf5e3;
   --unpositioned: #a0a4aa;
   --pressed: #d4ecf6;
   --overlay: #f6f7f9d9;
@@ -190,6 +194,7 @@ table.hear th, table.hear td { text-align: left; padding: 2px 4px; border-bottom
 .ln.dashed { border-top-style: dashed; }
 .ln.thick { border-top-width: 3px; }
 .ln.thin { border-top-width: 1px; }
+.ln.mqtt { border-top: 3px dotted var(--mqtt); }
 .age-ramp { height: 10px; border-radius: 3px; }
 .age-labels { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); margin-top: 2px; }
 .direction h3 { text-transform: none; letter-spacing: 0; font-size: 13px; color: var(--text); }
@@ -201,6 +206,7 @@ table.hear th, table.hear td { text-align: left; padding: 2px 4px; border-bottom
 .conf-high { background: var(--bg-accent); color: var(--accent); }
 .conf-medium { background: var(--bg-orange); color: var(--orange); }
 .conf-low { background: var(--bg-purple); color: var(--purple); }
+.conf-mqtt { background: var(--bg-mqtt); color: var(--mqtt); }
 .sig { padding: 0 6px; border-radius: 8px; font-size: 11px; background: var(--panel2); }
 .sig-verified { color: var(--ok); }
 .sig-unverifiable { color: var(--warn); }

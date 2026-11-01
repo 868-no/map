@@ -18,6 +18,7 @@ export interface MapPalette {
   highlight: RGBA // hovered link
   linkInfra: RGB
   linkOther: RGB
+  linkMqtt: RGB // hops that went over MQTT, not radio
   precision: RGB // reported position's precision cell
   estimate: RGB // estimate uncertainty circle
   pingOrigin: RGB // first broadcast by the originator
@@ -40,6 +41,7 @@ export const PALETTES: Record<Theme, MapPalette> = {
     highlight: [255, 255, 255, 80],
     linkInfra: [76, 201, 240],
     linkOther: [150, 163, 184],
+    linkMqtt: [120, 230, 140],
     precision: [230, 237, 243],
     estimate: [176, 156, 255],
     pingOrigin: [125, 224, 255],
@@ -58,6 +60,7 @@ export const PALETTES: Record<Theme, MapPalette> = {
     highlight: [0, 0, 0, 50],
     linkInfra: [8, 126, 164],
     linkOther: [98, 110, 128],
+    linkMqtt: [20, 140, 60],
     precision: [40, 46, 54],
     estimate: [98, 70, 196],
     pingOrigin: [0, 150, 210],

@@ -125,7 +125,8 @@ export interface LinkGeom {
   confidence: string // the better of the two directions
   inferred: boolean // only when every present direction is inferred
   samples: number
-  infra: boolean // both ends have an infrastructure role (ROUTER / ROUTER_LATE)
+  infra: boolean // both ends have an infrastructure role (ROUTER / ROUTER_LATE); never for MQTT links
+  mqtt: boolean // carried over MQTT, not radio (D-055): drawn in its own layer
 }
 
 /**
@@ -133,22 +134,24 @@ export interface LinkGeom {
  * total samples (best-supported first). Pairs with an unplaced end are skipped.
  */
 export function linkGeometry(edges: Edge[], pos: Map<string, [number, number]>, roles: Map<string, string | undefined> = new Map()): LinkGeom[] {
-  const pairs = new Map<string, { a: string; b: string; ab?: Edge; ba?: Edge }>()
+  // A pair can have both a radio link and an MQTT link: one line each.
+  const pairs = new Map<string, { a: string; b: string; mqtt: boolean; ab?: Edge; ba?: Edge }>()
   for (const e of edges) {
     const [a, b] = e.src < e.dst ? [e.src, e.dst] : [e.dst, e.src]
-    const k = `${a}|${b}`
-    const p = pairs.get(k) ?? pairs.set(k, { a, b }).get(k)!
+    const mqtt = !!e.mqtt
+    const k = `${a}|${b}|${mqtt}`
+    const p = pairs.get(k) ?? pairs.set(k, { a, b, mqtt }).get(k)!
     if (e.src === a) p.ab = e
     else p.ba = e
   }
   const out: LinkGeom[] = []
-  for (const { a, b, ab, ba } of pairs.values()) {
+  for (const { a, b, mqtt, ab, ba } of pairs.values()) {
     const pa = pos.get(a), pb = pos.get(b)
     if (!pa || !pb || (pa[0] === pb[0] && pa[1] === pb[1])) continue
     const dirs = [ab, ba].filter((e): e is Edge => !!e)
     const best = dirs.reduce((x, y) => (rank[y.confidence] > rank[x.confidence] ? y : x))
     out.push({ a, b, ab, ba, path: [pa, pb], confidence: best.confidence, inferred: dirs.every((e) => e.inferred),
-      samples: dirs.reduce((n, e) => n + e.samples, 0), infra: isInfraRole(roles.get(a)) && isInfraRole(roles.get(b)) })
+      samples: dirs.reduce((n, e) => n + e.samples, 0), infra: !mqtt && isInfraRole(roles.get(a)) && isInfraRole(roles.get(b)), mqtt })
   }
   return out.sort((x, y) => y.samples - x.samples)
 }

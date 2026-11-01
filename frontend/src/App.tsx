@@ -166,7 +166,7 @@ export default function App() {
 
   const sel = selection
   // A selected link is the node pair; either direction may be missing.
-  const linkSel = sel?.kind === 'edge' && (snap.data?.edges ?? []).some((e) => (e.src === sel.src && e.dst === sel.dst) || (e.src === sel.dst && e.dst === sel.src)) ? sel : undefined
+  const linkSel = sel?.kind === 'edge' && (snap.data?.edges ?? []).some((e) => !!e.mqtt === !!sel.mqtt && ((e.src === sel.src && e.dst === sel.dst) || (e.src === sel.dst && e.dst === sel.src))) ? sel : undefined
   const counts = snap.data?.counts
   const empty = snap.data && counts && counts.packets === 0 && (snap.data.nodes ?? []).length === 0
 
@@ -208,7 +208,7 @@ export default function App() {
           </nav>
           <div className="tab-body">
             {tab === 'nodes' && <NodeList snapshot={snap.data} />}
-            {tab === 'details' && (sel?.kind === 'node' ? <NodePanel id={sel.id} snapshot={snap.data} /> : linkSel ? <EdgePanel a={linkSel.src} b={linkSel.dst} snapshot={snap.data} /> : <div className="panel muted">Select a node or link on the map or in the list.</div>)}
+            {tab === 'details' && (sel?.kind === 'node' ? <NodePanel id={sel.id} snapshot={snap.data} /> : linkSel ? <EdgePanel a={linkSel.src} b={linkSel.dst} mqtt={!!linkSel.mqtt} snapshot={snap.data} /> : <div className="panel muted">Select a node or link on the map or in the list.</div>)}
             {tab === 'filters' && <FilterPanel snapshot={snap.data} />}
             {tab === 'legend' && <Legend snapshot={snap.data} />}
           </div>

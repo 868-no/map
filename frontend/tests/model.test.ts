@@ -54,6 +54,17 @@ describe('map view model', () => {
     expect(infra('!b', '!d')).toBe(false)
     expect(isInfraRole('CLIENT')).toBe(false)
   })
+  it('keeps MQTT links apart from radio links, never as infrastructure (D-055)', () => {
+    const pos = new Map<string, [number, number]>([['!a', [10, 63]], ['!b', [10.1, 63]]])
+    const roles = new Map<string, string | undefined>([['!a', 'ROUTER'], ['!b', 'ROUTER']])
+    const g = linkGeometry([edge('!a', '!b'), edge('!a', '!b', { mqtt: true }), edge('!b', '!a', { mqtt: true })], pos, roles)
+    expect(g).toHaveLength(2)
+    const radio = g.find((l) => !l.mqtt)!, mqtt = g.find((l) => l.mqtt)!
+    expect(radio.infra).toBe(true)
+    expect(radio.ba).toBeUndefined()
+    expect(mqtt.infra).toBe(false)
+    expect(mqtt.ab?.mqtt && mqtt.ba?.mqtt).toBe(true)
+  })
   it('collapses both directions into one line and skips unplaced endpoints', () => {
     const pos = new Map<string, [number, number]>([['!a', [10, 63]], ['!b', [10.1, 63]], ['!c', [10.2, 63]]])
     const g = linkGeometry([edge('!b', '!a', { confidence: 'medium' }), edge('!a', '!b', { confidence: 'low', inferred: true }), edge('!a', '!z'), edge('!b', '!c', { inferred: true, confidence: 'low' })], pos)
