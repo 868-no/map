@@ -301,7 +301,10 @@ impl RelayContext {
         }
         let mut longest: f64 = 0.0;
         for (a, b) in confirmed {
-            c.confirmed.insert(pair(a, b));
+            // Many samples share a pair: measure each pair once.
+            if !c.confirmed.insert(pair(a, b)) {
+                continue;
+            }
             if let (Some(&pa), Some(&pb)) = (c.pos.get(&a), c.pos.get(&b)) {
                 longest = longest.max(distance_m(pa, pb));
             }

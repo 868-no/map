@@ -11,3 +11,10 @@ NodeInfo packets), traffic, and ten node panels, plus the geolocation
 settings in effect. `tests/golden.rs` holds the engine to them field by field
 (times to the millisecond, numbers to 1e-4), with the CLIENT_MUTE relay rule
 off since it postdates the server views.
+
+`engine.json` holds the engine's own views of that window with default
+options (CLIENT_MUTE rule and MQTT links on), engine-only fields included:
+the same snapshot, filtered snapshot, traffic and node panels, plus packet
+logs and routes for a few nodes and packets. It locks current behaviour for
+refactors; after an intended change, record it again with `UPDATE_GOLDEN=1`
+set for `cargo test --test golden`.

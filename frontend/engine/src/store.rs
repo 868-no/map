@@ -2,6 +2,8 @@
 //! deduplicated by id. Fetched pages are staged first, so the caller can
 //! still decide to start over before they are committed.
 
+use std::cell::Cell;
+
 use serde::{Deserialize, Serialize};
 
 use crate::row::{to_json, Interner, JRow, Row};
@@ -17,6 +19,8 @@ pub struct Store {
     next_batch: u32,
     dirty: FxSet<i64>,  // hour starts with rows added since the last take_dirty
     pub version: u64,   // bumped on every change (memo key)
+    max_id: Option<i64>, // newest id among rows, kept up to date (revisions)
+    stats_memo: Cell<Option<(usize, usize, u64, i64)>>, // (from, to, version, newest id) of a partial range
 }
 
 #[derive(Deserialize, Serialize)]
@@ -97,6 +101,7 @@ impl Store {
             self.dirty.insert(r.t.div_euclid(HOUR_MS) * HOUR_MS);
         }
         let n = fresh.len();
+        self.max_id = fresh.iter().map(|r| r.id).chain(self.max_id).max();
         let append = self.rows.last().is_none_or(|tail| by_time(&fresh[0], tail).is_ge());
         self.rows.extend(fresh);
         if !append {
@@ -113,6 +118,7 @@ impl Store {
         self.rows.clear();
         self.ids.clear();
         self.dirty.clear();
+        self.max_id = None;
         self.version += 1;
     }
 
@@ -120,10 +126,16 @@ impl Store {
         self.rows.partition_point(|r| r.t < t)
     }
 
+    /// Indices [from, to) into rows of observed_at in [start, end).
+    pub fn range(&self, start: i64, end: i64) -> (usize, usize) {
+        let (a, b) = (self.lower_bound(start), self.lower_bound(end));
+        (a, b.max(a))
+    }
+
     /// Rows with observed_at in [start, end).
     pub fn slice(&self, start: i64, end: i64) -> &[Row] {
-        let (a, b) = (self.lower_bound(start), self.lower_bound(end));
-        &self.rows[a..b.max(a)]
+        let (a, b) = self.range(start, end);
+        &self.rows[a..b]
     }
 
     pub fn trim_before(&mut self, t: i64) {
@@ -131,8 +143,13 @@ impl Store {
         if k == 0 {
             return;
         }
+        let mut newest_gone = false;
         for r in self.rows.drain(..k) {
             self.ids.remove(&r.id);
+            newest_gone |= Some(r.id) == self.max_id;
+        }
+        if newest_gone {
+            self.max_id = self.rows.iter().map(|r| r.id).max();
         }
         self.version += 1;
     }
@@ -161,10 +178,26 @@ impl Store {
         serde_json::to_string(&rows).unwrap_or_else(|_| "[]".into())
     }
 
-    /// (rows, newest id) in [start, end): part of a view's revision.
+    /// (rows, newest id) in [start, end): part of a view's revision, asked
+    /// for on every view request. A window holding every row (the usual
+    /// case) uses the maintained newest id; any other range is scanned once
+    /// per store version.
     pub fn stats(&self, start: i64, end: i64) -> (usize, i64) {
-        let s = self.slice(start, end);
-        (s.len(), s.iter().map(|r| r.id).max().unwrap_or(0))
+        let (a, b) = self.range(start, end);
+        if a == b {
+            return (0, 0);
+        }
+        if a == 0 && b == self.rows.len() {
+            return (b, self.max_id.unwrap_or(0));
+        }
+        if let Some((ma, mb, v, m)) = self.stats_memo.get() {
+            if (ma, mb, v) == (a, b, self.version) {
+                return (b - a, m);
+            }
+        }
+        let m = self.rows[a..b].iter().map(|r| r.id).max().unwrap_or(0);
+        self.stats_memo.set(Some((a, b, self.version, m)));
+        (b - a, m)
     }
 }
 
@@ -198,6 +231,30 @@ mod tests {
         let m = s.stage(&page, 0, &mut i).unwrap();
         s.reset();
         assert_eq!(s.commit(m.batch), 2);
+    }
+
+    #[test]
+    fn stats_follow_additions_and_eviction() {
+        let mut i = Interner::default();
+        let mut s = Store::default();
+        let scan = |s: &Store, a: i64, b: i64| (s.slice(a, b).len(), s.slice(a, b).iter().map(|r| r.id).max().unwrap_or(0));
+        let check = |s: &Store| {
+            for (a, b) in [(0, 100), (0, 25), (15, 100), (25, 26), (90, 100)] {
+                assert_eq!(s.stats(a, b), scan(s, a, b), "[{a}, {b})");
+                assert_eq!(s.stats(a, b), scan(s, a, b), "[{a}, {b}) again");
+            }
+        };
+        s.add_json(&format!("[{},{},{}]", row(1, 10), row(9, 20), row(3, 30)), 0, &mut i).unwrap();
+        check(&s);
+        s.add_json(&format!("[{}]", row(2, 15)), 0, &mut i).unwrap();
+        check(&s);
+        s.trim_before(20); // evicts nothing newest
+        check(&s);
+        s.trim_before(25); // evicts the newest id (9)
+        assert_eq!(s.stats(0, 100), (1, 3));
+        check(&s);
+        s.keep_only(0, 0);
+        assert_eq!(s.stats(0, 100), (0, 0));
     }
 
     #[test]

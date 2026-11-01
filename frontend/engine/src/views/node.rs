@@ -1,0 +1,266 @@
+//! Per-node output shapes and the rows they come from.
+
+use serde::Serialize;
+
+use super::{latest_by, newer, Downlink};
+use crate::geo::{precision_error_m, Estimate};
+use crate::graph::{distance_m, LatLon};
+use crate::row::{ty, Interner, Position as RowPos, Row};
+use crate::util::{iso, map, node_id, set, FxMap, FxSet, BROADCAST};
+
+#[derive(Serialize, Clone, Debug)]
+pub struct Identity {
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub long_name: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub short_name: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub hw_model: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub role: String,
+    pub has_public_key: bool,
+    pub signature: String,
+    pub observed_at: String,
+}
+
+#[derive(Serialize, Clone, Debug)]
+pub struct Position {
+    pub lat: f64,
+    pub lon: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub alt: Option<i32>,
+    pub precision_bits: u32,
+    pub precision_known: bool,
+    pub signature: String,
+    pub observed_at: String,
+    pub source: String,
+}
+
+#[derive(Serialize, Clone, Debug)]
+pub struct Telemetry {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub battery: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub voltage: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ch_util: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub air_util: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub uptime: Option<u32>,
+    pub observed_at: String,
+}
+
+#[derive(Serialize, Clone, Copy, Default, Debug)]
+pub struct Signatures {
+    pub verified: usize,
+    pub unsigned: usize,
+    pub unverifiable: usize,
+    pub not_applicable: usize,
+}
+
+fn is_false(b: &bool) -> bool {
+    !*b
+}
+
+#[derive(Serialize, Clone, Debug)]
+pub struct Node {
+    pub id: String,
+    pub num: u32,
+    pub status: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub identity: Option<Identity>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub position: Option<Position>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub telemetry: Option<Telemetry>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub first_seen: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_seen: Option<String>,
+    pub packets: usize,
+    pub receptions: usize,
+    pub gateway_receptions: usize,
+    pub is_gateway: bool,
+    pub signatures: Signatures,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub brokers: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "is_false")]
+    pub mqtt_opt_out: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub estimate: Option<Estimate>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub estimate_note: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mqtt_downlink: Option<Downlink>,
+    #[serde(skip)]
+    pub(super) first: i64,
+    #[serde(skip)]
+    pub(super) last: i64,
+    #[serde(skip)]
+    pub(super) pos: Option<RowPos>,
+}
+
+impl Node {
+    pub(super) fn new(n: u32) -> Self {
+        Node {
+            id: node_id(n), num: n, status: "observed", identity: None, position: None, telemetry: None, first_seen: None, last_seen: None,
+            packets: 0, receptions: 0, gateway_receptions: 0, is_gateway: false, signatures: Signatures::default(), brokers: None,
+            mqtt_opt_out: false, estimate: None, estimate_note: None, mqtt_downlink: None, first: i64::MAX, last: i64::MIN, pos: None,
+        }
+    }
+}
+
+pub fn is_identity(r: &Row) -> bool {
+    r.ty == ty::NODEINFO && !r.nodeinfo().is_some_and(|n| n.untrusted)
+}
+pub fn is_position(r: &Row) -> bool {
+    (r.ty == ty::POSITION || r.ty == ty::MAPREPORT) && r.pos.is_some()
+}
+pub fn is_device_telemetry(r: &Row) -> bool {
+    r.ty == ty::TELEMETRY && r.telemetry().is_some_and(|t| t.kind == ty::DEVICE)
+}
+
+pub(super) fn identity_of(r: &Row, i: &Interner) -> Identity {
+    let s = |x: Option<u32>| x.map_or(String::new(), |x| i.s(x).to_string());
+    let n = r.nodeinfo();
+    Identity {
+        long_name: s(n.map(|n| n.long_name)),
+        short_name: s(n.map(|n| n.short_name)),
+        hw_model: s(n.map(|n| n.hw_model)),
+        role: s(n.map(|n| n.role)),
+        has_public_key: n.is_some_and(|n| n.has_public_key),
+        signature: i.s(r.sig).to_string(),
+        observed_at: iso(r.t),
+    }
+}
+
+pub(super) fn position_of(r: &Row, i: &Interner) -> Position {
+    let p = r.pos.unwrap();
+    Position { lat: p.lat, lon: p.lon, alt: p.alt, precision_bits: p.bits, precision_known: p.known, signature: i.s(r.sig).to_string(), observed_at: iso(r.t), source: i.s(r.ty).to_string() }
+}
+
+pub(super) fn telemetry_of(r: &Row) -> Telemetry {
+    let t = r.telemetry().unwrap();
+    Telemetry { battery: t.battery, voltage: t.voltage, ch_util: t.ch_util, air_util: t.air_util, uptime: t.uptime, observed_at: iso(r.t) }
+}
+
+/// Between a node's latest Position packet and latest map report: when their
+/// precision circles overlap they agree and the more precise one wins; when
+/// they do not, the node may have moved and the newer one wins. Unknown
+/// precision cannot be compared, so the newer one wins too.
+pub fn choose_position<'a>(a: &'a Row, b: &'a Row) -> &'a Row {
+    let (newer_, older) = if newer(a, b) { (b, a) } else { (a, b) };
+    let (pa, pb) = (a.pos.unwrap(), b.pos.unwrap());
+    if !pa.known || !pb.known {
+        return newer_;
+    }
+    let d = distance_m(LatLon { lat: pa.lat, lon: pa.lon }, LatLon { lat: pb.lat, lon: pb.lon });
+    if d > precision_error_m(pa.bits, pa.lat) + precision_error_m(pb.bits, pb.lat) {
+        return newer_;
+    }
+    if older.pos.unwrap().bits > newer_.pos.unwrap().bits { older } else { newer_ }
+}
+
+/// Each node's position row: latest of each packet type, then choose_position.
+pub(super) fn position_rows<'a>(rows: &[&'a Row]) -> FxMap<u32, &'a Row> {
+    let mut out = latest_by(rows, |r| r.ty == ty::POSITION && r.pos.is_some(), |r| r.src);
+    for (n, r) in latest_by(rows, |r| r.ty == ty::MAPREPORT && r.pos.is_some(), |r| r.src) {
+        let pick = match out.get(&n) {
+            Some(p) => choose_position(p, r),
+            None => r,
+        };
+        out.insert(n, pick);
+    }
+    out
+}
+
+pub(super) struct Origin {
+    pub(super) first: i64,
+    pub(super) last: i64,
+    pub(super) packets: FxSet<u64>,
+    pub(super) receptions: FxSet<u64>,
+    sig: FxMap<u32, FxSet<u64>>,
+    brokers: FxSet<u32>,
+    pub(super) opt_out: bool,
+}
+
+pub(super) fn origins(rows: &[&Row]) -> FxMap<u32, Origin> {
+    let mut m: FxMap<u32, Origin> = map();
+    for r in rows {
+        let o = m.entry(r.src).or_insert_with(|| Origin { first: r.t, last: r.t, packets: set(), receptions: set(), sig: map(), brokers: set(), opt_out: false });
+        o.first = o.first.min(r.t);
+        o.last = o.last.max(r.t);
+        o.packets.insert(r.lp);
+        o.receptions.insert(r.ok);
+        o.sig.entry(r.sig).or_insert_with(set).insert(r.lp);
+        o.brokers.insert(r.broker);
+        o.opt_out |= r.nk;
+    }
+    m
+}
+
+pub(super) fn sig_counts(o: &Origin, i: &Interner) -> Signatures {
+    let c = |s: &str| i.get(s).and_then(|id| o.sig.get(&id)).map_or(0, |x| x.len());
+    Signatures { verified: c("verified"), unsigned: c("unsigned"), unverifiable: c("unverifiable"), not_applicable: c("not-applicable") }
+}
+
+pub(super) fn brokers(o: &Origin, i: &Interner) -> Vec<String> {
+    let mut b: Vec<String> = o.brokers.iter().map(|&x| i.s(x).to_string()).collect();
+    b.sort();
+    b
+}
+
+/// Nodes mentioned by NeighborInfo, valid traceroute hops or traceroute destinations.
+pub fn referenced(rows: &[&Row]) -> FxSet<u32> {
+    let mut out = set();
+    let mut add = |n: u32| {
+        if n > 0 && n < BROADCAST {
+            out.insert(n);
+        }
+    };
+    for r in rows {
+        if r.ty == ty::NEIGHBORINFO {
+            for &(id, _) in r.neighbors() {
+                add(id);
+            }
+        }
+        if r.ty == ty::TRACEROUTE {
+            if let Some(t) = r.traceroute().filter(|t| t.valid) {
+                for h in t.route.iter().chain(&t.route_back) {
+                    if !h.unknown {
+                        add(h.id);
+                    }
+                }
+            }
+            if let Some(d) = r.dst.filter(|&d| d != 0 && d != BROADCAST) {
+                add(d);
+            }
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::views::test_rows::pos;
+
+    #[test]
+    fn choose_position_between_packet_and_map_report() {
+        const H: i64 = 3_600_000;
+        let (p, m) = (ty::POSITION, ty::MAPREPORT);
+        // 14 bits: ~1.2 km error radius; 32 bits: exact. 200 m apart: overlapping.
+        let cases = [
+            ("overlap: precise older wins", pos(1, p, 61.2232, 32, 0), pos(2, m, 61.2250, 14, H), p),
+            ("overlap: precise newer wins", pos(1, p, 61.2232, 13, 0), pos(2, m, 61.2250, 16, H), m),
+            ("overlap, equal precision: newer", pos(1, p, 61.2232, 16, H), pos(2, m, 61.2233, 16, 0), p),
+            ("apart (moving): newer despite lower precision", pos(1, p, 61.0, 32, 0), pos(2, m, 61.45, 14, H), m),
+            ("unknown precision: newer", pos(1, p, 61.2232, 0, H), pos(2, m, 61.2232, 32, 0), p),
+        ];
+        for (name, a, b, want) in cases {
+            assert_eq!(choose_position(&a, &b).ty, want, "{name}");
+            assert_eq!(choose_position(&b, &a).ty, want, "{name} (swapped)");
+        }
+    }
+}

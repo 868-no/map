@@ -18,7 +18,7 @@ use wasm_bindgen::prelude::*;
 use crate::row::{Interner, JRow};
 use crate::store::Store;
 use crate::util::{key64, parse_node};
-use crate::views::{apply_filters, build_node_detail, build_snapshot, build_traffic, bucket_for, Built, Filters, GeoOptions, Rules};
+use crate::views::{build_node_detail, build_snapshot, build_traffic, bucket_for, filter_fn, Built, Filters, GeoOptions, Rules};
 
 #[derive(Deserialize)]
 struct GeoSettings {
@@ -48,18 +48,35 @@ fn yes() -> bool {
     true
 }
 
+/// A view request's window and filters at one store version (memo key).
+struct Key {
+    start: i64,
+    end: i64,
+    filters: String,
+    version: u64,
+}
+
+impl Key {
+    fn is(&self, start: i64, end: i64, filters: &str, version: u64) -> bool {
+        (self.start, self.end, self.version) == (start, end, version) && self.filters == filters
+    }
+}
+
 #[wasm_bindgen]
 pub struct Engine {
     i: Interner,
     store: Store,
     geo: GeoOptions,
     rules: Rules,
-    built: Option<((i64, i64, String, u64), Built)>,
+    built: Option<(Key, Built)>,
+    /// The filtered window's rows as indices into the store, shared by the
+    /// views of one rebuild (snapshot, traffic, node, packet log, route).
+    rows: Option<(Key, Vec<u32>)>,
 }
 
 impl Default for Engine {
     fn default() -> Self {
-        Engine { i: Interner::default(), store: Store::default(), geo: GeoOptions::default(), rules: Rules::default(), built: None }
+        Engine { i: Interner::default(), store: Store::default(), geo: GeoOptions::default(), rules: Rules::default(), built: None, rows: None }
     }
 }
 
@@ -72,15 +89,33 @@ fn json<T: serde::Serialize>(v: &T) -> String {
 }
 
 impl Engine {
-    /// The snapshot (and relay context) for a window and filters, memoised
-    /// until the store or the request changes.
-    fn built(&mut self, start: i64, end: i64, filters: &str) -> Result<&Built, JsError> {
-        let key = (start, end, filters.to_string(), self.store.version);
-        if self.built.as_ref().is_none_or(|(k, _)| *k != key) {
+    /// Selects the window's rows passing the filters (Engine::rows),
+    /// memoised until the store or the request changes.
+    fn filter(&mut self, start: i64, end: i64, filters: &str) -> Result<(), JsError> {
+        let version = self.store.version;
+        if self.rows.as_ref().is_none_or(|(k, _)| !k.is(start, end, filters, version)) {
             let f: Filters = serde_json::from_str(filters).map_err(err)?;
-            let rows = apply_filters(self.store.slice(start, end), &f, &self.i);
-            let b = build_snapshot(&rows, &self.i, &self.geo, self.rules);
-            self.built = Some((key, b));
+            let keep = filter_fn(&f, &self.i);
+            let (a, b) = self.store.range(start, end);
+            let idx = (a..b).filter(|&k| keep(&self.store.rows[k])).map(|k| k as u32).collect();
+            self.rows = Some((Key { start, end, filters: filters.to_string(), version }, idx));
+        }
+        Ok(())
+    }
+
+    /// The rows selected by the last Engine::filter.
+    fn rows(&self) -> Vec<&row::Row> {
+        self.rows.as_ref().map_or(vec![], |(_, idx)| idx.iter().map(|&k| &self.store.rows[k as usize]).collect())
+    }
+
+    /// The snapshot (and relay context) for a window and filters, memoised
+    /// until the store or the request changes; their rows are selected too.
+    fn build(&mut self, start: i64, end: i64, filters: &str) -> Result<&Built, JsError> {
+        let version = self.store.version;
+        self.filter(start, end, filters)?;
+        if self.built.as_ref().is_none_or(|(k, _)| !k.is(start, end, filters, version)) {
+            let b = build_snapshot(&self.rows(), &self.i, &self.geo, self.rules);
+            self.built = Some((Key { start, end, filters: filters.to_string(), version }, b));
         }
         Ok(&self.built.as_ref().unwrap().1)
     }
@@ -158,31 +193,26 @@ impl Engine {
     pub fn view(&mut self, kind: &str, start: f64, end: f64, filters: &str, arg: &str) -> Result<String, JsError> {
         let (start, end) = (start as i64, end as i64);
         match kind {
-            "snapshot" => Ok(json(&self.built(start, end, filters)?.snapshot)),
+            "snapshot" => Ok(json(&self.build(start, end, filters)?.snapshot)),
             "traffic" => {
-                let f: Filters = serde_json::from_str(filters).map_err(err)?;
-                let rows = apply_filters(self.store.slice(start, end), &f, &self.i);
-                Ok(json(&build_traffic(&rows, start, bucket_for(end - start), &self.i)))
+                self.filter(start, end, filters)?;
+                Ok(json(&build_traffic(&self.rows(), start, bucket_for(end - start), &self.i)))
             }
             "node" => {
                 let num = parse_node(arg).ok_or_else(|| err("invalid node id"))?;
-                let f: Filters = serde_json::from_str(filters).map_err(err)?;
-                let rows = apply_filters(self.store.slice(start, end), &f, &self.i);
-                Ok(json(&build_node_detail(&rows, num, &self.i)))
+                self.filter(start, end, filters)?;
+                Ok(json(&build_node_detail(&self.rows(), num, &self.i)))
             }
             "packetlog" => {
                 let num = parse_node(arg).ok_or_else(|| err("invalid node id"))?;
-                self.built(start, end, filters)?;
-                let f: Filters = serde_json::from_str(filters).map_err(err)?;
-                let rows = apply_filters(self.store.slice(start, end), &f, &self.i);
+                self.build(start, end, filters)?;
                 let b = &self.built.as_ref().unwrap().1;
-                Ok(json(&packets::packet_log(&rows, num, &b.ctx, &self.i)))
+                Ok(json(&packets::packet_log(&self.rows(), num, &b.ctx, &self.i)))
             }
             "route" => {
                 let lp = key64(arg);
-                self.built(start, end, filters)?;
-                let f: Filters = serde_json::from_str(filters).map_err(err)?;
-                let rows: Vec<&row::Row> = apply_filters(self.store.slice(start, end), &f, &self.i).into_iter().filter(|r| r.lp == lp).collect();
+                self.build(start, end, filters)?;
+                let rows: Vec<&row::Row> = self.rows().into_iter().filter(|r| r.lp == lp).collect();
                 let b = &self.built.as_ref().unwrap().1;
                 Ok(json(&packets::packet_route(&rows, &b.ctx, &b.roles, &self.i)))
             }
