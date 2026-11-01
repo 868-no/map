@@ -329,6 +329,8 @@ test('the packet log combines own and relayed packets, and draws a packet route 
     await page.getByRole('tab', { name: 'Nodes' }).click()
     await rows.nth(i).click()
     await expect(page.getByRole('heading', { name: /^Packet log/ })).toBeVisible()
+    if (i === 0) await expect(toggle).not.toBeChecked() // own packets only by default
+    await toggle.check()
     await page.waitForTimeout(300)
     if (await log.locator('tbody tr button.linkish').count()) break
   }

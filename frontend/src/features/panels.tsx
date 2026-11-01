@@ -217,7 +217,7 @@ function PacketLogs({ id, names, positioned }: { id: string; names: Map<string, 
   const select = useStore((s) => s.select)
   const route = useStore((s) => s.route)
   const showRoute = useStore((s) => s.showRoute)
-  const [withRelayed, setWithRelayed] = useState(true)
+  const [withRelayed, setWithRelayed] = useState(false)
   const log = usePacketLog(id)
   const [shown, setShown] = useState({ own: 50, relayed: 50 })
   const more = (k: 'own' | 'relayed', total: number) =>

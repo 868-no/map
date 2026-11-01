@@ -265,7 +265,7 @@ Operator request: names of nodes close together overlapped; markers must stay pu
 
 ## D-036 Per-node packet logs (2026-10-31)
 
-Operator request: the selected node's panel shows its packets, built by the derivation worker from the window's rows (filters apply). One combined log, newest first, with an "Include relayed" toggle (on by default); up to 200 own and 200 relayed entries, 50 shown at first.
+Operator request: the selected node's panel shows its packets, built by the derivation worker from the window's rows (filters apply). One combined log, newest first, with an "Include relayed" toggle (off by default since 2026-11-01; it was on); up to 200 own and 200 relayed entries, 50 shown at first.
 - **Own packets:** one entry per logical packet the node sent: time, type, destination, fewest hops any gateway saw, gateways, signature.
 - **Relayed for others:** other nodes' packets this node passed on, from two kinds of evidence:
   - a gateway's last-hop byte resolved to it, with the same narrowing and context as links (D-022);
