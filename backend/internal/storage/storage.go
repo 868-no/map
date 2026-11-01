@@ -262,8 +262,10 @@ func RecentObservation(ctx context.Context, pool *pgxpool.Pool, key [16]byte, si
 // (the row's broker_id or an existing also_via entry) are not added again,
 // and rows needing no change are not rewritten. Only decoded_metadata
 // changes, so with fillfactor 90 most updates are HOT (no index writes).
-// also_via is not part of ObsRow, so obs_row stays valid.
-func AddAlsoVia(ctx context.Context, pool *pgxpool.Pool, byRow map[int64][]string) (int64, error) {
+// also_via is not part of ObsRow, so obs_row stays valid. All rows were
+// observed at or after since: the bound lets Postgres skip older partitions
+// instead of probing every partition's primary key for each id.
+func AddAlsoVia(ctx context.Context, pool *pgxpool.Pool, byRow map[int64][]string, since time.Time) (int64, error) {
 	if len(byRow) == 0 {
 		return 0, nil
 	}
@@ -288,11 +290,11 @@ func AddAlsoVia(ctx context.Context, pool *pgxpool.Pool, byRow map[int64][]strin
 			) s
 			WHERE b <> p.broker_id))
 		FROM v
-		WHERE p.id = v.id
+		WHERE p.id = v.id AND p.observed_at >= $3
 		  AND EXISTS (
 			SELECT 1 FROM unnest(v.brokers) nb
 			WHERE nb <> p.broker_id AND NOT (COALESCE(p.decoded_metadata->'also_via', '[]'::jsonb) ? nb))`,
-		ids, lists)
+		ids, lists, since)
 	if err != nil {
 		return 0, err
 	}

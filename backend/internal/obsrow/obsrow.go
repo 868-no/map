@@ -10,14 +10,18 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"log/slog"
+	"math/bits"
 	"strconv"
+	"sync/atomic"
 	"time"
 )
 
 // ObsRow is one packet_log row reduced to what the browser needs to derive
 // every view itself (D-031). Keys are short because a 7-day window holds
 // tens of thousands of rows. Only decoded public RF fields are included:
-// never envelope bytes, payload bodies, keys or MQTT topics.
+// never envelope bytes, payload bodies or keys. Of the MQTT topic, only its
+// root (`tp`, D-044) is kept.
 type ObsRow struct {
 	ID        int64    `json:"i"`
 	T         int64    `json:"t" doc:"observed_at, Unix milliseconds (floored)"`
@@ -171,7 +175,9 @@ func New(f Fields, meta []byte) ObsRow {
 		Logical: hex.EncodeToString(f.Logical[:min(8, len(f.Logical))]), Reception: hex.EncodeToString(f.Reception[:min(8, len(f.Reception))]),
 	}
 	var m storedMeta
-	_ = json.Unmarshal(meta, &m)
+	if err := json.Unmarshal(meta, &m); err != nil {
+		badMeta(r.ID, err)
+	}
 	r.Crypto, r.Bytes, r.DirectRF, r.RxReason, r.NotOK, r.Topic = m.Crypto, m.Bytes, m.Rx.DirectRF, m.Rx.Reason, m.NotOK, m.Topic
 	switch r.Type {
 	case "nodeinfo":
@@ -229,4 +235,19 @@ func AppendWithID(b []byte, id int64, tail []byte) []byte {
 	b = strconv.AppendInt(b, id, 10)
 	b = append(b, ',')
 	return append(b, tail...)
+}
+
+// badMetas counts rows whose stored metadata failed to decode; such rows go
+// out with the metadata fields missing.
+var badMetas atomic.Int64
+
+// BadMetas reports how many rows had undecodable metadata since start.
+func BadMetas() int64 { return badMetas.Load() }
+
+// badMeta warns on the 1st, 2nd, 4th, 8th, ... occurrence, so a corrupt or
+// changed decoded_metadata shows in the log without flooding it.
+func badMeta(id int64, err error) {
+	if n := badMetas.Add(1); bits.OnesCount64(uint64(n)) == 1 {
+		slog.Default().Warn("stored metadata did not decode; row sent without it", "row", id, "count", n, "err", err)
+	}
 }

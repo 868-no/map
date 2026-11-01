@@ -65,6 +65,30 @@ func (b *base) setState(s ConnState) {
 	b.m.BrokerUp.WithLabelValues(b.cfg.ID).Set(v)
 }
 
+var errSubscribeTimeout = errors.New("no SUBACK within 15s")
+
+// subscribed records the outcome of subscribing after a connect: the broker
+// is up (and ready) only once every filter was granted. A refused filter
+// (reason code 0x80 or above, in MQTT 3.1.1 and 5 alike) or no SUBACK leaves
+// it down, so readiness does not report a broker that delivers nothing.
+func (b *base) subscribed(err error, codes []byte, want int) {
+	if err == nil && len(codes) != want {
+		err = fmt.Errorf("SUBACK has %d reason codes for %d filters", len(codes), want)
+	}
+	for _, rc := range codes {
+		if err == nil && rc >= 0x80 {
+			err = fmt.Errorf("subscription refused (reason code 0x%02x)", rc)
+		}
+	}
+	if err != nil {
+		b.setState(StateDown)
+		b.log.Warn("subscribe failed", "err", err)
+		return
+	}
+	b.setState(StateUp)
+	b.log.Info("mqtt subscribed", "filters", want)
+}
+
 // deliver is called from the MQTT library's receive path. ObservedAt is
 // stamped here, before queuing (spec §4.1).
 func (b *base) deliver(topic string, payload []byte, retained bool) {

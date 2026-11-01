@@ -33,15 +33,17 @@ func (c *v5Client) Run(ctx context.Context) error {
 		ConnectUsername:               c.cfg.Username,
 		ConnectPassword:               []byte(c.cfg.Password),
 		OnConnectionUp: func(cm *autopaho.ConnectionManager, _ *paho.Connack) {
-			c.setState(StateUp)
 			c.m.BrokerConnects.WithLabelValues(c.cfg.ID).Inc()
-			c.log.Info("mqtt connected")
+			c.log.Info("mqtt connected; subscribing")
 			go func() {
 				sctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 				defer cancel()
-				if _, err := cm.Subscribe(sctx, &paho.Subscribe{Subscriptions: subs}); err != nil {
-					c.log.Warn("subscribe failed", "err", err)
+				sa, err := cm.Subscribe(sctx, &paho.Subscribe{Subscriptions: subs})
+				var codes []byte
+				if sa != nil {
+					codes = sa.Reasons
 				}
+				c.subscribed(err, codes, len(subs))
 			}()
 		},
 		OnConnectionDown: func() bool {
@@ -105,16 +107,21 @@ func (c *v3Client) Run(ctx context.Context) error {
 		filters[t.Filter] = t.QoS
 	}
 	o.SetOnConnectHandler(func(cl pahov3.Client) {
-		c.setState(StateUp)
 		c.m.BrokerConnects.WithLabelValues(c.cfg.ID).Inc()
-		c.log.Info("mqtt connected")
+		c.log.Info("mqtt connected; subscribing")
 		tok := cl.SubscribeMultiple(filters, func(_ pahov3.Client, m pahov3.Message) {
 			c.deliver(m.Topic(), m.Payload(), m.Retained())
 		})
 		go func() {
-			if tok.WaitTimeout(15*time.Second) && tok.Error() != nil {
-				c.log.Warn("subscribe failed", "err", tok.Error())
+			if !tok.WaitTimeout(15 * time.Second) {
+				c.subscribed(errSubscribeTimeout, nil, len(filters))
+				return
 			}
+			codes := make([]byte, 0, len(filters))
+			for _, q := range tok.(*pahov3.SubscribeToken).Result() {
+				codes = append(codes, q)
+			}
+			c.subscribed(tok.Error(), codes, len(filters))
 		}()
 	})
 	o.SetConnectionLostHandler(func(_ pahov3.Client, err error) {

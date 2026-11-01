@@ -21,8 +21,9 @@ type Sink interface {
 	// RecentObservation returns the row id of a recently stored observation.
 	RecentObservation(ctx context.Context, key [16]byte, since time.Time) (int64, bool, error)
 	// AddAlsoVia appends brokers to rows' decoded_metadata.also_via, skipping
-	// brokers already recorded (first broker or also_via).
-	AddAlsoVia(ctx context.Context, byRow map[int64][]string) (int64, error)
+	// brokers already recorded (first broker or also_via). Every row was
+	// observed at or after since (a bound that lets storage skip partitions).
+	AddAlsoVia(ctx context.Context, byRow map[int64][]string, since time.Time) (int64, error)
 }
 
 // Dedupe is the shared recent-observation index (Redis). May be nil.
@@ -357,7 +358,9 @@ func (p *Pipeline) flushProvenance() {
 	p.pendMu.Unlock()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	n, err := p.sink.AddAlsoVia(ctx, work)
+	// Rows reach here through the dedupe lookup, so they are at most one
+	// dedupe window old; the margin covers queueing and clock skew.
+	n, err := p.sink.AddAlsoVia(ctx, work, time.Now().Add(-p.cfg.DedupeTTL-24*time.Hour))
 	if err != nil {
 		p.m.ProvenanceUpdates.WithLabelValues("failed").Add(float64(len(work)))
 		p.log.Warn("broker provenance update failed", "rows", len(work), "err", err)

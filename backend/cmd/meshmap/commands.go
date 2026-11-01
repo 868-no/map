@@ -199,8 +199,8 @@ func (s storeSink) RecentObservation(ctx context.Context, k [16]byte, since time
 	return storage.RecentObservation(ctx, s.pool, k, since)
 }
 
-func (s storeSink) AddAlsoVia(ctx context.Context, byRow map[int64][]string) (int64, error) {
-	return storage.AddAlsoVia(ctx, s.pool, byRow)
+func (s storeSink) AddAlsoVia(ctx context.Context, byRow map[int64][]string, since time.Time) (int64, error) {
+	return storage.AddAlsoVia(ctx, s.pool, byRow, since)
 }
 
 // demoBroker is the compose demo profile's broker, used when DEMO_MODE is

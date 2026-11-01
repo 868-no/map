@@ -86,8 +86,8 @@ func (s sink) InsertBatch(ctx context.Context, o []*ingest.Observation) ([]int64
 func (s sink) RecentObservation(ctx context.Context, k [16]byte, since time.Time) (int64, bool, error) {
 	return storage.RecentObservation(ctx, s.pool, k, since)
 }
-func (s sink) AddAlsoVia(ctx context.Context, byRow map[int64][]string) (int64, error) {
-	return storage.AddAlsoVia(ctx, s.pool, byRow)
+func (s sink) AddAlsoVia(ctx context.Context, byRow map[int64][]string, since time.Time) (int64, error) {
+	return storage.AddAlsoVia(ctx, s.pool, byRow, since)
 }
 
 func newPipeline(t *testing.T, pool *pgxpool.Pool, rc *cache.Client, ids *identity.Store) *ingest.Pipeline {

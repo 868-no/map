@@ -124,3 +124,23 @@ func TestInlineYAMLReplacesFiles(t *testing.T) {
 		t.Fatalf("error should name the env var: %v", err)
 	}
 }
+
+// The revision is public (part of the data generation): keyed with the
+// database credentials, it cannot be recomputed from guessed channel keys.
+func TestRevisionIsKeyedWithTheDatabaseSecret(t *testing.T) {
+	c := &Config{Channels: []Channel{{Name: "LongFast", PSKs: []string{"AQ=="}}}}
+	c.Env.PGPassword = "one"
+	a := c.Revision()
+	if a != c.Revision() {
+		t.Fatal("revision is not stable")
+	}
+	c.Env.PGPassword = "two"
+	two := c.Revision()
+	if a == two {
+		t.Fatal("revision does not depend on the database secret")
+	}
+	c.Channels[0].PSKs = []string{"secret"}
+	if b := c.Revision(); b == two || len(b) != 12 {
+		t.Fatalf("revision %q does not follow the keys", b)
+	}
+}

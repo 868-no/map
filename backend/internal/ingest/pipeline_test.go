@@ -46,7 +46,7 @@ func (s *memSink) RecentObservation(_ context.Context, k [16]byte, since time.Ti
 	return 0, false, nil
 }
 
-func (s *memSink) AddAlsoVia(_ context.Context, byRow map[int64][]string) (int64, error) {
+func (s *memSink) AddAlsoVia(_ context.Context, byRow map[int64][]string, _ time.Time) (int64, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	var n int64

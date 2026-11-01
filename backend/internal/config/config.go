@@ -4,6 +4,7 @@
 package config
 
 import (
+	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -381,10 +382,14 @@ func (c *Config) SecurityChannels() []security.ChannelConfig {
 }
 
 // Revision is a digest of everything that changes decoding or derived
-// results (channel keys, modes, policy, retention). It is part of the data generation;
-// it reveals nothing about the keys themselves.
+// results (channel keys, modes, policy, retention). It is part of the data
+// generation, which is public. Everything else in it is public too, so a plain
+// hash would let anyone test guessed keys offline: it is an HMAC keyed with
+// the database credentials, a secret every deployment must set (and rotating
+// them only makes clients fetch their window again).
 func (c *Config) Revision() string {
-	h := sha256.New()
+	key := sha256.Sum256([]byte("meshmap-revision|" + c.Env.DatabaseURL + "|" + c.Env.PGPassword))
+	h := hmac.New(sha256.New, key[:])
 	for _, ch := range c.Channels {
 		fmt.Fprintf(h, "%s|%v|%s|%v|%v\n", ch.Name, ch.BrokerIDs, ch.Mode, ch.PSKs, ch.AcceptPlaintext)
 	}
