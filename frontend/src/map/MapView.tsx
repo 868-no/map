@@ -52,6 +52,7 @@ interface Props {
 export default function MapView({ caps, snapshot, onPositions }: Props) {
   const container = useRef<HTMLDivElement>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
+  const startView = useRef<{ center: maplibregl.LngLat; zoom: number } | null>(null) // the view the map opened on
   const overlayRef = useRef<MapboxOverlay | null>(null)
   const pingOverlayRef = useRef<MapboxOverlay | null>(null)
   const meshLayers = useRef<Layer[] | null>(null) // read by the e2e hook
@@ -100,6 +101,7 @@ export default function MapView({ caps, snapshot, onPositions }: Props) {
         // zoom, but move the view west towards the country's mass as far as
         // the whole country stays in view (D-074).
         map.jumpTo({ center: [startLon(map.getContainer().clientWidth, map.getZoom()), map.getCenter().lat] })
+        startView.current = { center: map.getCenter(), zoom: map.getZoom() }
         map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-left')
         map.addControl(new maplibregl.ScaleControl({ unit: 'metric' }), 'bottom-left')
         map.on('mousemove', (e: maplibregl.MapMouseEvent) => {
@@ -373,6 +375,19 @@ export default function MapView({ caps, snapshot, onPositions }: Props) {
 
   const routeFrame = useMemo(() => (routeLp && route?.length ? { key: routeLp, points: route.flatMap((r) => [r.from, r.to]) } : null), [routeLp, route])
   const { fit } = useCamera(mapRef, container, { pos, selection, route: routeFrame })
+  // On page load, fit the map to the data once its markers are placed (D-074):
+  // the Norway view only bridges the wait. A permanent link to a node flies
+  // there instead, so it is left alone.
+  // Nor is a view someone already moved away from while the data loaded.
+  const fittedOnLoad = useRef(false)
+  useEffect(() => {
+    const map = mapRef.current
+    if (fittedOnLoad.current || pos.size === 0 || !map) return
+    fittedOnLoad.current = true
+    const s = startView.current
+    const unmoved = !!s && Math.abs(map.getZoom() - s.zoom) < 0.01 && map.getCenter().distanceTo(s.center) < 100
+    if (!selection && unmoved) fit(0)
+  }, [pos, selection, fit])
 
   return (
     <div className="map-wrap">

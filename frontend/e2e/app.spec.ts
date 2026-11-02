@@ -282,17 +282,24 @@ test('the panel is closed until something is selected, and closes again when the
   await expect(page.locator('#dock')).toBeHidden()
 })
 
-test('starts with all of Norway in view, and clicking empty map clears the selection', async ({ page }) => {
+test('opens on Norway, fits the data once it loads, and clicking empty map clears the selection', async ({ page }) => {
   await page.goto('/')
   await page.waitForFunction(() => !!(window as unknown as { __meshmap?: unknown }).__meshmap)
-  // D-074: Lindesnes, Utsira, Nordkapp and Grense Jakobselv are all on screen, and stay so as data arrives.
-  const inView = () => page.evaluate(() => {
-    const b = (window as unknown as { __meshmap: { map: { getBounds: () => { contains: (p: [number, number]) => boolean } } } }).__meshmap.map.getBounds()
+  // D-074: Lindesnes, Utsira, Nordkapp and Grense Jakobselv are on screen before the data arrives...
+  type M = { map: { getBounds: () => { contains: (p: [number, number]) => boolean } }; layers: () => { id: string; data: { lon: number; lat: number }[] }[] }
+  const norway = () => page.evaluate(() => {
+    const b = (window as unknown as { __meshmap: M }).__meshmap.map.getBounds()
     return ([[7.05, 57.98], [4.88, 59.3], [25.78, 71.17], [30.8, 69.8]] as [number, number][]).every((p) => b.contains(p))
   })
-  expect(await inView()).toBe(true)
-  await page.waitForTimeout(3000)
-  expect(await inView()).toBe(true) // no fit to the data once it loads
+  const markers = () => page.evaluate(() => (window as unknown as { __meshmap: M }).__meshmap.layers().find((l) => l.id === 'nodes')?.data.length ?? 0)
+  if ((await markers()) === 0) expect(await norway()).toBe(true)
+  // ...then the view fits the markers: every one is on screen.
+  await expect.poll(markers, { timeout: 30_000 }).toBeGreaterThan(0)
+  await expect.poll(() => page.evaluate(() => {
+    const mm = (window as unknown as { __meshmap: M }).__meshmap
+    const b = mm.map.getBounds()
+    return mm.layers().find((l) => l.id === 'nodes')!.data.every((n) => b.contains([n.lon, n.lat]))
+  })).toBe(true)
   // Select a node from the list, then click empty sea far from any node.
   await openPanel(page)
   await page.locator('.node-row').first().click()
