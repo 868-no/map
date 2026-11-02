@@ -119,6 +119,12 @@ button[aria-pressed='true'], button[aria-selected='true'] { background: var(--pr
 .dock { position: absolute; top: var(--gap); right: calc(var(--rail) + 2 * var(--gap)); max-height: calc(100% - 2 * var(--gap)); width: var(--dock); z-index: 7; overflow: hidden;
   border: 1px solid var(--line); border-radius: var(--island-r); background: var(--overlay-strong); backdrop-filter: blur(8px); box-shadow: var(--elev-island); display: flex; flex-direction: column; min-height: 0; }
 .dock[hidden] { display: none; }
+/* Drag handle on the panel's left edge (D-097). */
+.dock-resize { position: absolute; left: 0; top: 0; bottom: 0; width: 8px; cursor: ew-resize; z-index: 1; touch-action: none; }
+.dock-resize::after { content: ''; position: absolute; left: 2px; top: 50%; height: 36px; margin-top: -18px; width: 3px; border-radius: 2px; background: var(--line); opacity: 0; transition: opacity .15s; }
+.dock-resize:hover::after, .dock-resize:focus-visible::after, body.resizing .dock-resize::after { opacity: 1; background: var(--accent); }
+.dock-resize:focus-visible { outline: none; }
+body.resizing { cursor: ew-resize; user-select: none; }
 .dock-head { display: flex; align-items: center; gap: 8px; padding: 8px 8px 8px 12px; border-bottom: 1px solid var(--line); }
 .dock-head h2 { flex: 1; margin: 0; font-size: 13px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); }
 .dock-head .close { position: static; }
@@ -302,6 +308,7 @@ table.hear th:not(:first-child), table.hear td:not(:first-child) { white-space: 
   .rail { top: calc(var(--head-h) + 2 * var(--gap)); }
   /* Above the map controls it covers. */
   .dock { top: calc(var(--head-h) + 2 * var(--gap)); left: var(--gap); width: auto; max-height: calc(100% - var(--head-h) - 3 * var(--gap)); z-index: 12; }
+  .dock-resize { display: none; } /* spans the width: nothing to resize */
   /* Nothing beside the header now: it may take the full width. */
   .topbar, .main:not(.panel-closed) .topbar { max-width: calc(100% - 2 * var(--gap)); }
   .topbar-row { white-space: nowrap; }

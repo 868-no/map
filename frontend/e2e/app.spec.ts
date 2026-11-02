@@ -529,3 +529,29 @@ test('the Health panel lists known issues and airtime, and Details shows a node\
   await expect(page.locator('.node-panel h3', { hasText: 'Health' })).toBeVisible()
   await expect(page.locator('.node-panel')).toContainText('Airtime (est.)')
 })
+
+test('the panel can be resized by its left edge, the width is remembered, and double-click resets it', async ({ page }) => {
+  await ready(page)
+  await openPanel(page)
+  const dock = page.locator('#dock')
+  const handle = page.getByRole('separator', { name: 'Panel width' })
+  const width = async () => (await dock.boundingBox())!.width
+  const before = await width()
+  const h = (await handle.boundingBox())!
+  await page.mouse.move(h.x + h.width / 2, h.y + h.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(h.x - 150, h.y + h.height / 2, { steps: 5 })
+  await page.mouse.up()
+  expect(await width()).toBeGreaterThan(before + 120)
+  const wide = await width()
+  await page.reload()
+  await ready(page)
+  await openPanel(page)
+  await expect.poll(width).toBeCloseTo(wide, 0)
+  await handle.dblclick()
+  await expect.poll(width).toBeCloseTo(before, 0)
+  // Arrow keys work too.
+  await handle.focus()
+  await page.keyboard.press('ArrowLeft')
+  await expect.poll(width).toBeGreaterThan(before)
+})
