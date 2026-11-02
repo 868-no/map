@@ -4,6 +4,8 @@
 // (D-031, D-040). Rows travel as JSON text straight into the engine; views
 // come back as UTF-8 JSON bytes, handed to the page as transferables.
 import init, { Engine } from '../engine/pkg/engine.js'
+// Content-hashed in builds: names this engine build for the saved row copy (D-102).
+import engineUrl from '../engine/pkg/engine_bg.wasm?url'
 import { openPersistence, type Persistence, type Source } from './persist'
 import { RowStore, type Backend, type Fetched, type Synced, type WindowReq } from './rowStore'
 import { debounce, rebuildDelay } from './debounce'
@@ -11,7 +13,7 @@ import { cursorMs, rangeEnd, sliceBounds } from './slices'
 import type { Request, Response, Transmission, ViewRequest } from './protocol'
 import { ViewError, type ViewMeta } from './views'
 
-const ready = init()
+const ready = init({ module_or_path: engineUrl })
 let engine: Engine
 let store: RowStore<number, string>
 let persist: Persistence | null = null
@@ -105,7 +107,7 @@ const started = (async () => {
   engine = new Engine()
   store = new RowStore(new EngineRows(), fetchRange)
   try {
-    persist = await openPersistence()
+    persist = await openPersistence(engineUrl)
   } catch {
     persist = null
   }

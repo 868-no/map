@@ -128,7 +128,13 @@ export interface Persistence {
   meta(cov: Coverage | null, generation: string | null): void
 }
 
-export async function openPersistence(): Promise<Persistence | null> {
+/**
+ * `engine` identifies the engine build (its content-hashed WebAssembly URL).
+ * Rows are stored as that engine re-exports them, so a copy written by another
+ * build may lack fields the current one reads: such a copy is discarded, and
+ * the window is fetched afresh (D-102).
+ */
+export async function openPersistence(engine: string): Promise<Persistence | null> {
   let db: IDBDatabase
   try {
     db = await open()
@@ -145,8 +151,15 @@ export async function openPersistence(): Promise<Persistence | null> {
     const deltas = tx.objectStore('deltas').getAll()
     const meta = tx.objectStore('meta').get('state')
     tx.oncomplete = async () => {
-      const m = meta.result as { cov: Coverage | null; generation: string | null } | undefined
+      const m = meta.result as { cov: Coverage | null; generation: string | null; engine?: string } | undefined
       if (!m) return resolve(empty)
+      if (m.engine !== engine) {
+        // Written by another engine build: drop it all, so no old chunk is read again later.
+        const w = db.transaction(['chunks', 'deltas', 'meta'], 'readwrite')
+        for (const store of ['chunks', 'deltas', 'meta']) w.objectStore(store).clear()
+        w.oncomplete = w.onerror = () => resolve(empty)
+        return
+      }
       for (const h of chunkKeys.result as number[]) stored.set(h, 0)
       for (const [h, seq] of deltaKeys.result as [number, number][]) stored.set(h, Math.max(stored.get(h) ?? 0, seq))
       try {
@@ -211,7 +224,7 @@ export async function openPersistence(): Promise<Persistence | null> {
     meta: (cov, generation) =>
       void run(async () => {
         const tx = db.transaction('meta', 'readwrite')
-        tx.objectStore('meta').put({ cov, generation }, 'state')
+        tx.objectStore('meta').put({ cov, generation, engine }, 'state')
         return tx
       }),
   }

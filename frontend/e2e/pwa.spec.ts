@@ -82,3 +82,42 @@ test('works offline with the last data received, and never stores tiles in the w
   expect(held).toBeGreaterThan(0)
   await context.setOffline(false)
 })
+
+// D-102: rows are saved as one engine build re-exports them; another build
+// must not trust that copy (it may lack fields the new engine reads).
+test('a saved row copy from another engine build is discarded and the window fetched afresh', async ({ page }) => {
+  const meta = (fn: string) => page.evaluate((fn) => new Promise<unknown>((resolve) => {
+    const req = indexedDB.open('meshmap-derive')
+    req.onupgradeneeded = () => req.transaction?.abort()
+    req.onsuccess = () => {
+      const db = req.result
+      if (!db.objectStoreNames.contains('meta')) {
+        db.close()
+        return resolve(null)
+      }
+      const tx = db.transaction('meta', fn === 'tamper' ? 'readwrite' : 'readonly')
+      const g = tx.objectStore('meta').get('state')
+      g.onsuccess = () => {
+        if (fn === 'tamper' && g.result) tx.objectStore('meta').put({ ...g.result, engine: 'an-older-build.wasm' }, 'state')
+        tx.oncomplete = () => {
+          db.close()
+          resolve(g.result ?? null)
+        }
+      }
+    }
+    req.onerror = () => resolve(null)
+  }), fn)
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Nodes', exact: true }).click()
+  await expect(page.locator('.node-row').first()).toBeVisible({ timeout: 30_000 })
+  await expect.poll(async () => !!((await meta('read')) as { cov?: unknown } | null)?.cov, { timeout: 15_000 }).toBe(true)
+  await meta('tamper')
+  const fetched: string[] = []
+  page.on('request', (r) => r.url().includes('/api/v1/observations') && fetched.push(r.url()))
+  await page.reload()
+  await page.getByRole('button', { name: 'Nodes', exact: true }).click()
+  await expect(page.locator('.node-row').first()).toBeVisible({ timeout: 30_000 })
+  // A trusted copy would only ask for what is new (since=...); a discarded one fetches the window.
+  await expect.poll(() => fetched.some((u) => !u.includes('since=') && !u.includes('cursor='))).toBe(true)
+  await expect.poll(async () => ((await meta('read')) as { engine?: string } | null)?.engine, { timeout: 15_000 }).not.toBe('an-older-build.wasm')
+})
