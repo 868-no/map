@@ -17,6 +17,7 @@ test('installable: manifest with icons, service worker, static caching headers',
   expect((await request.get(asset)).headers()['cache-control']).toContain('immutable')
   expect((await request.get('/')).headers()['cache-control']).toBe('no-cache')
   expect((await request.get('/sw.js')).headers()['cache-control']).toBe('no-cache')
+  if (process.env.MESHMAP_NO_BASEMAP) return // the basemap archive is not built in CI
   const tile = await request.get('/tiles/basemap.pmtiles', { headers: { Range: 'bytes=0-127' } })
   expect(tile.status()).toBe(206)
   expect(tile.headers()['cache-control']).toContain('max-age=')
@@ -56,7 +57,8 @@ test('works offline with the last data received, and never stores tiles in the w
   await expect(page.getByRole('status').filter({ hasText: 'Offline' })).toBeVisible()
   await page.getByRole('button', { name: 'Nodes', exact: true }).click()
   await expect(page.locator('.node-row').first()).toBeVisible()
-  expect(await page.locator('.node-row .nm').allTextContents()).toEqual(names)
+  // The same nodes; their order follows when each was last heard, which moves on with busy traffic.
+  expect((await page.locator('.node-row .nm').allTextContents()).sort()).toEqual([...names].sort())
 
   const cached = await page.evaluate(async () => {
     const urls: string[] = []

@@ -74,6 +74,7 @@ async function showLayers(page: Page, names: string[]) {
 }
 
 test('roads and city names show by default, local names on request, and the choice is remembered', async ({ page }) => {
+  test.skip(!!process.env.MESHMAP_NO_BASEMAP, 'needs the self-hosted basemap (not built in CI)')
   await ready(page)
   const labels = () => page.evaluate(() => (window as unknown as { __meshmap: { queryLabels: () => Labels } }).__meshmap.queryLabels())
   await viewAt(page, 63.43, 10.40, 10)
@@ -90,6 +91,7 @@ test('roads and city names show by default, local names on request, and the choi
 })
 
 test('genuine place, peak, road and border labels render (self-hosted basemap)', async ({ page }) => {
+  test.skip(!!process.env.MESHMAP_NO_BASEMAP, 'needs the self-hosted basemap (not built in CI)')
   await ready(page)
   await showLayers(page, ['Local place names', 'Peaks', 'Road names and numbers'])
   const labels = () => page.evaluate(() => (window as unknown as { __meshmap: { queryLabels: () => Labels } }).__meshmap.queryLabels())
@@ -250,11 +252,14 @@ test('the panel is closed until something is selected, and closes again when the
     const l = (window as unknown as { __meshmap: Hook }).__meshmap.layers()
     return (l.find((x) => x.id === 'nodes')?.data.length ?? 0) > 0
   }, null, { timeout: 30_000 })
+  // The most isolated node: a click on one in a crowd may land on its fanned-out cluster instead.
   const hit = await page.evaluate(() => {
     const mm = (window as unknown as { __meshmap: Hook & { map: { project: (p: [number, number]) => { x: number; y: number } } } }).__meshmap
     const nodes = mm.layers().find((l) => l.id === 'nodes')!.data as { lon: number; lat: number }[]
-    const p = mm.map.project([nodes[0].lon, nodes[0].lat])
-    return { x: p.x, y: p.y, lon: nodes[0].lon, lat: nodes[0].lat }
+    const gap = (n: { lon: number; lat: number }) => Math.min(...nodes.filter((m) => m !== n).map((m) => Math.hypot(m.lon - n.lon, (m.lat - n.lat) * 2)), Infinity)
+    const best = nodes.reduce((a, b) => (gap(b) > gap(a) ? b : a))
+    const p = mm.map.project([best.lon, best.lat])
+    return { x: p.x, y: p.y, lon: best.lon, lat: best.lat }
   })
   await page.evaluate(([lon, lat]) => (window as unknown as { __meshmap: { map: { jumpTo: (o: object) => void } } }).__meshmap.map.jumpTo({ center: [lon, lat], zoom: 11 }), [hit.lon, hit.lat])
   await page.waitForTimeout(800)
@@ -609,9 +614,16 @@ test('only online nodes: offline ones leave the map, and Details says which a no
   const count = () => page.evaluate(() => (window as unknown as { __meshmap: Hook }).__meshmap.layers().filter((l) => l.id === 'nodes' || l.id.startsWith('nodes-over-')).reduce((n, l) => n + l.data.length, 0))
   await expect.poll(count, { timeout: 30_000 }).toBeGreaterThan(0)
   const all = await count()
+  // Offline: not heard in the last 3 h of the window. A young database (the CI demo) may have none.
+  const offline = await page.evaluate(() => {
+    const mm = window as unknown as { __meshmap: Hook }
+    const l = mm.__meshmap.layers().find((x) => x.id === 'nodes')!.data as { node: { last_seen?: string } }[]
+    return l.filter((p) => !p.node.last_seen || Date.now() - Date.parse(p.node.last_seen) > 3 * 3_600_000).length
+  })
   await showPanel(page, 'Filters')
   await page.getByLabel(/Only online nodes/).check()
-  await expect.poll(count).toBeLessThan(all)
+  if (offline > 0) await expect.poll(count).toBeLessThan(all)
+  else await expect.poll(count).toBe(all)
   await expect(page.locator('.rail-btn[aria-label="Filters"] .rail-badge')).toHaveText('1')
   await page.getByLabel(/Only online nodes/).uncheck()
   await expect.poll(count).toBe(all)

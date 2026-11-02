@@ -1,7 +1,9 @@
 # Tests on every pull request and push, with the same Docker-wrapped
 # toolchains as local development (scripts/*.sh), so CI and laptops agree.
-# End-to-end tests (frontend/e2e) need a running stack with a built basemap
-# and live mesh traffic; they run against a deployment, not here.
+# End-to-end tests (frontend/e2e) run against the demo stack: the simulated
+# mesh on a local broker, plus two days of seeded history. The basemap is not
+# built here (it takes GBs and an hour), so tests that need real map labels
+# skip themselves (MESHMAP_NO_BASEMAP); run them against a full deployment.
 name: tests
 
 on:
@@ -57,3 +59,39 @@ jobs:
       # against the backend by internal/api/openapi_test.go): they must be current.
       - name: generated API types are current
         run: scripts/node.sh npm run gen:api && git diff --exit-code frontend/src/api/schema.d.ts
+
+  e2e:
+    name: end-to-end (demo stack, Playwright)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: start the demo stack
+        run: |
+          printf 'POSTGRES_PASSWORD=ci\nDEMO_MODE=true\nE2E_HOOKS=true\nDEMO_RATE=10\n' > .env
+          docker compose --profile demo up -d --build postgres redis backend web mosquitto demo-publisher
+      - name: seed two days of history
+        run: docker compose run --rm backend seed --nodes 150 --rows 20000 --days 2
+      - name: wait for live traffic
+        run: |
+          for i in $(seq 1 60); do
+            n=$(curl -s 'http://localhost:8080/api/v1/observations?limit=5000&duration=1h' | python3 -c 'import json,sys; print(len(json.load(sys.stdin)["rows"]))' 2>/dev/null || echo 0)
+            [ "$n" -gt 1000 ] && exit 0
+            sleep 5
+          done
+          echo "no live traffic after 5 minutes"; exit 1
+      - name: Playwright
+        # One retry: a few tests time animations and live traffic on a shared runner.
+        run: |
+          docker run --rm --network host --ipc=host -e MESHMAP_NO_BASEMAP=1 -v "$PWD":/src -w /src/frontend \
+            mcr.microsoft.com/playwright:v1.64.1-noble sh -c 'npm ci --no-audit --no-fund && npx playwright test --retries 1'
+      - name: stack logs
+        if: failure()
+        run: docker compose --profile demo logs --no-color --tail 200
+      - name: keep the failure traces
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: e2e-results
+          path: frontend/e2e/.results
+          retention-days: 7
