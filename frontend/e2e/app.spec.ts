@@ -126,7 +126,7 @@ test('default rolling 3-day window, presets and node details', async ({ page }) 
   await expect(page.locator('.node-panel h2')).toBeVisible()
   await expect(page.locator('.node-panel')).toContainText('Seen in window')
   // The public key comes from its own endpoint: a base64 key, or none retained.
-  await expect(page.locator('.node-panel dt:text-is("Public key") + dd')).toHaveText(/[A-Za-z0-9+/]{43}=|none retained|not shown/)
+  await expect(page.locator('.node-panel dt:text-is("Public key") + dd')).toHaveText(/[A-Za-z0-9+/]{43}=|none retained/)
   await page.waitForTimeout(800) // fly-to animation
   await page.waitForFunction(() => {
     const m = (window as unknown as { __meshmap: { map: { loaded: () => boolean; areTilesLoaded: () => boolean } } }).__meshmap.map

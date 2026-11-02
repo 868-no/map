@@ -189,7 +189,7 @@ export function NodePanel({ id, snapshot }: { id: string; snapshot: SnapshotView
           )}
         </dd>
         <dt>Public key</dt>
-        <dd>{d.mqtt_opt_out ? <span className="muted" title="Not shown for nodes that did not allow MQTT uplink">not shown</span> : <PublicKey key={d.id} id={d.id} />}</dd>
+        <dd><PublicKey key={d.id} id={d.id} optOut={d.mqtt_opt_out} /></dd>
         <dt>Position</dt>
         <dd>
           {d.position ? (
@@ -621,7 +621,7 @@ function RelayingSection({ node, snapshot }: { node: MeshNode | undefined; snaps
  * there is one, otherwise copied to the clipboard.
  */
 /** The node's public key from the whole retained log (keys identify a node, not a window). */
-function PublicKey({ id }: { id: string }) {
+function PublicKey({ id, optOut }: { id: string; optOut?: boolean }) {
   const [k, setK] = useState<NodeKey | 'none' | 'error' | null>(null)
   const [copied, setCopied] = useState(false)
   useEffect(() => {
@@ -634,7 +634,12 @@ function PublicKey({ id }: { id: string }) {
     return () => ctl.abort()
   }, [id])
   if (k === null) return <span className="muted">…</span>
-  if (k === 'none') return <span className="muted" title="No NodeInfo carrying a public key from this node is retained">none retained</span>
+  if (k === 'none')
+    return optOut ? (
+      <span className="muted" title="This node does not allow MQTT uplink, so its NodeInfo (which carries the key) is not stored when another gateway uplinks it">none retained (NodeInfo not stored)</span>
+    ) : (
+      <span className="muted" title="No NodeInfo carrying a public key from this node is retained">none retained</span>
+    )
   if (k === 'error') return <span className="muted">unavailable</span>
   const key = k.public_key || k.trusted_key || ''
   const copy = async () => {
