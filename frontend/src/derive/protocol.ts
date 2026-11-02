@@ -3,7 +3,7 @@ import type { Capabilities, ObsRow } from '../api/types'
 import type { WindowReq } from './rowStore'
 import type { ViewErrorKind, ViewMeta } from './views'
 
-export type ViewKind = 'snapshot' | 'traffic' | 'node' | 'packetlog' | 'route' | 'reach' | 'health'
+export type ViewKind = 'snapshot' | 'traffic' | 'node' | 'packetlog' | 'route' | 'reach' | 'health' | 'link'
 
 export interface ViewRequest {
   type: 'view'

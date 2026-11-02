@@ -170,6 +170,21 @@ export interface HealthView {
   airtime: { packets: number; transmissions: number; by_type: [string, number][]; nodes: NodeAirtime[]; store_forward: StoreForwardStats }
 }
 
+/** One link's evidence over time, per direction (D-105). */
+export interface LinkPoint {
+  t: number // ms
+  snr?: number
+  rssi?: number
+  ev: 'neighbor' | 'traceroute' | 'direct_rf' | 'relay_hint'
+}
+export interface LinkHistory {
+  meta: ViewMeta
+  a: string
+  b: string
+  ab: LinkPoint[] // a heard by b
+  ba: LinkPoint[]
+}
+
 /** How far a node's packets reach at each hop limit (D-069). */
 export interface ReachView {
   meta: ViewMeta

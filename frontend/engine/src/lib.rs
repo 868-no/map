@@ -254,6 +254,13 @@ impl Engine {
                 let own: Vec<&row::Row> = self.rows().into_iter().filter(|r| r.src == num).collect();
                 Ok(json(&reach::reach(num, &b.snapshot.edges, &silent, internet, &own)))
             }
+            "link" => {
+                // arg: "!aaaaaaaa|!bbbbbbbb" (D-105).
+                let (a, b) = arg.split_once('|').and_then(|(a, b)| Some((parse_node(a)?, parse_node(b)?))).ok_or_else(|| err("invalid link"))?;
+                self.build(start, end, filters)?;
+                let built = &self.built.as_ref().unwrap().1;
+                Ok(json(&views::link::link_history(&built.samples, a, b)))
+            }
             "health" => {
                 self.build(start, end, filters)?;
                 let b = &self.built.as_ref().unwrap().1;
@@ -275,7 +282,7 @@ impl Engine {
     pub fn transmissions(&mut self, rows: &str) -> Result<String, JsError> {
         let parsed: Vec<JRow> = serde_json::from_str(rows).map_err(err)?;
         let rows: Vec<row::Row> = parsed.into_iter().map(|r| r.into_row(&mut self.i)).collect();
-        let empty = Built { snapshot: views::Snapshot { nodes: vec![], edges: vec![], edges_truncated: false, counts: Default::default(), diagnostics: Default::default() }, ctx: Default::default(), roles: util::map() };
+        let empty = Built { snapshot: views::Snapshot { nodes: vec![], edges: vec![], edges_truncated: false, counts: Default::default(), diagnostics: Default::default() }, ctx: Default::default(), roles: util::map(), samples: vec![] };
         let b = self.built.as_ref().map_or(&empty, |(_, b)| b);
         let invalid = self.i.get("invalid");
         // Invalid rows prove nothing, not even a transmission (D-093).

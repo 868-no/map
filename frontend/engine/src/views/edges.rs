@@ -12,6 +12,8 @@ pub struct EdgeResult {
     pub truncated: bool,
     pub ambiguous: usize,
     pub unmatched: usize,
+    /// The radio evidence the edges were reduced from, for link history (D-105).
+    pub samples: Vec<Sample>,
 }
 
 /// Adjacent segments of every valid traceroute copy, in row order: link
@@ -104,5 +106,5 @@ pub fn build_edges(rows: &[&Row], hops: &[Sample], known: &[u32], pos: FxMap<u32
     let truncated = edges.len() > MAX_EDGES;
     edges.truncate(MAX_EDGES);
     edges.extend(graph::reduce_mqtt(&mqtt));
-    (EdgeResult { edges, truncated, ambiguous, unmatched }, ctx)
+    (EdgeResult { edges, truncated, ambiguous, unmatched, samples }, ctx)
 }

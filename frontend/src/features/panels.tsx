@@ -3,7 +3,7 @@ import { ApiError, getJSON } from '../api/client'
 import { NodeAirtimeRow, NodeHealth } from './health'
 import type { NodeKey } from '../api/types'
 import type { Answer, Edge, Hearing, MeshNode, Radio, Reply, SnapshotView } from '../derive/views'
-import { useNodeDetail, usePacketLog, usePacketRoute, useReach } from '../state/data'
+import { useLinkHistory, useNodeDetail, usePacketLog, usePacketRoute, useReach } from '../state/data'
 import { nodeLink, useStore, type DetailTab } from '../state/store'
 import { formatLocal, formatLogTime, relativeAge } from '../lib/time'
 import { TimeChart } from '../components/TimeChart'
@@ -721,7 +721,33 @@ export function EdgePanel({ a, b, mqtt = false, snapshot }: { a: string; b: stri
       )}
       {direction(a, b)}
       {direction(b, a)}
+      {!mqtt && snapshot && <LinkHistoryCharts a={a} b={b} name={name} start={Date.parse(snapshot.meta.window.start)} end={Date.parse(snapshot.meta.window.end)} />}
     </div>
+  )
+}
+
+const EV_LABEL: Record<string, string> = { neighbor: 'NeighborInfo', traceroute: 'traceroute', direct_rf: 'heard directly', relay_hint: 'relay guess' }
+
+/** The link's signal over the selected period, both directions (D-105). */
+function LinkHistoryCharts({ a, b, name, start, end }: { a: string; b: string; name: (id: string) => string; start: number; end: number }) {
+  const h = useLinkHistory(a, b)
+  if (!h.data) return null
+  const { ab, ba } = h.data
+  if (ab.length + ba.length === 0) return null
+  const series = (k: 'snr' | 'rssi') => [
+    { label: `${name(a)} → ${name(b)}`, color: 'var(--accent)', points: ab.map((p) => [p.t, p[k] ?? null] as [number, number | null]) },
+    { label: `${name(b)} → ${name(a)}`, color: 'var(--warn)', points: ba.map((p) => [p.t, p[k] ?? null] as [number, number | null]) },
+  ]
+  const kinds = [...new Set([...ab, ...ba].map((p) => EV_LABEL[p.ev] ?? p.ev))]
+  return (
+    <section className="link-history">
+      <h3 title="Every measured reading of this link in the selected period, each RF event once">Signal over time</h3>
+      <p className="muted small">Each reading as the receiving node measured it ({kinds.join(', ')}). A falling line across days can mean a degrading antenna, cable or site; short dips are often weather or traffic.</p>
+      <div className="tcharts">
+        <TimeChart label="SNR" unit="dB" start={start} end={end} series={series('snr')} />
+        <TimeChart label="RSSI" unit="dBm" decimals={0} start={start} end={end} series={series('rssi')} empty="only measured by gateway receptions" />
+      </div>
+    </section>
   )
 }
 

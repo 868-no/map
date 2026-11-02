@@ -61,6 +61,8 @@ pub struct Built {
     pub snapshot: Snapshot,
     pub ctx: RelayContext,
     pub roles: FxMap<u32, String>,
+    /// Radio link evidence, for link history (D-105).
+    pub samples: Vec<crate::graph::Sample>,
 }
 
 /// Roles that never rebroadcast: a relay byte can never mean them.
@@ -243,6 +245,7 @@ pub fn build_snapshot(rows: &[&Row], i: &Interner, g: &GeoOptions, rules: Rules)
         snapshot: Snapshot { nodes: list, edges: er.edges, edges_truncated: er.truncated, counts, diagnostics: Diagnostics { relay_ambiguous: er.ambiguous, relay_unmatched: er.unmatched } },
         ctx,
         roles,
+        samples: er.samples,
     }
 }
 

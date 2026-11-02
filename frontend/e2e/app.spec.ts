@@ -620,3 +620,17 @@ test('only online nodes: offline ones leave the map, and Details says which a no
   await expect(page.locator('.node-panel .tag.online, .node-panel .tag.offline')).toHaveCount(1)
 })
 
+test('a link shows its signal over the selected period, both directions', async ({ page }) => {
+  await withLinks(page)
+  await ready(page)
+  await openPanel(page)
+  for (let i = 0; i < 15; i++) {
+    await showPanel(page, 'Nodes')
+    await page.locator('.node-row').nth(i).click()
+    await page.getByRole('tab', { name: /^Links/ }).click()
+    if (await page.locator('ul.links li button').count()) break
+  }
+  await page.locator('ul.links li button').first().click()
+  await expect(page.locator('.link-history .tchart').first()).toBeVisible({ timeout: 30_000 })
+  await expect(page.locator('.link-history .tchart-legend').first()).toContainText('→')
+})

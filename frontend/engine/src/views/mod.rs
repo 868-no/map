@@ -15,6 +15,7 @@ mod edges;
 mod estimate;
 mod filters;
 mod node;
+pub mod link;
 mod snapshot;
 mod traffic;
 
