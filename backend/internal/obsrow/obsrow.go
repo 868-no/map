@@ -55,6 +55,22 @@ type ObsRow struct {
 	Traceroute   *ObsTraceroute   `json:"tr,omitempty"`
 	MapReport    *ObsMapReport    `json:"mr,omitempty"`
 	Routing      *ObsRouting      `json:"rt,omitempty"`
+	NodeStatus   *ObsNodeStatus   `json:"ns,omitempty"`
+	StoreForward *ObsStoreForward `json:"sf,omitempty"`
+}
+
+// ObsNodeStatus is a node's status text (D-103).
+type ObsNodeStatus struct {
+	Status string `json:"status"`
+}
+
+// ObsStoreForward is a store-and-forward message's kind (never its content).
+// Rows stored before it was decoded have kind "unknown" (D-103).
+type ObsStoreForward struct {
+	Kind      string `json:"kind"`
+	TextBytes int    `json:"text_bytes,omitempty"`
+	Period    uint32 `json:"period,omitempty" doc:"Heartbeat interval, seconds"`
+	Messages  uint32 `json:"messages,omitempty" doc:"History: messages it will replay"`
 }
 
 // ObsRouting is a routing packet's outcome: an ACK or an error answering the
@@ -157,6 +173,11 @@ type storedMeta struct {
 	Traceroute   *ObsTraceroute   `json:"traceroute"`
 	MapReport    *ObsMapReport    `json:"mapreport"`
 	Routing      *ObsRouting      `json:"routing"`
+	NodeStatus   *ObsNodeStatus   `json:"node_status"`
+	StoreForward *ObsStoreForward `json:"store_forward"`
+	Other        *struct {
+		PortName string `json:"port_name"`
+	} `json:"other"`
 }
 
 // Version is bumped whenever ObsRow gains or changes fields, or
@@ -164,8 +185,8 @@ type storedMeta struct {
 // /observations reports, so browsers holding rows in the old format start
 // over, and stored encodings of an older version are rebuilt (D-046)
 // (2: tp, mr; 3: map report identity and has_default_channel; 4: rt; 5: iv;
-// 6: environment telemetry).
-const Version = 6
+// 6: environment telemetry; 7: ns, sf, traceroute request_id).
+const Version = 7
 
 // Fields are the packet_log columns an ObsRow carries.
 type Fields struct {
@@ -226,6 +247,18 @@ func New(f Fields, meta []byte) ObsRow {
 		r.Traceroute = m.Traceroute
 	case "routing":
 		r.Routing = m.Routing
+	case "node_status":
+		r.NodeStatus = m.NodeStatus
+	case "store_forward":
+		r.StoreForward = m.StoreForward
+	case "other":
+		// Stored before these apps were decoded (D-103): their type, if not their contents.
+		switch o := m.Other; {
+		case o != nil && o.PortName == "STORE_FORWARD_APP":
+			r.Type, r.StoreForward = "store_forward", &ObsStoreForward{Kind: "unknown"}
+		case o != nil && o.PortName == "NODE_STATUS_APP":
+			r.Type = "node_status"
+		}
 	}
 	return r
 }

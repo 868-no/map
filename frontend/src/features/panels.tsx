@@ -230,6 +230,19 @@ export function NodePanel({ id, snapshot }: { id: string; snapshot: SnapshotView
             <dt>Short name</dt><dd>{d.identity?.short_name || NR}</dd>
             <dt>Hardware</dt><dd>{d.identity?.hw_model || NR}</dd>
             <dt>Role</dt><dd>{d.identity?.role || NR}</dd>
+            {(d.node_status ?? []).length > 0 && (
+              <>
+                <dt title="The status text the node broadcasts about itself (node status app, firmware 2.7.20 and later)">Status</dt>
+                <dd>
+                  <q className="node-status">{d.node_status![0].status}</q> <small className="muted">· {formatLocal(d.node_status![0].at)}</small>
+                  {d.node_status!.length > 1 && (
+                    <ul className="status-history">
+                      {d.node_status!.slice(1).map((s) => <li key={s.at}><span className="muted">earlier:</span> {s.status} <small className="muted">· {formatLocal(s.at)}</small></li>)}
+                    </ul>
+                  )}
+                </dd>
+              </>
+            )}
             <dt>Identity</dt>
             <dd>
               {!d.identity ? NR : d.identity.source === 'mapreport' ? (

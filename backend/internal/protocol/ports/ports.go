@@ -35,6 +35,10 @@ const (
 	// TypeInvalid is a packet that failed decoding or verification: header
 	// only, with the reason; never evidence (D-093).
 	TypeInvalid = "invalid"
+	// TypeNodeStatus is a node's status text; TypeStoreForward a store-and-
+	// forward message, kind only (D-103).
+	TypeNodeStatus   = "node_status"
+	TypeStoreForward = "store_forward"
 )
 
 var (
@@ -54,6 +58,8 @@ type Decoded struct {
 	Routing      *Routing      `json:"routing,omitempty"`
 	MapReport    *MapReport    `json:"mapreport,omitempty"`
 	Other        *Other        `json:"other,omitempty"`
+	NodeStatus   *NodeStatus   `json:"node_status,omitempty"`
+	StoreForward *StoreForward `json:"store_forward,omitempty"`
 }
 
 // Decode dispatches on portnum. Known ports whose payload does not parse or
@@ -86,6 +92,12 @@ func Decode(d *pb.Data, from uint32) (Decoded, error) {
 		// consumer reads both packet types.
 		v, pos, err := decodeMapReport(d.GetPayload())
 		return Decoded{Type: TypeMapReport, MapReport: v, Position: pos}, err
+	case pb.PortNum_NODE_STATUS_APP:
+		v, err := decodeNodeStatus(d.GetPayload())
+		return Decoded{Type: TypeNodeStatus, NodeStatus: v}, err
+	case pb.PortNum_STORE_FORWARD_APP:
+		v, err := decodeStoreForward(d.GetPayload())
+		return Decoded{Type: TypeStoreForward, StoreForward: v}, err
 	case pb.PortNum_UNKNOWN_APP:
 		return Decoded{}, ErrInvalid
 	}

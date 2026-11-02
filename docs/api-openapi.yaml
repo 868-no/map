@@ -392,6 +392,14 @@ components:
         short_name:
           type: string
       type: object
+    ObsNodeStatus:
+      additionalProperties: false
+      properties:
+        status:
+          type: string
+      required:
+        - status
+      type: object
     ObsPosition:
       additionalProperties: false
       properties:
@@ -487,6 +495,8 @@ components:
         nk:
           description: sent without OK-to-MQTT and uplinked by another gateway
           type: boolean
+        ns:
+          $ref: "#/components/schemas/ObsNodeStatus"
         o:
           description: observation key, first 8 bytes as hex
           type: string
@@ -510,6 +520,8 @@ components:
           format: int32
           minimum: 0
           type: integer
+        sf:
+          $ref: "#/components/schemas/ObsStoreForward"
         sg:
           type: string
         sn:
@@ -537,6 +549,27 @@ components:
         - l
         - o
         - sg
+      type: object
+    ObsStoreForward:
+      additionalProperties: false
+      properties:
+        kind:
+          type: string
+        messages:
+          description: "History: messages it will replay"
+          format: int32
+          minimum: 0
+          type: integer
+        period:
+          description: Heartbeat interval, seconds
+          format: int32
+          minimum: 0
+          type: integer
+        text_bytes:
+          format: int64
+          type: integer
+      required:
+        - kind
       type: object
     ObsTelemetry:
       additionalProperties: false

@@ -619,3 +619,4 @@ test('only online nodes: offline ones leave the map, and Details says which a no
   await page.locator('.node-row').first().click()
   await expect(page.locator('.node-panel .tag.online, .node-panel .tag.offline')).toHaveCount(1)
 })
+

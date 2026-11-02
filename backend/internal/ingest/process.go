@@ -216,6 +216,11 @@ func Process(m RawMessage, o Options) (Observation, error) {
 		dec.NodeInfo.LongName, dec.NodeInfo.ShortName = "", ""
 		stored = zeroPayload(env, len(data.GetPayload()), false)
 	}
+	if notOK && dec.NodeStatus != nil {
+		// Its status text is as personal as a name (D-103).
+		dec.NodeStatus.Status = ""
+		stored = zeroPayload(env, len(data.GetPayload()), false)
+	}
 
 	var announced []byte
 	if dec.NodeInfo != nil {

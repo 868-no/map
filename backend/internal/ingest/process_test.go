@@ -295,6 +295,11 @@ func TestOKToMQTT(t *testing.T) {
 		p := pkt{from: from, id: 9, to: 0xffffffff, gw: gw, data: d, hopStart: 3, hopLimit: 3, snr: 5, rssi: -80}
 		return Process(msg(topicLF, envelope(t, p, security.DefaultPSK[:], security.ModeCTR, "LongFast")), o)
 	}
+	// A relayed not-OK node status loses its text (D-103).
+	st, _ := proto.Marshal(&pb.StatusMessage{Status: "Hiking near Oppdal"})
+	if o, err := run(0x11111111, "!aabbccdd", withBitfield(&pb.Data{Portnum: pb.PortNum_NODE_STATUS_APP, Payload: st}, 0)); err != nil || o.PacketType != "node_status" || o.Meta.NodeStatus.Status != "" {
+		t.Fatalf("relayed not-OK status: %v %+v", err, o.Meta.NodeStatus)
+	}
 	// A relayed not-OK NodeInfo is kept without its names (D-093).
 	if o, err := run(0x11111111, "!aabbccdd", withBitfield(nodeInfoData(t), 0)); err != nil || o.PacketType != "nodeinfo" || o.Meta.NodeInfo.LongName != "" || o.Meta.NodeInfo.ShortName != "" || !o.Meta.NotOKToMQTT {
 		t.Fatalf("relayed not-OK NodeInfo: %v %+v", err, o.Meta.NodeInfo)

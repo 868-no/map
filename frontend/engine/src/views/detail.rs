@@ -48,6 +48,13 @@ pub struct EnvironmentSample {
     pub pressure: Option<f64>,
 }
 
+/// A status text the node broadcast (NODE_STATUS_APP), and when (D-103).
+#[derive(Serialize)]
+pub struct StatusText {
+    pub status: String,
+    pub at: String,
+}
+
 #[derive(Serialize)]
 pub struct Hearing {
     pub node: String,
@@ -80,6 +87,9 @@ pub struct NodeDetail {
     pub node: Node,
     pub positions: Vec<PositionSample>,
     pub telemetry_series: Vec<TelemetrySample>,
+    /// Its status texts, newest first: each distinct text once, at its latest (D-103).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub node_status: Vec<StatusText>,
     /// Environment reports in time order, one per packet (D-099).
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub environment_series: Vec<EnvironmentSample>,
@@ -160,7 +170,7 @@ pub fn build_node_detail(rows: &[&Row], num: u32, i: &Interner) -> Option<NodeDe
     radio.channels = crate::channels::channel_use(num, rows, i);
     radio.preset = crate::channels::preset_guess(num, rows, i);
     radio.uplink_topics = crate::radio::uplink_topics(&uplinked, i);
-    let mut d = NodeDetail { node: n, positions: vec![], telemetry_series: vec![], environment_series: vec![], heard_by: vec![], heard: vec![], recent_packets: vec![], truncated: false, radio, delivery: crate::packets::delivery(rows, num, i) };
+    let mut d = NodeDetail { node: n, positions: vec![], telemetry_series: vec![], environment_series: vec![], node_status: vec![], heard_by: vec![], heard: vec![], recent_packets: vec![], truncated: false, radio, delivery: crate::packets::delivery(rows, num, i) };
     if first == i64::MAX {
         let Some(&t) = referenced(rows).get(&num) else { return None };
         d.node.status = "referenced";
@@ -211,6 +221,11 @@ pub fn build_node_detail(rows: &[&Row], num: u32, i: &Interner) -> Option<NodeDe
         })
         .collect();
     d.truncated = truncated;
+    // Status texts: newest first, each once. Opt-out nodes' texts are never stored (empty).
+    let mut texts: Vec<(i64, u32)> = own.iter().filter_map(|r| r.node_status().filter(|&s| !i.s(s).is_empty()).map(|s| (r.t, s))).collect();
+    texts.sort_by(|a, b| b.0.cmp(&a.0));
+    let mut seen_text = set::<u32>();
+    d.node_status = texts.into_iter().filter(|(_, s)| seen_text.insert(*s)).take(5).map(|(t, s)| StatusText { status: i.s(s).to_string(), at: iso(t) }).collect();
     d.heard_by = hearings(rows, |r| r.src == num && r.gw.is_some_and(|g| g != r.src), |r| r.gw.unwrap());
     d.heard = hearings(rows, |r| r.gw == Some(num) && r.src != num, |r| r.src);
 
@@ -265,4 +280,26 @@ fn hearings(rows: &[&Row], keep: impl Fn(&Row) -> bool, other: impl Fn(&Row) -> 
     out.sort_by(|a, b| b.1.receptions.cmp(&a.1.receptions).then(a.0.cmp(&b.0)));
     out.truncate(MAX_GATEWAYED);
     out.into_iter().map(|(_, h)| h).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::row::JRow;
+
+    #[test]
+    fn status_texts_newest_first_each_once_without_empty_ones() {
+        let mut i = Interner::default();
+        let text = r#"[
+          {"i":1,"t":1000,"b":"x","g":5,"s":5,"y":"node_status","l":"01","o":"01","sg":"unsigned","ns":{"status":"At the cabin"}},
+          {"i":2,"t":2000,"b":"x","g":5,"s":5,"y":"node_status","l":"02","o":"02","sg":"unsigned","ns":{"status":"Back home"}},
+          {"i":3,"t":3000,"b":"x","g":5,"s":5,"y":"node_status","l":"03","o":"03","sg":"unsigned","ns":{"status":"At the cabin"}},
+          {"i":4,"t":4000,"b":"x","g":5,"s":5,"y":"node_status","l":"04","o":"04","sg":"unsigned","ns":{"status":""}}
+        ]"#;
+        let rows: Vec<Row> = serde_json::from_str::<Vec<JRow>>(text).unwrap().into_iter().map(|r| r.into_row(&mut i)).collect();
+        let refs: Vec<&Row> = rows.iter().collect();
+        let d = build_node_detail(&refs, 5, &i).unwrap();
+        let got: Vec<&str> = d.node_status.iter().map(|s| s.status.as_str()).collect();
+        assert_eq!(got, vec!["At the cabin", "Back home"]);
+    }
 }

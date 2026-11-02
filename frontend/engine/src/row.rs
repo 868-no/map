@@ -105,6 +105,15 @@ pub struct Traceroute {
     pub snr_back: Vec<Option<f64>>,
 }
 
+/// A store-and-forward message's kind and sizes (D-103).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct StoreForward {
+    pub kind: u32, // interned, e.g. router_heartbeat
+    pub text_bytes: i32,
+    pub period: u32,
+    pub messages: u32,
+}
+
 /// What a node's own map report says about itself and its radio (interned
 /// strings). `default_channel` is the only proof the preset is in use:
 /// firmware reports the stored preset even under a custom modem config.
@@ -132,6 +141,9 @@ pub struct Routing {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Detail {
     Routing(Routing),
+    /// A node's status text, interned (D-103).
+    NodeStatus(u32),
+    StoreForward(StoreForward),
     /// Type invalid: why its content was not kept (interned, D-093).
     Invalid(u32),
     MapReport(MapReport),
@@ -203,6 +215,18 @@ impl Row {
     pub fn invalid(&self) -> Option<u32> {
         match self.detail.as_deref() {
             Some(Detail::Invalid(v)) => Some(*v),
+            _ => None,
+        }
+    }
+    pub fn node_status(&self) -> Option<u32> {
+        match self.detail.as_deref() {
+            Some(Detail::NodeStatus(v)) => Some(*v),
+            _ => None,
+        }
+    }
+    pub fn store_forward(&self) -> Option<StoreForward> {
+        match self.detail.as_deref() {
+            Some(Detail::StoreForward(f)) => Some(*f),
             _ => None,
         }
     }
@@ -336,6 +360,24 @@ struct JTr {
     snr_back: Option<Vec<Option<f64>>>,
 }
 
+#[derive(Deserialize, Serialize)]
+struct JNs<'a> {
+    #[serde(borrow, default)]
+    status: Cow<'a, str>,
+}
+
+#[derive(Deserialize, Serialize)]
+struct JSf<'a> {
+    #[serde(borrow)]
+    kind: Cow<'a, str>,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    text_bytes: i32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    period: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    messages: Option<u32>,
+}
+
 /// The API's compact row (`ObsRow` in the OpenAPI document).
 #[derive(Deserialize, Serialize)]
 pub struct JRow<'a> {
@@ -398,6 +440,10 @@ pub struct JRow<'a> {
     rt: Option<JRt<'a>>,
     #[serde(borrow, default, skip_serializing_if = "Option::is_none")]
     iv: Option<Cow<'a, str>>,
+    #[serde(borrow, default, skip_serializing_if = "Option::is_none")]
+    ns: Option<JNs<'a>>,
+    #[serde(borrow, default, skip_serializing_if = "Option::is_none")]
+    sf: Option<JSf<'a>>,
 }
 
 fn is_false(b: &bool) -> bool {
@@ -437,6 +483,10 @@ impl JRow<'_> {
             }))
         } else if let Some(t) = self.te {
             Some(Detail::Telemetry(Telemetry { kind: i.id(&t.kind), battery: t.battery, voltage: t.voltage, ch_util: t.ch_util, air_util: t.air_util, uptime: t.uptime, temp: t.temp, humidity: t.humidity, pressure: t.pressure }))
+        } else if let Some(n) = self.ns {
+            Some(Detail::NodeStatus(i.id(&n.status)))
+        } else if let Some(f) = self.sf {
+            Some(Detail::StoreForward(StoreForward { kind: i.id(&f.kind), text_bytes: f.text_bytes, period: f.period.unwrap_or(0), messages: f.messages.unwrap_or(0) }))
         } else if let Some(v) = self.iv {
             Some(Detail::Invalid(i.id(&v)))
         } else if let Some(r) = self.rt {
@@ -495,7 +545,7 @@ pub fn to_json<'a>(r: &Row, i: &'a Interner) -> JRow<'a> {
         l: Cow::Owned(key_hex(r.lp)), o: Cow::Owned(key_hex(r.ok)), sn: r.snr, rs: r.rssi, hs: r.hs, hl: r.hl, r: r.relay,
         sg: s(r.sig), dr: r.dr, rr: opt(r.rr), cr: opt(r.crypto), by: r.bytes, nk: r.nk, tp: opt(r.topic),
         ni: None, po: r.pos.map(|p| JPo { lat: p.lat, lon: p.lon, alt: p.alt, precision_bits: p.bits, precision_known: p.known }),
-        te: None, nb: None, tr: None, mr: None, rt: None, iv: None,
+        te: None, nb: None, tr: None, mr: None, rt: None, iv: None, ns: None, sf: None,
     };
     match r.detail.as_deref() {
         Some(Detail::MapReport(m)) => {
@@ -514,6 +564,8 @@ pub fn to_json<'a>(r: &Row, i: &'a Interner) -> JRow<'a> {
         }
         Some(Detail::Telemetry(t)) => j.te = Some(JTe { kind: s(t.kind), battery: t.battery, voltage: t.voltage, ch_util: t.ch_util, air_util: t.air_util, uptime: t.uptime, temp: t.temp, humidity: t.humidity, pressure: t.pressure }),
         Some(Detail::Invalid(v)) => j.iv = Some(s(*v)),
+        Some(Detail::NodeStatus(v)) => j.ns = Some(JNs { status: s(*v) }),
+        Some(Detail::StoreForward(f)) => j.sf = Some(JSf { kind: s(f.kind), text_bytes: f.text_bytes, period: (f.period != 0).then_some(f.period), messages: (f.messages != 0).then_some(f.messages) }),
         Some(Detail::Routing(r)) => j.rt = Some(JRt { kind: s(r.kind), error: opt(r.error), request_id: (r.request != 0).then_some(r.request) }),
         Some(Detail::Neighbors(n)) => j.nb = Some(JNbs { neighbors: Some(n.iter().map(|&(id, snr)| JNb { id, snr }).collect()) }),
         Some(Detail::Traceroute(t)) => {

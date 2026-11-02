@@ -27,3 +27,4 @@ inputs:
       - protobufs/meshtastic/field_metadata.proto
       - protobufs/meshtastic/atak.proto
       - protobufs/meshtastic/xmodem.proto
+      - protobufs/meshtastic/storeforward.proto

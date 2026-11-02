@@ -295,6 +295,9 @@ export interface components {
             role?: string;
             short_name?: string;
         };
+        ObsNodeStatus: {
+            status: string;
+        };
         ObsPosition: {
             /** Format: int32 */
             alt?: number;
@@ -343,6 +346,7 @@ export interface components {
             ni?: components["schemas"]["ObsNodeInfo"];
             /** @description sent without OK-to-MQTT and uplinked by another gateway */
             nk?: boolean;
+            ns?: components["schemas"]["ObsNodeStatus"];
             /** @description observation key, first 8 bytes as hex */
             o: string;
             /** Format: int32 */
@@ -356,6 +360,7 @@ export interface components {
             rt?: components["schemas"]["ObsRouting"];
             /** Format: int32 */
             s: number;
+            sf?: components["schemas"]["ObsStoreForward"];
             sg: string;
             /** Format: float */
             sn?: number;
@@ -369,6 +374,21 @@ export interface components {
             tp?: string;
             tr?: components["schemas"]["ObsTraceroute"];
             y: string;
+        };
+        ObsStoreForward: {
+            kind: string;
+            /**
+             * Format: int32
+             * @description History: messages it will replay
+             */
+            messages?: number;
+            /**
+             * Format: int32
+             * @description Heartbeat interval, seconds
+             */
+            period?: number;
+            /** Format: int64 */
+            text_bytes?: number;
         };
         ObsTelemetry: {
             /** Format: double */

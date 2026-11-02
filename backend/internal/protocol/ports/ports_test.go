@@ -124,3 +124,23 @@ func TestMalformedKnownPortRejected(t *testing.T) {
 		t.Fatal("unknown well-formed port should be 'other'")
 	}
 }
+
+// D-103: node status text, sanitised; store-and-forward kind and sizes only.
+func TestNodeStatusAndStoreForward(t *testing.T) {
+	d, err := Decode(data(t, pb.PortNum_NODE_STATUS_APP, &pb.StatusMessage{Status: "On the hill \x07until Friday"}), 1)
+	if err != nil || d.Type != TypeNodeStatus || d.NodeStatus.Status != "On the hill until Friday" {
+		t.Fatalf("status: %v %+v", err, d.NodeStatus)
+	}
+	text := []byte("a stored message nobody should see")
+	d, err = Decode(data(t, pb.PortNum_STORE_FORWARD_APP, &pb.StoreAndForward{Rr: pb.StoreAndForward_ROUTER_TEXT_BROADCAST, Variant: &pb.StoreAndForward_Text{Text: text}}), 1)
+	if err != nil || d.Type != TypeStoreForward || d.StoreForward.Kind != "router_text_broadcast" || d.StoreForward.TextBytes != len(text) {
+		t.Fatalf("s&f text: %v %+v", err, d.StoreForward)
+	}
+	d, _ = Decode(data(t, pb.PortNum_STORE_FORWARD_APP, &pb.StoreAndForward{Rr: pb.StoreAndForward_ROUTER_HEARTBEAT, Variant: &pb.StoreAndForward_Heartbeat_{Heartbeat: &pb.StoreAndForward_Heartbeat{Period: 900}}}), 1)
+	if d.StoreForward.Kind != "router_heartbeat" || d.StoreForward.Period != 900 {
+		t.Fatalf("s&f heartbeat: %+v", d.StoreForward)
+	}
+	if _, err := Decode(&pb.Data{Portnum: pb.PortNum_STORE_FORWARD_APP, Payload: []byte{0xff, 0xff}}, 1); err == nil {
+		t.Fatal("garbage store-and-forward decoded")
+	}
+}
