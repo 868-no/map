@@ -174,5 +174,7 @@ func (s *Server) register(api huma.API) {
 		Summary: "Decoded observations of a window, paged, for deriving views in the browser", Tags: []string{"mesh"}, Errors: []int{400, 503},
 		Responses: map[string]*huma.Response{"200": {Description: "OK", Content: map[string]*huma.MediaType{
 			"application/json": {Schema: api.OpenAPI().Components.Schemas.Schema(reflect.TypeOf(ObservationsBody{}), true, "ObservationsBody")}}}}}, s.observations)
+	huma.Register(api, huma.Operation{OperationID: "node-public-key", Method: http.MethodGet, Path: "/api/v1/nodes/{id}/public-key",
+		Summary: "A node's announced and trusted public keys from the retained log", Tags: []string{"mesh"}, Errors: []int{400, 404}}, s.nodeKey)
 	s.registerStream(api)
 }

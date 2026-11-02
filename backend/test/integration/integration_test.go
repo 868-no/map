@@ -7,6 +7,7 @@ package integration
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"math/rand/v2"
@@ -198,6 +199,21 @@ func TestPipelineDemoStream(t *testing.T) {
 	}
 	if rebuilt.Len() != ids.Len() {
 		t.Fatalf("rebuilt %d identities, live store had %d", rebuilt.Len(), ids.Len())
+	}
+	// Each verified node's newest announced key is served, and in the demo
+	// (no key changes) it is the trusted one.
+	trusted, err := storage.VerifiedIdentities(context.Background(), pool, nil)
+	if err != nil || len(trusted) == 0 {
+		t.Fatalf("verified identities: %v (%d)", err, len(trusted))
+	}
+	for _, id := range trusted {
+		k, err := storage.LatestAnnouncedKey(context.Background(), pool, id.Node)
+		if err != nil || k.PublicKey != id.PublicKey || k.At.Before(id.Since) {
+			t.Fatalf("node %08x: announced %+v (%v), trusted %s", id.Node, k, err, id.PublicKey)
+		}
+	}
+	if _, err := storage.LatestAnnouncedKey(context.Background(), pool, 0x7fff_fff1); !errors.Is(err, storage.ErrNotFound) {
+		t.Fatalf("unknown node: %v", err)
 	}
 	t.Logf("%d rows, %d multi-gateway logical packets, %d identities", n, multi, ids.Len())
 }

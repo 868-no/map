@@ -344,5 +344,27 @@ func VerifiedIdentities(ctx context.Context, pool *pgxpool.Pool, node *uint32) (
 	return out, rows.Err()
 }
 
+// AnnouncedKey is a node's public key as its NodeInfo carried it.
+type AnnouncedKey struct {
+	PublicKey string // base64
+	At        time.Time
+	Signature string
+}
+
+// LatestAnnouncedKey returns the public key in the node's newest retained
+// NodeInfo that carried one, or ErrNotFound. Like VerifiedIdentities it
+// spans the whole retained log: a key identifies a node, not a window.
+func LatestAnnouncedKey(ctx context.Context, pool *pgxpool.Pool, node uint32) (AnnouncedKey, error) {
+	var k AnnouncedKey
+	err := pool.QueryRow(ctx, `SELECT decoded_metadata->'nodeinfo'->>'public_key', observed_at, signature_status
+	      FROM packet_log
+	      WHERE packet_type = 'nodeinfo' AND source_node_id = $1 AND decoded_metadata->'nodeinfo' ? 'public_key'
+	      ORDER BY id DESC LIMIT 1`, int64(node)).Scan(&k.PublicKey, &k.At, &k.Signature)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return k, ErrNotFound
+	}
+	return k, err
+}
+
 // ErrNotFound is returned by single-row lookups with no result.
 var ErrNotFound = errors.New("not found")

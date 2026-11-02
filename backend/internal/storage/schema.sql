@@ -56,12 +56,13 @@ ALTER SEQUENCE packet_log_id_seq OWNED BY packet_log.id;
 -- Serves every /observations page ((observed_at, id) keyset order, D-038)
 -- and the retention delete inside the oldest kept month.
 CREATE INDEX IF NOT EXISTS packet_log_time_idx        ON packet_log (observed_at DESC, id DESC);
--- Identity rebuild (verified NodeInfo rows, per node in id order): partial,
--- so other inserts never touch it. It replaces two full indexes on
--- (source_node_id, observed_at) and (packet_type, observed_at), which served
--- only this query.
-CREATE INDEX IF NOT EXISTS packet_log_verified_nodeinfo_idx ON packet_log (source_node_id, id)
-  WHERE packet_type = 'nodeinfo' AND signature_status = 'verified';
+-- NodeInfo rows per node in id order: the identity rebuild (verified rows)
+-- and a node's latest announced public key. Partial, so other inserts never
+-- touch it. It replaces two full indexes on (source_node_id, observed_at) and
+-- (packet_type, observed_at), and a narrower verified-only one.
+CREATE INDEX IF NOT EXISTS packet_log_nodeinfo_idx ON packet_log (source_node_id, id)
+  WHERE packet_type = 'nodeinfo';
+DROP INDEX IF EXISTS packet_log_verified_nodeinfo_idx;
 DROP INDEX IF EXISTS packet_log_source_time_idx;
 DROP INDEX IF EXISTS packet_log_type_time_idx;
 -- One row per reception (D-056): a batch retried after a commit whose

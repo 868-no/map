@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
+import { ApiError, getJSON } from '../api/client'
+import type { NodeKey } from '../api/types'
 import type { Edge, Hearing, MeshNode, Radio, SnapshotView } from '../derive/views'
 import { useNodeDetail, usePacketLog, usePacketRoute, useReach } from '../state/data'
 import { nodeLink, useStore } from '../state/store'
@@ -186,6 +188,8 @@ export function NodePanel({ id, snapshot }: { id: string; snapshot: SnapshotView
             <><SigBadge s={d.identity.signature} /> {d.identity.has_public_key ? 'announces a public key' : 'no public key'} · {formatLocal(d.identity.observed_at)}</>
           )}
         </dd>
+        <dt>Public key</dt>
+        <dd>{d.mqtt_opt_out ? <span className="muted" title="Not shown for nodes that did not allow MQTT uplink">not shown</span> : <PublicKey key={d.id} id={d.id} />}</dd>
         <dt>Position</dt>
         <dd>
           {d.position ? (
@@ -616,6 +620,52 @@ function RelayingSection({ node, snapshot }: { node: MeshNode | undefined; snaps
  * whatever window or filters the viewer had. The phone's share sheet when
  * there is one, otherwise copied to the clipboard.
  */
+/** The node's public key from the whole retained log (keys identify a node, not a window). */
+function PublicKey({ id }: { id: string }) {
+  const [k, setK] = useState<NodeKey | 'none' | 'error' | null>(null)
+  const [copied, setCopied] = useState(false)
+  useEffect(() => {
+    const ctl = new AbortController()
+    getJSON<NodeKey>(`/api/v1/nodes/${encodeURIComponent(id)}/public-key`, undefined, ctl.signal)
+      .then(setK)
+      .catch((e: unknown) => {
+        if ((e as Error).name !== 'AbortError') setK(e instanceof ApiError && e.status === 404 ? 'none' : 'error')
+      })
+    return () => ctl.abort()
+  }, [id])
+  if (k === null) return <span className="muted">…</span>
+  if (k === 'none') return <span className="muted" title="No NodeInfo carrying a public key from this node is retained">none retained</span>
+  if (k === 'error') return <span className="muted">unavailable</span>
+  const key = k.public_key || k.trusted_key || ''
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(key)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2500)
+    } catch {
+      /* clipboard refused */
+    }
+  }
+  const differs = !!k.trusted_key && !!k.public_key && k.trusted_key !== k.public_key
+  return (
+    <>
+      <code className="pubkey">{key}</code>{' '}
+      <button className="linkish" onClick={() => void copy()} title="Copy the key (base64)">{copied ? 'Copied' : 'Copy'}</button>
+      <br />
+      <small>
+        {k.announced_at && <>announced {formatLocal(k.announced_at)}</>}
+        {k.trusted_key && !differs && k.trusted_since && <span title="The first verified NodeInfo with this key: signatures from this node are checked against it (trust on first use)"> · trusted since {formatLocal(k.trusted_since)}</span>}
+        {!k.trusted_key && <span title="No signed NodeInfo verified under this key is retained, so signatures from this node cannot be checked"> · not verified</span>}
+      </small>
+      {differs && (
+        <p className="opt-out-note" title="Signatures are checked against the trusted key, so packets signed with the new one are not verified until the trusted key's NodeInfo ages out of retention">
+          Differs from the key trusted since {formatLocal(k.trusted_since!)}: <code className="pubkey">{k.trusted_key}</code>
+        </p>
+      )}
+    </>
+  )
+}
+
 function ShareNode({ id, name }: { id: string; name: string }) {
   const [state, setState] = useState<'idle' | 'copied' | 'failed'>('idle')
   const share = async () => {

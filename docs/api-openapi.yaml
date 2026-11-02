@@ -288,6 +288,38 @@ components:
       required:
         - live
       type: object
+    NodeKeyBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/api/schemas/NodeKeyBody.json
+          format: uri
+          readOnly: true
+          type: string
+        announced_at:
+          format: date-time
+          type: string
+        node:
+          examples:
+            - "!98644b01"
+          type: string
+        public_key:
+          description: Base64 X25519 key from the node's newest retained NodeInfo that carried one
+          type: string
+        signature:
+          description: Signature status of that NodeInfo
+          type: string
+        trusted_key:
+          description: "Key of the earliest retained verified NodeInfo (trust on first use): signatures are checked against it"
+          type: string
+        trusted_since:
+          format: date-time
+          type: string
+      required:
+        - node
+      type: object
     ObsHop:
       additionalProperties: false
       properties:
@@ -712,6 +744,57 @@ paths:
       summary: Supported windows, presets, feature flags and map defaults (no secrets)
       tags:
         - meta
+  /api/v1/nodes/{id}/public-key:
+    get:
+      operationId: node-public-key
+      parameters:
+        - description: Node id, !xxxxxxxx or decimal
+          in: path
+          name: id
+          required: true
+          schema:
+            description: Node id, !xxxxxxxx or decimal
+            examples:
+              - "!98644b01"
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NodeKeyBody"
+          description: OK
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+        "400":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Bad Request
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Not Found
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+      summary: A node's announced and trusted public keys from the retained log
+      tags:
+        - mesh
   /api/v1/observations:
     get:
       operationId: observations

@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -18,6 +19,7 @@ import (
 	"github.com/868-no/map/internal/obsrow"
 	"github.com/868-no/map/internal/protocol"
 	"github.com/868-no/map/internal/query"
+	"github.com/868-no/map/internal/storage"
 )
 
 // ---- capabilities ----
@@ -132,6 +134,53 @@ func (s *Server) retention(ctx context.Context, _ *struct{}) (*RetentionOutput, 
 		return nil, err
 	}
 	return &RetentionOutput{Body: out}, nil
+}
+
+// ---- a node's public key ----
+
+type NodeKeyInput struct {
+	ID string `path:"id" doc:"Node id, !xxxxxxxx or decimal" example:"!98644b01"`
+}
+
+type NodeKeyBody struct {
+	Node         string     `json:"node" example:"!98644b01"`
+	PublicKey    string     `json:"public_key,omitempty" doc:"Base64 X25519 key from the node's newest retained NodeInfo that carried one"`
+	AnnouncedAt  *time.Time `json:"announced_at,omitempty"`
+	Signature    string     `json:"signature,omitempty" doc:"Signature status of that NodeInfo"`
+	TrustedKey   string     `json:"trusted_key,omitempty" doc:"Key of the earliest retained verified NodeInfo (trust on first use): signatures are checked against it"`
+	TrustedSince *time.Time `json:"trusted_since,omitempty"`
+}
+
+type NodeKeyOutput struct {
+	CacheControl string `header:"Cache-Control"`
+	Body         NodeKeyBody
+}
+
+// nodeKey serves one node's public key. Keys are broadcast in the clear and
+// identify a node rather than a window, so this spans the retained log.
+func (s *Server) nodeKey(ctx context.Context, in *NodeKeyInput) (*NodeKeyOutput, error) {
+	n, ok := protocol.ParseNodeID(in.ID)
+	if !ok || !protocol.ValidNode(n) {
+		return nil, huma.Error400BadRequest("invalid node id")
+	}
+	out := NodeKeyBody{Node: protocol.NodeID(n)}
+	switch k, err := storage.LatestAnnouncedKey(ctx, s.Pool, n); {
+	case err == nil:
+		out.PublicKey, out.AnnouncedAt, out.Signature = k.PublicKey, &k.At, k.Signature
+	case !errors.Is(err, storage.ErrNotFound):
+		return nil, err
+	}
+	ids, err := storage.VerifiedIdentities(ctx, s.Pool, &n)
+	if err != nil {
+		return nil, err
+	}
+	if len(ids) > 0 {
+		out.TrustedKey, out.TrustedSince = ids[0].PublicKey, &ids[0].Since
+	}
+	if out.PublicKey == "" && out.TrustedKey == "" {
+		return nil, huma.Error404NotFound("no public key retained for this node")
+	}
+	return &NodeKeyOutput{CacheControl: "public, max-age=60", Body: out}, nil
 }
 
 // ---- raw observations (client-side derivation, D-031) ----

@@ -21,6 +21,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/nodes/{id}/public-key": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** A node's announced and trusted public keys from the retained log */
+        get: operations["node-public-key"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/observations": {
         parameters: {
             query?: never;
@@ -225,6 +242,26 @@ export interface components {
         LiveStatus: {
             live: boolean;
             reason?: string;
+        };
+        NodeKeyBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/api/schemas/NodeKeyBody.json
+             */
+            readonly $schema?: string;
+            /** Format: date-time */
+            announced_at?: string;
+            /** @example !98644b01 */
+            node: string;
+            /** @description Base64 X25519 key from the node's newest retained NodeInfo that carried one */
+            public_key?: string;
+            /** @description Signature status of that NodeInfo */
+            signature?: string;
+            /** @description Key of the earliest retained verified NodeInfo (trust on first use): signatures are checked against it */
+            trusted_key?: string;
+            /** Format: date-time */
+            trusted_since?: string;
         };
         ObsHop: {
             /** Format: int32 */
@@ -453,6 +490,66 @@ export interface operations {
             };
             /** @description Error */
             default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "node-public-key": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Node id, !xxxxxxxx or decimal */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NodeKeyBody"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
                 headers: {
                     [name: string]: unknown;
                 };
