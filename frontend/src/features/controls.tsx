@@ -54,7 +54,7 @@ export function LayersPanel() {
       <h3>Map</h3>
       {BASEMAP_GROUPS.map((g) => check(g.label, t.basemap[g.id], (v) => setT({ basemap: { [g.id]: v } }), g.info))}
       {check('Regions (landsdeler)', t.regions, (v) => setT({ regions: v }),
-        'Norway\'s five regions: Nord-Norge (Nordland, Troms, Finnmark), Trøndelag, Vestlandet (Rogaland, Vestland, Møre og Romsdal), Østlandet (Oslo, Akershus, Østfold, Buskerud, Vestfold, Telemark, Innlandet) and Sørlandet (Agder). Tinted areas with outlines, named at overview zooms. Boundaries from Kartverket\'s county data (CC BY 4.0), simplified.')}
+        'Norway\'s five regions: Nord-Norge (Nordland, Troms, Finnmark), Trøndelag, Vestlandet (Rogaland, Vestland, Møre og Romsdal), Østlandet (Oslo, Akershus, Østfold, Buskerud, Vestfold, Telemark, Innlandet) and Sørlandet (Agder). Outlines drawn just inside each region (no fill), named at overview zooms. Boundaries from Kartverket\'s county data (CC BY 4.0), simplified.')}
     </div>
   )
 }

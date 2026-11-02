@@ -196,7 +196,7 @@ func decodeNeighborInfo(b []byte, from uint32) (*NeighborInfo, error) {
 	return out, nil
 }
 
-// Text records only that a message-like packet existed (§5: no bodies).
+// Text records only that a message-like packet existed (design §3.2: no bodies).
 type Text struct {
 	Port  string `json:"port"`
 	Bytes int    `json:"bytes"`

@@ -1,5 +1,7 @@
 # Operations
 
+How to deploy, configure and run the 868.no Map. For what the system does and why, see [design.md](design.md).
+
 ## Deploy
 
 ```sh

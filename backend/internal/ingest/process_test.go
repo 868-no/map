@@ -83,7 +83,7 @@ func msg(topic string, payload []byte) RawMessage {
 
 const topicLF = "msh/EU_868/NO/Trøndelag/2/e/LongFast/!aabbccdd"
 
-// §17 test 1 (decode part) and §7.1 C direct-RF provenance.
+// design §10.2 test 1 (decode part) and design §2.2 direct-RF provenance.
 func TestProcessCTRDirect(t *testing.T) {
 	p := pkt{from: 0x11111111, id: 5, to: 0xffffffff, gw: "!aabbccdd", data: posData(t), hopStart: 3, hopLimit: 3, snr: 7.5, rssi: -90}
 	obs, err := Process(msg(topicLF, envelope(t, p, security.DefaultPSK[:], security.ModeCTR, "LongFast")), opts(t, longFast))
@@ -101,7 +101,7 @@ func TestProcessCTRDirect(t *testing.T) {
 	}
 }
 
-// §17 test 25: relayed or MQTT-carried packets do not claim direct RF.
+// design §10.2 test 25: relayed or MQTT-carried packets do not claim direct RF.
 func TestProcessNotDirect(t *testing.T) {
 	p := pkt{from: 0x11111111, id: 5, to: 0xffffffff, gw: "!aabbccdd", data: posData(t), hopStart: 3, hopLimit: 2, snr: 7.5, rssi: -90, relay: 0x42}
 	obs, err := Process(msg(topicLF, envelope(t, p, security.DefaultPSK[:], security.ModeCTR, "LongFast")), opts(t, longFast))
@@ -113,7 +113,7 @@ func TestProcessNotDirect(t *testing.T) {
 	}
 }
 
-// §17 test 2: wrong key / malformed protobuf discarded.
+// design §10.2 test 2: wrong key / malformed protobuf discarded.
 func TestProcessWrongKeyAndMalformed(t *testing.T) {
 	wrong := make([]byte, 16)
 	wrong[0] = 9
@@ -132,7 +132,7 @@ func TestProcessWrongKeyAndMalformed(t *testing.T) {
 	}
 }
 
-// §17 test 3: CCM authenticates; modified ciphertext/tag is discarded.
+// design §10.2 test 3: CCM authenticates; modified ciphertext/tag is discarded.
 func TestProcessCCM(t *testing.T) {
 	key := make([]byte, 32)
 	for i := range key {
@@ -164,7 +164,7 @@ func TestProcessCCM(t *testing.T) {
 	}
 }
 
-// §17 test 8: PKI DMs discarded without trying PSKs.
+// design §10.2 test 8: PKI DMs discarded without trying PSKs.
 func TestProcessPKI(t *testing.T) {
 	mp := &pb.MeshPacket{From: 0x11111111, To: 0x22222222, Id: 1, Channel: 0, PkiEncrypted: true,
 		PayloadVariant: &pb.MeshPacket_Encrypted{Encrypted: make([]byte, 40)}}
@@ -207,7 +207,7 @@ func TestProcessRetainedIgnored(t *testing.T) {
 	}
 }
 
-// §17 test 9 (key part): two brokers delivering the same gateway upload
+// design §10.2 test 9 (key part): two brokers delivering the same gateway upload
 // share an observation key; two gateways share only the logical key.
 func TestDedupeKeys(t *testing.T) {
 	p := pkt{from: 0x11111111, id: 5, to: 0xffffffff, gw: "!aabbccdd", data: posData(t), hopStart: 3, hopLimit: 3, snr: 5, rssi: -80}

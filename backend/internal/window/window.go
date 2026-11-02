@@ -1,6 +1,6 @@
 // Package window is the single source of truth for time-window semantics:
 // every mesh-derived result is scoped to the half-open UTC interval
-// [Start, End) (spec §4.3).
+// [Start, End) (design §3.5).
 package window
 
 import (
@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-// Defaults and limits (spec §9.1, §12).
+// Defaults and limits (design §3.5).
 const (
 	MinDuration     = time.Hour
 	MaxDuration     = 7 * 24 * time.Hour

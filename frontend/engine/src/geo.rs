@@ -1,5 +1,5 @@
 //! Coarse locations for unpositioned nodes from direct links to positioned
-//! anchors (spec §8); ported from the backend's internal/geo. Estimates
+//! anchors (design §6.12); ported from the backend's internal/geo. Estimates
 //! carry explicit uncertainty; underdetermined cases yield nothing.
 
 use serde::{Deserialize, Serialize};

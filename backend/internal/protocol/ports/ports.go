@@ -67,7 +67,7 @@ func Decode(d *pb.Data, from uint32) (Decoded, error) {
 		v, err := decodeTraceroute(d)
 		return Decoded{Type: TypeTraceroute, Traceroute: v}, err
 	case pb.PortNum_TEXT_MESSAGE_APP, pb.PortNum_TEXT_MESSAGE_COMPRESSED_APP, pb.PortNum_DETECTION_SENSOR_APP, pb.PortNum_ALERT_APP:
-		// Bodies are never stored (§5): size and kind only.
+		// Bodies are never stored (design §3.2): size and kind only.
 		return Decoded{Type: TypeText, Text: &Text{Bytes: len(d.GetPayload()), Port: d.GetPortnum().String()}}, nil
 	case pb.PortNum_ROUTING_APP:
 		v, err := decodeRouting(d)

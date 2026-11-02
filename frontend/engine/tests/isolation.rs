@@ -1,4 +1,4 @@
-//! Spec §17 tests 11-14, the engine's half: every derived field comes only
+//! Design §10.2 tests 11-14, the engine's half: every derived field comes only
 //! from rows inside [start, end) (the server's half is that /observations
 //! returns exactly those rows: backend test/integration TestTemporalIsolation).
 

@@ -69,7 +69,7 @@ func InitSchema(ctx context.Context, pool *pgxpool.Pool) error {
 }
 
 // CheckSchema verifies the schema version and that packet_log is the only
-// application table (spec invariant 2).
+// application table (design §1.2, invariant 2).
 func CheckSchema(ctx context.Context, pool *pgxpool.Pool) error {
 	var comment *string
 	if err := pool.QueryRow(ctx, `SELECT obj_description(to_regclass('public.packet_log'), 'pg_class')`).Scan(&comment); err != nil {

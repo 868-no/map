@@ -104,7 +104,7 @@ func DefaultScenario() *Scenario {
 		s.Nodes = append(s.Nodes, n)
 	}
 	// Deliberate relay-byte collision: two nodes share the low byte so the
-	// relay-hint inference must refuse to guess (spec §17 test 23).
+	// relay-hint inference must refuse to guess (design §10.2 test 23).
 	s.Nodes[16].Num = (s.Nodes[16].Num &^ 0xff) | (s.Nodes[17].Num & 0xff)
 	if s.Nodes[16].Key != nil {
 		s.Nodes[16].Key = nil // a legacy node: its number need not match a key

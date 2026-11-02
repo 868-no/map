@@ -90,7 +90,7 @@ func (b *base) subscribed(err error, codes []byte, want int) {
 }
 
 // deliver is called from the MQTT library's receive path. ObservedAt is
-// stamped here, before queuing (spec §4.1).
+// stamped here, before queuing (design §3.4).
 func (b *base) deliver(topic string, payload []byte, retained bool) {
 	now := time.Now().UTC()
 	b.m.Received.WithLabelValues(b.cfg.ID).Inc()
@@ -147,7 +147,7 @@ func brokerURL(c config.Broker) *url.URL {
 	return &url.URL{Scheme: scheme, Host: c.Host + ":" + strconv.Itoa(c.Port)}
 }
 
-// Backoff is full-jitter exponential backoff from 1 s to 60 s (spec §3.4).
+// Backoff is full-jitter exponential backoff from 1 s to 60 s (design §2.1).
 func Backoff(attempt int) time.Duration {
 	d := time.Second << min(attempt, 6)
 	if d > time.Minute {

@@ -12,7 +12,7 @@ func bounds() Bounds {
 	return Bounds{Now: now, Cutoff: now.AddDate(0, -6, 0), MaxDuration: MaxDuration, LiveQuantum: 10 * time.Second}
 }
 
-// §17 test 13: start inclusive, end exclusive.
+// design §10.2 test 13: start inclusive, end exclusive.
 func TestHalfOpen(t *testing.T) {
 	w, err := Fixed(now.Add(-24*time.Hour), now, bounds())
 	if err != nil {
@@ -23,7 +23,7 @@ func TestHalfOpen(t *testing.T) {
 	}
 }
 
-// §17 test 18: 7 days + 1 s and pre-retention requests are rejected.
+// design §10.2 test 18: 7 days + 1 s and pre-retention requests are rejected.
 func TestRejections(t *testing.T) {
 	b := bounds()
 	cases := map[string]func() error{

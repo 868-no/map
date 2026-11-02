@@ -29,7 +29,7 @@ func sign(k testutil.XKey, h PacketHeader, d *pb.Data) {
 	d.XeddsaSignature = ed25519.Sign(k.EdPriv, SigningBuffer(h.From, h.ID, h.To, d))
 }
 
-// §17 test 5: first-contact signed NodeInfo accepted only when self-consistent.
+// design §10.2 test 5: first-contact signed NodeInfo accepted only when self-consistent.
 func TestFirstContactNodeInfo(t *testing.T) {
 	k := testutil.NewXKey(1)
 	h := PacketHeader{From: k.NodeNum(), ID: 42, To: 0xffffffff}
@@ -59,7 +59,7 @@ func TestFirstContactNodeInfo(t *testing.T) {
 	}
 }
 
-// §17 test 4: known key, verified; one-byte mutation discarded.
+// design §10.2 test 4: known key, verified; one-byte mutation discarded.
 func TestKnownKeyVerification(t *testing.T) {
 	k := testutil.NewXKey(4)
 	id, _ := NewIdentity(k.NodeNum(), k.X25519Pub)
@@ -94,7 +94,7 @@ func TestSignedNodeInfoMustClaimSigningKey(t *testing.T) {
 	}
 }
 
-// §17 test 6: unknown-key signatures never display as verified.
+// design §10.2 test 6: unknown-key signatures never display as verified.
 func TestUnknownKeyAndUnsigned(t *testing.T) {
 	k := testutil.NewXKey(7)
 	h := PacketHeader{From: k.NodeNum(), ID: 9, To: 0xffffffff}
@@ -128,7 +128,7 @@ func TestUnsignedNodeInfoCannotOverrideSigner(t *testing.T) {
 	}
 }
 
-// §17 test 7: traceroute signatures are never claimed verified.
+// design §10.2 test 7: traceroute signatures are never claimed verified.
 func TestTracerouteExemption(t *testing.T) {
 	k := testutil.NewXKey(10)
 	id, _ := NewIdentity(k.NodeNum(), k.X25519Pub)

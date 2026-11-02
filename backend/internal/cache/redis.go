@@ -1,5 +1,5 @@
 // Package cache wraps Redis, an ephemeral and fully rebuildable cache
-// (spec §5). Every call degrades gracefully: callers get an error and fall
+// (design §3.6). Every call degrades gracefully: callers get an error and fall
 // back to computing from packet_log.
 package cache
 

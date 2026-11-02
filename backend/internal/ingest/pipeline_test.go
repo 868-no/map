@@ -100,7 +100,7 @@ func waitFor(t *testing.T, cond func() bool) {
 	}
 }
 
-// §17 test 9 end to end through the pipeline, plus writer retry on DB
+// design §10.2 test 9 end to end through the pipeline, plus writer retry on DB
 // failure: one row per gateway reception; a copy from another broker is
 // recorded in also_via, a same-broker retry only counted.
 func TestPipelineDedupeAndRetry(t *testing.T) {

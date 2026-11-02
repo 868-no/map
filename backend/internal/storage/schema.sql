@@ -1,4 +1,4 @@
--- meshmap schema. The ONLY application table is packet_log (spec §5),
+-- meshmap schema. The ONLY application table is packet_log (design §3.1),
 -- range-partitioned by month on observed_at (D-056): retention drops whole
 -- months instead of deleting and vacuuming rows. Partitions are created by
 -- storage.EnsurePartitions, never by hand.

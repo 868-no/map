@@ -52,7 +52,7 @@ pub fn move_threshold_m(a: (f64, u32), b: (f64, u32)) -> f64 {
 
 /// A stationary node whose reports jump around one place (D-077): GPS noise
 /// around a fixed spot, or reports of different precision. The agreeing
-/// reports pick its place, never finer than it shared itself (spec §8.7).
+/// reports pick its place, never finer than it shared itself (design §6.10).
 #[derive(Serialize, Clone, Debug, PartialEq)]
 pub struct Anchor {
     pub lat: f64,
@@ -143,7 +143,7 @@ fn narrow(inliers: &[crate::row::Position], mode: &crate::row::Position) -> (f64
         let rms = (fine.iter().map(|p| distance_m(LatLon { lat, lon }, LatLon { lat: p.lat, lon: p.lon }).powi(2)).sum::<f64>() / k).sqrt();
         return (lat, lon, (2.0 * rms / k.sqrt()).max(10.0));
     }
-    // Truncated cells. Spec §8.7: a position shared with reduced precision
+    // Truncated cells. Design §6.10: a position shared with reduced precision
     // keeps that precision, so nothing finer than the node's own finest
     // report is inferred (no narrowing to an edge or corner between cells).
     // Among the agreeing reports at the finest precision, the most reported

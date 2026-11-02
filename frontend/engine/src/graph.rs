@@ -1,4 +1,4 @@
-//! Link graph from in-window evidence (spec §7); ported from the backend's
+//! Link graph from in-window evidence (design §6.2-§6.4); ported from the backend's
 //! internal/graph via the TypeScript worker. Pure: callers pass only rows
 //! inside the window.
 

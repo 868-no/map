@@ -87,7 +87,7 @@ func TestMigrateSchema1(t *testing.T) {
 }
 
 // schema1 is schema.sql as of schema version 1 (before D-056).
-const schema1 = `-- meshmap schema. The ONLY application table is packet_log (spec §5).
+const schema1 = `-- meshmap schema. The ONLY application table is packet_log (design §3.1).
 -- Every statement is idempotent; init-schema runs it under an advisory lock.
 -- The schema version lives in the table comment, not in a migrations table.
 

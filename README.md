@@ -1,20 +1,20 @@
 # 868.no Map
 
-An interactive map, in light and dark themes, for observing Meshtastic mesh networks using only traffic from one or more MQTT brokers. It decrypts channel traffic, verifies XEdDSA packet signatures and stores each accepted gateway reception in one PostgreSQL table (`packet_log`). From that table the browser reconstructs nodes, evidence-backed RF links, traffic and coarse location estimates for any time window in the retention period. Nothing from outside the selected window ever leaks into a view.
+An interactive map, in light and dark themes, for observing Meshtastic mesh networks using only traffic from one or more MQTT brokers. It decrypts channel traffic, verifies XEdDSA packet signatures and stores each accepted gateway reception in one PostgreSQL table (`packet_log`). From that table the browser reconstructs nodes, evidence-backed RF links, traffic and coarse location estimates for any time window in the retention period. Nothing from outside the selected window ever leaks into a view. [docs/design.md](docs/design.md) describes how it works and why.
 
 ![Live overview](docs/screenshots/live-overview.png)
 
 - **Time windows:** default rolling 3 days, presets from 1 h to 7 d, custom start/end, slide the window back through 6 months. Live updates arrive over SSE.
-- **Honest topology:** links come from NeighborInfo, traceroute segments, proven direct gateway receptions, and uniquely resolved relay bytes (low confidence, dashed). Every link shows provenance, per-direction SNR/RSSI statistics and a confidence reason.
+- **Honest topology:** links come from NeighborInfo, traceroute segments, proven direct gateway receptions, and uniquely resolved relay bytes (low confidence, dashed). Confidence counts the evidence: high when observed 3 or more times or in more than one way, medium once or twice (D-087). Every link shows provenance, per-direction SNR/RSSI statistics and a confidence reason.
 - **Live pings:** each transmission heard live animates as a ring at the transmitter and a line to each direct receiver (D-053). The link layers start switched off.
 - **MQTT bridges:** the glyph inside the marker shows how a node uplinks to MQTT: ↑ a gateway (the first copy of each packet), a double chevron one that uplinks every copy it hears (D-084). A small ↓ beside the marker means it probably downlinks: its traceroute hops read exactly 0 dB, as packets taken from the broker do (D-054). Hops into downlinking nodes recorded at exactly 0 dB are internet links, drawn dotted green in their own layer and never counted as radio links (D-055).
 - **0-cost links and reach:** hop limits seen before and after each relay reveal routers that relay a favourite's packets without spending a hop, one direction at a time (gold chevrons, D-068). A selected node's panel simulates how far its packets get at each hop limit, 0 to 7, from the links seen, and can draw that on the map (D-069).
-- **Honest positions:** reported positions only from in-window packets. Estimates need ≥ 3 well-spaced anchors and are drawn as hollow markers with an uncertainty circle; there are no guessed pins.
+- **Honest positions:** reported positions only from in-window packets, never made finer than their owners shared them. Estimates need ≥ 3 well-spaced anchors and are drawn as hollow markers with an uncertainty circle; there are no guessed pins. Marker colour is when a node was last heard, on one gold-to-violet ramp with a logarithmic time scale (D-085, D-087).
 - **Crypto:** AES-CTR and firmware 2.8.1+ AES-CCM channels, firmware-compatible XEdDSA verification with trust-on-first-use, and per-packet status (`verified`, `unsigned`, `unverifiable`, `not-applicable`). Verified against real firmware 2.8 traffic.
-- **Light and dark themes:** follows the browser's setting by default (Auto); viewers can pick Light or Dark under Settings on the tool rail.
+- **Tool rail and themes:** every control sits on a floating tool rail (Nodes, Details, Period, Filters, Layers, Legend, Settings) beside a header island with the live indicator and counters (D-066, D-082). The theme follows the browser by default (Auto); viewers can pick Light or Dark under Settings.
 - **Privacy:** no accounts, cookies, analytics or third-party requests; a [privacy policy](frontend/public/privacy.html) at `/privacy.html` fills in the deployment's operator, contact and retention from the API.
 - **Installable and offline-capable:** add it to a phone's home screen; without a connection it opens with the last data it received (map tiles are not stored offline).
-- **Self-hosted:** Docker Compose, a self-hosted PMTiles basemap with switchable layers (place, peak, road and border labels; most names hidden by default) and an optional regions layer that splits Norway into Nord-Norge, Trøndelag, Vestlandet, Østlandet and Sørlandet, no external services at runtime apart from the basemap service's OpenStreetMap downloads when it builds.
+- **Self-hosted:** Docker Compose, a self-hosted PMTiles basemap with switchable layers (roads, borders and city and country names on by default; local place names, peaks, road names and water names off) and an optional regions layer that splits Norway into Nord-Norge, Trøndelag, Vestlandet, Østlandet and Sørlandet, no external services at runtime apart from the basemap service's OpenStreetMap downloads when it builds.
 
 ## Quick start (demo)
 
@@ -74,9 +74,9 @@ Health at `/health/ready`, metrics at `backend:9100/metrics`. Retention runs dai
 
 | Document | Contents |
 | --- | --- |
+| [docs/design.md](docs/design.md) | How the system works and why: principles, ingest, storage, API, the browser engine, every derived view and map rule, testing, limitations |
 | [docs/architecture.md](docs/architecture.md) | Components, network diagram, data model, time isolation, trust model |
 | [docs/protocol-compatibility.md](docs/protocol-compatibility.md) | Pinned upstream revisions; crypto, signing and traceroute facts verified against firmware |
-| [docs/decisions.md](docs/decisions.md) | Decisions and deviations from the spec and plan |
 | [docs/operations.md](docs/operations.md) | Deploy, configure, monitor, back up, troubleshoot |
 | [docs/basemap.md](docs/basemap.md) | Basemap build, style, glyphs, licences |
 | [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) | Licenses of dependencies, fonts and map data |

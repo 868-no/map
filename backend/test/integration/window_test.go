@@ -202,7 +202,7 @@ const (
 var base = time.Date(2026, 10, 30, 0, 0, 0, 0, time.UTC)
 var testNow = base.Add(24 * time.Hour)
 
-// §17 tests 11, 12, 13, 14 (as window end) and 17. The server's half of
+// design §10.2 tests 11, 12, 13, 14 (as window end) and 17. The server's half of
 // time isolation: /observations returns exactly the rows observed in
 // [start, end). The views built from them are the engine's half
 // (frontend/engine: views over Store::slice).
@@ -257,7 +257,7 @@ func TestTemporalIsolation(t *testing.T) {
 	}
 }
 
-// §17 test 15 (no stale results): with no server-side result cache, a row
+// design §10.2 test 15 (no stale results): with no server-side result cache, a row
 // inserted inside a window is returned by the very next request, and
 // other windows are unaffected.
 func TestNoStaleResults(t *testing.T) {
@@ -278,7 +278,7 @@ func TestNoStaleResults(t *testing.T) {
 	}
 }
 
-// §17 test 16: the rolling window drops rows that aged out, with no new
+// design §10.2 test 16: the rolling window drops rows that aged out, with no new
 // packets arriving.
 func TestRollingWindowEviction(t *testing.T) {
 	pool := freshDB(t)
@@ -292,7 +292,7 @@ func TestRollingWindowEviction(t *testing.T) {
 	}
 }
 
-// §17 test 18 through the API.
+// design §10.2 test 18 through the API.
 func TestRangeRejections(t *testing.T) {
 	pool := freshDB(t)
 	c := newAPI(t, pool, nil, testNow)
@@ -311,7 +311,7 @@ func TestRangeRejections(t *testing.T) {
 	}
 }
 
-// §17 tests 19 and 20: rows deleted by retention are gone from the next
+// design §10.2 tests 19 and 20: rows deleted by retention are gone from the next
 // response, and responses do not depend on Redis (a restart with an empty
 // Redis returns identical rows).
 func TestRetentionAndRebuild(t *testing.T) {

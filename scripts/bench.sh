@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Reference-workload benchmark (spec §11): seed a throwaway PostgreSQL with
+# Reference-workload benchmark (design §9): seed a throwaway PostgreSQL with
 # synthetic observations, then measure API latency. Database and Redis are
 # limited to 4 vCPU / 8 GiB like the spec's reference machine.
 #   scripts/bench.sh [rows] [nodes]

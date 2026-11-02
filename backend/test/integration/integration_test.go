@@ -1,7 +1,7 @@
 //go:build integration
 
 // Integration tests against real PostgreSQL, Redis and Mosquitto, started by
-// scripts/integration.sh. They cover spec §17 tests 9, 10, 20 (identity part),
+// scripts/integration.sh. They cover design §10.2 tests 9, 10, 20 (identity part),
 // 33 and parts of 35.
 package integration
 
@@ -133,7 +133,7 @@ func waitRows(t *testing.T, pool *pgxpool.Pool, atLeast int) int {
 	return 0
 }
 
-// §17 tests 9 and 20 (identity part): the demo stream through the real
+// design §10.2 tests 9 and 20 (identity part): the demo stream through the real
 // pipeline; re-deliveries collapse, gateways stay distinct, identities
 // rebuild from packet_log after a "restart".
 func TestPipelineDemoStream(t *testing.T) {
@@ -277,7 +277,7 @@ func TestDedupeWithoutRedis(t *testing.T) {
 	}
 }
 
-// §17 test 33: retention deletes only expired rows, is repeatable, never
+// design §10.2 test 33: retention deletes only expired rows, is repeatable, never
 // runs concurrently, and leaves packet_log as the only table.
 func TestRetention(t *testing.T) {
 	pool := freshDB(t)
@@ -347,7 +347,7 @@ func TestRetention(t *testing.T) {
 	}
 }
 
-// §17 tests 10 and 35 (partial): real broker; garbage never crashes the
+// design §10.2 tests 10 and 35 (partial): real broker; garbage never crashes the
 // client; client reconnects and resubscribes after the broker drops it.
 // Subtests share got; each resets it.
 func TestMQTTClientRobustness(t *testing.T) {

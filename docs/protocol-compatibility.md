@@ -34,7 +34,7 @@ Regenerate bindings after bumping the submodule: `scripts/go.sh buf generate`, t
 
 ## Ground truth from live traffic
 
-The decoder, decryption and signature verification were replayed against a read-only capture of `mqtt.868.no` (Norwegian community broker, channel `NarrowFast`, default key) on 2026-10-31. See `backend/test/fixtures/README.md` for the capture procedure. Results are recorded in `docs/decisions.md` (D-003).
+The decoder, decryption and signature verification were replayed against a read-only capture of `mqtt.868.no` (Norwegian community broker, channel `NarrowFast`, default key) on 2026-10-31. See `backend/test/fixtures/README.md` for the capture procedure. Results are summarised in [design.md](design.md) §2.4 (D-003).
 
 ## Policy differences from firmware (deliberate)
 

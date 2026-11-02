@@ -23,7 +23,7 @@ import (
 const DecodeVersion = 2
 
 // RawMessage is one MQTT delivery. ObservedAt is captured in the MQTT
-// callback before queuing and is the authoritative event time (§4.1).
+// callback before queuing and is the authoritative event time (design §3.4).
 type RawMessage struct {
 	BrokerID   string
 	Topic      string
@@ -59,7 +59,7 @@ const (
 	CryptoMapReport CryptoStatus = "mqtt_map_report"     // a node's own report to MQTT; never on RF
 )
 
-// RxInfo is reception provenance used by the graph reducer (§7.1 C/D).
+// RxInfo is reception provenance used by the graph reducer (design §6.2).
 type RxInfo struct {
 	DirectRF bool   `json:"direct_rf"`
 	Reason   string `json:"reason"`
@@ -336,7 +336,7 @@ func transportName(t pb.MeshPacket_TransportMechanism) string {
 }
 
 // directRF decides whether the gateway demonstrably received this packet
-// over RF directly from its originator (§7.1 C). Absent fields -> false.
+// over RF directly from its originator (design §2.2). Absent fields -> false.
 func directRF(p *pb.MeshPacket, gw uint32, snr *float32, rssi *int32) RxInfo {
 	switch {
 	case gw == 0:

@@ -5,7 +5,7 @@ Reproduce with `scripts/bench.sh [rows] [nodes]` (server; `meshmap bench --dump`
 ## Environment (2026-10-31)
 
 - Host: 16 CPUs, 31 GiB RAM, NVMe; Docker.
-- PostgreSQL 16 container limited to **4 vCPU / 8 GiB** (the spec's reference machine), `shared_buffers=2GB`; Redis 1 vCPU / 512 MiB.
+- PostgreSQL 16 container limited to **4 vCPU / 8 GiB** (the reference machine, [design.md](design.md) §9), `shared_buffers=2GB`; Redis 1 vCPU / 512 MiB.
 - Backend: Go 1.26, the production query code via an in-process HTTP server (not CPU-limited).
 - Data: `meshmap seed`, 2 000 nodes (1 500 signing, 175 gateways, 487 unpositioned, 15 095 directed RF links), **2 000 000 observations** over 30 days through the production `Process` + COPY path (real CTR/CCM encryption and XEdDSA signatures). Table plus indexes: 2.5 GB.
 
@@ -25,7 +25,7 @@ Since D-041 the server only returns rows; a browser opening a window fetches eve
 | **72 h** | 188 799 | 10 | 72 MiB | 119 ms | **1.60 s** | 1.64 s |
 | 168 h | 440 968 | 23 | 169 MiB | 156 ms | 3.74 s | 3.84 s |
 
-These figures predate stored row encodings (D-046), which roughly halved whole-window time in a separate measurement (190k rows over 72 h, 9 sequential pages: p50 4.6 s → 2.5 s). Pages are served by the `observed_at` index (D-038), so the time per row does not grow with retained history. Rows compress to roughly 57 bytes each with gzip (zstd slightly smaller), so a first visit to a 72 h window at reference density transfers about 11 MB; later visits transfer only rows newer than what is held. The browser fetches the rest of a range in four parallel time slices after the first page, so wall time is shorter than these sequential figures. Spec target for a 3-day window: ≤ 10 s from empty. **Met** (1.6 s server time, before network).
+These figures predate stored row encodings (D-046), which roughly halved whole-window time in a separate measurement (190k rows over 72 h, 9 sequential pages: p50 4.6 s → 2.5 s). Pages are served by the `observed_at` index (D-038), so the time per row does not grow with retained history. Rows compress to roughly 57 bytes each with gzip (zstd slightly smaller), so a first visit to a 72 h window at reference density transfers about 11 MB; later visits transfer only rows newer than what is held. The browser fetches the rest of a range in four parallel time slices after the first page, so wall time is shorter than these sequential figures. Target for a 3-day window (design.md §9): ≤ 10 s from empty. **Met** (1.6 s server time, before network).
 
 ## Derivation (WebAssembly engine vs the TypeScript it replaced, Node 22 / V8, same rows)
 
@@ -37,7 +37,7 @@ These figures predate stored row encodings (D-046), which roughly halved whole-w
 - The engine builds a snapshot **8× (72 h) to 17× (168 h) faster** than the TypeScript implementation, in about a third of the memory. Loading costs the same as `JSON.parse` alone, and no JavaScript objects are created for rows.
 - Engine memory is measured with page-sized loads (20 000 rows, as the app feeds it). WebAssembly memory never shrinks, so loading one huge string at once reserves more (286 / 604 MiB in that test).
 - All of this runs in the worker. The page's only cost per view is decoding and parsing the transferred JSON (7.5 MiB snapshot: about 26 ms).
-- Live updates rebuild the whole snapshot, debounced by window length: 2 s quiet / 5 s at most up to 6 h, 10 s / 15 s from 24 h (D-058). At 0.2–0.4 s off the main thread, incremental aggregation would add a lot of complexity for little benefit at reference density; revisit if meshes grow well beyond it.
+- Live updates rebuild the whole snapshot, debounced by window length: 2 s quiet / 5 s at most up to 6 h, 10 s / 15 s from 24 h (D-058), and never less than 20× / 30× the last snapshot build (D-083). At 0.2–0.4 s off the main thread, incremental aggregation would add a lot of complexity for little benefit at reference density; revisit if meshes grow well beyond it.
 
 ## Browser (Playwright, headless Chromium, software WebGL via SwiftShader, no GPU)
 
@@ -48,7 +48,7 @@ Synthetic observations at reference density (positions, NodeInfo and NeighborInf
 | Empty mesh (basemap only) | 15 MiB | 9.1 fps |
 | 2 000 nodes / 20 000 links | **26 MiB** | 11.8 fps |
 
-The heap target (< 250 MiB) is met with a large margin; the browser never holds raw history. Frame rates here are CPU-rasterised (SwiftShader) and are **not representative of a desktop GPU**. They are useful as a relative measure: level-of-detail rendering (best-supported 3 000 links below zoom 9, viewport-culled links above, arrowheads only from zoom 9) raised the dense-scene rate from 4.7 to 11.4 fps under identical conditions. The 60 fps desktop target has not been verified on GPU hardware in this environment; measure it on target hardware with the same spec file in headed mode.
+The heap target (< 250 MiB) is met with a large margin; the browser never holds raw history. Frame rates here are CPU-rasterised (SwiftShader) and are **not representative of a desktop GPU**. They are useful as a relative measure: level-of-detail rendering (best-supported 3 000 links below zoom 9, viewport-culled links above) raised the dense-scene rate from 4.7 to 11.4 fps under identical conditions. The 60 fps desktop target has not been verified on GPU hardware in this environment; measure it on target hardware with the same spec file in headed mode.
 
 ## Observations and follow-ups
 

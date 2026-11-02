@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test'
 import { mockObservations, neighborRow, nodeRows } from './mock'
 
-// Spec §11/§17 test 32 (client side): reference density of 2 000 nodes and
+// Design §9 and §10.2 test 32 (client side): reference density of 2 000 nodes and
 // 20 000 links, derived in the browser from synthetic observations; measure
 // JS heap and frame rate while panning. Printed for docs/benchmarks.md.
 for (const [N, E] of [[0, 0], [2000, 20000]] as const) test(`rendering ${N} nodes / ${E} edges: heap and frame rate`, async ({ page }) => {

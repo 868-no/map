@@ -10,7 +10,7 @@ import (
 	"github.com/868-no/map/internal/protocol/pb"
 )
 
-// Limits applied before and during envelope parsing (§3.4).
+// Limits applied before and during envelope parsing (design §2.2).
 const (
 	MaxEnvelopeBytes  = 1024 // ServiceEnvelope: ≤256 B encrypted payload plus headers, ids and optional decoded fields
 	MaxChannelIDLen   = 64

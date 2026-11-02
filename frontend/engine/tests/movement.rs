@@ -93,7 +93,7 @@ const CELL15: f64 = 1e-7 * 131_072.0; // a 15-bit cell, in degrees
 #[test]
 fn jitter_across_a_cell_edge_picks_a_cell_but_never_goes_finer_than_shared() {
     // Reports alternate between two cells either side of an edge, one more often.
-    // Spec §8.7: no narrowing to the edge between them, only the better-supported cell.
+    // Design §6.10: no narrowing to the edge between them, only the better-supported cell.
     let (south, north) = (63.40, 63.40 + CELL15);
     let rows: Vec<Value> = [south, north, south, north, south, south].iter().enumerate().map(|(k, &lat)| pos(k as i64 + 1, k as i64 * 10, lat, 15, None)).collect();
     let n = node(&snapshot(Value::Array(rows)), M);

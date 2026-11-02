@@ -59,7 +59,7 @@ func TestParseEnvelopeValidation(t *testing.T) {
 	}
 }
 
-// Arbitrary bytes must never panic the parser (§17 test 10).
+// Arbitrary bytes must never panic the parser (design §10.2 test 10).
 func TestParseEnvelopeNeverPanics(t *testing.T) {
 	rapid.Check(t, func(t *rapid.T) {
 		b := rapid.SliceOfN(rapid.Byte(), 0, 2048).Draw(t, "b")

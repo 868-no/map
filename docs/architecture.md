@@ -1,5 +1,7 @@
 # Architecture
 
+This page shows the components and where the code lives. The rules the system follows (ingest, storage, the derived views and the map) are in [design.md](design.md).
+
 ## Overview
 
 ```text
