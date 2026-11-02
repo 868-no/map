@@ -472,6 +472,9 @@ components:
         i:
           format: int64
           type: integer
+        iv:
+          description: "Type invalid: why its content was not kept (sig_invalid, payload_invalid, ...); its sender may be forged"
+          type: string
         l:
           description: logical packet key, first 8 bytes as hex
           type: string

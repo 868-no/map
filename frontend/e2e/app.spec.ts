@@ -164,7 +164,7 @@ test('API payloads never carry envelopes, ciphertext or message bodies', async (
   if (bodies.at(-1) !== '') expect(bodies.at(-1)).toContain('"row"')
   else test.info().annotations.push({ type: 'note', description: 'no live traffic within 45 s; stream payload not sampled' })
   for (const b of bodies) {
-    expect(b).not.toMatch(/"(envelope_bytes|envelope|encrypted|payload|psk|xeddsa_signature)"/)
+    expect(b).not.toMatch(/"(envelope_bytes|envelope|encrypted|payload|psk|xeddsa_signature)"\s*:/)
   }
 })
 

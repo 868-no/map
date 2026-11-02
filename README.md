@@ -26,7 +26,7 @@ docker compose --profile demo up -d --build
 open http://localhost:8080
 ```
 
-The `demo` profile adds a local Mosquitto broker (compose network only) and a simulator for a 22-node mesh in Trøndelag. The simulator uses real encryption and signatures, flood relaying via several gateways, traceroutes, NeighborInfo, plaintext uplinks, unpositioned nodes, a relay-byte collision, and deliberately bad input (forged signatures, PKI DMs, malformed protobufs) that must be rejected. It refuses to publish to non-private hosts.
+The `demo` profile adds a local Mosquitto broker (compose network only) and a simulator for a 22-node mesh in Trøndelag. The simulator uses real encryption and signatures, flood relaying via several gateways, traceroutes, NeighborInfo, plaintext uplinks, unpositioned nodes, a relay-byte collision, and deliberately bad input: forged signatures and PKI DMs, which must be kept header-only, and malformed protobufs, which must be rejected. It refuses to publish to non-private hosts.
 
 The `basemap` service starts too and downloads several GB of OpenStreetMap data for its first build; the map works without tiles until it finishes. Add `--scale basemap=0` to skip it.
 

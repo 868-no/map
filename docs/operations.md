@@ -50,7 +50,7 @@ Pin a version tag or `sha-…` in production (`compose.production.yaml` takes it
 
 - `secrets/mqtt-brokers.yaml`: a list of brokers, each with `id`, `host`, `port`, `protocol` (v5/v311), `tls` (enabled, ca_file, server_name), `username`, `password` or `password_file`, `client_id` and `topics` (filter, qos 0/1). Set `accept_retained: false` (the default) so retained messages never fabricate current activity.
 - `secrets/channel-keys.yaml`: a list of channels, each with `name`, `broker_ids` (`*` for all), `mode` (`ctr`, or `ccm` for firmware 2.8.1+ AEAD channels), `psks` (current key first, then previous keys during rotation; base64, or `hex:`; `AQ==` is the public default key) and `accept_plaintext` (default true for configured channels). List as many channels as you like; a channel name may also appear more than once with different `broker_ids`.
-- Channels that are not listed are tried with the public default key (`AQ==`, CTR and CCM) under the channel name in the topic, so default-key channels with any name decode without configuration (D-065). The packet's channel byte (a hash of name and key) must match, so channels with their own key stay undecoded (`no_key`). Set `DEFAULT_KEY_FALLBACK=false` to decode only listed channels.
+- Channels that are not listed are tried with the public default key (`AQ==`, CTR and CCM) under the channel name in the topic, so default-key channels with any name decode without configuration (D-065). The packet's channel byte (a hash of name and key) must match, so channels with their own key stay undecoded: they are stored header-only as `encrypted` rows (D-093). Set `DEFAULT_KEY_FALLBACK=false` to decode only listed channels.
 - Key rotation: add the new key first and keep the old one until no traffic uses it, then restart `backend`. The configuration hash is part of the `generation` that `/observations` reports, so browsers discard the rows they hold and refetch.
 - Optional: `GEOLOCATION_CALIBRATION` is the path to a YAML file with `default: {p0_dbm, path_loss_exponent}` for calibrated RF location estimates (D-016). All other settings are environment variables; see `.env.example` and `backend/internal/config/config.go`.
 
@@ -86,7 +86,7 @@ Public by default. For basic auth, create `deploy/caddy-auth/basic.caddy` (see t
 - `GET /health/ready`: database, schema version, Redis (degraded when unreachable; dedupe falls back to a database lookup), ingest writer and queue, broker connection states, and the last retention run (time, deleted rows, table size).
 - Prometheus metrics at `backend:9100/metrics` (compose network only). `PUBLIC_METRICS_ENABLED=true` also serves them on the backend's HTTP port (`backend:8000/metrics`); the `web` service does not proxy that path, so publishing them needs your own reverse-proxy route (protect it). Key series:
   - `meshmap_mqtt_received_total`, `meshmap_mqtt_connected`
-  - `meshmap_ingest_accepted_total{packet_type,signature_status}`, `meshmap_ingest_rejected_total{category}` (includes `not_ok_to_mqtt_nodeinfo`: NodeInfo withheld because the sender did not allow MQTT uplink, and `map_report_invalid`)
+  - `meshmap_ingest_accepted_total{packet_type,signature_status}`, `meshmap_ingest_rejected_total{category}` (duplicates, unparseable envelopes and `map_report_invalid`; packets that fail keys, decoding or verification are accepted as `encrypted`/`invalid` header-only rows)
   - `meshmap_ingest_dropped_total{reason}` (queue full = data loss window)
   - `meshmap_ingest_duplicate_deliveries_total{broker}`, `meshmap_ingest_provenance_updates_total`
   - `meshmap_writer_*`, `meshmap_identities`, `meshmap_retention_deleted_rows_total`
@@ -119,7 +119,7 @@ Only `packet_log` matters; Redis is ephemeral and rebuilds itself. After a resto
 | Symptom | Check |
 | --- | --- |
 | Map is grey/empty | `docker compose logs basemap` (the first build takes a while); `data/basemap/basemap.pmtiles` (or the `basemap` volume with `compose.production.yaml`) exists; `curl -r 0-99 localhost:8080/tiles/basemap.pmtiles` returns 206 |
-| No nodes | `/health/ready` broker states; rejection metrics (`no_key` → no listed key and not the default key; `retained_ignored`; `topic_json`) |
+| No nodes | `/health/ready` broker states; rejection metrics (`retained_ignored`; `topic_json`) and accepted `encrypted` rows (no listed key and not the default key) |
 | Many `decrypt_failed` | Wrong PSK for that channel name, or a CCM channel configured as `ctr` |
 | `sig_invalid` rejections | Forged or corrupted signed packets; expected to be rare on real traffic |
 | Live badge “paused” | Redis down in API-only mode (`serve --no-ingest`), or SSE blocked by a proxy (disable buffering) |

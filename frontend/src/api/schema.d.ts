@@ -334,6 +334,8 @@ export interface components {
             hs?: number;
             /** Format: int64 */
             i: number;
+            /** @description Type invalid: why its content was not kept (sig_invalid, payload_invalid, ...); its sender may be forged */
+            iv?: string;
             /** @description logical packet key, first 8 bytes as hex */
             l: string;
             mr?: components["schemas"]["ObsMapReport"];

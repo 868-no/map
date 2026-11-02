@@ -52,12 +52,13 @@ func Category(err error) string {
 type CryptoStatus string
 
 const (
-	CryptoCTR       CryptoStatus = "ctr_unauthenticated" // decrypted, no integrity guarantee
-	CryptoCCM       CryptoStatus = "ccm_authenticated"   // AEAD tag verified (channel membership, not sender)
-	CryptoPlaintext CryptoStatus = "plaintext_uplink"    // gateway uplinked decoded packet
-	CryptoNone      CryptoStatus = "unencrypted_channel" // PSK shorthand 0x00
-	CryptoMapReport CryptoStatus = "mqtt_map_report"     // a node's own report to MQTT; never on RF
-	CryptoPKI       CryptoStatus = "pki_unreadable"      // end-to-end encrypted direct message: header only (D-091)
+	CryptoCTR        CryptoStatus = "ctr_unauthenticated" // decrypted, no integrity guarantee
+	CryptoCCM        CryptoStatus = "ccm_authenticated"   // AEAD tag verified (channel membership, not sender)
+	CryptoPlaintext  CryptoStatus = "plaintext_uplink"    // gateway uplinked decoded packet
+	CryptoNone       CryptoStatus = "unencrypted_channel" // PSK shorthand 0x00
+	CryptoMapReport  CryptoStatus = "mqtt_map_report"     // a node's own report to MQTT; never on RF
+	CryptoPKI        CryptoStatus = "pki_unreadable"      // end-to-end encrypted direct message: header only (D-091)
+	CryptoUnreadable CryptoStatus = "channel_unreadable"  // a channel we hold no working key for: header only (D-093)
 )
 
 // RxInfo is reception provenance used by the graph reducer (design §6.2).
@@ -81,6 +82,10 @@ type Metadata struct {
 	// is rejected so the node is never named (D-032).
 	NotOKToMQTT bool `json:"not_ok_to_mqtt,omitempty"`
 	Bytes       int  `json:"bytes"`
+	// Invalid is why a header-only row's content was not kept: it failed
+	// decoding or verification (sig_invalid, payload_invalid, ...). Its
+	// sender may be forged, so it is never evidence (D-093).
+	Invalid string `json:"invalid,omitempty"`
 	// AlsoVia lists other brokers that delivered this same gateway upload
 	// (bridged brokers, multi-broker gateways) before it was committed.
 	// Debug aid only; never counted as additional receptions.
@@ -167,31 +172,33 @@ func Process(m RawMessage, o Options) (Observation, error) {
 		data, crypto = p.GetDecoded(), CryptoMapReport
 	} else if env.Kind == protocol.PayloadDecoded {
 		if p.GetPkiEncrypted() {
-			return directMessage(m, topic, env, channelName), nil
+			return headerOnly(m, topic, env, channelName, ports.TypeDirectMessage, CryptoPKI, ""), nil
 		}
 		if !o.Keyring.AcceptsPlaintext(m.BrokerID, channelName) {
-			return Observation{}, reject("plaintext_unconfigured")
+			return headerOnly(m, topic, env, channelName, ports.TypeInvalid, CryptoPlaintext, "plaintext_unconfigured"), nil
 		}
 		data, crypto = p.GetDecoded(), CryptoPlaintext
 	} else {
 		// PKI DMs travel with channel hash 0 and cannot be read with a PSK.
 		if p.GetPkiEncrypted() || p.GetChannel() == 0 {
-			return directMessage(m, topic, env, channelName), nil
+			return headerOnly(m, topic, env, channelName, ports.TypeDirectMessage, CryptoPKI, ""), nil
 		}
 		if p.GetChannel() > 0xFF {
 			return Observation{}, reject("invalid_envelope")
 		}
 		data, crypto, err = decrypt(m.BrokerID, topic.Channel, p, o)
 		if err != nil {
-			return Observation{}, err
+			// A channel we hold no working key for: who sent what to whom
+			// is in the clear on RF, its content is not (D-093).
+			return headerOnly(m, topic, env, channelName, ports.TypeEncrypted, CryptoUnreadable, ""), nil
 		}
 	}
 	if data.GetPortnum() == pb.PortNum_UNKNOWN_APP {
-		return Observation{}, reject("decode_failed")
+		return headerOnly(m, topic, env, channelName, ports.TypeInvalid, crypto, "decode_failed"), nil
 	}
 	dec, err := ports.Decode(data, p.GetFrom())
 	if err != nil {
-		return Observation{}, reject("payload_invalid")
+		return headerOnly(m, topic, env, channelName, ports.TypeInvalid, crypto, "payload_invalid"), nil
 	}
 	if !mapReport && dec.Type == ports.TypeMapReport {
 		return Observation{}, reject("map_report_invalid") // only the map topic carries them
@@ -202,8 +209,12 @@ func Process(m RawMessage, o Options) (Observation, error) {
 	// flag reached us despite the sender's choice. Keep the traffic, never
 	// the identity.
 	notOK := data.Bitfield != nil && data.GetBitfield()&1 == 0 && env.Gateway != p.GetFrom()
+	stored := m.Payload
 	if notOK && dec.NodeInfo != nil {
-		return Observation{}, reject("not_ok_to_mqtt_nodeinfo")
+		// Kept without its names (D-032, D-093): hardware, role and key
+		// remain. The stored envelope loses its payload, which holds them.
+		dec.NodeInfo.LongName, dec.NodeInfo.ShortName = "", ""
+		stored = zeroPayload(env, len(data.GetPayload()), false)
 	}
 
 	var announced []byte
@@ -215,7 +226,9 @@ func Process(m RawMessage, o Options) (Observation, error) {
 		// Map reports carry no signature and are published unauthenticated,
 		// like the gateway id itself.
 		if verdict, err = security.Evaluate(security.HeaderOf(p), data, announced, o.Identities, o.Policy); err != nil {
-			return Observation{}, reject(err.Error())
+			// Failed verification: its content cannot be trusted, and its
+			// sender may be forged. Header only, never used as evidence.
+			return headerOnly(m, topic, env, channelName, ports.TypeInvalid, crypto, err.Error()), nil
 		}
 	}
 	if dec.NodeInfo != nil {
@@ -234,7 +247,7 @@ func Process(m RawMessage, o Options) (Observation, error) {
 		PacketType:      dec.Type,
 		Transport:       transportName(p.GetTransportMechanism()),
 		SignatureStatus: verdict.Status,
-		EnvelopeBytes:   m.Payload,
+		EnvelopeBytes:   stored,
 		Promote:         verdict.Promote,
 		Meta: Metadata{
 			Decoded: dec, Crypto: crypto, ViaMQTT: p.GetViaMqtt(), WantAck: p.GetWantAck(),
@@ -284,23 +297,19 @@ func setHeader(obs *Observation, p *pb.MeshPacket, gw uint32) {
 	obs.Meta.Rx = directRF(p, gw, obs.RxSNR, obs.RxRSSI)
 }
 
-// directMessage keeps only the header of an end-to-end encrypted direct
-// message (D-091): who sent it to whom, its id, hops, relay, size and the
-// gateway's reception metrics travel in the clear on RF; its content does
-// not, and is never stored. The stored envelope has the ciphertext (or a
-// decoded payload a recipient's gateway uplinked) replaced by zeros of the
-// same length, so re-decoding reproduces this row and nothing more.
-func directMessage(m RawMessage, topic protocol.Topic, env protocol.Envelope, channelName string) Observation {
+// headerOnly keeps only a packet's cleartext header (D-091, D-093): who
+// sent it to whom, its id, hops, relay, size and the gateway's reception
+// metrics, which travel in the clear on RF. Used for end-to-end encrypted
+// direct messages, channels we cannot read, and packets that failed
+// decoding or verification (ty invalid, with the reason). Its content is
+// never stored: the stored envelope has the payload replaced by zeros of
+// the same length, so re-decoding yields this row and nothing more.
+func headerOnly(m RawMessage, topic protocol.Topic, env protocol.Envelope, channelName, ty string, crypto CryptoStatus, invalid string) Observation {
 	p := env.Packet
 	size := len(p.GetEncrypted())
 	if d := p.GetDecoded(); d != nil {
 		size = len(d.GetPayload())
 	}
-	stripped := proto.Clone(env.Raw).(*pb.ServiceEnvelope)
-	sp := stripped.GetPacket()
-	sp.PayloadVariant = &pb.MeshPacket_Encrypted{Encrypted: make([]byte, max(size, 1))}
-	sp.PkiEncrypted = true
-	raw, _ := deterministic.Marshal(stripped)
 	obs := Observation{
 		ObservedAt:      m.ObservedAt.UTC(),
 		BrokerID:        m.BrokerID,
@@ -308,13 +317,13 @@ func directMessage(m RawMessage, topic protocol.Topic, env protocol.Envelope, ch
 		Source:          p.GetFrom(),
 		PacketID:        p.GetId(),
 		Channel:         channelName,
-		PacketType:      ports.TypeDirectMessage,
+		PacketType:      ty,
 		Transport:       transportName(p.GetTransportMechanism()),
 		SignatureStatus: security.SigNotApplicable,
-		EnvelopeBytes:   raw,
+		EnvelopeBytes:   zeroPayload(env, size, ty == ports.TypeDirectMessage),
 		Meta: Metadata{
-			Decoded: ports.Decoded{Type: ports.TypeDirectMessage}, Crypto: CryptoPKI, ViaMQTT: p.GetViaMqtt(), WantAck: p.GetWantAck(),
-			TopicRoot: topic.Root, NextHop: p.GetNextHop(), Bytes: size,
+			Decoded: ports.Decoded{Type: ty}, Crypto: crypto, ViaMQTT: p.GetViaMqtt(), WantAck: p.GetWantAck(),
+			TopicRoot: topic.Root, NextHop: p.GetNextHop(), Bytes: size, Invalid: invalid,
 		},
 	}
 	setHeader(&obs, p, env.Gateway)
@@ -322,6 +331,19 @@ func directMessage(m RawMessage, topic protocol.Topic, env protocol.Envelope, ch
 	obs.LogicalKey = logicalKey(p, channelName, empty)
 	obs.ObservationKey = observationKey(obs, env.Gateway, empty)
 	return obs
+}
+
+// zeroPayload re-encodes the envelope with its payload replaced by size
+// zero bytes (at least one, so it still parses); pki keeps it a PKI packet.
+func zeroPayload(env protocol.Envelope, size int, pki bool) []byte {
+	stripped := proto.Clone(env.Raw).(*pb.ServiceEnvelope)
+	sp := stripped.GetPacket()
+	sp.PayloadVariant = &pb.MeshPacket_Encrypted{Encrypted: make([]byte, max(size, 1))}
+	if pki {
+		sp.PkiEncrypted = true
+	}
+	raw, _ := deterministic.Marshal(stripped)
+	return raw
 }
 
 func decrypt(broker, topicChannel string, p *pb.MeshPacket, o Options) (*pb.Data, CryptoStatus, error) {

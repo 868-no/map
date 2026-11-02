@@ -29,6 +29,12 @@ const (
 	// TypeDirectMessage is an end-to-end (PKI) encrypted direct message, of
 	// which only the cleartext header is kept (D-091).
 	TypeDirectMessage = "direct_message"
+	// TypeEncrypted is a packet on a channel we hold no working key for:
+	// header only (D-093).
+	TypeEncrypted = "encrypted"
+	// TypeInvalid is a packet that failed decoding or verification: header
+	// only, with the reason; never evidence (D-093).
+	TypeInvalid = "invalid"
 )
 
 var (

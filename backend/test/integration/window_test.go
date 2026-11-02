@@ -143,7 +143,8 @@ type obsRow struct {
 	S  uint32 `json:"s"`
 	NK bool   `json:"nk"`
 	NI *struct {
-		LongName string `json:"long_name"`
+		LongName  string `json:"long_name"`
+		ShortName string `json:"short_name"`
 	} `json:"ni"`
 	PO *struct {
 		Lat           float64 `json:"lat"`
@@ -452,7 +453,7 @@ func TestMapReportsAndMQTTOptOut(t *testing.T) {
 	if err := f.insert(ingest.RawMessage{BrokerID: "it", Topic: "msh/EU_868/2/map/", Payload: env, ObservedAt: T2}); err != nil {
 		t.Fatal(err)
 	}
-	// nodeB: no OK-to-MQTT, uplinked by gw1. Its NodeInfo is refused, its position kept.
+	// nodeB: no OK-to-MQTT, uplinked by gw1. Its NodeInfo is kept without names (D-093), its position kept.
 	notOK := uint32(0)
 	b, _ := proto.Marshal(&pb.User{LongName: "Secret", ShortName: "SE"})
 	f.pid++
@@ -461,13 +462,17 @@ func TestMapReportsAndMQTTOptOut(t *testing.T) {
 	mp := &pb.MeshPacket{From: nodeB, To: protocol.Broadcast, Id: f.pid, Channel: uint32(security.ChannelHash("LongFast", security.DefaultPSK[:], security.ModeCTR)),
 		PayloadVariant: &pb.MeshPacket_Encrypted{Encrypted: ct}, HopStart: 3, HopLimit: 3}
 	envB, _ := proto.Marshal(&pb.ServiceEnvelope{Packet: mp, ChannelId: "LongFast", GatewayId: protocol.NodeID(gw1)})
-	if err := f.insert(ingest.RawMessage{BrokerID: "it", Topic: "msh/EU_868/2/e/LongFast/" + protocol.NodeID(gw1), Payload: envB, ObservedAt: T1}); ingest.Category(err) != "not_ok_to_mqtt_nodeinfo" {
+	if err := f.insert(ingest.RawMessage{BrokerID: "it", Topic: "msh/EU_868/2/e/LongFast/" + protocol.NodeID(gw1), Payload: envB, ObservedAt: T1}); err != nil {
 		t.Fatalf("nodeinfo: %v", err)
 	}
 	la, lo := int32(63.5e7), int32(10.4e7)
 	pb2, _ := proto.Marshal(&pb.Position{LatitudeI: &la, LongitudeI: &lo, PrecisionBits: 32})
 	f.store(T1, nodeB, gw1, &pb.Data{Portnum: pb.PortNum_POSITION_APP, Payload: pb2, Bitfield: &notOK}, nil)
 
+	var leaked int
+	if err := pool.QueryRow(context.Background(), `SELECT count(*) FROM packet_log WHERE decoded_metadata::text LIKE '%Secret%' OR position('Secret'::bytea in envelope_bytes) > 0`).Scan(&leaked); err != nil || leaked != 0 {
+		t.Fatalf("opt-out name stored: %d %v", leaked, err)
+	}
 	c := newAPI(t, pool, rc, testNow)
 	rows, code := c.rows(win(base, base.Add(6*time.Hour)))
 	if code != 200 {
@@ -491,10 +496,13 @@ func TestMapReportsAndMQTTOptOut(t *testing.T) {
 			}
 		case r.S == nodeB && r.Y == "nodeinfo":
 			bInfo++
+			if r.NI == nil || r.NI.LongName != "" || r.NI.ShortName != "" || !r.NK {
+				t.Fatalf("nodeB NodeInfo must be unnamed and marked: %+v", r.NI)
+			}
 		}
 	}
-	if reports != 1 || bPos != 1 || bInfo != 0 {
-		t.Fatalf("map reports %d, nodeB positions %d, nodeB NodeInfo %d (want 1, 1, 0)", reports, bPos, bInfo)
+	if reports != 1 || bPos != 1 || bInfo != 1 {
+		t.Fatalf("map reports %d, nodeB positions %d, nodeB NodeInfo %d (want 1, 1, 1)", reports, bPos, bInfo)
 	}
 }
 

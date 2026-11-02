@@ -46,6 +46,7 @@ type ObsRow struct {
 	Bytes     int      `json:"by,omitempty"`
 	NotOK     bool     `json:"nk,omitempty" doc:"sent without OK-to-MQTT and uplinked by another gateway"`
 	Topic     string   `json:"tp,omitempty" doc:"MQTT topic root the reception arrived on (before /2/e/...), e.g. msh/EU_868/NO/Trøndelag"`
+	Invalid   string   `json:"iv,omitempty" doc:"Type invalid: why its content was not kept (sig_invalid, payload_invalid, ...); its sender may be forged"`
 	// Port-specific decoded fields; omitted for types that have none.
 	NodeInfo     *ObsNodeInfo     `json:"ni,omitempty"`
 	Position     *ObsPosition     `json:"po,omitempty"`
@@ -129,11 +130,12 @@ type ObsTraceroute struct {
 
 // storedMeta is the subset of decoded_metadata copied into ObsRow.
 type storedMeta struct {
-	Crypto string `json:"crypto"`
-	Bytes  int    `json:"bytes"`
-	NotOK  bool   `json:"not_ok_to_mqtt"`
-	Topic  string `json:"topic_root"`
-	Rx     struct {
+	Crypto  string `json:"crypto"`
+	Bytes   int    `json:"bytes"`
+	NotOK   bool   `json:"not_ok_to_mqtt"`
+	Topic   string `json:"topic_root"`
+	Invalid string `json:"invalid"`
+	Rx      struct {
 		DirectRF bool   `json:"direct_rf"`
 		Reason   string `json:"reason"`
 	} `json:"rx"`
@@ -157,8 +159,8 @@ type storedMeta struct {
 // New builds them differently. It is part of the generation
 // /observations reports, so browsers holding rows in the old format start
 // over, and stored encodings of an older version are rebuilt (D-046)
-// (2: tp, mr; 3: map report identity and has_default_channel; 4: rt).
-const Version = 4
+// (2: tp, mr; 3: map report identity and has_default_channel; 4: rt; 5: iv).
+const Version = 5
 
 // Fields are the packet_log columns an ObsRow carries.
 type Fields struct {
@@ -188,7 +190,7 @@ func New(f Fields, meta []byte) ObsRow {
 	if err := json.Unmarshal(meta, &m); err != nil {
 		badMeta(r.ID, err)
 	}
-	r.Crypto, r.Bytes, r.DirectRF, r.RxReason, r.NotOK, r.Topic = m.Crypto, m.Bytes, m.Rx.DirectRF, m.Rx.Reason, m.NotOK, m.Topic
+	r.Crypto, r.Bytes, r.DirectRF, r.RxReason, r.NotOK, r.Topic, r.Invalid = m.Crypto, m.Bytes, m.Rx.DirectRF, m.Rx.Reason, m.NotOK, m.Topic, m.Invalid
 	switch r.Type {
 	case "nodeinfo":
 		if n := m.NodeInfo; n != nil {

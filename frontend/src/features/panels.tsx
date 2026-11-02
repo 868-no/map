@@ -16,6 +16,19 @@ function nodeName(n: MeshNode | undefined, id: string): string {
   return n?.identity?.long_name || n?.identity?.short_name || id
 }
 
+/** Packet log type labels and tooltips for header-only rows (D-091, D-093). */
+const TYPE_SHORT: Record<string, string> = { direct_message: 'DM 🔒', encrypted: 'encrypted 🔒' }
+const TYPE_TIP: Record<string, string> = {
+  direct_message: 'Encrypted direct message: who sent it to whom is known, its content is not',
+  encrypted: 'On a channel this map has no key for: who sent it is known, its content is not',
+  invalid: 'Failed decoding or verification: content not kept, and the sender may be forged, so it counts for nothing else on the map',
+}
+const INVALID: Record<string, string> = {
+  sig_invalid: 'its signature does not verify', sig_malformed: 'malformed signature', first_contact_invalid: 'its first NodeInfo failed verification',
+  nodeinfo_key_mismatch: 'NodeInfo with a different key than the trusted one', strict_unverifiable: 'signed with an unknown key (strict policy)',
+  payload_invalid: 'its payload does not decode', decode_failed: 'decrypted to nothing readable', plaintext_unconfigured: 'unencrypted uplink from a broker not trusted for that',
+}
+
 /** Firmware Routing.Error names in plain words (D-092). */
 const ROUTING_ERROR: Record<string, string> = {
   NO_ROUTE: 'no route', GOT_NAK: 'refused', TIMEOUT: 'timed out', NO_INTERFACE: 'no interface', MAX_RETRANSMIT: 'gave up after retries',
@@ -415,7 +428,7 @@ function PacketLogs({ id, names, positioned, moved }: { id: string; names: Map<s
     traceroute: ['route', "This node is in the traceroute's recorded route"],
   } as const
   type Entry = { lp: string; at: string; type: string; to?: string; gateways: number } & (
-    | { kind: 'own'; hops?: number; signature: string; by_itself?: boolean; downlinked?: boolean; replies?: Reply[]; answers?: Answer }
+    | { kind: 'own'; hops?: number; signature: string; by_itself?: boolean; downlinked?: boolean; replies?: Reply[]; answers?: Answer; invalid?: string }
     | { kind: 'relayed'; origin: string; evidence: ('relay_byte' | 'traceroute')[] }
     | { kind: 'inbound'; origin: string; answers?: Answer }
   )
@@ -453,8 +466,8 @@ function PacketLogs({ id, names, positioned, moved }: { id: string; names: Map<s
                   <button className="linkish" onClick={(e) => { e.stopPropagation(); select({ kind: 'node', id: p.origin }) }}>{nm(p.origin)}</button>
                 )}
               </td>
-              <td title={(p.type === 'direct_message' ? 'encrypted direct message: content unknown' : p.type) + (p.kind === 'own' ? ` · ${SIG_LABEL[p.signature] ?? p.signature}` : '') + (p.kind !== 'relayed' && p.answers ? ` · answers packet ${p.answers.request_id}` : '')}>
-                {p.kind !== 'relayed' && p.answers ? <AnswerTag a={p.answers} /> : p.type === 'direct_message' ? 'DM 🔒' : p.type}
+              <td title={(TYPE_TIP[p.type] ?? p.type) + (p.kind === 'own' && p.invalid ? `: ${INVALID[p.invalid] ?? p.invalid}` : '') + (p.kind === 'own' && p.type !== 'invalid' ? ` · ${SIG_LABEL[p.signature] ?? p.signature}` : '') + (p.kind !== 'relayed' && p.answers ? ` · answers packet ${p.answers.request_id}` : '')}>
+                {p.kind !== 'relayed' && p.answers ? <AnswerTag a={p.answers} /> : p.type === 'invalid' ? <span className="reply-err">invalid</span> : TYPE_SHORT[p.type] ?? p.type}
               </td>
               <td className="wrap" title={p.to && p.to !== 'broadcast' ? nm(p.to) : undefined}>{p.to === 'broadcast' ? 'all' : p.to ? nm(p.to) : ''}</td>
               <td>

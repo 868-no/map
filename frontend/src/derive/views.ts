@@ -262,6 +262,7 @@ export interface OwnPacket {
   signature: string
   replies?: Reply[] // ACKs and errors answering it (D-092)
   answers?: Answer // for a routing packet: what it says
+  invalid?: string // type invalid: why its content was not kept (D-093)
 }
 
 /** Routing packets from one node answering a packet. */

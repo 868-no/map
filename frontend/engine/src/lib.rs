@@ -217,7 +217,12 @@ impl Engine {
                 let num = parse_node(arg).ok_or_else(|| err("invalid node id"))?;
                 self.build(start, end, filters)?;
                 let b = &self.built.as_ref().unwrap().1;
-                Ok(json(&packets::packet_log(&self.rows(), num, &b.ctx, &self.i)))
+                // Its invalid rows too, which the filters always leave out (D-093).
+                let invalid = self.i.get("invalid");
+                let (a, z) = self.store.range(start, end);
+                let mut rows = self.rows();
+                rows.extend(self.store.rows[a..z].iter().filter(|r| Some(r.ty) == invalid && r.src == num));
+                Ok(json(&packets::packet_log(&rows, num, &b.ctx, &self.i)))
             }
             "route" => {
                 let lp = key64(arg);
@@ -253,7 +258,9 @@ impl Engine {
         let rows: Vec<row::Row> = parsed.into_iter().map(|r| r.into_row(&mut self.i)).collect();
         let empty = Built { snapshot: views::Snapshot { nodes: vec![], edges: vec![], edges_truncated: false, counts: Default::default(), diagnostics: Default::default() }, ctx: Default::default(), roles: util::map() };
         let b = self.built.as_ref().map_or(&empty, |(_, b)| b);
-        let out: Vec<Vec<packets::Transmission>> = rows.iter().map(|r| packets::transmissions(r, &b.ctx, &b.roles)).collect();
+        let invalid = self.i.get("invalid");
+        // Invalid rows prove nothing, not even a transmission (D-093).
+        let out: Vec<Vec<packets::Transmission>> = rows.iter().map(|r| if Some(r.ty) == invalid { vec![] } else { packets::transmissions(r, &b.ctx, &b.roles) }).collect();
         Ok(json(&out))
     }
 }

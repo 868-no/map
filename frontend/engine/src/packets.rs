@@ -41,6 +41,9 @@ pub struct OwnPacket {
     /// For a routing packet: what it says and which packet it answers.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub answers: Option<Answer>,
+    /// Type invalid: why its content was not kept (D-093).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub invalid: Option<String>,
 }
 
 /// Routing packets from one node answering a packet: ACKs or one error.
@@ -185,6 +188,7 @@ pub fn packet_log(rows: &[&Row], num: u32, ctx: &RelayContext, i: &Interner) -> 
                     signature: best.to_string(),
                     replies: first.pid.map_or(vec![], |p| replies.replies(p, num, i)),
                     answers: replies.answer(first, i),
+                    invalid: first.invalid().map(|v| i.s(v).to_string()),
                 },
             )
         })

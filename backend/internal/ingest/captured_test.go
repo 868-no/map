@@ -49,14 +49,17 @@ func TestCapturedTraffic(t *testing.T) {
 					continue
 				}
 				stats[obs.PacketType+"/"+string(obs.SignatureStatus)]++
+				if obs.Meta.Invalid != "" {
+					stats["invalid:"+obs.Meta.Invalid]++
+				}
 				if obs.Promote != nil {
 					ids[obs.Promote.Node] = *obs.Promote
 				}
 			}
 			t.Logf("%v", stats)
 			for _, bad := range []string{"sig_invalid", "sig_malformed", "first_contact_invalid", "nodeinfo_key_mismatch", "malformed_proto", "payload_invalid"} {
-				if stats["reject:"+bad] > 0 {
-					t.Errorf("real traffic rejected as %s: %d", bad, stats["reject:"+bad])
+				if n := stats["reject:"+bad] + stats["invalid:"+bad]; n > 0 {
+					t.Errorf("real traffic rejected as %s: %d", bad, n)
 				}
 			}
 			if stats["nodeinfo/verified"] == 0 || stats["telemetry/verified"] == 0 {

@@ -129,6 +129,8 @@ pub struct Routing {
 #[derive(Clone, Debug, PartialEq)]
 pub enum Detail {
     Routing(Routing),
+    /// Type invalid: why its content was not kept (interned, D-093).
+    Invalid(u32),
     MapReport(MapReport),
     NodeInfo(NodeInfo),
     Telemetry(Telemetry),
@@ -191,6 +193,13 @@ impl Row {
     pub fn map_report(&self) -> Option<MapReport> {
         match self.detail.as_deref() {
             Some(Detail::MapReport(m)) => Some(*m),
+            _ => None,
+        }
+    }
+    /// Why an invalid row's content was not kept.
+    pub fn invalid(&self) -> Option<u32> {
+        match self.detail.as_deref() {
+            Some(Detail::Invalid(v)) => Some(*v),
             _ => None,
         }
     }
@@ -378,6 +387,8 @@ pub struct JRow<'a> {
     mr: Option<JMr<'a>>,
     #[serde(borrow, default, skip_serializing_if = "Option::is_none")]
     rt: Option<JRt<'a>>,
+    #[serde(borrow, default, skip_serializing_if = "Option::is_none")]
+    iv: Option<Cow<'a, str>>,
 }
 
 fn is_false(b: &bool) -> bool {
@@ -417,6 +428,8 @@ impl JRow<'_> {
             }))
         } else if let Some(t) = self.te {
             Some(Detail::Telemetry(Telemetry { kind: i.id(&t.kind), battery: t.battery, voltage: t.voltage, ch_util: t.ch_util, air_util: t.air_util, uptime: t.uptime }))
+        } else if let Some(v) = self.iv {
+            Some(Detail::Invalid(i.id(&v)))
         } else if let Some(r) = self.rt {
             Some(Detail::Routing(Routing { kind: i.id(&r.kind), error: r.error.map_or(0, |e| i.id(&e)), request: r.request_id.unwrap_or(0) }))
         } else if let Some(n) = self.nb {
@@ -473,7 +486,7 @@ pub fn to_json<'a>(r: &Row, i: &'a Interner) -> JRow<'a> {
         l: Cow::Owned(key_hex(r.lp)), o: Cow::Owned(key_hex(r.ok)), sn: r.snr, rs: r.rssi, hs: r.hs, hl: r.hl, r: r.relay,
         sg: s(r.sig), dr: r.dr, rr: opt(r.rr), cr: opt(r.crypto), by: r.bytes, nk: r.nk, tp: opt(r.topic),
         ni: None, po: r.pos.map(|p| JPo { lat: p.lat, lon: p.lon, alt: p.alt, precision_bits: p.bits, precision_known: p.known }),
-        te: None, nb: None, tr: None, mr: None, rt: None,
+        te: None, nb: None, tr: None, mr: None, rt: None, iv: None,
     };
     match r.detail.as_deref() {
         Some(Detail::MapReport(m)) => {
@@ -491,6 +504,7 @@ pub fn to_json<'a>(r: &Row, i: &'a Interner) -> JRow<'a> {
             j.ni = Some(JNi { long_name: s(n.long_name), short_name: s(n.short_name), hw_model: s(n.hw_model), role: s(n.role), has_public_key: n.has_public_key, identity_untrusted: n.untrusted })
         }
         Some(Detail::Telemetry(t)) => j.te = Some(JTe { kind: s(t.kind), battery: t.battery, voltage: t.voltage, ch_util: t.ch_util, air_util: t.air_util, uptime: t.uptime }),
+        Some(Detail::Invalid(v)) => j.iv = Some(s(*v)),
         Some(Detail::Routing(r)) => j.rt = Some(JRt { kind: s(r.kind), error: opt(r.error), request_id: (r.request != 0).then_some(r.request) }),
         Some(Detail::Neighbors(n)) => j.nb = Some(JNbs { neighbors: Some(n.iter().map(|&(id, snr)| JNb { id, snr }).collect()) }),
         Some(Detail::Traceroute(t)) => {

@@ -5,10 +5,11 @@ import { PALETTES } from '../map/palette'
 import { useTheme } from '../theme'
 import { BASEMAP_GROUPS } from '../map/layers'
 
-const TYPES = ['nodeinfo', 'position', 'telemetry', 'neighborinfo', 'traceroute', 'text', 'routing', 'direct_message', 'mapreport', 'other']
+const TYPES = ['nodeinfo', 'position', 'telemetry', 'neighborinfo', 'traceroute', 'text', 'routing', 'direct_message', 'encrypted', 'mapreport', 'other']
 export const TYPE_LABEL: Record<string, string> = { mapreport: 'map report', direct_message: 'direct message' }
 const TYPE_TIP: Record<string, string> = {
   mapreport: 'Map reports: a node sends these to the MQTT broker itself, not over the radio',
+  encrypted: 'Packets on channels this map has no key for: only who sent them, their size and how they travelled are known',
   direct_message: 'Direct messages encrypted end to end: only who sent one to whom, its size and how it travelled are known, never the content',
   other: 'Packets of any other application (admin, store and forward, range test, …)',
 }

@@ -38,7 +38,11 @@ func TestSimulatorThroughIngest(t *testing.T) {
 				notes[m.Note]["reject:"+ingest.Category(err)]++
 				continue
 			}
-			notes[m.Note]["ok"]++
+			if obs.Meta.Invalid != "" {
+				notes[m.Note]["invalid"]++
+			} else {
+				notes[m.Note]["ok"]++
+			}
 			accepted[obs.PacketType+"/"+string(obs.SignatureStatus)+"/"+string(obs.Meta.Crypto)]++
 			if obs.Promote != nil {
 				store[obs.Promote.Node] = *obs.Promote
@@ -56,11 +60,8 @@ func TestSimulatorThroughIngest(t *testing.T) {
 			t.Errorf("demo never produced %s", want)
 		}
 	}
-	if n := notes["forged signature (must be rejected)"]; n["ok"] > 0 && n["reject:sig_invalid"] == 0 {
-		t.Errorf("forged signatures accepted: %v", n)
-	}
-	if notes["forged signature (must be rejected)"]["reject:sig_invalid"] == 0 {
-		t.Error("forged signature case never rejected as sig_invalid")
+	if n := notes["forged signature (header only)"]; n["invalid"] == 0 || len(n) != 1 {
+		t.Errorf("forged signatures should be header-only invalid rows: %v", n)
 	}
 	if notes["malformed protobuf"]["ok"] > 0 {
 		t.Error("malformed input accepted")

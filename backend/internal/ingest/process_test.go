@@ -8,6 +8,7 @@ import (
 
 	"google.golang.org/protobuf/proto"
 
+	"github.com/868-no/map/internal/protocol"
 	"github.com/868-no/map/internal/protocol/pb"
 	"github.com/868-no/map/internal/security"
 	"github.com/868-no/map/internal/testutil"
@@ -125,9 +126,7 @@ func TestProcessWrongKeyAndMalformed(t *testing.T) {
 	_ = proto.Unmarshal(b, &se)
 	se.Packet.Channel = uint32(security.ChannelHash("LongFast", security.DefaultPSK[:], security.ModeCTR))
 	b, _ = proto.Marshal(&se)
-	if _, err := Process(msg(topicLF, b), opts(t, longFast)); Category(err) != "decrypt_failed" {
-		t.Fatalf("wrong key: %v", err)
-	}
+	wantHeaderOnly(t, "wrong key", msg(topicLF, b), opts(t, longFast), "encrypted", "")
 	if _, err := Process(msg(topicLF, []byte{0xff, 0xff, 0x01}), opts(t, longFast)); Category(err) != "malformed_proto" {
 		t.Fatalf("malformed: %v", err)
 	}
@@ -160,9 +159,7 @@ func TestProcessCCM(t *testing.T) {
 	enc := se.Packet.GetEncrypted()
 	enc[len(enc)-1] ^= 1
 	b2, _ := proto.Marshal(&se)
-	if _, err := Process(msg(topic, b2), opts(t, ch)); Category(err) != "ccm_auth_failed" {
-		t.Fatalf("tampered tag: %v", err)
-	}
+	wantHeaderOnly(t, "tampered tag", msg(topic, b2), opts(t, ch), "encrypted", "")
 }
 
 // design §10.2 test 8: PKI DMs keep their cleartext header only (D-091).
@@ -210,9 +207,7 @@ func TestProcessPlaintextUplink(t *testing.T) {
 	o := opts(t, longFast)
 	o.Identities = mapIDs{k.NodeNum(): id}
 	// Inbound xeddsa_signed=true with a garbage signature must be rejected, not trusted.
-	if _, err := Process(msg(topicLF, b), o); Category(err) != "sig_invalid" {
-		t.Fatalf("forged flag: %v", err)
-	}
+	wantHeaderOnly(t, "forged flag", msg(topicLF, b), o, "invalid", "sig_invalid")
 	d.XeddsaSignature = ed25519.Sign(k.EdPriv, security.SigningBuffer(k.NodeNum(), 9, 0xffffffff, d))
 	b, _ = proto.Marshal(&pb.ServiceEnvelope{Packet: mp, ChannelId: "LongFast", GatewayId: "!aabbccdd"})
 	obs, err := Process(msg(topicLF, b), o)
@@ -220,9 +215,7 @@ func TestProcessPlaintextUplink(t *testing.T) {
 		t.Fatalf("plaintext verified: %+v %v", obs.Meta.Crypto, err)
 	}
 	other := security.ChannelConfig{Name: "Other", PSKs: []string{"AQ=="}}
-	if _, err := Process(msg(topicLF, b), opts(t, other)); Category(err) != "plaintext_unconfigured" {
-		t.Fatalf("unconfigured plaintext: %v", err)
-	}
+	wantHeaderOnly(t, "plaintext from an unconfigured broker", msg(topicLF, b), opts(t, other), "invalid", "plaintext_unconfigured")
 }
 
 func TestProcessRetainedIgnored(t *testing.T) {
@@ -302,8 +295,11 @@ func TestOKToMQTT(t *testing.T) {
 		p := pkt{from: from, id: 9, to: 0xffffffff, gw: gw, data: d, hopStart: 3, hopLimit: 3, snr: 5, rssi: -80}
 		return Process(msg(topicLF, envelope(t, p, security.DefaultPSK[:], security.ModeCTR, "LongFast")), o)
 	}
-	if _, err := run(0x11111111, "!aabbccdd", withBitfield(nodeInfoData(t), 0)); Category(err) != "not_ok_to_mqtt_nodeinfo" {
-		t.Fatalf("relayed not-OK NodeInfo: %v", err)
+	// A relayed not-OK NodeInfo is kept without its names (D-093).
+	if o, err := run(0x11111111, "!aabbccdd", withBitfield(nodeInfoData(t), 0)); err != nil || o.PacketType != "nodeinfo" || o.Meta.NodeInfo.LongName != "" || o.Meta.NodeInfo.ShortName != "" || !o.Meta.NotOKToMQTT {
+		t.Fatalf("relayed not-OK NodeInfo: %v %+v", err, o.Meta.NodeInfo)
+	} else if bytes.Contains(o.EnvelopeBytes, []byte(o.Meta.NodeInfo.HwModel)) && o.Meta.NodeInfo.HwModel != "" {
+		t.Fatal("stored envelope still holds the NodeInfo payload")
 	}
 	obs, err := run(0x11111111, "!aabbccdd", withBitfield(posData(t), 0))
 	if err != nil || !obs.Meta.NotOKToMQTT {
@@ -381,9 +377,7 @@ func TestProcessDefaultKeyFallback(t *testing.T) {
 	const topic = "msh/EU_868/NO/Trøndelag/2/e/Custom/!ae609008"
 	b := envelope(t, p, security.DefaultPSK[:], security.ModeCTR, "Custom")
 	o := opts(t, longFast)
-	if _, err := Process(msg(topic, b), o); Category(err) != "no_key" {
-		t.Fatalf("fallback off: %v, want no_key", err)
-	}
+	wantHeaderOnly(t, "fallback off", msg(topic, b), o, "encrypted", "")
 	o.Keyring.DefaultFallback = true
 	obs, err := Process(msg(topic, b), o)
 	if err != nil {
@@ -400,7 +394,19 @@ func TestProcessDefaultKeyFallback(t *testing.T) {
 	secret := make([]byte, 32)
 	secret[0] = 9
 	bs := envelope(t, p, secret, security.ModeCTR, "Custom")
-	if _, err := Process(msg(topic, bs), o); err == nil {
-		t.Fatal("a custom-key channel must not decode with the default key")
+	wantHeaderOnly(t, "a custom-key channel must not decode with the default key", msg(topic, bs), o, "encrypted", "")
+}
+
+// wantHeaderOnly: m is kept as a header-only row of type ty (D-093), with
+// the given invalid reason, and its payload is not stored.
+func wantHeaderOnly(t *testing.T, what string, m RawMessage, o Options, ty, reason string) {
+	t.Helper()
+	obs, err := Process(m, o)
+	if err != nil || obs.PacketType != ty || obs.Meta.Invalid != reason || obs.Meta.Decoded.Type != ty {
+		t.Fatalf("%s: %v, type %q reason %q", what, err, obs.PacketType, obs.Meta.Invalid)
+	}
+	env, _ := protocol.ParseEnvelope(obs.EnvelopeBytes)
+	if e := env.Packet.GetEncrypted(); len(e) == 0 || !bytes.Equal(e, make([]byte, len(e))) || env.Packet.GetDecoded() != nil {
+		t.Fatalf("%s: payload stored", what)
 	}
 }

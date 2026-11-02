@@ -377,7 +377,7 @@ func (sim *Simulator) forgedSignature() []Message {
 		d.Payload[2] ^= 0x01                                                   // inside latitude_i: still a valid Position, wrong signature
 		msgs := sim.flood(i, protocol.Broadcast, id, d, PublicChannel, 3, nil) // keeps the stale signature
 		for j := range msgs {
-			msgs[j].Note = "forged signature (must be rejected)"
+			msgs[j].Note = "forged signature (header only)"
 		}
 		return msgs
 	}
