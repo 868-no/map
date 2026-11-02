@@ -53,6 +53,9 @@ pub const RESTARTS_WARN: usize = 3;
 pub const AIRTIME_WARN_SHARE: f64 = 0.10;
 /// Share of the window's airtime one node's store-and-forward may take before it is noted.
 pub const STORE_FORWARD_SHARE: f64 = 0.02;
+/// Packets claiming to be from one node that failed verification before it
+/// is flagged as possibly impersonated (D-108).
+pub const SPOOF_MIN: usize = 3;
 /// Distinct nodes refusing its remote-admin requests before it is noted.
 pub const ADMIN_REFUSALS_MIN: usize = 2;
 
@@ -267,8 +270,10 @@ pub fn airtime(rows: &[&Row], ctx: &RelayContext, i: &Interner, hours: f64) -> A
 }
 
 /// The window's known issues and airtime. `hours`: the window's length;
-/// rates use the span its rows cover when that is shorter.
-pub fn health(rows: &[&Row], nodes: &[Node], ctx: &RelayContext, i: &Interner, hours: f64) -> Health {
+/// rates use the span its rows cover when that is shorter. `invalid`: the
+/// window's rows that failed decoding or verification, which the filters
+/// keep out of `rows` (D-093).
+pub fn health(rows: &[&Row], invalid: &[&Row], nodes: &[Node], ctx: &RelayContext, i: &Interner, hours: f64) -> Health {
     // Rates over the span the data covers, which can be shorter than the
     // window (the service started later, or was down).
     let (lo, hi) = rows.iter().fold((i64::MAX, i64::MIN), |(lo, hi), r| (lo.min(r.t), hi.max(r.t)));
@@ -480,6 +485,36 @@ pub fn health(rows: &[&Row], nodes: &[Node], ctx: &RelayContext, i: &Interner, h
         }
     }
 
+    // Possible impersonation (D-108): packets claiming to be from a node whose
+    // signature or key does not check out. Decoding failures are not counted.
+    let trust = ["sig_invalid", "sig_malformed", "first_contact_invalid", "nodeinfo_key_mismatch", "strict_unverifiable"];
+    let mut claimed: FxMap<u32, (FxSet<u64>, FxMap<u32, usize>, FxSet<u32>)> = map();
+    for &r in invalid {
+        let Some(reason) = r.invalid().filter(|&v| trust.contains(&i.s(v))) else { continue };
+        let e = claimed.entry(r.src).or_default();
+        if e.0.insert(r.lp) {
+            *e.1.entry(reason).or_default() += 1;
+        }
+        if let Some(g) = r.gw {
+            e.2.insert(g);
+        }
+    }
+    for (n, (packets, reasons, gws)) in claimed {
+        if packets.len() < SPOOF_MIN {
+            continue;
+        }
+        let mut rs: Vec<(String, usize)> = reasons.into_iter().map(|(k, c)| (i.s(k).to_string(), c)).collect();
+        rs.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+        let list: Vec<String> = rs.iter().map(|(k, c)| format!("{c} × {}", k.replace('_', " "))).collect();
+        let key_change = rs.iter().all(|(k, _)| k == "nodeinfo_key_mismatch");
+        let why = if key_change {
+            "They announce a different public key than the one trusted for this node: most likely it was reset or reflashed and has a new key, which is trusted only once the old key's announcements leave retention. If not, someone is using its node number."
+        } else {
+            "Their signatures do not verify against the key trusted for this node: someone may be sending packets in its name, or its key changed. They are kept out of the map, so they do not affect its links or counts."
+        };
+        add(n, "spoofed", "warning", format!("{} packets in its name failed verification", packets.len()), format!("{} packets claiming to come from it ({}), reported by {} gateway{}. {why}", packets.len(), list.join(", "), gws.len(), if gws.len() == 1 { "" } else { "s" }));
+    }
+
     // Airtime.
     let air = airtime(rows, ctx, i, hours);
     for a in air.nodes.iter().filter(|a| a.caused >= AIRTIME_WARN_SHARE) {
@@ -519,7 +554,7 @@ mod tests {
 
     fn issues(rows: &[Row], i: &Interner) -> Vec<Issue> {
         let refs: Vec<&Row> = rows.iter().collect();
-        health(&refs, &[], &RelayContext::default(), i, 48.0).issues
+        health(&refs, &[], &[], &RelayContext::default(), i, 48.0).issues
     }
 
     #[test]
@@ -546,5 +581,26 @@ mod tests {
         // A node reporting uptime 0 every time has not restarted.
         let zero: Vec<Row> = (0..10).map(|k| telemetry(&mut i, k, 100.0, 0)).collect();
         assert!(issues(&zero, &i).iter().all(|x| x.kind != "restarted"));
+    }
+
+    #[test]
+    fn packets_in_a_nodes_name_that_fail_verification_are_flagged() {
+        let mut i = Interner::default();
+        let bad = |i: &mut Interner, k: i64, reason: &str| {
+            let text = format!(r#"{{"i":{k},"t":{k},"b":"x","g":7,"s":5,"y":"invalid","l":"{k:016x}","o":"{k:016x}","sg":"not-applicable","iv":"{reason}"}}"#);
+            serde_json::from_str::<JRow>(&text).unwrap().into_row(i)
+        };
+        let forged: Vec<Row> = (1..=3).map(|k| bad(&mut i, k, "sig_invalid")).collect();
+        let decode: Vec<Row> = (4..=9).map(|k| bad(&mut i, k, "payload_invalid")).collect();
+        let refs: Vec<&Row> = forged.iter().chain(&decode).collect();
+        let got = health(&[], &refs, &[], &RelayContext::default(), &i, 48.0).issues;
+        let s: Vec<&Issue> = got.iter().filter(|x| x.kind == "spoofed").collect();
+        assert_eq!(s.len(), 1, "decoding failures alone are not impersonation");
+        assert!(s[0].summary.starts_with("3 packets"));
+        // A changed key is explained as a likely reset.
+        let rekeyed: Vec<Row> = (1..=4).map(|k| bad(&mut i, k, "nodeinfo_key_mismatch")).collect();
+        let refs: Vec<&Row> = rekeyed.iter().collect();
+        let got = health(&[], &refs, &[], &RelayContext::default(), &i, 48.0).issues;
+        assert!(got.iter().any(|x| x.kind == "spoofed" && x.detail.contains("reset or reflashed")));
     }
 }

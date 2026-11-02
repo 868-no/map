@@ -265,7 +265,11 @@ impl Engine {
                 self.build(start, end, filters)?;
                 let b = &self.built.as_ref().unwrap().1;
                 let hours = (end - start) as f64 / 3_600_000.0;
-                Ok(json(&health::health(&self.rows(), &b.snapshot.nodes, &b.ctx, &self.i, hours)))
+                // Rows that failed verification, which the filters always leave out (D-108).
+                let invalid_ty = self.i.get("invalid");
+                let (lo, hi) = self.store.range(start, end);
+                let invalid: Vec<&row::Row> = self.store.rows[lo..hi].iter().filter(|r| Some(r.ty) == invalid_ty).collect();
+                Ok(json(&health::health(&self.rows(), &invalid, &b.snapshot.nodes, &b.ctx, &self.i, hours)))
             }
             _ => Err(err(format!("unknown view {kind}"))),
         }
