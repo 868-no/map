@@ -195,9 +195,12 @@ export function NodePanel({ id, snapshot }: { id: string; snapshot: SnapshotView
   const radio = radioSummary(d.radio, (n) => names.get(n) ?? n)
   return (
     <div className="panel node-panel">
-      <h2>{d.identity?.long_name || d.id}</h2>
-      <p className="muted">
-        {d.id} · #{d.num} <ShareNode id={d.id} name={d.identity?.long_name || d.id} />{' '}
+      <div className="node-title">
+        <h2>{d.identity?.long_name || d.id}</h2>
+        <ShareNode id={d.id} name={d.identity?.long_name || d.id} />
+      </div>
+      <p className="muted node-id">{d.id} · #{d.num}</p>
+      <p className="node-tags">
         {isOnline(d, now)
           ? <span className="tag online" title="Heard within the last 3 hours of the selected period">● online</span>
           : <span className="tag offline" title="Not heard in the last 3 hours of the selected period">offline{d.last_seen ? ` · last heard ${relativeAge(d.last_seen, now)}` : ''}</span>}{' '}
@@ -888,7 +891,7 @@ function ShareNode({ id, name }: { id: string; name: string }) {
   }
   return (
     <button className="linkish share-link" onClick={() => void share()} title={`Copy a permanent link to this node: ${nodeLink(id)}`}>
-      {state === 'copied' ? 'Link copied' : state === 'failed' ? 'Could not copy' : 'Share link'}
+      {state === 'copied' ? 'Copied' : state === 'failed' ? 'Could not copy' : 'Share'}
     </button>
   )
 }

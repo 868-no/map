@@ -187,6 +187,13 @@ body.resizing { cursor: ew-resize; user-select: none; }
   border-bottom-color: transparent; padding-top: 8px; }
 .detail-tabs button[aria-selected='true']::before { content: ''; position: absolute; left: -1px; right: -1px; top: -1px; height: 3px; border-radius: 7px 7px 0 0; background: var(--accent); }
 .detail-tabs button:focus-visible { outline: 2px solid var(--accent); outline-offset: -3px; }
+.node-title { display: flex; align-items: baseline; gap: 10px; }
+.node-title h2 { flex: 1; min-width: 0; overflow-wrap: anywhere; padding-right: 0; }
+.node-title .share-link { flex: none; font-size: 13px; }
+.node-id { margin: 0 0 6px; }
+.node-tags { display: flex; flex-wrap: wrap; gap: 4px 6px; margin: 0 0 4px; }
+.node-tags:empty { display: none; }
+.node-tags .tag { margin-left: 0; }
 .tag.online { color: var(--ok); background: color-mix(in srgb, var(--ok) 14%, transparent); }
 .tag.offline { color: var(--muted); background: var(--panel2); }
 .tab-count { margin-left: 4px; font-size: 11px; font-weight: 400; color: var(--muted); font-variant-numeric: tabular-nums; }
