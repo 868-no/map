@@ -144,7 +144,7 @@ button[aria-pressed='true'], button[aria-selected='true'] { background: var(--pr
 .attribution { position: absolute; right: 0; bottom: 0; font-size: 11px; background: var(--overlay); padding: 2px 6px; color: var(--muted); }
 .attribution a { color: var(--muted); }
 .coords { position: absolute; bottom: 28px; right: 10px; font: 12px ui-monospace, monospace; color: var(--muted); background: var(--overlay); padding: 2px 6px; border-radius: 4px; }
-.tooltip { position: absolute; pointer-events: none; background: var(--tooltip); border: 1px solid var(--line); box-shadow: var(--elev-float); padding: 4px 8px; border-radius: 4px; font-size: 12px; max-width: 320px; z-index: 5; }
+.tooltip { position: absolute; pointer-events: none; white-space: pre-line; background: var(--tooltip); border: 1px solid var(--line); box-shadow: var(--elev-float); padding: 4px 8px; border-radius: 4px; font-size: 12px; max-width: 320px; z-index: 5; }
 .banners { position: absolute; left: 50px; top: calc(var(--head-h) + 2 * var(--gap)); right: calc(var(--rail) + 3 * var(--gap)); display: flex; flex-direction: column; gap: 6px; pointer-events: none; }
 .banner { pointer-events: auto; align-self: flex-start; background: var(--overlay-strong); border: 1px solid var(--line); border-left: 3px solid var(--accent); box-shadow: var(--elev-float); padding: 6px 10px; border-radius: 4px; font-size: 13px; }
 .banner.error { border-left-color: var(--err); }

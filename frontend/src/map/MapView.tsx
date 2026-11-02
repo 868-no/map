@@ -223,7 +223,14 @@ export default function MapView({ caps, snapshot, onPositions }: Props) {
   const clusters = useMemo(() => clusterLabels(placed, zoom), [placed, zoom])
   const clusterOf = useRef(new Map<string, Cluster>())
   const nameOf = useRef(new Map<string, string>())
-  nameOf.current = useMemo(() => new Map((snapshot?.nodes ?? []).map((n) => [n.id, n.identity?.long_name || n.identity?.short_name || n.id])), [snapshot])
+  const shortOf = useRef(new Map<string, string>())
+  ;[nameOf.current, shortOf.current] = useMemo(() => {
+    const nodes = snapshot?.nodes ?? []
+    return [
+      new Map(nodes.map((n) => [n.id, n.identity?.long_name || n.identity?.short_name || n.id])),
+      new Map(nodes.map((n) => [n.id, n.identity?.short_name || n.identity?.long_name || n.id])),
+    ]
+  }, [snapshot])
   clusterOf.current = useMemo(() => new Map(clusters.flatMap((c) => c.members.map((m) => [m.node.id, c] as const))), [clusters])
   const [hoverCluster, setHoverCluster] = useState<string | null>(null)
   const collapseTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
@@ -299,8 +306,10 @@ export default function MapView({ caps, snapshot, onPositions }: Props) {
           const name = n.identity?.long_name ?? n.id
           setHover({ x: info.x, y: info.y, text: `${name}${o.kind === 'estimated' ? ' — estimated location' : ''}${n.airborne ? ' — airborne' : n.moved_at ? ' — moving' : ''}${n.mqtt_opt_out ? ' — did not allow MQTT uplink; name withheld' : ''}` })
         } else {
-          const dir = (e: Edge | undefined, from: string, to: string) => (e ? `${from} → ${to}: ${e.confidence}, ${e.samples} samples${e.zero_cost?.likely ? ', 0-cost' : ''}` : `${from} → ${to}: no evidence`)
-          setHover({ x: info.x, y: info.y, text: `${o.mqtt ? 'Over the internet (MQTT), not radio — ' : ''}${dir(o.ab, o.a, o.b)} · ${dir(o.ba, o.b, o.a)}` })
+          // One line per direction, nodes by short name.
+          const sn = (id: string) => shortOf.current.get(id) ?? id
+          const dir = (e: Edge | undefined, from: string, to: string) => `${sn(from)} → ${sn(to)}: ${e ? `${e.confidence}, ${e.samples} samples${e.zero_cost?.likely ? ', 0-cost' : ''}` : 'no evidence'}`
+          setHover({ x: info.x, y: info.y, text: [o.mqtt ? 'Over the internet (MQTT), not radio' : '', dir(o.ab, o.a, o.b), dir(o.ba, o.b, o.a)].filter(Boolean).join('\n') })
         }
       },
       onClick: (info: PickingInfo) => {

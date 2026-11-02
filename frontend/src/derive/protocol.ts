@@ -1,7 +1,7 @@
 // Messages between the page and the derivation worker.
 import type { Capabilities, ObsRow } from '../api/types'
 import type { WindowReq } from './rowStore'
-import type { ViewErrorKind } from './views'
+import type { ViewErrorKind, ViewMeta } from './views'
 
 export type ViewKind = 'snapshot' | 'traffic' | 'node' | 'packetlog' | 'route' | 'reach'
 
@@ -40,7 +40,8 @@ export interface Transmission {
 }
 
 export type Response =
-  | { id: number; ok: true; body: Uint8Array; offline: boolean } // UTF-8 JSON, transferred
+  | { id: number; ok: true; body: Uint8Array; meta: ViewMeta; offline: boolean } // body: UTF-8 JSON without meta, transferred
   | { id: number; ok: false; kind: ViewErrorKind; message: string }
   | { type: 'changed' } // live rows arrived: views are worth rebuilding
   | { type: 'pings'; transmissions: Transmission[] }
+  | { type: 'fatal'; message: string } // the engine trapped or failed to start: restart the worker

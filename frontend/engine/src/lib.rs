@@ -239,6 +239,12 @@ impl Engine {
         }
     }
 
+    /// Engine::view as UTF-8 bytes (a Uint8Array in JS): the page decodes
+    /// them once, with no UTF-16 string in between.
+    pub fn view_bytes(&mut self, kind: &str, start: f64, end: f64, filters: &str, arg: &str) -> Result<Vec<u8>, JsError> {
+        self.view(kind, start, end, filters, arg).map(String::into_bytes)
+    }
+
     /// Transmissions proven by live rows (JSON array), attributed with the
     /// latest snapshot's relay context; JSON array of arrays, one per row.
     pub fn transmissions(&mut self, rows: &str) -> Result<String, JsError> {

@@ -62,10 +62,11 @@ function useWindowQuery<T extends { meta: ViewMeta }>(kind: ViewKind, node?: str
   const win = useStore((s) => s.win)
   const filters = useStore((s) => s.filters)
   const rev = useLiveEpoch((s) => s.rev)
+  const limitsReady = useStore((s) => s.limitsReady) // the server's window limits applied
   const key: Key = [kind + (node ? ':' + node : ''), params.toString(), identity, win.live ? `${epoch}#${rev}` : epoch]
   return useQuery<T, Error, T, Key>({
     queryKey: key,
-    enabled,
+    enabled: enabled && limitsReady,
     queryFn: async ({ signal }) => {
       const r = await deriveView({
         kind, node, epoch,

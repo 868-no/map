@@ -2,7 +2,7 @@
 // Derivation worker: holds the browser's copy of the packet log in the
 // WebAssembly engine and builds every view from it, off the main thread
 // (D-031, D-040). Rows travel as JSON text straight into the engine; views
-// come back as JSON text and are handed to the page as transferable bytes.
+// come back as UTF-8 JSON bytes, handed to the page as transferables.
 import init, { Engine } from '../engine/pkg/engine.js'
 import { openPersistence, type Persistence, type Source } from './persist'
 import { RowStore, type Backend, type Fetched, type Synced, type WindowReq } from './rowStore'
@@ -132,6 +132,20 @@ let quantumMs = 10_000
 // Views wait for the operator's geolocation settings from the page.
 let initDone: () => void
 const inited = new Promise<void>((resolve) => (initDone = resolve))
+let startError: string | null = null // the engine could not start: every view fails with it
+
+/**
+ * A WebAssembly trap (a Rust panic aborts) leaves the engine unusable: every
+ * later call fails. Report it so the page restarts the worker.
+ */
+function fatal(err: unknown): boolean {
+  if (!(err instanceof WebAssembly.RuntimeError)) return false
+  self.postMessage({ type: 'fatal', message: err.message } satisfies Response)
+  return true
+}
+self.addEventListener('unhandledrejection', (e) => {
+  if (fatal(e.reason)) e.preventDefault()
+})
 
 // One sync at a time; repeated requests for the same window and epoch share it.
 let chain: Promise<unknown> = Promise.resolve()
@@ -199,14 +213,14 @@ function liveRows(rows: unknown[], ping: number[]) {
   if (store.addLive(text)) changed()
 }
 
-// Views are memoised (as JSON text) by data revision, kind, window and
-// filters. A snapshot at reference density is several MB and every live
+// Views are memoised (as UTF-8 JSON bytes) by data revision, kind, window
+// and filters. A snapshot at reference density is several MB and every live
 // rebuild is a new revision, so entries of older revisions are dropped and
 // the total is capped.
-const MEMO_MAX_CHARS = 24_000_000
-const memo = new Map<string, string>()
+const MEMO_MAX_CHARS = 24_000_000 // bytes
+const memo = new Map<string, Uint8Array>()
 let memoChars = 0
-function remember(key: string, revision: string, make: () => string): string {
+function remember(key: string, revision: string, make: () => Uint8Array): Uint8Array {
   const hit = memo.get(key)
   if (hit !== undefined) return hit
   const v = make()
@@ -221,8 +235,12 @@ function remember(key: string, revision: string, make: () => string): string {
   return v
 }
 
-async function view(req: ViewRequest): Promise<{ body: string; offline: boolean }> {
+const NULL = [110, 117, 108, 108] // "null"
+const isNull = (b: Uint8Array) => b.length === 4 && NULL.every((c, k) => b[k] === c)
+
+async function view(req: ViewRequest): Promise<{ body: Uint8Array; meta: ViewMeta; offline: boolean }> {
   await inited
+  if (startError) throw new ViewError('internal', `the derivation engine failed to start: ${startError}`)
   liveHours = req.win.live ? req.win.durationH : null
   const { synced: sy, offline } = await synced(req.win, req.epoch)
   const { start, end } = bounds(req.win, sy, offline)
@@ -234,43 +252,54 @@ async function view(req: ViewRequest): Promise<{ body: string; offline: boolean 
     window: { start: new Date(start).toISOString(), end: new Date(end).toISOString(), rolling: sy.rolling },
     data_until: new Date(Math.max(store.cov?.hi ?? 0, engine.newest_t())).toISOString(),
   }
-  const mj = JSON.stringify(meta)
   const key = `${revision}|${start}|${end}|${fj}|${req.kind}|${req.node ?? ''}`
-  let body: string
+  let body: Uint8Array
   try {
-    body = remember(key, revision, () => engine.view(req.kind, start, end, fj, req.node ?? ''))
+    body = remember(key, revision, () => engine.view_bytes(req.kind, start, end, fj, req.node ?? ''))
   } catch (e) {
+    if (e instanceof WebAssembly.RuntimeError) throw e // a trap, not a bad request
     throw new ViewError('bad_request', e instanceof Error ? e.message : String(e))
   }
-  if (body === 'null') throw new ViewError('not_found', 'node not observed or referenced in the selected window')
-  // Splice the meta in without parsing the (possibly large) body here.
-  return { body: body === '{}' ? `{"meta":${mj}}` : `{"meta":${mj},${body.slice(1)}`, offline }
+  if (isNull(body)) throw new ViewError('not_found', 'node not observed or referenced in the selected window')
+  // The meta travels beside the body: the (possibly large) body is never parsed or re-encoded here.
+  return { body, meta, offline }
 }
 
 self.onmessage = async (e: MessageEvent<Request>) => {
   const msg = e.data
   if (msg.type === 'rows') {
-    await started
-    liveRows(msg.rows, msg.ping)
+    try {
+      await started
+      liveRows(msg.rows, msg.ping)
+    } catch (err) {
+      if (!fatal(err)) console.warn('live rows dropped', err)
+    }
     return
   }
   if (msg.type === 'init') {
-    await started
-    engine.set_options(JSON.stringify({ geo: msg.geo }))
-    quantumMs = msg.liveQuantumMs
-    memo.clear()
-    memoChars = 0
-    initDone()
+    try {
+      await started
+      engine.set_options(JSON.stringify({ geo: msg.geo }))
+      quantumMs = msg.liveQuantumMs
+      memo.clear()
+      memoChars = 0
+    } catch (err) {
+      startError = err instanceof Error ? err.message : String(err)
+      fatal(err)
+    } finally {
+      initDone() // views stop waiting: they build, or fail with startError
+    }
     return
   }
   let out: Response
   const transfer: Transferable[] = []
   try {
-    const { body, offline } = await view(msg)
-    const bytes = new TextEncoder().encode(body)
+    const { body, meta, offline } = await view(msg)
+    const bytes = body.slice() // the memo keeps the original; the copy is transferred
     transfer.push(bytes.buffer)
-    out = { id: msg.id, ok: true, body: bytes, offline }
+    out = { id: msg.id, ok: true, body: bytes, meta, offline }
   } catch (err) {
+    fatal(err)
     out = { id: msg.id, ok: false, kind: err instanceof ViewError ? err.kind : 'internal', message: err instanceof Error ? err.message : String(err) }
   }
   self.postMessage(out, transfer)

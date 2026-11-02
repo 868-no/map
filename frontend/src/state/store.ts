@@ -42,8 +42,18 @@ export interface WindowState {
   end: string | null
 }
 
+/**
+ * The server's window limits (`/capabilities`): the default rolling window
+ * and the longest window it serves. Until they arrive these are the server's
+ * own defaults, but no view is requested before then (`limitsReady`).
+ */
+export const windowLimits = { defaultH: 72, maxH: 168 }
+
 interface Store {
   win: WindowState
+  /** The server's window limits are applied to `win`: views may be requested. */
+  limitsReady: boolean
+  applyLimits: (defaultH: number, maxH: number) => void
   filters: Filters
   toggles: Toggles
   selection: Selection
@@ -68,7 +78,7 @@ export const defaultToggles: Toggles = { infraLinks: false, otherLinks: false, m
 // Layer choices are a per-viewer convenience kept in browser storage; the
 // map works the same when storage is unavailable.
 // public/theme-boot.js reads the theme from this key too.
-export const TOGGLES_KEY = 'meshmap:toggles:v5' // bumped when defaults change (v2 node names on, v3 major roads off, v4 accuracy circles off, v5 links off)
+export const TOGGLES_KEY = 'meshmap:toggles:v6' // bumped when defaults change (v2 node names on, v3 major roads off, v4 accuracy circles off, v5 links off, v6 roads and city names on)
 function loadToggles(): Toggles {
   try {
     const saved = JSON.parse(window.localStorage.getItem(TOGGLES_KEY) ?? 'null') as Partial<Toggles> | null
@@ -88,6 +98,17 @@ function saveToggles(t: Toggles) {
 
 export const useStore = create<Store>((set) => ({
   win: { live: true, durationH: 72, start: null, end: null },
+  limitsReady: false,
+  applyLimits: (defaultH, maxH) =>
+    set((s) => {
+      windowLimits.defaultH = defaultH
+      windowLimits.maxH = maxH
+      const w = s.win
+      if (w.live) return { limitsReady: true, win: { ...w, durationH: Math.min(urlDuration ? w.durationH : defaultH, maxH) } }
+      // A fixed window longer than the server serves keeps its end.
+      const end = Date.parse(w.end!), start = Math.max(Date.parse(w.start!), end - maxH * 3_600_000)
+      return { limitsReady: true, win: { ...w, start: new Date(start).toISOString() } }
+    }),
   filters: defaultFilters,
   toggles: typeof window === 'undefined' ? defaultToggles : loadToggles(),
   selection: null,
@@ -126,7 +147,7 @@ export function toQuery(s: Pick<Store, 'win' | 'filters'> & { selection?: Select
   const q = new URLSearchParams()
   if (s.selection?.kind === 'node') q.set('node', s.selection.id)
   if (s.win.live) {
-    if (s.win.durationH !== 72) q.set('duration', `${s.win.durationH}h`)
+    if (s.win.durationH !== windowLimits.defaultH) q.set('duration', `${s.win.durationH}h`)
   } else if (s.win.start && s.win.end) {
     q.set('start', s.win.start)
     q.set('end', s.win.end)
@@ -143,7 +164,7 @@ export function fromQuery(q: URLSearchParams): Partial<Pick<Store, 'win' | 'filt
   if (node && NODE_ID.test(node)) out.selection = { kind: 'node', id: node }
   const start = q.get('start'), end = q.get('end'), dur = q.get('duration')
   if (start && end && !Number.isNaN(Date.parse(start)) && !Number.isNaN(Date.parse(end))) {
-    out.win = { live: false, durationH: 72, start, end }
+    out.win = { live: false, durationH: windowLimits.defaultH, start, end }
   } else if (dur) {
     const h = parseInt(dur, 10)
     if (h >= 1 && h <= 168) out.win = { live: true, durationH: h, start: null, end: null }
@@ -153,7 +174,11 @@ export function fromQuery(q: URLSearchParams): Partial<Pick<Store, 'win' | 'filt
   return out
 }
 
-/** API query parameters for the current state (window + server-side filters). */
+/**
+ * API query parameters for the current state: the window, plus the channel,
+ * broker and type filters. The server no longer filters (the engine does);
+ * these only key the queries and the live stream URL.
+ */
 export function apiParams(s: Pick<Store, 'win' | 'filters'>, extra?: Record<string, string>): URLSearchParams {
   const q = new URLSearchParams()
   if (s.win.live) q.set('duration', `${s.win.durationH}h`)
@@ -166,4 +191,15 @@ export function apiParams(s: Pick<Store, 'win' | 'filters'>, extra?: Record<stri
   if (s.filters.types.length) q.set('type', s.filters.types.join(','))
   for (const [k, v] of Object.entries(extra ?? {})) q.set(k, v)
   return q
+}
+
+// The URL seeds the state before the first render, so a shared link never
+// first loads the default window. The window it names is clamped to the
+// server's limits once they are known (applyLimits); a live link without a
+// duration takes the server's default.
+let urlDuration = false
+if (typeof window !== 'undefined') {
+  const init = fromQuery(new URLSearchParams(window.location.search))
+  urlDuration = !!init.win?.live
+  useStore.setState(init)
 }

@@ -21,6 +21,7 @@ export function passes(r: ObsRow, f: Filters): boolean {
  */
 export function useLiveStream(positions: RefObject<Map<string, [number, number]>>, onNotice: (text: string) => void): boolean {
   const win = useStore((s) => s.win)
+  const limitsReady = useStore((s) => s.limitsReady)
   const filters = useStore((s) => s.filters)
   const bump = useLiveEpoch((s) => s.bump)
   const qc = useQueryClient()
@@ -38,7 +39,7 @@ export function useLiveStream(positions: RefObject<Map<string, [number, number]>
   // Live updates for the rolling window only. The stream carries every new
   // row (unfiltered: the browser's copy needs them all); filters apply here.
   useEffect(() => {
-    if (!win.live) return
+    if (!win.live || !limitsReady) return
     const params = apiParams({ win, filters: defaultFilters })
     let lastRefresh = Date.now() // the views were just loaded
     let wasLive = true
@@ -82,7 +83,7 @@ export function useLiveStream(positions: RefObject<Map<string, [number, number]>
       unsub()
       clearPings()
     }
-  }, [win, bump, qc])
+  }, [win, limitsReady, bump, qc])
 
   return liveOK
 }

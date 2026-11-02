@@ -11,7 +11,7 @@ import { useCapabilities, useRetention, useSnapshot, useTraffic } from './state/
 import type { Counts } from './derive/views'
 import { useLiveStream } from './state/live'
 import { initDerive } from './derive/client'
-import { fromQuery, toQuery, useStore } from './state/store'
+import { toQuery, useStore } from './state/store'
 import { applyTheme, useTheme } from './theme'
 
 export default function App() {
@@ -50,11 +50,11 @@ export default function App() {
     return () => ro.disconnect()
   }, [caps.data]) // the header exists once the app has loaded
 
-  // URL <-> state (shareable links; back/forward).
+  // State -> URL (shareable links). The URL seeds the store before the first
+  // render (state/store.ts); entries are replaced, not pushed: back leaves the map.
   useEffect(() => {
-    const init = fromQuery(new URLSearchParams(window.location.search))
-    useStore.setState((s) => ({ ...s, ...init }))
-  }, [])
+    if (caps.data) useStore.getState().applyLimits(caps.data.default_window_hours, caps.data.max_window_hours)
+  }, [caps.data])
   useEffect(() => {
     const q = toQuery({ win, filters, selection }).toString()
     const url = q ? `?${q}` : window.location.pathname

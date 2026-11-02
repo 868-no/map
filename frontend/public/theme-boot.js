@@ -5,7 +5,7 @@
 ;(function () {
   var choice = 'system'
   try {
-    var saved = JSON.parse(localStorage.getItem('meshmap:toggles:v5') || 'null')
+    var saved = JSON.parse(localStorage.getItem('meshmap:toggles:v6') || 'null')
     if (saved && (saved.theme === 'light' || saved.theme === 'dark')) choice = saved.theme
   } catch {
     /* storage unavailable: follow the browser */

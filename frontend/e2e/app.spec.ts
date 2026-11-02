@@ -8,7 +8,7 @@ type Hook = { layers: () => HookLayer[] }
 
 /** Turn both link layers on (off by default, D-047) before the page loads. */
 async function withLinks(page: Page) {
-  await page.addInitScript(() => localStorage.setItem('meshmap:toggles:v5', JSON.stringify({ infraLinks: true, otherLinks: true })))
+  await page.addInitScript(() => localStorage.setItem('meshmap:toggles:v6', JSON.stringify({ infraLinks: true, otherLinks: true })))
 }
 
 async function ready(page: Page) {
@@ -73,21 +73,25 @@ async function showLayers(page: Page, names: string[]) {
   await page.getByRole('button', { name: 'Close layers' }).click()
 }
 
-test('basemap names are hidden by default and the choice is remembered', async ({ page }) => {
+test('roads and city names show by default, local names on request, and the choice is remembered', async ({ page }) => {
   await ready(page)
-  const l = await viewAt(page, 63.43, 10.40, 10)
-  expect(sum(l, 'place-') + sum(l, 'road-name') + sum(l, 'mountain-peak')).toBe(0)
-  expect(sum(l, 'road-')).toBe(0)
+  const labels = () => page.evaluate(() => (window as unknown as { __meshmap: { queryLabels: () => Labels } }).__meshmap.queryLabels())
+  await viewAt(page, 63.43, 10.40, 10)
+  await expect.poll(async () => (await labels()).names['place-city'] ?? [], { timeout: 30_000 }).toContain('Trondheim')
+  await expect.poll(async () => sum(await labels(), 'road-')).toBeGreaterThan(0)
+  const l = await labels()
+  expect(sum(l, 'place-town') + sum(l, 'place-village') + sum(l, 'road-name') + sum(l, 'mountain-peak')).toBe(0)
   expect(l.counts['water'] ?? 0).toBeGreaterThan(0)
-  await showLayers(page, ['Place names'])
+  await showLayers(page, ['Local place names'])
   await page.reload()
   await page.waitForFunction(() => !!(window as unknown as { __meshmap?: unknown }).__meshmap, null, { timeout: 30_000 })
-  await expect.poll(async () => (await viewAt(page, 63.43, 10.40, 10)).names['place-city'] ?? [], { timeout: 30_000 }).toContain('Trondheim')
+  await viewAt(page, 63.43, 10.40, 10)
+  await expect.poll(async () => sum(await labels(), 'place-town') + sum(await labels(), 'place-village'), { timeout: 30_000 }).toBeGreaterThan(0)
 })
 
 test('genuine place, peak, road and border labels render (self-hosted basemap)', async ({ page }) => {
   await ready(page)
-  await showLayers(page, ['Place names', 'Peaks', 'Road names and numbers', 'Major roads', 'Minor roads and rail'])
+  await showLayers(page, ['Local place names', 'Peaks', 'Road names and numbers'])
   const labels = () => page.evaluate(() => (window as unknown as { __meshmap: { queryLabels: () => Labels } }).__meshmap.queryLabels())
   // Labels are placed asynchronously after tiles load: poll until present.
   await viewAt(page, 63.43, 10.40, 10)
@@ -483,7 +487,7 @@ test('reset clears stored settings and data, then reloads', async ({ page }) => 
   page.once('dialog', (d) => d.accept())
   await Promise.all([page.waitForEvent('load'), page.getByRole('button', { name: 'Reset and reload' }).click()])
   await page.waitForFunction(() => !!(window as unknown as { __meshmap?: unknown }).__meshmap, null, { timeout: 30_000 })
-  expect(await page.evaluate(() => localStorage.getItem('meshmap:toggles:v5'))).toBeNull()
+  expect(await page.evaluate(() => localStorage.getItem('meshmap:toggles:v6'))).toBeNull()
   await showPanel(page, 'Layers')
   await expect(page.getByRole('complementary', { name: 'Layers' }).getByLabel('Regions (landsdeler)')).not.toBeChecked()
   await showPanel(page, 'Settings')
