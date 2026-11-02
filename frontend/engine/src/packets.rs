@@ -117,7 +117,7 @@ pub fn packet_log(rows: &[&Row], num: u32, ctx: &RelayContext, i: &Interner) -> 
             let first = rs.iter().copied().reduce(|a, b| if b.t < a.t { b } else { a }).unwrap();
             use crate::row::ty;
             let others: Vec<&Row> = rs.iter().copied().filter(|r| r.gw.is_some_and(|g| g != num)).collect();
-            let radio = |r: &&&Row| r.rr != ty::VIA_MQTT && r.rr != ty::NON_RF && !ctx.downlinked(r);
+            let radio = |r: &&&Row| r.rr != ty::VIA_MQTT && r.rr != ty::NON_RF;
             let hops = others.iter().filter(radio).filter_map(|r| r.hops()).min();
             let best = rs.iter().map(|r| i.s(r.sig)).max_by_key(|s| sig_rank(s)).unwrap_or("unsigned");
             (
@@ -222,7 +222,7 @@ pub fn packet_route(rows: &[&Row], ctx: &RelayContext, roles: &FxMap<u32, String
             }
             continue;
         }
-        if !over_radio {
+        if !over_radio && !ctx.downlinked(r) {
             continue; // not heard over radio
         }
         if r.dr || r.rr == ty::NO_RX_METRICS {
@@ -241,6 +241,7 @@ pub fn packet_route(rows: &[&Row], ctx: &RelayContext, roles: &FxMap<u32, String
                 let direct = r.hops() == Some(1) && roles.get(&relay).is_some_and(|ro| !ro.is_empty() && !zero_cost_role(ro));
                 add(origin, relay, !direct, if direct { "relay" } else { "gap" });
             }
+            _ if ctx.downlinked(r) => add(origin, gw, true, "internet"),
             _ => add(origin, gw, true, "unknown_relay"),
         }
     }
@@ -330,18 +331,19 @@ pub fn transmissions(r: &Row, ctx: &RelayContext, roles: &FxMap<u32, String>) ->
     }
     let first = |rx: Option<u32>, s: Option<f64>| Transmission { key: key(r.src), tx: node_id(r.src), rx: rx.map(node_id), rebroadcast: false, strength: s };
     let Some(gw) = r.gw else { return vec![first(None, None)] };
-    if gw == r.src || r.rr == ty::VIA_MQTT || r.rr == ty::NON_RF {
+    let downlinked = ctx.downlinked(r);
+    if gw == r.src || r.rr == ty::NON_RF || (downlinked && r.relay.is_none()) {
         return vec![first(None, None)]; // the gateway did not hear it over the air
     }
-    if r.dr || r.hops() == Some(0) {
+    if !downlinked && (r.dr || r.hops() == Some(0)) {
         return vec![first(Some(gw), strength)];
     }
     let relay = match r.relay.and_then(|b| ctx.resolve((b & 0xff) as u8, r.src, gw)) {
         Some(Ok(n)) => n,
         _ => return vec![first(None, None)],
     };
-    // A downlinked copy (D-087) carries no hop count: the relay got it from MQTT.
-    let heard_origin = !ctx.downlinked(r) && r.hops() == Some(1) && roles.get(&relay).is_some_and(|ro| !ro.is_empty() && !zero_cost_role(ro));
+    // A downlinked copy (D-088) carries no hop count: the relay got it from MQTT.
+    let heard_origin = !downlinked && r.hops() == Some(1) && roles.get(&relay).is_some_and(|ro| !ro.is_empty() && !zero_cost_role(ro));
     vec![
         first(heard_origin.then_some(relay), None),
         Transmission { key: key(relay), tx: node_id(relay), rx: Some(node_id(gw)), rebroadcast: true, strength },
@@ -474,5 +476,22 @@ mod tests {
         let c = ctx(&[0xaaaa_0011, 0xbbbb_0011, 0xcccc_0022], &[]);
         assert_eq!(c.resolve(0x11, 0xcccc_0022, 0xaaaa_0011), None);
         assert_eq!(c.resolve(0x11, 0xcccc_0022, 0xdddd_0033), Some(Err(())));
+    }
+
+    #[test]
+    fn only_flagged_copies_count_as_downlinked() {
+        let c = ctx(&[A, C, GW], &[]);
+        let ro = roles(&[(C, "CLIENT")]);
+        // A relayed copy with no hops left is ordinary radio: C heard A itself.
+        let plain = relayed(row(A, GW), 0xcc, 1);
+        assert!(!c.downlinked(&plain));
+        assert_eq!(pairs(&transmissions(&plain, &c, &ro)), vec![(id(A), Some(id(C))), (id(C), Some(id(GW)))]);
+        // Flagged via_mqtt: C took it from MQTT, so only its own transmission is radio.
+        let flagged = Row { rr: crate::row::ty::VIA_MQTT, ..relayed(row(A, GW), 0xcc, 0) };
+        assert!(c.downlinked(&flagged));
+        assert_eq!(pairs(&transmissions(&flagged, &c, &ro)), vec![(id(A), None), (id(C), Some(id(GW)))]);
+        // With no last hop, nothing radio is proven.
+        let bare = Row { rr: crate::row::ty::VIA_MQTT, ..row(A, GW) };
+        assert_eq!(pairs(&transmissions(&bare, &c, &ro)), vec![(id(A), None)]);
     }
 }

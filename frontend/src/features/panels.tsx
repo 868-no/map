@@ -402,7 +402,7 @@ function PacketLogs({ id, names, positioned, moved }: { id: string; names: Map<s
                 {p.kind === 'own'
                   ? <>
                       {p.hops !== undefined ? `${p.hops}` : p.by_itself ? <span className="muted" title="Only it uplinked this packet itself">self</span> : ''}
-                      {p.downlinked && <span className="ev-tag" title="A copy reached a gateway through an MQTT downlink: taken from the broker and transmitted with no hops left, so it carries no hop count"> MQTT</span>}
+                      {p.downlinked && <span className="ev-tag" title="A copy reached a gateway through an MQTT downlink: flagged via MQTT, taken from the broker and transmitted with no hops left, so it carries no hop count"> MQTT</span>}
                     </>
                   : p.evidence.map((e) => <span key={e} className="ev-tag" title={how[e][1]}>{how[e][0]}</span>)}
               </td>

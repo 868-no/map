@@ -356,15 +356,12 @@ impl RelayContext {
     }
 
     /// A copy a downlinker transmitted after taking the packet from MQTT:
-    /// firmware sends downlinked packets with no hops left (D-087), so a
-    /// relayed copy with hop limit 0 whose last hop resolves to a downlinker
-    /// crossed the internet before its last (radio) hop. Its hop count says
-    /// nothing about the path.
+    /// firmware flags such packets `via_mqtt` (and sends them with no hops
+    /// left), so it crossed the internet before its last radio hop, from the
+    /// relay to the gateway. Gateways normally never uplink flagged packets,
+    /// so such copies are rare (D-088).
     pub fn downlinked(&self, r: &crate::row::Row) -> bool {
-        !self.downlinkers.is_empty()
-            && !r.dr
-            && r.hl == Some(0)
-            && matches!((r.relay, r.gw), (Some(b), Some(g)) if matches!(self.resolve((b & 0xff) as u8, r.src, g), Some(Ok(n)) if self.downlinkers.contains(&n)))
+        r.rr == crate::row::ty::VIA_MQTT
     }
 
     /// Engine::resolve, also telling whether a tie between candidates was
