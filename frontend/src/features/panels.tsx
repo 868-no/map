@@ -124,8 +124,8 @@ export function NodePanel({ id, snapshot }: { id: string; snapshot: SnapshotView
   const select = useStore((s) => s.select)
   const snapNode = (snapshot?.nodes ?? []).find((n) => n.id === id)
   const now = snapshot ? Date.parse(snapshot.meta.window.end) : Date.now()
-  const edges = useMemo(() => (snapshot?.edges ?? []).filter((e) => e.src === id || e.dst === id), [snapshot, id])
   const names = useMemo(() => new Map((snapshot?.nodes ?? []).map((n) => [n.id, nodeName(n, n.id)])), [snapshot])
+  const neighbours = useMemo(() => linkNeighbours(snapshot?.edges ?? [], id, names), [snapshot, id, names])
   const positioned = useMemo(() => new Set((snapshot?.nodes ?? []).filter((n) => n.position || n.estimate).map((n) => n.id)), [snapshot])
   const moved = useMemo(() => new Set((snapshot?.nodes ?? []).filter((n) => n.moved_at).map((n) => n.id)), [snapshot])
   if (isLoading) return <div className="panel">Loading {id}…</div>
@@ -242,16 +242,30 @@ export function NodePanel({ id, snapshot }: { id: string; snapshot: SnapshotView
       )}
       <RelayingSection node={snapNode} snapshot={snapshot} />
       <ReachSection key={d.id} id={d.id} name={(n) => names.get(n) ?? n} />
-      <h3>Links in window ({edges.length})</h3>
+      <h3>Links in window ({neighbours.length})</h3>
       <ul className="links">
-        {edges.map((e) => (
-          <li key={e.src + e.dst + (e.mqtt ? 'm' : '')}>
-            <button onClick={() => select({ kind: 'edge', src: e.src, dst: e.dst, mqtt: !!e.mqtt })}>
-              {e.src === id ? <>→ {names.get(e.dst) ?? e.dst}</> : <>← {names.get(e.src) ?? e.src}</>}{' '}
-              {e.mqtt ? <span className="conf conf-mqtt" title="Over the internet through an MQTT broker, not radio">Internet</span> : <span className={`conf conf-${e.confidence}`}>{e.confidence}</span>} {e.snr.median !== undefined && e.snr.median !== null && <small>SNR {e.snr.median} dB</small>}
-            </button>
-          </li>
-        ))}
+        {neighbours.map((g) => {
+          const dir = (e: Edge | undefined, arrow: string, heard: string) => (
+            <span className={`link-dir${e ? '' : ' muted'}`} title={heard}>
+              {arrow}{' '}
+              {!e ? 'no evidence' : e.mqtt ? <span className="conf conf-mqtt" title="Over the internet through an MQTT broker, not radio">Internet</span> : <span className={`conf conf-${e.confidence}`}>{e.confidence}</span>}
+              {e?.snr.median != null && <small> SNR {e.snr.median} dB</small>}
+            </span>
+          )
+          const name = names.get(g.peer) ?? g.peer
+          const self = names.get(id) ?? id
+          return (
+            <li key={g.peer + (g.mqtt ? 'm' : '')}>
+              <button onClick={() => select({ kind: 'edge', src: id, dst: g.peer, mqtt: g.mqtt })}>
+                <span className="link-peer">{name}</span>
+                <span className="link-dirs">
+                  {dir(g.out, '→', g.mqtt ? `${name} took ${self}'s packets from MQTT` : `${name} heard ${self}`)}
+                  {dir(g.in, '←', g.mqtt ? `${self} took ${name}'s packets from MQTT` : `${self} heard ${name}`)}
+                </span>
+              </button>
+            </li>
+          )
+        })}
       </ul>
       <h3>Heard by gateways ({(d.heard_by ?? []).length})</h3>
       <table className="hear">
@@ -569,3 +583,37 @@ function ShareNode({ id, name }: { id: string; name: string }) {
   )
 }
 
+
+const CONF_RANK: Record<string, number> = { high: 3, medium: 2, low: 1 }
+
+/** A neighbour on the Links list: both directions of the link to it. */
+export interface LinkNeighbour {
+  peer: string
+  mqtt: boolean
+  out?: Edge // the neighbour heard this node
+  in?: Edge // this node heard the neighbour
+}
+
+/**
+ * The selected node's links grouped by neighbour (radio and internet links
+ * apart), sorted by the better direction's confidence, then its median SNR
+ * (strongest first), then name. Internet links follow the radio ones.
+ */
+export function linkNeighbours(edges: Edge[], id: string, names: Map<string, string>): LinkNeighbour[] {
+  const groups = new Map<string, LinkNeighbour>()
+  for (const e of edges) {
+    if (e.src !== id && e.dst !== id) continue
+    const peer = e.src === id ? e.dst : e.src
+    const key = peer + (e.mqtt ? '|m' : '')
+    const g = groups.get(key) ?? { peer, mqtt: !!e.mqtt }
+    if (e.src === id) g.out = e
+    else g.in = e
+    groups.set(key, g)
+  }
+  const both = (g: LinkNeighbour) => [g.out, g.in].filter((e): e is Edge => !!e)
+  const conf = (g: LinkNeighbour) => (g.mqtt ? 0 : Math.max(...both(g).map((e) => CONF_RANK[e.confidence] ?? 0)))
+  const snr = (g: LinkNeighbour) => Math.max(...both(g).map((e) => e.snr.median ?? -999))
+  return [...groups.values()].sort(
+    (a, b) => conf(b) - conf(a) || snr(b) - snr(a) || (names.get(a.peer) ?? a.peer).localeCompare(names.get(b.peer) ?? b.peer),
+  )
+}

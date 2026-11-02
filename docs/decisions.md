@@ -682,3 +682,9 @@ Operator request: light and dark mode use the same "last heard" gradient, with a
 - **Why these:** no colour stands out strongly from both a near-black and a near-white map, so every stop sits in a middle band of luminance: at least 3.2:1 against the dark background and 2.1:1 against the light one. The dark theme's inferno ramp sank to 2.7:1 at its oldest stop; its pale newest yellow was 1.1:1 on the light map, which is why the light theme had needed a ramp of its own. Against roads, water and land cover (roads and city names are on by default, D-083) contrast is lower, so the markers' dark outline and the estimated rings' dark halo, kept in both themes, carry the separation.
 - **Glyph ink by contrast:** the ink of the uplink glyph inside a marker is now chosen by WCAG luminance (dark above 18%), not by a perceptual weighting that put white on orange at 2.8:1. Every age gets at least 4:1.
 - Unit tests check both backgrounds at 21 points along the ramp, the falling lightness, and the glyph ink.
+
+## D-086 Links in window, grouped by neighbour (2026-11-02)
+
+Operator request: the node panel's "Links in window" listed each direction as its own row, in the engine's order (evidence sample count, which the list does not show), with radio links first and internet links after.
+- One row per neighbour: its name, then both directions. → the neighbour heard this node, ← this node heard the neighbour (each with confidence and median SNR, "no evidence" when a direction was not observed; a tooltip spells it out). Radio and internet links to the same neighbour stay separate rows. Clicking a row opens the link, both directions, as before.
+- Sorted by the better direction's confidence (high, medium, low), then its median SNR (strongest first), then name; internet links last. The heading counts neighbours.

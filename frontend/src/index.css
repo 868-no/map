@@ -166,6 +166,10 @@ button[aria-pressed='true'], button[aria-selected='true'] { background: var(--pr
 .node-row .id { font: 11px ui-monospace, monospace; color: var(--muted); }
 .node-row .ct { font-size: 11px; color: var(--muted); }
 .links button { border: none; background: none; text-align: left; padding: 2px 0; }
+.links button { display: flex; flex-direction: column; gap: 1px; width: 100%; }
+.link-dirs { display: flex; flex-wrap: wrap; gap: 2px 14px; font-size: 12px; }
+.link-dir.muted { opacity: 0.6; }
+.links li + li { margin-top: 4px; }
 .linkish { border: none; background: none; color: var(--accent); padding: 0; text-decoration: underline; }
 .tag { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 10px; font-size: 11px; background: var(--bg-purple); color: var(--purple); }
 .tag.gw { background: var(--bg-accent); color: var(--accent); }
