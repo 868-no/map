@@ -683,3 +683,31 @@ test('the map view is remembered: a reload opens where it was left, without fitt
   expect(v.lng).toBeCloseTo(8.5, 2)
   expect(v.lat).toBeCloseTo(61.5, 2)
 })
+
+test('selecting a node on the map with the panel closed centres it beside the panel that opens', async ({ page }) => {
+  type M = Hook & { map: { project: (p: [number, number]) => { x: number; y: number }; jumpTo: (o: object) => void } }
+  await ready(page)
+  await expect(page.locator('#dock')).toBeHidden()
+  await page.waitForFunction(() => ((window as unknown as { __meshmap: Hook }).__meshmap.layers().find((x) => x.id === 'nodes')?.data.length ?? 0) > 0, null, { timeout: 30_000 })
+  await page.waitForTimeout(1500) // the fit on first load
+  // The most isolated node, so the click selects it rather than a cluster.
+  const hit = await page.evaluate(() => {
+    const nodes = (window as unknown as { __meshmap: M }).__meshmap.layers().find((l) => l.id === 'nodes')!.data as { lon: number; lat: number }[]
+    const gap = (n: { lon: number; lat: number }) => Math.min(...nodes.filter((m) => m !== n).map((m) => Math.hypot(m.lon - n.lon, (m.lat - n.lat) * 2)), Infinity)
+    const best = nodes.reduce((a, b) => (gap(b) > gap(a) ? b : a))
+    return { lon: best.lon, lat: best.lat }
+  })
+  await page.evaluate(([lon, lat]) => (window as unknown as { __meshmap: M }).__meshmap.map.jumpTo({ center: [lon, lat], zoom: 10 }), [hit.lon, hit.lat])
+  await page.waitForTimeout(500)
+  const box = (await page.locator('.map').boundingBox())!
+  const pt = await page.evaluate(([lon, lat]) => (window as unknown as { __meshmap: M }).__meshmap.map.project([lon, lat]), [hit.lon, hit.lat])
+  await expect(async () => {
+    await page.mouse.click(box.x + pt.x, box.y + pt.y)
+    await expect(page.locator('#dock')).toBeVisible({ timeout: 2000 })
+  }).toPass({ timeout: 20_000 })
+  await page.waitForTimeout(1200) // the flight
+  const dock = (await page.locator('#dock').boundingBox())!
+  const now = await page.evaluate(([lon, lat]) => (window as unknown as { __meshmap: M }).__meshmap.map.project([lon, lat]), [hit.lon, hit.lat])
+  const freeCentre = (dock.x - box.x) / 2 // the middle of the map left of the panel
+  expect(Math.abs(now.x - freeCentre)).toBeLessThan(40)
+})

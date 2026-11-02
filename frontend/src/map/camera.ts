@@ -6,6 +6,9 @@ import type { Selection } from '../state/store'
 
 type LngLat = [number, number]
 
+/** Frames a fly-to waits for the panel that a selection opens (about 0.2 s). */
+const PANEL_WAIT_FRAMES = 12
+
 /** Pixels of the map covered by the floating header (top) and the open panel (right edge, or the top on phones). */
 function covered(container: HTMLElement | null): { top: number; right: number; bottom: number } {
   const head = document.getElementById('topbar')
@@ -39,8 +42,7 @@ export function useCamera(
 
   // Fly to a selected node once per selection, centred in the area the side
   // panel leaves free. Positions refresh as live data arrives; that must not
-  // pull the view back. Measured on the next frame: this selection may be
-  // what opens the panel.
+  // pull the view back.
   const flownTo = useRef<string | null>(null)
   useEffect(() => {
     if (selection?.kind !== 'node') {
@@ -51,12 +53,19 @@ export function useCamera(
     const p = pos.get(selection.id)
     if (!p) return // not placed yet: fly when it first is
     const id = (flownTo.current = selection.id)
-    // Not cancelled by a position refresh; skipped if the selection changed meanwhile.
-    requestAnimationFrame(() => {
+    // Not cancelled by a position refresh; skipped if the selection changed
+    // meanwhile. Selecting opens the panel through a state update that renders
+    // a frame or two later: wait for it (briefly, as a selection need not open
+    // it), so the first flight already leaves room for it.
+    let frames = 0
+    const go = () => {
       if (flownTo.current !== id) return
+      const panel = document.getElementById('dock')
+      if ((!panel || panel.hidden) && frames++ < PANEL_WAIT_FRAMES) return void requestAnimationFrame(go)
       const c = covered(container.current)
       mapRef.current?.easeTo({ center: p, zoom: Math.max(mapRef.current.getZoom(), 10), duration: 600, offset: [-c.right / 2, (c.top - c.bottom) / 2] })
-    })
+    }
+    requestAnimationFrame(go)
   }, [selection, pos, mapRef, container])
 
   // Frame a packet's route once when it is drawn (not again as data refreshes).
