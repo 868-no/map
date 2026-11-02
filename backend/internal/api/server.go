@@ -17,6 +17,7 @@ import (
 	"github.com/868-no/map/internal/config"
 	"github.com/868-no/map/internal/geo"
 	"github.com/868-no/map/internal/observability"
+	"github.com/868-no/map/internal/storage"
 	"github.com/868-no/map/internal/window"
 )
 
@@ -49,6 +50,7 @@ type Server struct {
 	heavy      chan struct{}
 	closing    chan struct{}
 	trendsMemo trendsCache
+	trendHours storage.TrendHours // hourly summaries for trends (D-112)
 	once       sync.Once
 }
 

@@ -694,3 +694,43 @@ func TestRedecodeOldRows(t *testing.T) {
 		t.Fatalf("second run: %d %v", n, err)
 	}
 }
+
+// D-112: trends come from hourly summaries in memory, refreshed
+// incrementally; hours summed under an older decoder are recomputed, and
+// hours older than the retained log are dropped.
+func TestTrendSummaries(t *testing.T) {
+	pool := freshDB(t)
+	f := newFixture(t, pool)
+	ctx := context.Background()
+	f.position(base.Add(time.Hour), nodeA, gw1, 63.0)
+	f.position(base.Add(26*time.Hour), nodeB, gw1, 63.1)
+	var th storage.TrendHours
+	now := base.Add(27 * time.Hour)
+	if err := th.Refresh(ctx, pool, now); err != nil {
+		t.Fatal(err)
+	}
+	if th.Len() != 2 {
+		t.Fatalf("%d summarised hours, want 2", th.Len())
+	}
+	// A new row in a recent hour is picked up by the next refresh.
+	f.position(base.Add(26*time.Hour+30*time.Minute), nodeA, gw1, 63.0)
+	if err := th.Refresh(ctx, pool, now); err != nil {
+		t.Fatal(err)
+	}
+	if h, _ := th.Hour(base.Add(26 * time.Hour)); len(h.Nodes) != 2 || h.Packets != 2 {
+		t.Fatalf("recent hour: %+v", h)
+	}
+	// Hours before the oldest retained row go when it does.
+	if _, err := pool.Exec(ctx, `DELETE FROM packet_log WHERE observed_at < $1`, base.Add(2*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if err := th.Refresh(ctx, pool, now); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := th.Hour(base.Add(time.Hour)); ok || th.Len() != 1 {
+		t.Fatalf("an hour outlived the data (%d left)", th.Len())
+	}
+	if tables, _ := storage.ApplicationTables(ctx, pool); len(tables) != 1 {
+		t.Fatalf("trends must not add tables: %v", tables)
+	}
+}

@@ -42,8 +42,9 @@ type TrendsOutput struct {
 	Body         TrendsBody
 }
 
-// TrendsTTL is how long a computed trend is reused: each one scans the log.
-const TrendsTTL = 10 * time.Minute
+// TrendsTTL is how long a computed trend is reused before the hourly
+// summaries are refreshed again (D-112).
+const TrendsTTL = time.Minute
 
 // trendsCache keeps computed trends per bucket and time zone for TrendsTTL.
 type trendsCache struct {
@@ -82,38 +83,13 @@ func (s *Server) trends(ctx context.Context, in *TrendsInput) (*TrendsOutput, er
 	defer release()
 
 	body := TrendsBody{Bucket: in.Bucket, TZ: in.TZ, Buckets: []TrendBucket{}, Computed: s.now()}
-	// Invalid rows (failed verification, D-093) may carry a forged sender: never counted.
-	rows, err := s.Pool.Query(ctx, `
-		WITH t AS (
-		  SELECT date_trunc($1, observed_at AT TIME ZONE $2) AS b, source_node_id, gateway_node_id, logical_packet_key,
-		    -- Rows stored before these apps were decoded, labelled as the rows clients get (D-103).
-		    CASE WHEN packet_type = 'other' AND decoded_metadata->'other'->>'port_name' = 'STORE_FORWARD_APP' THEN 'store_forward'
-		         WHEN packet_type = 'other' AND decoded_metadata->'other'->>'port_name' = 'NODE_STATUS_APP' THEN 'node_status'
-		         ELSE packet_type END AS packet_type
-		  FROM packet_log WHERE packet_type <> 'invalid'),
-		firsts AS (SELECT min(b) AS b FROM t GROUP BY source_node_id),
-		totals AS (SELECT b, count(DISTINCT source_node_id) n, count(DISTINCT gateway_node_id) g, count(DISTINCT logical_packet_key) p, count(*) r FROM t GROUP BY b),
-		news AS (SELECT b, count(*) c FROM firsts GROUP BY b),
-		types AS (SELECT b, jsonb_object_agg(packet_type, c) j FROM (SELECT b, packet_type, count(DISTINCT logical_packet_key) c FROM t GROUP BY b, packet_type) x GROUP BY b)
-		SELECT totals.b, n, g, COALESCE(news.c, 0), p, r, COALESCE(types.j, '{}'::jsonb)
-		FROM totals LEFT JOIN news USING (b) LEFT JOIN types USING (b) ORDER BY totals.b`, in.Bucket, in.TZ)
-	if err != nil {
+	// Hourly summaries in memory keep this fast however long retention is (D-112).
+	if err := s.trendHours.Refresh(ctx, s.Pool, s.now()); err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 	loc, _ := time.LoadLocation(in.TZ)
-	for rows.Next() {
-		var tb TrendBucket
-		var local time.Time
-		if err := rows.Scan(&local, &tb.Nodes, &tb.Gateways, &tb.NewNodes, &tb.Packets, &tb.Receptions, &tb.ByType); err != nil {
-			return nil, err
-		}
-		// date_trunc of a local timestamp: wall-clock fields in the zone.
-		tb.Start = time.Date(local.Year(), local.Month(), local.Day(), local.Hour(), 0, 0, 0, loc)
-		body.Buckets = append(body.Buckets, tb)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
+	for _, b := range s.trendHours.Buckets(in.Bucket, loc) {
+		body.Buckets = append(body.Buckets, TrendBucket{Start: b.Start, Nodes: b.Nodes, Gateways: b.Gateways, NewNodes: b.NewNodes, Packets: b.Packets, Receptions: b.Receptions, ByType: b.ByType})
 	}
 	if err := s.Pool.QueryRow(ctx, `SELECT min(observed_at) FROM packet_log`).Scan(&body.Since); err != nil {
 		return nil, err
