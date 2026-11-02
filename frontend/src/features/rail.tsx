@@ -3,7 +3,7 @@
 // panel's button again, its close button or Escape closes it.
 import { useCallback, useEffect, useRef, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react'
 
-export type PanelId = 'nodes' | 'details' | 'health' | 'period' | 'filters' | 'layers' | 'legend' | 'settings'
+export type PanelId = 'nodes' | 'details' | 'health' | 'trends' | 'period' | 'filters' | 'layers' | 'legend' | 'settings'
 
 const ICON_PROPS = { viewBox: '0 0 20 20', width: 20, height: 20, 'aria-hidden': true, fill: 'none', stroke: 'currentColor', strokeWidth: 1.6, strokeLinecap: 'round', strokeLinejoin: 'round' } as const
 
@@ -27,6 +27,9 @@ const ICONS: Record<PanelId, ReactNode> = {
   legend: (
     <svg {...ICON_PROPS}><rect x="3" y="3.5" width="4.5" height="4.5" rx="1" /><circle cx="5.25" cy="13.75" r="2.25" /><path d="M10.5 5.75h6.5M10.5 13.75h6.5" /></svg>
   ),
+  trends: (
+    <svg {...ICON_PROPS}><path d="M3 16.5h14" /><path d="M5 13.5V10M8.5 13.5V6.5M12 13.5V8.5M15.5 13.5V4" /></svg>
+  ),
   settings: (
     <svg {...ICON_PROPS}><path d="M3 6h14M3 14h14" /><circle cx="7.5" cy="6" r="2" fill="var(--panel)" /><circle cx="12.5" cy="14" r="2" fill="var(--panel)" /></svg>
   ),
@@ -36,6 +39,7 @@ export const PANELS: { id: PanelId; label: string; hint: string }[] = [
   { id: 'nodes', label: 'Nodes', hint: 'Find a node by name or ID' },
   { id: 'details', label: 'Details', hint: 'The selected node or link (closing it clears the selection)' },
   { id: 'health', label: 'Health', hint: 'Known problems in the mesh, and who uses the airtime' },
+  { id: 'trends', label: 'Trends', hint: 'Daily, weekly and monthly summaries over everything the server keeps' },
   { id: 'period', label: 'Period', hint: 'The time window: its length, start and end' },
   { id: 'filters', label: 'Filters', hint: 'Which observations and links count' },
   { id: 'layers', label: 'Layers', hint: 'What the map shows' },

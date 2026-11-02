@@ -620,6 +620,17 @@ test('only online nodes: offline ones leave the map, and Details says which a no
   await expect(page.locator('.node-panel .tag.online, .node-panel .tag.offline')).toHaveCount(1)
 })
 
+test('the rail opens long-term trends by day, week and month', async ({ page }) => {
+  await ready(page)
+  await page.locator('.rail-btn[aria-label="Trends"]').click()
+  const panel = page.locator('.trends-panel')
+  await expect(panel.locator('.bchart').first()).toBeVisible({ timeout: 30_000 })
+  await expect(panel.locator('.trends-table tbody tr').first()).toBeVisible()
+  await panel.getByRole('radio', { name: 'Monthly' }).click()
+  await expect(panel.getByRole('radio', { name: 'Monthly' })).toHaveAttribute('aria-checked', 'true')
+  await expect(panel.locator('.trends-table th').first()).toHaveText('Month')
+})
+
 test('a link shows its signal over the selected period, both directions', async ({ page }) => {
   await withLinks(page)
   await ready(page)

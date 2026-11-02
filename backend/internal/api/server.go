@@ -46,9 +46,10 @@ type Server struct {
 	// connections held while rows stream); default 8.
 	HeavySlots int
 
-	heavy   chan struct{}
-	closing chan struct{}
-	once    sync.Once
+	heavy      chan struct{}
+	closing    chan struct{}
+	trendsMemo trendsCache
+	once       sync.Once
 }
 
 // CloseStreams ends every open live stream, so a shutdown need not wait
@@ -176,5 +177,7 @@ func (s *Server) register(api huma.API) {
 			"application/json": {Schema: api.OpenAPI().Components.Schemas.Schema(reflect.TypeOf(ObservationsBody{}), true, "ObservationsBody")}}}}}, s.observations)
 	huma.Register(api, huma.Operation{OperationID: "node-public-key", Method: http.MethodGet, Path: "/api/v1/nodes/{id}/public-key",
 		Summary: "A node's announced and trusted public keys from the retained log", Tags: []string{"mesh"}, Errors: []int{400, 404}}, s.nodeKey)
+	huma.Register(api, huma.Operation{OperationID: "trends", Method: http.MethodGet, Path: "/api/v1/trends",
+		Summary: "Daily, weekly or monthly summaries over the whole retained log", Tags: []string{"mesh"}, Errors: []int{400, 503}}, s.trends)
 	s.registerStream(api)
 }

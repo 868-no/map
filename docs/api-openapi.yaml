@@ -779,6 +779,81 @@ components:
         - table_bytes
         - duration_ms
       type: object
+    TrendBucket:
+      additionalProperties: false
+      properties:
+        by_type:
+          additionalProperties:
+            format: int64
+            type: integer
+          description: Distinct packets by type
+          type: object
+        gateways:
+          description: Distinct gateways that uplinked anything
+          format: int64
+          type: integer
+        new_nodes:
+          description: Nodes first heard in this bucket (within retention)
+          format: int64
+          type: integer
+        nodes:
+          description: Distinct nodes heard (senders)
+          format: int64
+          type: integer
+        packets:
+          description: Distinct packets
+          format: int64
+          type: integer
+        receptions:
+          description: Gateway receptions of them
+          format: int64
+          type: integer
+        start:
+          description: Bucket start in the requested time zone
+          format: date-time
+          type: string
+      required:
+        - start
+        - nodes
+        - gateways
+        - new_nodes
+        - packets
+        - receptions
+        - by_type
+      type: object
+    TrendsBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/api/schemas/TrendsBody.json
+          format: uri
+          readOnly: true
+          type: string
+        bucket:
+          type: string
+        buckets:
+          items:
+            $ref: "#/components/schemas/TrendBucket"
+          type:
+            - array
+            - "null"
+        computed:
+          format: date-time
+          type: string
+        since:
+          description: "Oldest retained observation: the first bucket may be partial, and new_nodes counts from here"
+          format: date-time
+          type: string
+        tz:
+          type: string
+      required:
+        - bucket
+        - tz
+        - buckets
+        - computed
+      type: object
     WindowEcho:
       additionalProperties: false
       properties:
@@ -1118,3 +1193,65 @@ paths:
       summary: Live updates for the rolling window (SSE)
       tags:
         - live
+  /api/v1/trends:
+    get:
+      operationId: trends
+      parameters:
+        - description: Bucket length
+          explode: false
+          in: query
+          name: bucket
+          schema:
+            default: day
+            description: Bucket length
+            enum:
+              - day
+              - week
+              - month
+            type: string
+        - description: IANA time zone the buckets start in, e.g. Europe/Oslo
+          explode: false
+          in: query
+          name: tz
+          schema:
+            default: UTC
+            description: IANA time zone the buckets start in, e.g. Europe/Oslo
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrendsBody"
+          description: OK
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+        "400":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Bad Request
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Service Unavailable
+      summary: Daily, weekly or monthly summaries over the whole retained log
+      tags:
+        - mesh

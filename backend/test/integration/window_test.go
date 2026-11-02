@@ -607,3 +607,50 @@ func TestStoredRowEncodings(t *testing.T) {
 		t.Fatalf("rows after backfill differ:\ngot  %s\nwant %s", got, want)
 	}
 }
+
+// D-104: daily and monthly trends over the whole retained log, in the
+// requested time zone; new nodes count once, in the bucket they first appear.
+func TestTrends(t *testing.T) {
+	pool := freshDB(t)
+	rc := redisClient(t)
+	f := newFixture(t, pool)
+	day1, day2 := base.Add(10*time.Hour), base.Add(34*time.Hour)
+	f.position(day1, nodeA, gw1, 63.0)
+	f.position(day1.Add(time.Hour), nodeA, gw1, 63.0)
+	f.position(day2, nodeA, gw1, 63.0)
+	f.position(day2, nodeB, gw1, 63.1)
+	// 23:30 UTC on day 2 is already day 3 in Oslo.
+	f.position(base.Add(47*time.Hour+30*time.Minute), nodeB, gw1, 63.1)
+	c := newAPI(t, pool, rc, testNow)
+	var got struct {
+		Buckets []struct {
+			Start                                time.Time
+			Nodes, Gateways, Packets, Receptions int
+			NewNodes                             int            `json:"new_nodes"`
+			ByType                               map[string]int `json:"by_type"`
+		} `json:"buckets"`
+	}
+	if code := c.get("/api/v1/trends", url.Values{"bucket": {"day"}, "tz": {"Europe/Oslo"}}, &got); code != 200 {
+		t.Fatalf("HTTP %d", code)
+	}
+	if len(got.Buckets) != 3 {
+		t.Fatalf("%d day buckets, want 3: %+v", len(got.Buckets), got.Buckets)
+	}
+	b := got.Buckets
+	if b[0].Nodes != 1 || b[0].Packets != 2 || b[0].NewNodes != 1 || b[0].ByType["position"] != 2 || b[0].Gateways != 1 {
+		t.Fatalf("day 1: %+v", b[0])
+	}
+	if b[1].Nodes != 2 || b[1].NewNodes != 1 || b[2].Nodes != 1 || b[2].NewNodes != 0 {
+		t.Fatalf("days 2-3: %+v %+v", b[1], b[2])
+	}
+	if b[2].Start.UTC().Hour() != 23 {
+		t.Fatalf("day 3 should start at Oslo midnight (23:00 UTC): %v", b[2].Start)
+	}
+	// The last packet is already November in Oslo: October and November.
+	if code := c.get("/api/v1/trends", url.Values{"bucket": {"month"}, "tz": {"Europe/Oslo"}}, &got); code != 200 || len(got.Buckets) != 2 || got.Buckets[0].Nodes != 2 || got.Buckets[0].NewNodes != 2 || got.Buckets[1].Nodes != 1 || got.Buckets[1].NewNodes != 0 {
+		t.Fatalf("month: %d %+v", code, got.Buckets)
+	}
+	if code := c.get("/api/v1/trends", url.Values{"tz": {"Mars/Olympus"}}, &got); code != 400 {
+		t.Fatalf("bad zone: HTTP %d", code)
+	}
+}

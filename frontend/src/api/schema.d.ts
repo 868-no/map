@@ -92,6 +92,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/trends": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Daily, weekly or monthly summaries over the whole retained log */
+        get: operations["trends"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -508,6 +525,60 @@ export interface components {
             /** Format: int64 */
             table_bytes: number;
         };
+        TrendBucket: {
+            /** @description Distinct packets by type */
+            by_type: {
+                [key: string]: number;
+            };
+            /**
+             * Format: int64
+             * @description Distinct gateways that uplinked anything
+             */
+            gateways: number;
+            /**
+             * Format: int64
+             * @description Nodes first heard in this bucket (within retention)
+             */
+            new_nodes: number;
+            /**
+             * Format: int64
+             * @description Distinct nodes heard (senders)
+             */
+            nodes: number;
+            /**
+             * Format: int64
+             * @description Distinct packets
+             */
+            packets: number;
+            /**
+             * Format: int64
+             * @description Gateway receptions of them
+             */
+            receptions: number;
+            /**
+             * Format: date-time
+             * @description Bucket start in the requested time zone
+             */
+            start: string;
+        };
+        TrendsBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/api/schemas/TrendsBody.json
+             */
+            readonly $schema?: string;
+            bucket: string;
+            buckets: components["schemas"]["TrendBucket"][] | null;
+            /** Format: date-time */
+            computed: string;
+            /**
+             * Format: date-time
+             * @description Oldest retained observation: the first bucket may be partial, and new_nodes counts from here
+             */
+            since?: string;
+            tz: string;
+        };
         WindowEcho: {
             /** Format: date-time */
             end: string;
@@ -785,6 +856,68 @@ export interface operations {
             };
             /** @description Error */
             default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    trends: {
+        parameters: {
+            query?: {
+                /** @description Bucket length */
+                bucket?: "day" | "week" | "month";
+                /** @description IANA time zone the buckets start in, e.g. Europe/Oslo */
+                tz?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TrendsBody"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
