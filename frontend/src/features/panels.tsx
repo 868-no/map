@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import { ApiError, getJSON } from '../api/client'
 import { NodeAirtimeRow, NodeHealth } from './health'
 import type { NodeKey } from '../api/types'
@@ -497,11 +497,16 @@ function DetailTabs({ counts }: { counts: Partial<Record<DetailTab, number>> }) 
   }
   return (
     <div className="detail-tabs" role="tablist" aria-label="Node details" onKeyDown={onKey}>
-      {TABS.map((t) => (
-        <button key={t.id} id={`detail-tab-${t.id}`} role="tab" aria-selected={tab === t.id} tabIndex={tab === t.id ? 0 : -1} title={t.hint} onClick={() => setTab(t.id)}>
-          {t.label}{counts[t.id] !== undefined && <span className="tab-count">{counts[t.id]}</span>}
-        </button>
+      <span className="tab-edge" aria-hidden />
+      {TABS.map((t, k) => (
+        <Fragment key={t.id}>
+          {k > 0 && <span className="tab-gap" aria-hidden />}
+          <button id={`detail-tab-${t.id}`} role="tab" aria-selected={tab === t.id} tabIndex={tab === t.id ? 0 : -1} title={t.hint} onClick={() => setTab(t.id)}>
+            {t.label}{counts[t.id] !== undefined && <span className="tab-count">{counts[t.id]}</span>}
+          </button>
+        </Fragment>
       ))}
+      <span className="tab-edge end" aria-hidden />
     </div>
   )
 }
