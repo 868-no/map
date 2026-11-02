@@ -26,6 +26,9 @@ const (
 	TypeRouting      = "routing"
 	TypeMapReport    = "mapreport"
 	TypeOther        = "other"
+	// TypeDirectMessage is an end-to-end (PKI) encrypted direct message, of
+	// which only the cleartext header is kept (D-091).
+	TypeDirectMessage = "direct_message"
 )
 
 var (

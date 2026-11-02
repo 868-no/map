@@ -163,6 +163,8 @@ button[aria-pressed='true'], button[aria-selected='true'] { background: var(--pr
 .node-list, .links { list-style: none; margin: 0; padding: 0; }
 .node-row { display: grid; grid-template-columns: 14px 1fr auto auto; gap: 8px; width: 100%; text-align: left; border: none; background: none; padding: 4px 2px; align-items: center; }
 .node-row:hover { background: var(--panel2); }
+.reply-ok { color: var(--ok, #3fb950); }
+.reply-err { color: var(--danger, #f0883e); }
 .topic { font: 12px ui-monospace, monospace; word-break: break-all; }
 .pubkey { font: 11px ui-monospace, monospace; word-break: break-all; }
 .node-row .id { font: 11px ui-monospace, monospace; color: var(--muted); }

@@ -53,6 +53,15 @@ type ObsRow struct {
 	NeighborInfo *ObsNeighborInfo `json:"nb,omitempty"`
 	Traceroute   *ObsTraceroute   `json:"tr,omitempty"`
 	MapReport    *ObsMapReport    `json:"mr,omitempty"`
+	Routing      *ObsRouting      `json:"rt,omitempty"`
+}
+
+// ObsRouting is a routing packet's outcome: an ACK or an error answering the
+// packet whose id is RequestID (D-092).
+type ObsRouting struct {
+	Kind      string `json:"kind" enum:"ack,error,route_request,route_reply"`
+	Error     string `json:"error,omitempty" doc:"Firmware Routing.Error name, e.g. NO_RESPONSE"`
+	RequestID uint32 `json:"request_id,omitempty" doc:"Packet id of the packet this answers"`
 }
 
 // ObsMapReport is what a node's own map report says about itself and its
@@ -141,14 +150,15 @@ type storedMeta struct {
 	NeighborInfo *ObsNeighborInfo `json:"neighborinfo"`
 	Traceroute   *ObsTraceroute   `json:"traceroute"`
 	MapReport    *ObsMapReport    `json:"mapreport"`
+	Routing      *ObsRouting      `json:"routing"`
 }
 
 // Version is bumped whenever ObsRow gains or changes fields, or
 // New builds them differently. It is part of the generation
 // /observations reports, so browsers holding rows in the old format start
 // over, and stored encodings of an older version are rebuilt (D-046)
-// (2: tp, mr; 3: map report identity and has_default_channel).
-const Version = 3
+// (2: tp, mr; 3: map report identity and has_default_channel; 4: rt).
+const Version = 4
 
 // Fields are the packet_log columns an ObsRow carries.
 type Fields struct {
@@ -203,6 +213,8 @@ func New(f Fields, meta []byte) ObsRow {
 		r.NeighborInfo = m.NeighborInfo
 	case "traceroute":
 		r.Traceroute = m.Traceroute
+	case "routing":
+		r.Routing = m.Routing
 	}
 	return r
 }

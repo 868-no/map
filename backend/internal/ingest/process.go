@@ -57,6 +57,7 @@ const (
 	CryptoPlaintext CryptoStatus = "plaintext_uplink"    // gateway uplinked decoded packet
 	CryptoNone      CryptoStatus = "unencrypted_channel" // PSK shorthand 0x00
 	CryptoMapReport CryptoStatus = "mqtt_map_report"     // a node's own report to MQTT; never on RF
+	CryptoPKI       CryptoStatus = "pki_unreadable"      // end-to-end encrypted direct message: header only (D-091)
 )
 
 // RxInfo is reception provenance used by the graph reducer (design §6.2).
@@ -166,7 +167,7 @@ func Process(m RawMessage, o Options) (Observation, error) {
 		data, crypto = p.GetDecoded(), CryptoMapReport
 	} else if env.Kind == protocol.PayloadDecoded {
 		if p.GetPkiEncrypted() {
-			return Observation{}, reject("pki_only")
+			return directMessage(m, topic, env, channelName), nil
 		}
 		if !o.Keyring.AcceptsPlaintext(m.BrokerID, channelName) {
 			return Observation{}, reject("plaintext_unconfigured")
@@ -175,7 +176,7 @@ func Process(m RawMessage, o Options) (Observation, error) {
 	} else {
 		// PKI DMs travel with channel hash 0 and cannot be read with a PSK.
 		if p.GetPkiEncrypted() || p.GetChannel() == 0 {
-			return Observation{}, reject("pki_only")
+			return directMessage(m, topic, env, channelName), nil
 		}
 		if p.GetChannel() > 0xFF {
 			return Observation{}, reject("invalid_envelope")
@@ -240,8 +241,22 @@ func Process(m RawMessage, o Options) (Observation, error) {
 			TopicRoot: topic.Root, NextHop: p.GetNextHop(), Bytes: len(data.GetPayload()), NotOKToMQTT: notOK,
 		},
 	}
-	if env.Gateway != 0 {
-		g := env.Gateway
+	setHeader(&obs, p, env.Gateway)
+	obs.LogicalKey = logicalKey(p, channelName, data)
+	if mapReport {
+		// Every report has packet id 0: tell periodic reports apart by
+		// time, while copies delivered by several brokers still collide.
+		obs.LogicalKey = h16(obs.LogicalKey[:], u32(uint32(obs.ObservedAt.Truncate(5*time.Minute).Unix())))
+	}
+	obs.ObservationKey = observationKey(obs, env.Gateway, data)
+	return obs, nil
+}
+
+// setHeader copies the cleartext MeshPacket header and the gateway's
+// reception metrics into obs, with reception provenance.
+func setHeader(obs *Observation, p *pb.MeshPacket, gw uint32) {
+	if gw != 0 {
+		g := gw
 		obs.Gateway = &g
 	}
 	if to := p.GetTo(); to != 0 {
@@ -266,15 +281,47 @@ func Process(m RawMessage, o Options) (Observation, error) {
 		ri := int32(r)
 		obs.RelayHint = &ri
 	}
-	obs.Meta.Rx = directRF(p, env.Gateway, obs.RxSNR, obs.RxRSSI)
-	obs.LogicalKey = logicalKey(p, channelName, data)
-	if mapReport {
-		// Every report has packet id 0: tell periodic reports apart by
-		// time, while copies delivered by several brokers still collide.
-		obs.LogicalKey = h16(obs.LogicalKey[:], u32(uint32(obs.ObservedAt.Truncate(5*time.Minute).Unix())))
+	obs.Meta.Rx = directRF(p, gw, obs.RxSNR, obs.RxRSSI)
+}
+
+// directMessage keeps only the header of an end-to-end encrypted direct
+// message (D-091): who sent it to whom, its id, hops, relay, size and the
+// gateway's reception metrics travel in the clear on RF; its content does
+// not, and is never stored. The stored envelope has the ciphertext (or a
+// decoded payload a recipient's gateway uplinked) replaced by zeros of the
+// same length, so re-decoding reproduces this row and nothing more.
+func directMessage(m RawMessage, topic protocol.Topic, env protocol.Envelope, channelName string) Observation {
+	p := env.Packet
+	size := len(p.GetEncrypted())
+	if d := p.GetDecoded(); d != nil {
+		size = len(d.GetPayload())
 	}
-	obs.ObservationKey = observationKey(obs, env.Gateway, data)
-	return obs, nil
+	stripped := proto.Clone(env.Raw).(*pb.ServiceEnvelope)
+	sp := stripped.GetPacket()
+	sp.PayloadVariant = &pb.MeshPacket_Encrypted{Encrypted: make([]byte, max(size, 1))}
+	sp.PkiEncrypted = true
+	raw, _ := deterministic.Marshal(stripped)
+	obs := Observation{
+		ObservedAt:      m.ObservedAt.UTC(),
+		BrokerID:        m.BrokerID,
+		Topic:           m.Topic,
+		Source:          p.GetFrom(),
+		PacketID:        p.GetId(),
+		Channel:         channelName,
+		PacketType:      ports.TypeDirectMessage,
+		Transport:       transportName(p.GetTransportMechanism()),
+		SignatureStatus: security.SigNotApplicable,
+		EnvelopeBytes:   raw,
+		Meta: Metadata{
+			Decoded: ports.Decoded{Type: ports.TypeDirectMessage}, Crypto: CryptoPKI, ViaMQTT: p.GetViaMqtt(), WantAck: p.GetWantAck(),
+			TopicRoot: topic.Root, NextHop: p.GetNextHop(), Bytes: size,
+		},
+	}
+	setHeader(&obs, p, env.Gateway)
+	empty := &pb.Data{}
+	obs.LogicalKey = logicalKey(p, channelName, empty)
+	obs.ObservationKey = observationKey(obs, env.Gateway, empty)
+	return obs
 }
 
 func decrypt(broker, topicChannel string, p *pb.MeshPacket, o Options) (*pb.Data, CryptoStatus, error) {

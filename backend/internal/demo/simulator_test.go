@@ -62,8 +62,11 @@ func TestSimulatorThroughIngest(t *testing.T) {
 	if notes["forged signature (must be rejected)"]["reject:sig_invalid"] == 0 {
 		t.Error("forged signature case never rejected as sig_invalid")
 	}
-	if notes["PKI DM (must be discarded)"]["ok"] > 0 || notes["malformed protobuf"]["ok"] > 0 {
-		t.Error("PKI or malformed input accepted")
+	if notes["malformed protobuf"]["ok"] > 0 {
+		t.Error("malformed input accepted")
+	}
+	if n := notes["PKI DM (header only)"]; n["ok"] == 0 || len(n) != 1 {
+		t.Errorf("PKI DMs should be kept as header-only rows: %v", n)
 	}
 	if len(store) == 0 {
 		t.Error("no identities learned")

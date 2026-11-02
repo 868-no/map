@@ -416,6 +416,27 @@ components:
         - precision_bits
         - precision_known
       type: object
+    ObsRouting:
+      additionalProperties: false
+      properties:
+        error:
+          description: Firmware Routing.Error name, e.g. NO_RESPONSE
+          type: string
+        kind:
+          enum:
+            - ack
+            - error
+            - route_request
+            - route_reply
+          type: string
+        request_id:
+          description: Packet id of the packet this answers
+          format: int32
+          minimum: 0
+          type: integer
+      required:
+        - kind
+      type: object
     ObsRow:
       additionalProperties: false
       properties:
@@ -480,6 +501,8 @@ components:
         rs:
           format: int32
           type: integer
+        rt:
+          $ref: "#/components/schemas/ObsRouting"
         s:
           format: int32
           minimum: 0

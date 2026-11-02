@@ -100,6 +100,11 @@
         Only the operator has access to these stored packets.
       </p>
       <p>
+        <strong>Encrypted direct messages.</strong> Direct messages encrypted end to end between two nodes cannot be read by this service, and their contents are never stored, not even in encrypted form.
+        Their unencrypted header is kept and shown like any other packet's: sender, recipient, packet ID, size, hop counts and reception details. It shows that one node sent a message to another, and when, but not what it said.
+        Packets on channels whose key this service does not have are not stored at all.
+      </p>
+      <p>
         <strong>Nodes that did not allow MQTT uplink.</strong> Meshtastic lets a node mark its packets as not OK to forward to MQTT. When such packets still reach this service through another gateway, their name announcements (NodeInfo) are discarded.
         The node appears only as an unnamed node marked with a red ring. Gateways that forward their own traffic have chosen to do so and are treated normally.
       </p>

@@ -245,6 +245,7 @@ export interface NodeView extends MeshNode {
   recent_packets: { at: string; type: string; packet_id: number; to?: string; channel?: string; signature: string; crypto: string; receptions: number; bytes: number }[]
   truncated: boolean
   radio: Radio
+  delivery?: Delivery
 }
 
 export interface OwnPacket {
@@ -259,6 +260,41 @@ export interface OwnPacket {
   downlinked?: boolean // some copy reached a gateway through an MQTT downlink (D-087)
   receptions: number
   signature: string
+  replies?: Reply[] // ACKs and errors answering it (D-092)
+  answers?: Answer // for a routing packet: what it says
+}
+
+/** Routing packets from one node answering a packet. */
+export interface Reply {
+  from: string
+  kind: string // ack | error | …
+  error?: string // firmware Routing.Error name
+  count: number // distinct routing packets
+}
+
+/** What a routing packet says, and the answered packet's key when in the window. */
+export interface Answer {
+  kind: string
+  error?: string
+  request_id: number
+  re?: string
+}
+
+/** A routing packet or encrypted direct message addressed to the node. */
+export interface InboundPacket {
+  lp: string
+  at: string
+  origin: string
+  type: string
+  answers?: Answer
+}
+
+/** A node's ACKs and errors, sent and addressed to it (D-092). */
+export interface Delivery {
+  acks_sent: number
+  acks_received: number
+  errors_sent: [string, number][]
+  errors_received: [string, number][]
 }
 
 export interface RelayedPacket {
@@ -275,6 +311,7 @@ export interface PacketLog {
   meta: ViewMeta
   own: OwnPacket[]
   relayed: RelayedPacket[]
+  inbound: InboundPacket[]
   truncated: boolean
 }
 

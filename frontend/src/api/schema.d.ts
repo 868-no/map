@@ -306,6 +306,17 @@ export interface components {
             precision_bits: number;
             precision_known: boolean;
         };
+        ObsRouting: {
+            /** @description Firmware Routing.Error name, e.g. NO_RESPONSE */
+            error?: string;
+            /** @enum {string} */
+            kind: "ack" | "error" | "route_request" | "route_reply";
+            /**
+             * Format: int32
+             * @description Packet id of the packet this answers
+             */
+            request_id?: number;
+        };
         ObsRow: {
             b: string;
             /** Format: int64 */
@@ -340,6 +351,7 @@ export interface components {
             rr?: string;
             /** Format: int32 */
             rs?: number;
+            rt?: components["schemas"]["ObsRouting"];
             /** Format: int32 */
             s: number;
             sg: string;

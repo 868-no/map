@@ -1,6 +1,7 @@
 package ingest
 
 import (
+	"bytes"
 	"crypto/ed25519"
 	"testing"
 	"time"
@@ -164,13 +165,38 @@ func TestProcessCCM(t *testing.T) {
 	}
 }
 
-// design §10.2 test 8: PKI DMs discarded without trying PSKs.
+// design §10.2 test 8: PKI DMs keep their cleartext header only (D-091).
 func TestProcessPKI(t *testing.T) {
-	mp := &pb.MeshPacket{From: 0x11111111, To: 0x22222222, Id: 1, Channel: 0, PkiEncrypted: true,
-		PayloadVariant: &pb.MeshPacket_Encrypted{Encrypted: make([]byte, 40)}}
+	secret := []byte("this ciphertext must never be stored, 40B")[:40]
+	mp := &pb.MeshPacket{From: 0x11111111, To: 0x22222222, Id: 1, Channel: 0, PkiEncrypted: true, HopStart: 3, HopLimit: 2, RelayNode: 0x44, WantAck: true,
+		PayloadVariant: &pb.MeshPacket_Encrypted{Encrypted: secret}}
 	b, _ := proto.Marshal(&pb.ServiceEnvelope{Packet: mp, ChannelId: "PKI", GatewayId: "!aabbccdd"})
-	if _, err := Process(msg("msh/EU_868/2/e/PKI/!aabbccdd", b), opts(t, longFast)); Category(err) != "pki_only" {
-		t.Fatalf("got %v", err)
+	o, err := Process(msg("msh/EU_868/2/e/PKI/!aabbccdd", b), opts(t, longFast))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if o.PacketType != "direct_message" || o.Meta.Crypto != CryptoPKI || o.Source != 0x11111111 || *o.Destination != 0x22222222 || o.Meta.Bytes != 40 || !o.Meta.WantAck {
+		t.Fatalf("header: %+v", o)
+	}
+	if *o.HopStart != 3 || *o.HopLimit != 2 || *o.RelayHint != 0x44 || *o.Gateway != 0xaabbccdd || o.Meta.Rx.Reason != "relayed" {
+		t.Fatalf("radio header: %+v", o)
+	}
+	if bytes.Contains(o.EnvelopeBytes, secret[:16]) {
+		t.Fatal("ciphertext stored")
+	}
+	// The stored envelope re-decodes to the same row.
+	again, err := Process(msg("msh/EU_868/2/e/PKI/!aabbccdd", o.EnvelopeBytes), opts(t, longFast))
+	if err != nil || again.LogicalKey != o.LogicalKey || again.ObservationKey != o.ObservationKey {
+		t.Fatalf("re-decode: %v", err)
+	}
+	// A recipient's gateway uplinking it decoded: same header-only row, the text dropped.
+	text := []byte("hei, dette er privat")
+	mp2 := &pb.MeshPacket{From: 0x11111111, To: 0x22222222, Id: 2, PkiEncrypted: true,
+		PayloadVariant: &pb.MeshPacket_Decoded{Decoded: &pb.Data{Portnum: pb.PortNum_TEXT_MESSAGE_APP, Payload: text}}}
+	b2, _ := proto.Marshal(&pb.ServiceEnvelope{Packet: mp2, ChannelId: "PKI", GatewayId: "!22222222"})
+	o2, err := Process(msg("msh/EU_868/2/e/PKI/!22222222", b2), opts(t, longFast))
+	if err != nil || o2.PacketType != "direct_message" || o2.Meta.Bytes != len(text) || bytes.Contains(o2.EnvelopeBytes, text) {
+		t.Fatalf("decoded DM: %v %+v", err, o2)
 	}
 }
 

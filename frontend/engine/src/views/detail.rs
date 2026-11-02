@@ -72,6 +72,9 @@ pub struct NodeDetail {
     pub truncated: bool,
     /// Region and LoRa preset as heard (topics, channel names) and as reported.
     pub radio: crate::radio::Radio,
+    /// ACKs and errors it sent and received (D-092).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub delivery: Option<crate::packets::Delivery>,
 }
 
 /// One node's in-window details, or None when it is neither observed nor referenced.
@@ -135,7 +138,7 @@ pub fn build_node_detail(rows: &[&Row], num: u32, i: &Interner) -> Option<NodeDe
     radio.channels = crate::channels::channel_use(num, rows, i);
     radio.preset = crate::channels::preset_guess(num, rows, i);
     radio.uplink_topics = crate::radio::uplink_topics(&uplinked, i);
-    let mut d = NodeDetail { node: n, positions: vec![], telemetry_series: vec![], heard_by: vec![], heard: vec![], recent_packets: vec![], truncated: false, radio };
+    let mut d = NodeDetail { node: n, positions: vec![], telemetry_series: vec![], heard_by: vec![], heard: vec![], recent_packets: vec![], truncated: false, radio, delivery: crate::packets::delivery(rows, num, i) };
     if first == i64::MAX {
         let Some(&t) = referenced(rows).get(&num) else { return None };
         d.node.status = "referenced";

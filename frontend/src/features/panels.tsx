@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ApiError, getJSON } from '../api/client'
 import type { NodeKey } from '../api/types'
-import type { Edge, Hearing, MeshNode, Radio, SnapshotView } from '../derive/views'
+import type { Answer, Edge, Hearing, MeshNode, Radio, Reply, SnapshotView } from '../derive/views'
 import { useNodeDetail, usePacketLog, usePacketRoute, useReach } from '../state/data'
 import { nodeLink, useStore } from '../state/store'
 import { formatLocal, formatLogTime, relativeAge } from '../lib/time'
@@ -15,6 +15,16 @@ const NR = <span className="nr">not reported in selected period</span>
 function nodeName(n: MeshNode | undefined, id: string): string {
   return n?.identity?.long_name || n?.identity?.short_name || id
 }
+
+/** Firmware Routing.Error names in plain words (D-092). */
+const ROUTING_ERROR: Record<string, string> = {
+  NO_ROUTE: 'no route', GOT_NAK: 'refused', TIMEOUT: 'timed out', NO_INTERFACE: 'no interface', MAX_RETRANSMIT: 'gave up after retries',
+  NO_CHANNEL: 'no matching channel', TOO_LARGE: 'too large', NO_RESPONSE: 'no response', DUTY_CYCLE_LIMIT: 'duty-cycle limit',
+  BAD_REQUEST: 'bad request', NOT_AUTHORIZED: 'not authorised', PKI_FAILED: 'encryption failed', PKI_UNKNOWN_PUBKEY: "doesn't know the sender's key",
+  ADMIN_BAD_SESSION_KEY: 'admin session expired', ADMIN_PUBLIC_KEY_UNAUTHORIZED: 'admin key not authorised', RATE_LIMIT_EXCEEDED: 'rate limited',
+  PKI_SEND_FAIL_PUBLIC_KEY: "no key for the recipient",
+}
+export const routingError = (e?: string) => (e ? ROUTING_ERROR[e] ?? e.toLowerCase().replaceAll('_', ' ') : 'error')
 
 const SIG_LABEL: Record<string, string> = { verified: 'signature verified', unsigned: 'unsigned', unverifiable: 'signed, key unknown', 'not-applicable': 'not signable' }
 const SIG_SHORT: Record<string, string> = { verified: '✓', unsigned: '–', unverifiable: '?', 'not-applicable': 'n/a' }
@@ -263,6 +273,16 @@ export function NodePanel({ id, snapshot }: { id: string; snapshot: SnapshotView
           {(d.own_uplinks ?? 0) > 0 && <span title="Its own packets it uplinked itself as a gateway, its map reports among them: not radio receptions"> · {d.own_uplinks} uplinked itself</span>}
           {d.is_gateway && <span title="Other nodes' packets it uplinked as a gateway"> · uplinked {d.gateway_receptions - (d.own_uplinks ?? 0)} of others'</span>}
         </dd>
+        {d.delivery && (
+          <>
+            <dt title="Routing packets: the ACKs and errors nodes send back for packets that asked for confirmation, or that could not be delivered or processed">Delivery reports</dt>
+            <dd>
+              <DeliveryList label="sent" acks={d.delivery.acks_sent} errors={d.delivery.errors_sent} />
+              <br />
+              <DeliveryList label="received" acks={d.delivery.acks_received} errors={d.delivery.errors_received} />
+            </dd>
+          </>
+        )}
         <dt>Signatures</dt>
         <dd title="One status per packet, its best copy's: relays can strip a signature, so a packet some gateway verified counts as verified">
           {d.signatures.verified} verified · {d.signatures.unsigned} unsigned · {d.signatures.unverifiable} signed, key unknown · {d.signatures.not_applicable} not signable
@@ -361,7 +381,23 @@ export function NodePanel({ id, snapshot }: { id: string; snapshot: SnapshotView
   )
 }
 
-/** The selected node's packets in the window: its own, and others' it relayed. */
+function DeliveryList({ label, acks, errors }: { label: string; acks: number; errors: [string, number][] }) {
+  return (
+    <>
+      {label}: {acks} ACK{acks === 1 ? '' : 's'}
+      {errors.map(([e, n]) => (
+        <span key={e} title={e}> · <span className="reply-err">{n} × {routingError(e)}</span></span>
+      ))}
+    </>
+  )
+}
+
+/** A routing packet's verdict, short: ✓ ACK or ✗ reason. */
+function AnswerTag({ a }: { a: { kind: string; error?: string } }) {
+  return a.kind === 'ack' ? <span className="reply-ok">✓ ACK</span> : <span className="reply-err" title={a.error}>✗ {routingError(a.error)}</span>
+}
+
+/** The selected node's packets in the window: its own, others' it relayed, and routing packets and direct messages addressed to it. */
 function PacketLogs({ id, names, positioned, moved }: { id: string; names: Map<string, string>; positioned: Set<string>; moved: Set<string> }) {
   const select = useStore((s) => s.select)
   const route = useStore((s) => s.route)
@@ -379,8 +415,9 @@ function PacketLogs({ id, names, positioned, moved }: { id: string; names: Map<s
     traceroute: ['route', "This node is in the traceroute's recorded route"],
   } as const
   type Entry = { lp: string; at: string; type: string; to?: string; gateways: number } & (
-    | { kind: 'own'; hops?: number; signature: string; by_itself?: boolean; downlinked?: boolean }
+    | { kind: 'own'; hops?: number; signature: string; by_itself?: boolean; downlinked?: boolean; replies?: Reply[]; answers?: Answer }
     | { kind: 'relayed'; origin: string; evidence: ('relay_byte' | 'traceroute')[] }
+    | { kind: 'inbound'; origin: string; answers?: Answer }
   )
   // Newest first; times parsed once per log, not inside the comparator on every render.
   const data = log.data
@@ -388,14 +425,15 @@ function PacketLogs({ id, names, positioned, moved }: { id: string; names: Map<s
     const all: Entry[] = [
       ...(data?.own ?? []).map((p) => ({ ...p, kind: 'own' as const })),
       ...(withRelayed ? (data?.relayed ?? []).map((p) => ({ ...p, kind: 'relayed' as const, gateways: p.gateways.length })) : []),
+      ...(data?.inbound ?? []).map((p) => ({ ...p, kind: 'inbound' as const, to: id, gateways: 0 })),
     ]
     const ms = new Map(all.map((e) => [e, Date.parse(e.at)]))
     return all.sort((a, b) => ms.get(b)! - ms.get(a)!)
-  }, [data, withRelayed])
+  }, [data, withRelayed, id])
   return (
     <>
       <div className="log-head">
-        <h3>Packet log ({own.length + (withRelayed ? relayed.length : 0)}{log.data?.truncated ? '+' : ''})</h3>
+        <h3>Packet log ({own.length + (withRelayed ? relayed.length : 0) + (log.data?.inbound.length ?? 0)}{log.data?.truncated ? '+' : ''})</h3>
         <label title="Other nodes' packets this node passed on: a gateway's last-hop byte resolved to it, or it is in a traceroute's recorded route">
           <input type="checkbox" checked={withRelayed} onChange={(e) => setWithRelayed(e.target.checked)} /> Include relayed ({relayed.length}{log.data?.truncated && relayed.length >= 200 ? '+' : ''})
         </label>
@@ -404,8 +442,8 @@ function PacketLogs({ id, names, positioned, moved }: { id: string; names: Map<s
       <RouteNote positioned={positioned} moved={moved} name={(n) => names.get(n) ?? n} />
       <p className="muted small">Select a packet to draw its route on the map.</p>
       <table className="hear pkt-log" aria-label="Packet log">
-        <colgroup><col style={{ width: 60 }} /><col /><col style={{ width: 92 }} /><col /><col style={{ width: 70 }} /><col style={{ width: 30 }} /></colgroup>
-        <thead><tr><th>Time</th><th>From</th><th>Type</th><th>To</th><th title="Own packets: the fewest hops another gateway's copy shows (hop start minus hop limit; relays over 0-cost links spend none, so it can be fewer than the relays). 'self': only it uplinked it. 'MQTT': a copy came through an MQTT downlink. Relayed: how we know this node passed it on">Hops</th><th title="Other gateways that uplinked it (relayed: that heard this node's rebroadcast)">GWs</th></tr></thead>
+        <colgroup><col style={{ width: 60 }} /><col /><col style={{ width: 92 }} /><col /><col style={{ width: 70 }} /><col style={{ width: 30 }} /><col style={{ width: 34 }} /></colgroup>
+        <thead><tr><th>Time</th><th>From</th><th>Type</th><th>To</th><th title="Own packets: the fewest hops another gateway's copy shows (hop start minus hop limit; relays over 0-cost links spend none, so it can be fewer than the relays). 'self': only it uplinked it. 'MQTT': a copy came through an MQTT downlink. Relayed: how we know this node passed it on">Hops</th><th title="Other gateways that uplinked it (relayed: that heard this node's rebroadcast)">GWs</th><th title="Delivery reports: ✓ an ACK or ✗ an error answered this packet. Only reports that reached a gateway are known, so a blank never means it was lost. For a routing packet, ↩ selects the packet it answers">Re</th></tr></thead>
         <tbody>
           {entries.slice(0, shown.own).map((p) => (
             <tr key={p.kind + p.lp} className={route === p.lp ? 'active' : undefined} onClick={() => showRoute(route === p.lp ? null : p.lp)} aria-selected={route === p.lp}>
@@ -415,7 +453,9 @@ function PacketLogs({ id, names, positioned, moved }: { id: string; names: Map<s
                   <button className="linkish" onClick={(e) => { e.stopPropagation(); select({ kind: 'node', id: p.origin }) }}>{nm(p.origin)}</button>
                 )}
               </td>
-              <td title={p.kind === 'own' ? `${p.type} · ${SIG_LABEL[p.signature] ?? p.signature}` : p.type}>{p.type}</td>
+              <td title={(p.type === 'direct_message' ? 'encrypted direct message: content unknown' : p.type) + (p.kind === 'own' ? ` · ${SIG_LABEL[p.signature] ?? p.signature}` : '') + (p.kind !== 'relayed' && p.answers ? ` · answers packet ${p.answers.request_id}` : '')}>
+                {p.kind !== 'relayed' && p.answers ? <AnswerTag a={p.answers} /> : p.type === 'direct_message' ? 'DM 🔒' : p.type}
+              </td>
               <td className="wrap" title={p.to && p.to !== 'broadcast' ? nm(p.to) : undefined}>{p.to === 'broadcast' ? 'all' : p.to ? nm(p.to) : ''}</td>
               <td>
                 {p.kind === 'own'
@@ -423,9 +463,18 @@ function PacketLogs({ id, names, positioned, moved }: { id: string; names: Map<s
                       {p.hops !== undefined ? `${p.hops}` : p.by_itself ? <span className="muted" title="Only it uplinked this packet itself">self</span> : ''}
                       {p.downlinked && <span className="ev-tag" title="A copy reached a gateway through an MQTT downlink: flagged via MQTT, taken from the broker and transmitted with no hops left, so it carries no hop count"> MQTT</span>}
                     </>
-                  : p.evidence.map((e) => <span key={e} className="ev-tag" title={how[e][1]}>{how[e][0]}</span>)}
+                  : p.kind === 'relayed' ? p.evidence.map((e) => <span key={e} className="ev-tag" title={how[e][1]}>{how[e][0]}</span>) : <span className="muted" title="Addressed to this node">to it</span>}
               </td>
               <td>{p.gateways || ''}</td>
+              <td>
+                {p.kind === 'own' && p.replies?.length ? (
+                  <span title={p.replies.map((r) => `${r.kind === 'ack' ? 'ACK' : routingError(r.error)} from ${nm(r.from)}${r.count > 1 ? ` ×${r.count}` : ''}`).join('\n')}>
+                    {p.replies.some((r) => r.kind !== 'ack') ? <span className="reply-err">✗</span> : <span className="reply-ok">✓</span>}
+                  </span>
+                ) : p.kind !== 'relayed' && p.answers?.re ? (
+                  <button className="linkish" title="Draw the route of the packet this answers" onClick={(e) => { e.stopPropagation(); showRoute(p.answers!.re!) }}>↩</button>
+                ) : ''}
+              </td>
             </tr>
           ))}
         </tbody>

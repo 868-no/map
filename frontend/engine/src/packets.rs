@@ -35,6 +35,47 @@ pub struct OwnPacket {
     pub downlinked: bool,
     pub receptions: usize,
     pub signature: String,
+    /// ACKs and errors answering it, by who sent them (D-092).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub replies: Vec<Reply>,
+    /// For a routing packet: what it says and which packet it answers.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub answers: Option<Answer>,
+}
+
+/// Routing packets from one node answering a packet: ACKs or one error.
+#[derive(Serialize, Debug, PartialEq)]
+pub struct Reply {
+    pub from: String,
+    pub kind: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    /// Distinct routing packets (a sender that retries gets each copy answered).
+    pub count: usize,
+}
+
+/// What a routing packet says: ack or error, for the packet with this id.
+#[derive(Serialize, Debug, PartialEq)]
+pub struct Answer {
+    pub kind: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+    pub request_id: u32,
+    /// The answered packet's key, when it is in the window.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub re: Option<String>,
+}
+
+/// A routing packet or encrypted direct message addressed to the node.
+#[derive(Serialize)]
+pub struct InboundPacket {
+    pub lp: String,
+    pub at: String,
+    pub origin: String,
+    #[serde(rename = "type")]
+    pub ty: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub answers: Option<Answer>,
 }
 
 #[derive(Serialize)]
@@ -54,6 +95,7 @@ pub struct RelayedPacket {
 pub struct PacketLog {
     pub own: Vec<OwnPacket>,
     pub relayed: Vec<RelayedPacket>,
+    pub inbound: Vec<InboundPacket>,
     pub truncated: bool,
 }
 
@@ -81,10 +123,17 @@ pub fn packet_log(rows: &[&Row], num: u32, ctx: &RelayContext, i: &Interner) -> 
         gateways: FxSet<u32>,
     }
     let mut relayed: FxMap<u64, Rel> = map();
+    let routing_ty = i.get("routing");
+    let dm_ty = i.get("direct_message");
+    let mut inbound: FxMap<u64, &Row> = map();
+    let replies = ReplyIndex::new(rows);
     for &r in rows {
         if r.src == num {
             own.entry(r.lp).or_default().push(r);
             continue;
+        }
+        if r.dst == Some(num) && (Some(r.ty) == routing_ty || Some(r.ty) == dm_ty) {
+            inbound.entry(r.lp).and_modify(|cur| if r.t < cur.t { *cur = r }).or_insert(r);
         }
         let mut note = |route: bool, gw: Option<u32>| {
             let e = relayed.entry(r.lp).or_insert_with(|| Rel { first: r.t, row: r, byte: false, route: false, gateways: set() });
@@ -134,6 +183,8 @@ pub fn packet_log(rows: &[&Row], num: u32, ctx: &RelayContext, i: &Interner) -> 
                     downlinked: others.iter().any(|r| ctx.downlinked(r)),
                     receptions: rs.iter().map(|r| r.ok).collect::<FxSet<u64>>().len(),
                     signature: best.to_string(),
+                    replies: first.pid.map_or(vec![], |p| replies.replies(p, num, i)),
+                    answers: replies.answer(first, i),
                 },
             )
         })
@@ -153,11 +204,118 @@ pub fn packet_log(rows: &[&Row], num: u32, ctx: &RelayContext, i: &Interner) -> 
             (e.first, RelayedPacket { lp: key_hex(e.row.lp), at: iso(e.first), origin: node_id(e.row.src), ty: i.s(e.row.ty).to_string(), to: dest(e.row.dst), evidence, gateways: gws.into_iter().map(node_id).collect() })
         })
         .collect();
+    let n_in = inbound.len();
+    let mut in_list: Vec<(i64, InboundPacket)> =
+        inbound.into_values().map(|r| (r.t, InboundPacket { lp: key_hex(r.lp), at: iso(r.t), origin: node_id(r.src), ty: i.s(r.ty).to_string(), answers: replies.answer(r, i) })).collect();
     own_list.sort_by(|a, b| b.0.cmp(&a.0));
     rel_list.sort_by(|a, b| b.0.cmp(&a.0));
+    in_list.sort_by(|a, b| b.0.cmp(&a.0));
     own_list.truncate(MAX_LOG);
     rel_list.truncate(MAX_LOG);
-    PacketLog { own: own_list.into_iter().map(|x| x.1).collect(), relayed: rel_list.into_iter().map(|x| x.1).collect(), truncated: n_own > MAX_LOG || n_rel > MAX_LOG }
+    in_list.truncate(MAX_LOG);
+    PacketLog {
+        own: own_list.into_iter().map(|x| x.1).collect(),
+        relayed: rel_list.into_iter().map(|x| x.1).collect(),
+        inbound: in_list.into_iter().map(|x| x.1).collect(),
+        truncated: n_own > MAX_LOG || n_rel > MAX_LOG || n_in > MAX_LOG,
+    }
+}
+
+/// Routing packets by the packet they answer, and packets by sender and id,
+/// to pair ACKs and errors with what they answer (D-092). A routing packet
+/// is addressed to the original's sender and carries its packet id; an
+/// error may come from a relay rather than the destination, so the
+/// answering node is not required to be the original's destination.
+pub struct ReplyIndex<'a> {
+    by_request: FxMap<(u32, u32), Vec<&'a Row>>, // (request id, addressed to)
+    by_id: FxMap<(u32, u32), u64>,               // (sender, packet id) -> packet key
+}
+
+impl<'a> ReplyIndex<'a> {
+    pub fn new(rows: &[&'a Row]) -> Self {
+        let mut ix = ReplyIndex { by_request: map(), by_id: map() };
+        for &r in rows {
+            if let (Some(rt), Some(d)) = (r.routing(), r.dst) {
+                if rt.request != 0 {
+                    ix.by_request.entry((rt.request, d)).or_default().push(r);
+                }
+            }
+            if let Some(p) = r.pid.filter(|&p| p != 0) {
+                ix.by_id.entry((r.src, p)).or_insert(r.lp);
+            }
+        }
+        ix
+    }
+
+    /// Replies to `sender`'s packet `pid`, grouped by who answered and how.
+    pub fn replies(&self, pid: u32, sender: u32, i: &Interner) -> Vec<Reply> {
+        let Some(rs) = self.by_request.get(&(pid, sender)) else { return vec![] };
+        let mut groups: FxMap<(u32, u32, u32), FxSet<u64>> = map();
+        let mut order = vec![];
+        for r in rs {
+            let rt = r.routing().unwrap();
+            let k = (r.src, rt.kind, rt.error);
+            groups.entry(k).or_insert_with(|| {
+                order.push(k);
+                set()
+            });
+            groups.get_mut(&k).unwrap().insert(r.lp);
+        }
+        order.into_iter().map(|k| Reply { from: node_id(k.0), kind: i.s(k.1).to_string(), error: (k.2 != 0).then(|| i.s(k.2).to_string()), count: groups[&k].len() }).collect()
+    }
+
+    /// What a routing packet says, and the answered packet when known.
+    pub fn answer(&self, r: &Row, i: &Interner) -> Option<Answer> {
+        let rt = r.routing()?;
+        let re = r.dst.and_then(|d| self.by_id.get(&(d, rt.request))).map(|&lp| key_hex(lp));
+        Some(Answer { kind: i.s(rt.kind).to_string(), error: (rt.error != 0).then(|| i.s(rt.error).to_string()), request_id: rt.request, re })
+    }
+}
+
+/// A node's routing traffic in the window: ACKs and errors it sent, and
+/// those addressed to it, errors by firmware reason (D-092).
+#[derive(Serialize, Default, Debug, PartialEq)]
+pub struct Delivery {
+    pub acks_sent: usize,
+    pub acks_received: usize,
+    pub errors_sent: Vec<(String, usize)>,
+    pub errors_received: Vec<(String, usize)>,
+}
+
+pub fn delivery(rows: &[&Row], num: u32, i: &Interner) -> Option<Delivery> {
+    let ack = i.get("ack");
+    let (mut sent, mut recv): (FxMap<u64, &Row>, FxMap<u64, &Row>) = (map(), map());
+    for &r in rows {
+        if r.routing().is_none() {
+            continue;
+        }
+        if r.src == num {
+            sent.insert(r.lp, r);
+        } else if r.dst == Some(num) {
+            recv.insert(r.lp, r);
+        }
+    }
+    if sent.is_empty() && recv.is_empty() {
+        return None;
+    }
+    let tally = |m: &FxMap<u64, &Row>| -> (usize, Vec<(String, usize)>) {
+        let mut acks = 0;
+        let mut errs: FxMap<u32, usize> = map();
+        for r in m.values() {
+            let rt = r.routing().unwrap();
+            if Some(rt.kind) == ack {
+                acks += 1;
+            } else if rt.error != 0 {
+                *errs.entry(rt.error).or_default() += 1;
+            }
+        }
+        let mut v: Vec<(String, usize)> = errs.into_iter().map(|(e, n)| (i.s(e).to_string(), n)).collect();
+        v.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+        (acks, v)
+    };
+    let (acks_sent, errors_sent) = tally(&sent);
+    let (acks_received, errors_received) = tally(&recv);
+    Some(Delivery { acks_sent, acks_received, errors_sent, errors_received })
 }
 
 #[derive(Serialize, Clone, Debug, PartialEq)]
@@ -493,5 +651,27 @@ mod tests {
         // With no last hop, nothing radio is proven.
         let bare = Row { rr: crate::row::ty::VIA_MQTT, ..row(A, GW) };
         assert_eq!(pairs(&transmissions(&bare, &c, &ro)), vec![(id(A), None)]);
+    }
+
+    #[test]
+    fn acks_and_errors_pair_with_what_they_answer() {
+        use crate::row::{Interner, Routing};
+        let mut it = Interner::default();
+        let (routing, ack, err, dm, nr) = (it.id("routing"), it.id("ack"), it.id("error"), it.id("direct_message"), it.id("NO_RESPONSE"));
+        // A's DM 77 to C, answered twice by C (A retried) and once with an error by a relay.
+        let msg = Row { ty: dm, dst: Some(C), pid: Some(77), lp: 1, ..row(A, GW) };
+        let answer = |src: u32, lp: u64, kind: u32, error: u32| Row { ty: routing, dst: Some(A), pid: Some(lp as u32 + 1000), lp, detail: Some(Box::new(Detail::Routing(Routing { kind, error, request: 77 }))), ..row(src, GW) };
+        let rows = [msg, answer(C, 2, ack, 0), answer(C, 3, ack, 0), Row { ok: 9, ..answer(C, 3, ack, 0) }, answer(GW, 4, err, nr)];
+        let refs: Vec<&Row> = rows.iter().collect();
+        let log = packet_log(&refs, A, &ctx(&[A, C, GW], &[]), &it);
+        let sent = log.own.iter().find(|p| p.lp == key_hex(1)).unwrap();
+        assert_eq!(sent.replies, vec![Reply { from: id(C), kind: "ack".into(), error: None, count: 2 }, Reply { from: id(GW), kind: "error".into(), error: Some("NO_RESPONSE".into()), count: 1 }]);
+        assert_eq!(log.inbound.len(), 3, "routing packets addressed to it, one per packet");
+        assert!(log.inbound.iter().all(|p| p.answers.as_ref().unwrap().re.as_deref() == Some(key_hex(1).as_str())));
+        // C's view: its ACKs say what they answer.
+        let clog = packet_log(&refs, C, &ctx(&[A, C, GW], &[]), &it);
+        assert_eq!(clog.own[0].answers.as_ref().map(|a| (a.kind.as_str(), a.request_id)), Some(("ack", 77)));
+        assert_eq!(delivery(&refs, A, &it), Some(Delivery { acks_sent: 0, acks_received: 2, errors_sent: vec![], errors_received: vec![("NO_RESPONSE".into(), 1)] }));
+        assert_eq!(delivery(&refs, C, &it).map(|d| d.acks_sent), Some(2));
     }
 }

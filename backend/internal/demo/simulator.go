@@ -384,7 +384,7 @@ func (sim *Simulator) forgedSignature() []Message {
 	return nil
 }
 
-// pkiDM: a PKI-encrypted direct message (channel hash 0); must be discarded.
+// pkiDM: a PKI-encrypted direct message (channel hash 0); only its header is kept (D-091).
 func (sim *Simulator) pkiDM() []Message {
 	a, b := sim.S.Nodes[1], sim.S.Nodes[2]
 	ct := make([]byte, 48)
@@ -396,5 +396,5 @@ func (sim *Simulator) pkiDM() []Message {
 	mp := &pb.MeshPacket{From: a.Num, To: b.Num, Id: sim.id(), Channel: 0, PkiEncrypted: true, HopStart: 3, HopLimit: 2, RxRssi: &rssi,
 		PayloadVariant: &pb.MeshPacket_Encrypted{Encrypted: ct}}
 	env, _ := proto.Marshal(&pb.ServiceEnvelope{Packet: mp, ChannelId: "PKI", GatewayId: protocol.NodeID(gw.Num)})
-	return []Message{{Topic: TopicRoot + "/2/e/PKI/" + protocol.NodeID(gw.Num), Payload: env, Note: "PKI DM (must be discarded)"}}
+	return []Message{{Topic: TopicRoot + "/2/e/PKI/" + protocol.NodeID(gw.Num), Payload: env, Note: "PKI DM (header only)"}}
 }
