@@ -20,6 +20,14 @@ export interface PlacedNode {
  */
 export const AGE_TAU_MS = 10 * 60_000
 
+/** A node heard within this long before the window's end is online (D-101). */
+export const ONLINE_MS = 3 * 3_600_000
+
+/** Heard within ONLINE_MS of the window's end; nodes only named by others never are. */
+export function isOnline(n: Pick<MeshNode, 'last_seen'>, endMs: number): boolean {
+  return !!n.last_seen && endMs - Date.parse(n.last_seen) <= ONLINE_MS
+}
+
 /**
  * How long before the window end the node was last heard (0 = at the end,
  * 1 = only at its start), on a logarithmic scale over the window, so recent

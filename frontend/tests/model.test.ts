@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ageColor, AGE_STOPS, bridgeRoute, filterEdges, glyphInk, relativeLuminance, isInfraRole, mqttDownlink, mqttUplink, LOW_ZOOM_LINKS, precisionErrorM, visibleLinks, lastHeardAge, ageMs, linkGeometry, placeNodes, roleRadius } from '../src/map/model'
+import { ageColor, AGE_STOPS, isOnline, ONLINE_MS, bridgeRoute, filterEdges, glyphInk, relativeLuminance, isInfraRole, mqttDownlink, mqttUplink, LOW_ZOOM_LINKS, precisionErrorM, visibleLinks, lastHeardAge, ageMs, linkGeometry, placeNodes, roleRadius } from '../src/map/model'
 
 // WCAG contrast ratio.
 const contrast = (a: readonly number[], b: readonly number[]) => (Math.max(relativeLuminance(a), relativeLuminance(b)) + 0.05) / (Math.min(relativeLuminance(a), relativeLuminance(b)) + 0.05)
@@ -143,5 +143,14 @@ describe('packet routes across nodes without a position', () => {
     const pos = new Map<string, [number, number]>([['a', [0, 0]], ['c', [1, 1]], ['d', [2, 2]]])
     const out = bridgeRoute([seg('a', 'b'), seg('b', 'c'), seg('b', 'd'), seg('a', 'c', 'relay')], pos)
     expect(out.map((s) => `${s.seg.a}>${s.seg.b}${s.dashed ? '~' : ''}`)).toEqual(['a>c', 'a>d~'])
+  })
+})
+
+describe('online', () => {
+  const end = Date.parse('2026-11-02T12:00:00Z')
+  it('is heard within 3 hours of the window end', () => {
+    expect(isOnline({ last_seen: new Date(end - ONLINE_MS).toISOString() }, end)).toBe(true)
+    expect(isOnline({ last_seen: new Date(end - ONLINE_MS - 1000).toISOString() }, end)).toBe(false)
+    expect(isOnline({}, end)).toBe(false) // only named by others
   })
 })

@@ -14,6 +14,7 @@ export interface Filters {
   evidence: string[] // client-side edge filter
   minConfidence: Confidence
   positionedOnly: boolean
+  onlineOnly: boolean // only nodes heard within 3 h of the window's end (D-101)
 }
 
 export interface Toggles {
@@ -75,7 +76,7 @@ interface Store {
   setDetailTab: (t: DetailTab) => void
 }
 
-export const defaultFilters: Filters = { channels: [], brokers: [], types: [], evidence: [], minConfidence: 'low', positionedOnly: false }
+export const defaultFilters: Filters = { channels: [], brokers: [], types: [], evidence: [], minConfidence: 'low', positionedOnly: false, onlineOnly: false }
 const prefersReducedMotion = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
 
 export const defaultToggles: Toggles = { infraLinks: false, otherLinks: false, mqttLinks: false, inferred: true, uncertainty: false, animation: !prefersReducedMotion, labels: true, regions: false, trails: false, theme: 'system', basemap: defaultBasemap }

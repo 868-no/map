@@ -7,7 +7,7 @@ import { useNodeDetail, usePacketLog, usePacketRoute, useReach } from '../state/
 import { nodeLink, useStore, type DetailTab } from '../state/store'
 import { formatLocal, formatLogTime, relativeAge } from '../lib/time'
 import { TimeChart } from '../components/TimeChart'
-import { ageColor, lastHeardAge, precisionErrorM } from '../map/model'
+import { ageColor, isOnline, lastHeardAge, precisionErrorM } from '../map/model'
 import { PALETTES } from '../map/palette'
 import { useTheme } from '../theme'
 
@@ -198,6 +198,9 @@ export function NodePanel({ id, snapshot }: { id: string; snapshot: SnapshotView
       <h2>{d.identity?.long_name || d.id}</h2>
       <p className="muted">
         {d.id} · #{d.num} <ShareNode id={d.id} name={d.identity?.long_name || d.id} />{' '}
+        {isOnline(d, now)
+          ? <span className="tag online" title="Heard within the last 3 hours of the selected period">● online</span>
+          : <span className="tag offline" title="Not heard in the last 3 hours of the selected period">offline{d.last_seen ? ` · last heard ${relativeAge(d.last_seen, now)}` : ''}</span>}{' '}
         {d.status === 'referenced' && <span className="tag">referenced only — not directly observed</span>}
         {d.is_gateway &&
           (d.multi_uplink ? (

@@ -21,7 +21,7 @@ function toggle(list: string[], v: string): string[] {
 
 /** How many filters differ from the defaults (the Filters button's badge). */
 export function activeFilters(f: Filters): number {
-  return [f.positionedOnly, f.evidence.length > 0 && f.evidence.length < EVIDENCE.length, f.minConfidence !== 'low', f.types.length > 0, f.channels.length > 0, f.brokers.length > 0].filter(Boolean).length
+  return [f.positionedOnly, f.onlineOnly, f.evidence.length > 0 && f.evidence.length < EVIDENCE.length, f.minConfidence !== 'low', f.types.length > 0, f.channels.length > 0, f.brokers.length > 0].filter(Boolean).length
 }
 
 /** Map layer switches: mesh overlays and basemap groups. */
@@ -74,7 +74,8 @@ export function FilterPanel({ snapshot }: { snapshot: SnapshotView | undefined }
       </p>
       <h3>Nodes</h3>
       <label><input type="checkbox" checked={f.positionedOnly} onChange={(e) => set({ positionedOnly: e.target.checked })} /> Only nodes with reported positions</label>
-      <p className="muted">This and the link filters below change what the map draws, not the counts in the header or a node's details.</p>
+      <label title="Online: heard within the last 3 hours of the selected period (now, when live). Nodes only named by others are offline."><input type="checkbox" checked={f.onlineOnly} onChange={(e) => set({ onlineOnly: e.target.checked })} /> Only online nodes (heard in the last 3 h)</label>
+      <p className="muted">These and the link filters below change what the map draws, not the counts in the header or a node's details.</p>
 
       <h3>Link evidence</h3>
       {EVIDENCE.map(([k, label]) => (
