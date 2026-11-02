@@ -137,9 +137,7 @@ export function Legend({ snapshot }: { snapshot: SnapshotView | undefined }) {
         <li><span className="dot rep" /> Reported position (from an in-window Position packet or map report). When its reports jump around one place, they are combined into a narrower position.</li>
         <li><span className="dot rep gwring glyph"><FlowIcon flow="up" /></span> MQTT gateway: uplinks the first copy of each packet it hears to the broker</li>
         <li><span className="dot rep gwring glyph"><FlowIcon flow="upAll" /></span> MQTT gateway that uplinks every copy it hears, each with its own last hop (a firmware option)</li>
-        <li><span className="dot rep glyph"><FlowIcon flow="down" /></span> Probably downlinks: transmits packets it takes from the broker (its traceroute hops read exactly 0 dB, as packets from MQTT do)</li>
-        <li><span className="dot rep gwring glyph"><FlowIcon flow="both" /></span> Both uplinks and downlinks</li>
-        <li><span className="glyph-badged"><span className="dot rep gwring glyph"><FlowIcon flow="upAll" /></span><FlowIcon flow="down" className="glyph-badge" /></span> Uplinks every copy and downlinks: the downlink shows as a small arrow beside the marker</li>
+        <li><span className="glyph-badged"><span className="dot rep" /><FlowIcon flow="down" className="glyph-badge" /></span> Arrow beside the marker: probably downlinks, transmitting packets it takes from the broker (its traceroute hops read exactly 0 dB, as packets from MQTT do). Shown with either uplink glyph too.</li>
         <li><span className="dot rep optout" /> Red ring: did not allow MQTT uplink; reached us through another gateway, so the name is withheld</li>
         <li><span className="dot est" /> Estimated location — translucent circle is the uncertainty</li>
         <li>Selecting a node shows its accuracy circle (estimate uncertainty, or the precision of a coarse reported position) and only its links.</li>

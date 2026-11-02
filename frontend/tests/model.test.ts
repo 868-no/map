@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ageColor, AGE_STOPS, AGE_STOPS_LIGHT, bridgeRoute, filterEdges, glyphInk, isInfraRole, mqttBadge, mqttFlow, LOW_ZOOM_LINKS, precisionErrorM, visibleLinks, lastHeardAge, linkGeometry, placeNodes, roleRadius } from '../src/map/model'
+import { ageColor, AGE_STOPS, AGE_STOPS_LIGHT, bridgeRoute, filterEdges, glyphInk, isInfraRole, mqttDownlink, mqttUplink, LOW_ZOOM_LINKS, precisionErrorM, visibleLinks, lastHeardAge, linkGeometry, placeNodes, roleRadius } from '../src/map/model'
 import { defaultFilters, defaultToggles } from '../src/state/store'
 
 const node = (id: string, extra: object = {}) => ({ id, num: parseInt(id.slice(1), 16), status: 'observed', packets: 1, receptions: 1, gateway_receptions: 0, is_gateway: false,
@@ -90,17 +90,15 @@ describe('map view model', () => {
 
 describe('MQTT direction glyphs (D-054)', () => {
   const node = (is_gateway: boolean, down: boolean) =>
-    ({ id: '!1', num: 1, status: 'observed', packets: 0, receptions: 0, gateway_receptions: 0, is_gateway, signatures: { verified: 0, unsigned: 0, unverifiable: 0, not_applicable: 0 }, ...(down ? { mqtt_downlink: { zero_snr: 3, traceroutes: 4 } } : {}) }) as Parameters<typeof mqttFlow>[0]
+    ({ id: '!1', num: 1, status: 'observed', packets: 0, receptions: 0, gateway_receptions: 0, is_gateway, signatures: { verified: 0, unsigned: 0, unverifiable: 0, not_applicable: 0 }, ...(down ? { mqtt_downlink: { zero_snr: 3, traceroutes: 4 } } : {}) }) as Parameters<typeof mqttUplink>[0]
   it('marks uplink, downlink, both or neither', () => {
-    expect(mqttFlow(node(true, false))).toBe('up')
-    expect(mqttFlow(node(false, true))).toBe('down')
-    expect(mqttFlow(node(true, true))).toBe('both')
-    expect(mqttFlow(node(false, false))).toBeUndefined()
-    // Uplinks every copy (D-084): the double chevron; a downlink then shows as a badge.
-    expect(mqttFlow({ ...node(true, false), multi_uplink: true })).toBe('upAll')
-    expect(mqttFlow({ ...node(true, true), multi_uplink: true })).toBe('upAll')
-    expect(mqttBadge({ ...node(true, true), multi_uplink: true })).toBe(true)
-    expect(mqttBadge(node(true, true))).toBe(false)
+    // Inside the marker: how it uplinks; beside it: whether it downlinks (D-084).
+    expect(mqttUplink(node(true, false))).toBe('up')
+    expect(mqttUplink({ ...node(true, true), multi_uplink: true })).toBe('upAll')
+    expect(mqttUplink(node(false, true))).toBeUndefined()
+    expect(mqttDownlink(node(false, true))).toBe(true)
+    expect(mqttDownlink(node(true, true))).toBe(true)
+    expect(mqttDownlink(node(true, false))).toBe(false)
   })
   it('inks dark on the newest (light) fill and light on the oldest (dark) one', () => {
     expect(glyphInk(AGE_STOPS[0])[0]).toBeLessThan(50)
