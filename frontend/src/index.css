@@ -196,6 +196,8 @@ button.linkish { background: none; border: 0; padding: 0; color: var(--accent); 
 button.more { margin: 4px 0 8px; font-size: 12px; }
 .muted.small { font-size: 12px; margin: 0 0 4px; }
 table.hear th, table.hear td { text-align: left; padding: 2px 4px; border-bottom: 1px solid var(--line); }
+/* Numbers and headers stay on one line; the name column (first) takes the wrapping. */
+table.hear th:not(:first-child), table.hear td:not(:first-child) { white-space: nowrap; }
 .chips { display: flex; flex-wrap: wrap; gap: 4px; }
 .charts { display: grid; gap: 6px; }
 .spark { margin: 0; }

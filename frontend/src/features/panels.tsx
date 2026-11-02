@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { Edge, MeshNode, Radio, SnapshotView } from '../derive/views'
+import type { Edge, Hearing, MeshNode, Radio, SnapshotView } from '../derive/views'
 import { useNodeDetail, usePacketLog, usePacketRoute, useReach } from '../state/data'
 import { nodeLink, useStore } from '../state/store'
 import { formatLocal, formatLogTime, relativeAge } from '../lib/time'
@@ -126,6 +126,7 @@ export function NodePanel({ id, snapshot }: { id: string; snapshot: SnapshotView
   const now = snapshot ? Date.parse(snapshot.meta.window.end) : Date.now()
   const names = useMemo(() => new Map((snapshot?.nodes ?? []).map((n) => [n.id, nodeName(n, n.id)])), [snapshot])
   const neighbours = useMemo(() => linkNeighbours(snapshot?.edges ?? [], id, names), [snapshot, id, names])
+  const heardBy = useMemo(() => sortHearings(data?.heard_by ?? [], id, snapshot?.edges ?? [], names), [data, id, snapshot, names])
   const positioned = useMemo(() => new Set((snapshot?.nodes ?? []).filter((n) => n.position || n.estimate).map((n) => n.id)), [snapshot])
   const moved = useMemo(() => new Set((snapshot?.nodes ?? []).filter((n) => n.moved_at).map((n) => n.id)), [snapshot])
   if (isLoading) return <div className="panel">Loading {id}…</div>
@@ -267,10 +268,14 @@ export function NodePanel({ id, snapshot }: { id: string; snapshot: SnapshotView
       </ul>
       <h3>Heard by gateways ({(d.heard_by ?? []).length})</h3>
       <table className="hear">
-        <thead><tr><th>Gateway</th><th>Rx</th><th>Direct</th><th>SNR med</th><th>RSSI med</th></tr></thead>
+        <thead><tr><th>Gateway</th><th title="The radio link from this node to the gateway: its confidence, or — when the gateway only got the packets relayed">Link</th><th>Rx</th><th>Direct</th><th>SNR med</th><th>RSSI med</th></tr></thead>
         <tbody>
-          {(d.heard_by ?? []).slice(0, 30).map((h) => (
-            <tr key={h.node}><td>{names.get(h.node) ?? h.node}</td><td>{h.receptions}</td><td>{h.direct_rf}</td><td>{fmt(h.snr.median, 'dB')}</td><td>{fmt(h.rssi.median, 'dBm', 0)}</td></tr>
+          {heardBy.slice(0, 30).map(({ h, link }) => (
+            <tr key={h.node}>
+              <td>{names.get(h.node) ?? h.node}</td>
+              <td>{link ? <span className={`conf conf-${link.confidence}`}>{link.confidence}</span> : <span className="muted" title="No radio link: only relayed copies">—</span>}</td>
+              <td>{h.receptions}</td><td>{h.direct_rf}</td><td>{fmt(h.snr.median, 'dB')}</td><td>{fmt(h.rssi.median, 'dBm', 0)}</td>
+            </tr>
           ))}
         </tbody>
       </table>
@@ -614,4 +619,17 @@ export function linkNeighbours(edges: Edge[], id: string, names: Map<string, str
   return [...groups.values()].sort(
     (a, b) => conf(b) - conf(a) || snr(b) - snr(a) || (names.get(a.peer) ?? a.peer).localeCompare(names.get(b.peer) ?? b.peer),
   )
+}
+
+/**
+ * Gateways that heard the node, sorted like the Links list: by the radio
+ * link's confidence (none last: the gateway only got relayed copies), then
+ * median SNR (strongest first), then name.
+ */
+export function sortHearings(heardBy: Hearing[], id: string, edges: Edge[], names: Map<string, string>): { h: Hearing; link?: Edge }[] {
+  const links = new Map(edges.filter((e) => !e.mqtt && e.src === id).map((e) => [e.dst, e]))
+  const rank = (x: { link?: Edge }) => (x.link ? CONF_RANK[x.link.confidence] ?? 0 : 0)
+  const snr = (x: { h: Hearing }) => x.h.snr.median ?? -999
+  const name = (x: { h: Hearing }) => names.get(x.h.node) ?? x.h.node
+  return heardBy.map((h) => ({ h, link: links.get(h.node) })).sort((a, b) => rank(b) - rank(a) || snr(b) - snr(a) || name(a).localeCompare(name(b)))
 }
