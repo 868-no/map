@@ -209,6 +209,14 @@ export interface Radio {
   reported?: { region?: string; modem_preset?: string; preset_confirmed?: boolean; at: string }
   channels?: ChannelUse[] // channels it was seen on (D-064)
   preset?: PresetGuess // its modem preset as far as the window shows (D-064)
+  uplink_topics?: TopicUse[] // as a gateway: MQTT topic roots it uplinked under, busiest first (D-090)
+}
+
+export interface TopicUse {
+  topic: string
+  regions: string[]
+  receptions: number
+  last_at: string
 }
 
 export interface ChannelUse {

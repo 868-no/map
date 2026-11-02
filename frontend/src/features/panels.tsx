@@ -268,6 +268,21 @@ export function NodePanel({ id, snapshot }: { id: string; snapshot: SnapshotView
           {d.signatures.verified} verified · {d.signatures.unsigned} unsigned · {d.signatures.unverifiable} signed, key unknown · {d.signatures.not_applicable} not signable
         </dd>
         <dt>Brokers</dt><dd>{d.brokers?.length ? d.brokers.join(', ') : NR}</dd>
+        {d.is_gateway && (
+          <>
+            <dt title="The topic root this gateway publishes under, from the topics of the packets it uplinked in the selected period">MQTT root topic</dt>
+            <dd>
+              {!d.radio.uplink_topics?.length
+                ? NR
+                : d.radio.uplink_topics.map((t, k) => (
+                    <div key={t.topic} title={`Regions: ${t.regions.join(' or ') || 'unknown'} · last ${formatLocal(t.last_at)}`}>
+                      <code className="topic">{t.topic}</code>
+                      {d.radio.uplink_topics!.length > 1 && <small className="muted"> · {t.receptions} uplinks{k === 0 ? ' (most)' : ''}</small>}
+                    </div>
+                  ))}
+            </dd>
+          </>
+        )}
         <dt>Telemetry</dt>
         <dd>
           {d.telemetry ? (

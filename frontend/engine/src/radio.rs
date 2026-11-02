@@ -91,6 +91,42 @@ pub struct Radio {
     /// Its modem preset as far as the window shows (D-064).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub preset: Option<crate::channels::PresetGuess>,
+    /// As a gateway: the MQTT topic roots it uplinked under (D-090).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub uplink_topics: Vec<TopicUse>,
+}
+
+/// A topic root a gateway uplinked under: distinct receptions and the last one.
+#[derive(Serialize, Debug, PartialEq)]
+pub struct TopicUse {
+    pub topic: String,
+    pub regions: Vec<String>,
+    pub receptions: usize,
+    pub last_at: String,
+}
+
+/// uplinked: the window's rows the node uplinked as a gateway. Most
+/// gateways use one root; several mean its configuration changed or it
+/// publishes to several brokers. Busiest first.
+pub fn uplink_topics(uplinked: &[&Row], i: &Interner) -> Vec<TopicUse> {
+    let mut groups: FxMap<u32, (FxSet<u64>, i64)> = map();
+    for &r in uplinked {
+        if r.topic == 0 {
+            continue;
+        }
+        let g = groups.entry(r.topic).or_insert_with(|| (set(), r.t));
+        g.0.insert(r.ok);
+        g.1 = g.1.max(r.t);
+    }
+    let mut out: Vec<TopicUse> = groups
+        .into_iter()
+        .map(|(t, (rx, last))| {
+            let topic = i.s(t).to_string();
+            TopicUse { regions: regions_of(&topic), topic, receptions: rx.len(), last_at: iso(last) }
+        })
+        .collect();
+    out.sort_by(|a, b| b.receptions.cmp(&a.receptions).then(a.topic.cmp(&b.topic)));
+    out
 }
 
 /// own: the window's rows originated by the node. Map reports are the
@@ -175,5 +211,22 @@ mod tests {
         assert_eq!((r.heard_as[1].regions.clone(), r.heard_as[1].preset), (vec!["EU_N_868".to_string()], None));
         let rep = r.reported.unwrap();
         assert_eq!((rep.region.as_str(), rep.modem_preset.as_str()), ("EU_N_868", "NARROW_FAST"));
+    }
+
+    #[test]
+    fn a_gateways_uplink_topics_busiest_first() {
+        let mut i = Interner::default();
+        let text = r#"[
+          {"i":1,"t":10,"b":"x","g":7,"s":5,"y":"text","l":"0000000000000001","o":"0000000000000011","sg":"unsigned","tp":"msh/EU_868/NO/Trøndelag"},
+          {"i":2,"t":20,"b":"x","g":7,"s":6,"y":"text","l":"0000000000000002","o":"0000000000000012","sg":"unsigned","tp":"msh/EU_868/NO/Trøndelag"},
+          {"i":3,"t":30,"b":"x","g":7,"s":6,"y":"text","l":"0000000000000003","o":"0000000000000013","sg":"unsigned","tp":"msh/EU_868"},
+          {"i":4,"t":40,"b":"x","g":7,"s":6,"y":"text","l":"0000000000000004","o":"0000000000000014","sg":"unsigned"}
+        ]"#;
+        let rows: Vec<Row> = serde_json::from_str::<Vec<crate::row::JRow>>(text).unwrap().into_iter().map(|r| r.into_row(&mut i)).collect();
+        let refs: Vec<&Row> = rows.iter().collect();
+        let t = uplink_topics(&refs, &i);
+        let got: Vec<(&str, usize)> = t.iter().map(|x| (x.topic.as_str(), x.receptions)).collect();
+        assert_eq!(got, vec![("msh/EU_868/NO/Trøndelag", 2), ("msh/EU_868", 1)], "rows without a topic are left out");
+        assert_eq!(t[1].regions, vec!["EU_868"]);
     }
 }

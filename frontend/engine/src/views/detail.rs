@@ -134,6 +134,7 @@ pub fn build_node_detail(rows: &[&Row], num: u32, i: &Interner) -> Option<NodeDe
     let mut radio = crate::radio::radio(&own, i);
     radio.channels = crate::channels::channel_use(num, rows, i);
     radio.preset = crate::channels::preset_guess(num, rows, i);
+    radio.uplink_topics = crate::radio::uplink_topics(&uplinked, i);
     let mut d = NodeDetail { node: n, positions: vec![], telemetry_series: vec![], heard_by: vec![], heard: vec![], recent_packets: vec![], truncated: false, radio };
     if first == i64::MAX {
         let Some(&t) = referenced(rows).get(&num) else { return None };
