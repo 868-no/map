@@ -346,6 +346,7 @@ test('the packet log combines own and relayed packets, and draws a packet route 
   for (let i = 0; i < 15; i++) {
     await showPanel(page, 'Nodes')
     await rows.nth(i).click()
+    await page.getByRole('tab', { name: /^Packets/ }).click()
     await expect(page.getByRole('heading', { name: /^Packet log/ })).toBeVisible()
     if (i === 0) await expect(toggle).not.toBeChecked() // own packets only by default
     await toggle.check()
@@ -440,6 +441,7 @@ test('the reach simulator counts nodes per hop limit and draws the reach on the 
   await openPanel(page)
   await page.getByPlaceholder(/Search/).fill(id)
   await page.locator('.node-row').first().click()
+  await page.getByRole('tab', { name: /^Links/ }).click()
   const reach = page.locator('.reach')
   await expect(reach).toContainText(/Reaches \d+ node/)
   const slider = reach.getByRole('slider', { name: 'Max hops' })
@@ -526,7 +528,8 @@ test('the Health panel lists known issues and airtime, and Details shows a node\
   await expect(panel).toContainText(/No known issues|problem|warning|notice/)
   // Picking a node in the airtime list opens its details, with its health and airtime.
   await panel.locator('.shares').nth(1).locator('button').first().click()
-  await expect(page.locator('.node-panel h3', { hasText: 'Health' })).toBeVisible()
+  await expect(page.locator('.node-panel .node-health')).toBeVisible()
+  await page.getByRole('tab', { name: /^Packets/ }).click()
   await expect(page.locator('.node-panel')).toContainText('Airtime (est.)')
 })
 
@@ -554,4 +557,24 @@ test('the panel can be resized by its left edge, the width is remembered, and do
   await handle.focus()
   await page.keyboard.press('ArrowLeft')
   await expect.poll(width).toBeGreaterThan(before)
+})
+
+test('node details are split into tabs, and the chosen tab is kept for the next node', async ({ page }) => {
+  await ready(page)
+  await openPanel(page)
+  await page.locator('.node-row').first().click()
+  const tabs = page.getByRole('tablist', { name: 'Node details' })
+  await expect(tabs.getByRole('tab', { name: /^Overview/ })).toHaveAttribute('aria-selected', 'true')
+  await expect(page.locator('.node-panel')).toContainText('Position')
+  await expect(page.locator('.node-panel')).not.toContainText('Packet log')
+  await tabs.getByRole('tab', { name: /^Radio/ }).click()
+  await expect(page.locator('.node-panel')).toContainText('LoRa preset')
+  // Arrow keys move between tabs.
+  await page.keyboard.press('ArrowRight')
+  await expect(tabs.getByRole('tab', { name: /^Packets/ })).toHaveAttribute('aria-selected', 'true')
+  await expect(page.getByRole('heading', { name: /^Packet log/ })).toBeVisible()
+  // Another node opens on the same tab.
+  await showPanel(page, 'Nodes')
+  await page.locator('.node-row').nth(1).click()
+  await expect(page.getByRole('heading', { name: /^Packet log/ })).toBeVisible()
 })

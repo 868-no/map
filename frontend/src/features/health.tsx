@@ -1,7 +1,7 @@
 // Mesh health (D-095): the engine's rules for known problems, and its
 // airtime estimate. The Health panel lists every issue in the window; the
 // node panel shows the selected node's.
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import type { HealthView, Issue, NodeAirtime, SnapshotView } from '../derive/views'
 import { useHealth } from '../state/data'
 import { useStore } from '../state/store'
@@ -121,16 +121,24 @@ export function HealthPanel({ snapshot }: { snapshot: SnapshotView | undefined }
   )
 }
 
-/** The selected node's issues, for the node panel. */
+/** The selected node's issues, for the node panel: a compact count line above
+ * the tabs that expands to the list, so issues are never hidden by a tab. */
 export function NodeHealth({ id }: { id: string }) {
   const h = useHealth()
+  const [open, setOpen] = useState(false)
   if (!h.data) return null
   const mine = h.data.issues.filter((i) => i.node === id)
+  if (mine.length === 0) return <p className="node-health muted small" title="The health rules found nothing for this node in the selected period">✓ No known issues</p>
+  const counts = (['problem', 'warning', 'notice'] as const)
+    .map((s) => [s, mine.filter((i) => i.severity === s).length] as const)
+    .filter(([, n]) => n > 0)
   return (
-    <>
-      <h3 title="Known problems found by the health rules (the Health panel lists all of them)">Health</h3>
-      {mine.length === 0 ? <p className="muted small">No known issues.</p> : <ul className="issues">{mine.map((i) => <IssueLine key={i.kind} i={i} />)}</ul>}
-    </>
+    <div className="node-health">
+      <button className="linkish node-health-toggle" aria-expanded={open} onClick={() => setOpen(!open)} title="Known problems found by the health rules (the Health panel lists all of them)">
+        {counts.map(([s, n]) => `${SEVERITY[s].icon} ${n} ${n === 1 ? SEVERITY[s].label : SEVERITY[s].plural}`).join(' · ')} {open ? '▴' : '▾'}
+      </button>
+      {open && <ul className="issues">{mine.map((i) => <IssueLine key={i.kind} i={i} />)}</ul>}
+    </div>
   )
 }
 

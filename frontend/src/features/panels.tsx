@@ -4,7 +4,7 @@ import { NodeAirtimeRow, NodeHealth } from './health'
 import type { NodeKey } from '../api/types'
 import type { Answer, Edge, Hearing, MeshNode, Radio, Reply, SnapshotView } from '../derive/views'
 import { useNodeDetail, usePacketLog, usePacketRoute, useReach } from '../state/data'
-import { nodeLink, useStore } from '../state/store'
+import { nodeLink, useStore, type DetailTab } from '../state/store'
 import { formatLocal, formatLogTime, relativeAge } from '../lib/time'
 import { Sparkline } from '../components/Sparkline'
 import { ageColor, lastHeardAge, precisionErrorM } from '../map/model'
@@ -162,6 +162,7 @@ function radioSummary(r: Radio | undefined, name: (id: string) => string): { reg
 export function NodePanel({ id, snapshot }: { id: string; snapshot: SnapshotView | undefined }) {
   const { data, isLoading, error } = useNodeDetail(id)
   const select = useStore((s) => s.select)
+  const tab = useStore((s) => s.detailTab)
   const snapNode = (snapshot?.nodes ?? []).find((n) => n.id === id)
   const now = snapshot ? Date.parse(snapshot.meta.window.end) : Date.now()
   const names = useMemo(() => new Map((snapshot?.nodes ?? []).map((n) => [n.id, nodeName(n, n.id)])), [snapshot])
@@ -200,206 +201,258 @@ export function NodePanel({ id, snapshot }: { id: string; snapshot: SnapshotView
         <p className="opt-out-note">This node did not allow MQTT uplink, but some of its packets reached us through another gateway. Its name and NodeInfo are not stored.</p>
       )}
       <NodeHealth id={d.id} />
-      <dl>
-        <dt>Short name</dt><dd>{d.identity?.short_name || NR}</dd>
-        <dt>Hardware</dt><dd>{d.identity?.hw_model || NR}</dd>
-        <dt>Role</dt><dd>{d.identity?.role || NR}</dd>
-        <dt>Identity</dt>
-        <dd>
-          {!d.identity ? NR : d.identity.source === 'mapreport' ? (
-            <span title="No NodeInfo from this node in the selected period: name, hardware and role come from the map report it sends to the MQTT broker itself">
-              from its own map report · {formatLocal(d.identity.observed_at)}
-            </span>
-          ) : (
-            <><SigBadge s={d.identity.signature} /> {d.identity.has_public_key ? 'announces a public key' : 'no public key'} · {formatLocal(d.identity.observed_at)}</>
-          )}
-        </dd>
-        <dt>Public key</dt>
-        <dd><PublicKey key={d.id} id={d.id} optOut={d.mqtt_opt_out} /></dd>
-        <dt>Position</dt>
-        <dd>
-          {d.stale_position && (
-            <div className="stale-note" title="A reported position more than a day older than the newest data in the selected period may no longer be where the node is (D-094)">
-              Last reported position is stale: {formatLocal(d.stale_position.observed_at)}.{' '}
-              {est ? 'Estimated instead:' : 'No estimate could be made, so it is not on the map.'}
-            </div>
-          )}
-          {pos ? (
-            <>
-              {pos.lat.toFixed(5)}, {pos.lon.toFixed(5)}
-              {pos.alt !== undefined && pos.alt !== null && <> · {pos.alt} m above sea level</>}
-              <br />
-              <small>
-                {pos.source === 'mapreport' ? 'from map report · ' : ''}
-                {pos.precision_known
-                  ? pos.precision_bits >= 32
-                    ? 'full precision'
-                    : <span title={`Shared with ${pos.precision_bits} precision bits: firmware reports the centre of a cell this size, so it is somewhere within this distance`}>± {dist(precisionErrorM(pos.precision_bits, pos.lat))}</span>
-                  : 'precision unknown'} · <SigBadge s={pos.signature} /> · {formatLocal(pos.observed_at)}
-              </small>
-              {d.refined && (
-                <div className="refined" title="Its reports jump around one place: combined, they narrow down where it is. The map places it here (D-077).">
-                  Narrowed to {d.refined.lat.toFixed(5)}, {d.refined.lon.toFixed(5)} ± {d.refined.radius_m < 1000 ? `${Math.round(d.refined.radius_m)} m` : `${(d.refined.radius_m / 1000).toFixed(1)} km`}
-                  <br />
-                  <small>
-                    from {d.refined.agree} of {d.refined.reports} reports{d.refined.agree < d.refined.reports ? `; ${d.refined.reports - d.refined.agree} outlying ones set aside as noise` : ''}
-                  </small>
+      <DetailTabs counts={{ links: neighbours.length, packets: d.packets }} />
+      {tab === 'overview' && (
+        <>
+          <dl>
+            <dt>Short name</dt><dd>{d.identity?.short_name || NR}</dd>
+            <dt>Hardware</dt><dd>{d.identity?.hw_model || NR}</dd>
+            <dt>Role</dt><dd>{d.identity?.role || NR}</dd>
+            <dt>Identity</dt>
+            <dd>
+              {!d.identity ? NR : d.identity.source === 'mapreport' ? (
+                <span title="No NodeInfo from this node in the selected period: name, hardware and role come from the map report it sends to the MQTT broker itself">
+                  from its own map report · {formatLocal(d.identity.observed_at)}
+                </span>
+              ) : (
+                <><SigBadge s={d.identity.signature} /> {d.identity.has_public_key ? 'announces a public key' : 'no public key'} · {formatLocal(d.identity.observed_at)}</>
+              )}
+            </dd>
+            <dt>Public key</dt>
+            <dd><PublicKey key={d.id} id={d.id} optOut={d.mqtt_opt_out} /></dd>
+            <dt>Position</dt>
+            <dd>
+              {d.stale_position && (
+                <div className="stale-note" title="A reported position more than a day older than the newest data in the selected period may no longer be where the node is (D-094)">
+                  Last reported position is stale: {formatLocal(d.stale_position.observed_at)}.{' '}
+                  {est ? 'Estimated instead:' : 'No estimate could be made, so it is not on the map.'}
                 </div>
               )}
-            </>
-          ) : est ? (
-            <span className="est-note">
-              Estimated location{d.stale_position ? '' : ' (not reported)'}: {est.lat.toFixed(3)}, {est.lon.toFixed(3)} ± {dist(est.uncertainty_radius_m)}
-              <br />
-              <small title="Anchors: nodes with a precise reported position that heard it directly. Samples: those receptions.">
-                {QUALITY[est.quality] ?? est.quality} estimate from the {METHOD[est.method] ?? est.method}: {est.anchor_count} anchors, {est.sample_count} receptions. {(est.reasons ?? []).join(' ')}
-              </small>
-            </span>
-          ) : (
-            <>
-              {!d.stale_position && NR}
-              {snapNode?.estimate_note && <>{!d.stale_position && <br />}<small>No estimate: {snapNode.estimate_note}</small></>}
-            </>
-          )}
-        </dd>
-        {d.moved_at && (
-          <>
-            <dt title="It moved more than a few hundred metres beyond what its position precision explains (D-073)">Moving</dt>
-            <dd>
-              last moved {formatLocal(d.moved_at)} · {d.track?.length ?? 0}{(d.track?.length ?? 0) >= 100 ? '+' : ''} reported places in the window{d.airborne && <> · <span className="tag">✈ airborne</span></>}
-              <br /><small className="muted">Its links count only evidence from after that move.</small>
-            </dd>
-          </>
-        )}
-        <dt>Region</dt><dd>{radio.region}</dd>
-        <dt>LoRa preset</dt><dd title={radio.presetNote}>{radio.preset}</dd>
-        <dt>Channels</dt>
-        <dd>
-          {d.radio?.channels?.length
-            ? d.radio.channels.map((c, k) => (
-                <span key={c.name} title={[c.primary && 'Its primary channel (its own map report).', c.sent && `${c.sent} of its packets uplinked on it.`, c.uplinked && `Uplinked ${c.uplinked} receptions on it as a gateway.`].filter(Boolean).join(' ')}>
-                  {k > 0 && ', '}{c.name}{c.primary && ' (primary)'}
-                </span>
-              ))
-            : NR}
-        </dd>
-        <dt title="First and last time anything from it, or uplinked by it as a gateway, reached the broker">Seen in window</dt>
-        <dd>
-          {d.first_seen ? `${formatLocal(d.first_seen)} → ${formatLocal(d.last_seen)} (${relativeAge(d.last_seen, now)})`
-            : d.last_referenced ? <span title="Never heard itself: only named in others' NeighborInfo or traceroutes">named by others, last {formatLocal(d.last_referenced)} ({relativeAge(d.last_referenced, now)})</span> : NR}
-        </dd>
-        <dt>Traffic</dt>
-        <dd>
-          <span title="Distinct packets it sent that reached the broker">{d.packets} unique packets</span> ·{' '}
-          <span title="Receptions of its packets by other gateways, over the air (one per gateway and copy)">{d.receptions - (d.own_uplinks ?? 0)} receptions by other gateways</span>
-          {(d.own_uplinks ?? 0) > 0 && <span title="Its own packets it uplinked itself as a gateway, its map reports among them: not radio receptions"> · {d.own_uplinks} uplinked itself</span>}
-          {d.is_gateway && <span title="Other nodes' packets it uplinked as a gateway"> · uplinked {d.gateway_receptions - (d.own_uplinks ?? 0)} of others'</span>}
-        </dd>
-        <NodeAirtimeRow id={d.id} />
-        {d.delivery && (
-          <>
-            <dt title="Routing packets: the ACKs and errors nodes send back for packets that asked for confirmation, or that could not be delivered or processed">Delivery reports</dt>
-            <dd>
-              <DeliveryList label="sent" acks={d.delivery.acks_sent} errors={d.delivery.errors_sent} />
-              <br />
-              <DeliveryList label="received" acks={d.delivery.acks_received} errors={d.delivery.errors_received} />
-            </dd>
-          </>
-        )}
-        <dt>Signatures</dt>
-        <dd title="One status per packet, its best copy's: relays can strip a signature, so a packet some gateway verified counts as verified">
-          {d.signatures.verified} verified · {d.signatures.unsigned} unsigned · {d.signatures.unverifiable} signed, key unknown · {d.signatures.not_applicable} not signable
-        </dd>
-        <dt>Brokers</dt><dd>{d.brokers?.length ? d.brokers.join(', ') : NR}</dd>
-        {d.is_gateway && (
-          <>
-            <dt title="The topic root this gateway publishes under, from the topics of the packets it uplinked in the selected period">MQTT root topic</dt>
-            <dd>
-              {!d.radio.uplink_topics?.length
-                ? NR
-                : d.radio.uplink_topics.map((t, k) => (
-                    <div key={t.topic} title={`Regions: ${t.regions.join(' or ') || 'unknown'} · last ${formatLocal(t.last_at)}`}>
-                      <code className="topic">{t.topic}</code>
-                      {d.radio.uplink_topics!.length > 1 && <small className="muted"> · {t.receptions} uplinks{k === 0 ? ' (most)' : ''}</small>}
+              {pos ? (
+                <>
+                  {pos.lat.toFixed(5)}, {pos.lon.toFixed(5)}
+                  {pos.alt !== undefined && pos.alt !== null && <> · {pos.alt} m above sea level</>}
+                  <br />
+                  <small>
+                    {pos.source === 'mapreport' ? 'from map report · ' : ''}
+                    {pos.precision_known
+                      ? pos.precision_bits >= 32
+                        ? 'full precision'
+                        : <span title={`Shared with ${pos.precision_bits} precision bits: firmware reports the centre of a cell this size, so it is somewhere within this distance`}>± {dist(precisionErrorM(pos.precision_bits, pos.lat))}</span>
+                      : 'precision unknown'} · <SigBadge s={pos.signature} /> · {formatLocal(pos.observed_at)}
+                  </small>
+                  {d.refined && (
+                    <div className="refined" title="Its reports jump around one place: combined, they narrow down where it is. The map places it here (D-077).">
+                      Narrowed to {d.refined.lat.toFixed(5)}, {d.refined.lon.toFixed(5)} ± {d.refined.radius_m < 1000 ? `${Math.round(d.refined.radius_m)} m` : `${(d.refined.radius_m / 1000).toFixed(1)} km`}
+                      <br />
+                      <small>
+                        from {d.refined.agree} of {d.refined.reports} reports{d.refined.agree < d.refined.reports ? `; ${d.refined.reports - d.refined.agree} outlying ones set aside as noise` : ''}
+                      </small>
                     </div>
-                  ))}
+                  )}
+                </>
+              ) : est ? (
+                <span className="est-note">
+                  Estimated location{d.stale_position ? '' : ' (not reported)'}: {est.lat.toFixed(3)}, {est.lon.toFixed(3)} ± {dist(est.uncertainty_radius_m)}
+                  <br />
+                  <small title="Anchors: nodes with a precise reported position that heard it directly. Samples: those receptions.">
+                    {QUALITY[est.quality] ?? est.quality} estimate from the {METHOD[est.method] ?? est.method}: {est.anchor_count} anchors, {est.sample_count} receptions. {(est.reasons ?? []).join(' ')}
+                  </small>
+                </span>
+              ) : (
+                <>
+                  {!d.stale_position && NR}
+                  {snapNode?.estimate_note && <>{!d.stale_position && <br />}<small>No estimate: {snapNode.estimate_note}</small></>}
+                </>
+              )}
             </dd>
-          </>
-        )}
-        <dt>Telemetry</dt>
-        <dd>
-          {d.telemetry ? (
-            <>
-              battery {battery(d.telemetry.battery)} · {fmt(d.telemetry.voltage, 'V', 2)}
-              <br />
-              <span title="Share of airtime busy with any traffic it can hear">channel use {fmt(d.telemetry.ch_util, '%')}</span> ·{' '}
-              <span title="Share of the last hour it spent transmitting itself">own airtime {fmt(d.telemetry.air_util, '%')}</span> · <small>{formatLocal(d.telemetry.observed_at)}</small>
-            </>
-          ) : NR}
-        </dd>
-      </dl>
-      {(d.telemetry_series ?? []).length > 1 && (
-        <div className="charts">
-          <Sparkline label="Battery % (external power left out)" points={(d.telemetry_series ?? []).map((s) => [Date.parse(s.at), s.battery !== undefined && s.battery !== null && s.battery <= 100 ? s.battery : null])} />
-          <Sparkline label="Channel utilisation %" points={(d.telemetry_series ?? []).map((s) => [Date.parse(s.at), s.ch_util ?? null])} />
-        </div>
+            {d.moved_at && (
+              <>
+                <dt title="It moved more than a few hundred metres beyond what its position precision explains (D-073)">Moving</dt>
+                <dd>
+                  last moved {formatLocal(d.moved_at)} · {d.track?.length ?? 0}{(d.track?.length ?? 0) >= 100 ? '+' : ''} reported places in the window{d.airborne && <> · <span className="tag">✈ airborne</span></>}
+                  <br /><small className="muted">Its links count only evidence from after that move.</small>
+                </dd>
+              </>
+            )}
+            <dt title="First and last time anything from it, or uplinked by it as a gateway, reached the broker">Seen in window</dt>
+            <dd>
+              {d.first_seen ? `${formatLocal(d.first_seen)} → ${formatLocal(d.last_seen)} (${relativeAge(d.last_seen, now)})`
+                : d.last_referenced ? <span title="Never heard itself: only named in others' NeighborInfo or traceroutes">named by others, last {formatLocal(d.last_referenced)} ({relativeAge(d.last_referenced, now)})</span> : NR}
+            </dd>
+            <dt>Traffic</dt>
+            <dd>
+              <span title="Distinct packets it sent that reached the broker">{d.packets} unique packets</span> ·{' '}
+              <span title="Receptions of its packets by other gateways, over the air (one per gateway and copy)">{d.receptions - (d.own_uplinks ?? 0)} receptions by other gateways</span>
+              {(d.own_uplinks ?? 0) > 0 && <span title="Its own packets it uplinked itself as a gateway, its map reports among them: not radio receptions"> · {d.own_uplinks} uplinked itself</span>}
+              {d.is_gateway && <span title="Other nodes' packets it uplinked as a gateway"> · uplinked {d.gateway_receptions - (d.own_uplinks ?? 0)} of others'</span>}
+            </dd>
+            <dt>Telemetry</dt>
+            <dd>
+              {d.telemetry ? (
+                <>
+                  battery {battery(d.telemetry.battery)} · {fmt(d.telemetry.voltage, 'V', 2)}
+                  <br />
+                  <span title="Share of airtime busy with any traffic it can hear">channel use {fmt(d.telemetry.ch_util, '%')}</span> ·{' '}
+                  <span title="Share of the last hour it spent transmitting itself">own airtime {fmt(d.telemetry.air_util, '%')}</span> · <small>{formatLocal(d.telemetry.observed_at)}</small>
+                </>
+              ) : NR}
+            </dd>
+          </dl>
+          {(d.telemetry_series ?? []).length > 1 && (
+            <div className="charts">
+              <Sparkline label="Battery % (external power left out)" points={(d.telemetry_series ?? []).map((s) => [Date.parse(s.at), s.battery !== undefined && s.battery !== null && s.battery <= 100 ? s.battery : null])} />
+              <Sparkline label="Channel utilisation %" points={(d.telemetry_series ?? []).map((s) => [Date.parse(s.at), s.ch_util ?? null])} />
+            </div>
+          )}
+        </>
       )}
-      <RelayingSection node={snapNode} snapshot={snapshot} />
-      <ReachSection key={d.id} id={d.id} name={(n) => names.get(n) ?? n} />
-      <h3 title="Every link in the window, whatever the map's filters hide; links to nodes without a position and guessed links included">Links in window ({neighbours.length})</h3>
-      <ul className="links">
-        {neighbours.map((g) => {
-          const dir = (e: Edge | undefined, arrow: string, heard: string) => (
-            <span className={`link-dir${e ? '' : ' muted'}`} title={heard}>
-              {arrow}{' '}
-              {!e ? 'no evidence' : e.mqtt ? <span className="conf conf-mqtt" title="Over the internet through an MQTT broker, not radio">Internet</span> : <span className={`conf conf-${e.confidence}`} title={e.reason}>{e.confidence}</span>}
-              {e?.snr.median != null && <small title="Median SNR measured at the receiving end, from all evidence for this direction"> SNR {e.snr.median.toFixed(1)} dB</small>}
-            </span>
-          )
-          const name = names.get(g.peer) ?? g.peer
-          const self = names.get(id) ?? id
-          return (
-            <li key={g.peer + (g.mqtt ? 'm' : '')}>
-              <button onClick={() => select({ kind: 'edge', src: id, dst: g.peer, mqtt: g.mqtt })}>
-                <span className="link-peer" title={name}>{name}</span>
-                {dir(g.out, '→', g.mqtt ? `${name} got packets ${self} passed on from an MQTT broker, not over the air` : `${name} heard ${self}`)}
-                {dir(g.in, '←', g.mqtt ? `${self} got packets ${name} passed on from an MQTT broker, not over the air` : `${self} heard ${name}`)}
-              </button>
-            </li>
-          )
-        })}
-      </ul>
-      <h3 title="Gateways that uplinked its packets, directly or after relays">Uplinked by gateways ({(d.heard_by ?? []).length})</h3>
-      <table className="hear">
-        <thead><tr><th>Gateway</th><th title="The radio link from this node to the gateway: its confidence, or — when the gateway only got relayed copies (or its links were reset by a move)">Link</th><th title="Receptions of its packets by this gateway, relayed ones included">Rx</th><th title="Of those, heard directly (no relay in between)">Direct</th><th title="Median SNR of the direct receptions only: a relayed copy's SNR measures the last relay, not this node">SNR med</th><th title="Median RSSI of the direct receptions only">RSSI med</th></tr></thead>
-        <tbody>
-          {heardBy.slice(0, 30).map(({ h, link }) => (
-            <tr key={h.node}>
-              <td>{names.get(h.node) ?? h.node}</td>
-              <td>{link ? <span className={`conf conf-${link.confidence}`} title={link.reason}>{link.confidence}</span> : <span className="muted" title="No radio link: only relayed copies, or its links were reset by a move">—</span>}</td>
-              <td>{h.receptions}</td><td>{h.direct_rf}</td><td>{fmt(h.snr.median, 'dB')}</td><td>{fmt(h.rssi.median, 'dBm', 0)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      {(d.radio?.heard_as ?? []).length > 1 && (
+      {tab === 'links' && (
         <>
-          <h3 title="Each gateway uplinks with its own topic and channel name, so one node can be heard several ways">Heard on ({d.radio.heard_as.length})</h3>
-          <table className="hear pkt-log" aria-label="Heard on">
-            <colgroup><col /><col style={{ width: 90 }} /><col style={{ width: 88 }} /><col style={{ width: 34 }} /></colgroup>
-            <thead><tr><th>MQTT topic</th><th>Channel</th><th>Preset</th><th>Rx</th></tr></thead>
+          <h3 title="Every link in the window, whatever the map's filters hide; links to nodes without a position and guessed links included">Links in window ({neighbours.length})</h3>
+          <ul className="links">
+            {neighbours.map((g) => {
+              const dir = (e: Edge | undefined, arrow: string, heard: string) => (
+                <span className={`link-dir${e ? '' : ' muted'}`} title={heard}>
+                  {arrow}{' '}
+                  {!e ? 'no evidence' : e.mqtt ? <span className="conf conf-mqtt" title="Over the internet through an MQTT broker, not radio">Internet</span> : <span className={`conf conf-${e.confidence}`} title={e.reason}>{e.confidence}</span>}
+                  {e?.snr.median != null && <small title="Median SNR measured at the receiving end, from all evidence for this direction"> SNR {e.snr.median.toFixed(1)} dB</small>}
+                </span>
+              )
+              const name = names.get(g.peer) ?? g.peer
+              const self = names.get(id) ?? id
+              return (
+                <li key={g.peer + (g.mqtt ? 'm' : '')}>
+                  <button onClick={() => select({ kind: 'edge', src: id, dst: g.peer, mqtt: g.mqtt })}>
+                    <span className="link-peer" title={name}>{name}</span>
+                    {dir(g.out, '→', g.mqtt ? `${name} got packets ${self} passed on from an MQTT broker, not over the air` : `${name} heard ${self}`)}
+                    {dir(g.in, '←', g.mqtt ? `${self} got packets ${name} passed on from an MQTT broker, not over the air` : `${self} heard ${name}`)}
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
+          <h3 title="Gateways that uplinked its packets, directly or after relays">Uplinked by gateways ({(d.heard_by ?? []).length})</h3>
+          <table className="hear">
+            <thead><tr><th>Gateway</th><th title="The radio link from this node to the gateway: its confidence, or — when the gateway only got relayed copies (or its links were reset by a move)">Link</th><th title="Receptions of its packets by this gateway, relayed ones included">Rx</th><th title="Of those, heard directly (no relay in between)">Direct</th><th title="Median SNR of the direct receptions only: a relayed copy's SNR measures the last relay, not this node">SNR med</th><th title="Median RSSI of the direct receptions only">RSSI med</th></tr></thead>
             <tbody>
-              {d.radio.heard_as.map((h) => (
-                <tr key={h.topic + h.channel} title={`Regions: ${h.regions.join(' or ') || 'unknown'} · last ${formatLocal(h.last_at)}`}>
-                  <td>{h.topic}</td><td>{h.channel ?? ''}</td><td>{h.preset ? presetName(h.preset) : 'unknown'}</td><td>{h.receptions}</td>
+              {heardBy.slice(0, 30).map(({ h, link }) => (
+                <tr key={h.node}>
+                  <td>{names.get(h.node) ?? h.node}</td>
+                  <td>{link ? <span className={`conf conf-${link.confidence}`} title={link.reason}>{link.confidence}</span> : <span className="muted" title="No radio link: only relayed copies, or its links were reset by a move">—</span>}</td>
+                  <td>{h.receptions}</td><td>{h.direct_rf}</td><td>{fmt(h.snr.median, 'dB')}</td><td>{fmt(h.rssi.median, 'dBm', 0)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
+          <RelayingSection node={snapNode} snapshot={snapshot} />
+          <ReachSection key={d.id} id={d.id} name={(n) => names.get(n) ?? n} />
         </>
       )}
-      <PacketLogs id={id} names={names} positioned={positioned} moved={moved} />
-      <p className="muted">Message contents are never stored or shown.</p>
+      {tab === 'radio' && (
+        <>
+          <dl>
+            <dt>Region</dt><dd>{radio.region}</dd>
+            <dt>LoRa preset</dt><dd title={radio.presetNote}>{radio.preset}</dd>
+            <dt>Channels</dt>
+            <dd>
+              {d.radio?.channels?.length
+                ? d.radio.channels.map((c, k) => (
+                    <span key={c.name} title={[c.primary && 'Its primary channel (its own map report).', c.sent && `${c.sent} of its packets uplinked on it.`, c.uplinked && `Uplinked ${c.uplinked} receptions on it as a gateway.`].filter(Boolean).join(' ')}>
+                      {k > 0 && ', '}{c.name}{c.primary && ' (primary)'}
+                    </span>
+                  ))
+                : NR}
+            </dd>
+            <dt>Brokers</dt><dd>{d.brokers?.length ? d.brokers.join(', ') : NR}</dd>
+            {d.is_gateway && (
+              <>
+                <dt title="The topic root this gateway publishes under, from the topics of the packets it uplinked in the selected period">MQTT root topic</dt>
+                <dd>
+                  {!d.radio.uplink_topics?.length
+                    ? NR
+                    : d.radio.uplink_topics.map((t, k) => (
+                        <div key={t.topic} title={`Regions: ${t.regions.join(' or ') || 'unknown'} · last ${formatLocal(t.last_at)}`}>
+                          <code className="topic">{t.topic}</code>
+                          {d.radio.uplink_topics!.length > 1 && <small className="muted"> · {t.receptions} uplinks{k === 0 ? ' (most)' : ''}</small>}
+                        </div>
+                      ))}
+                </dd>
+              </>
+            )}
+          </dl>
+          {(d.radio?.heard_as ?? []).length > 0 && (
+            <>
+              <h3 title="Each gateway uplinks with its own topic and channel name, so one node can be heard several ways">Heard on ({d.radio.heard_as.length})</h3>
+              <table className="hear pkt-log" aria-label="Heard on">
+                <colgroup><col /><col style={{ width: 90 }} /><col style={{ width: 88 }} /><col style={{ width: 34 }} /></colgroup>
+                <thead><tr><th>MQTT topic</th><th>Channel</th><th>Preset</th><th>Rx</th></tr></thead>
+                <tbody>
+                  {d.radio.heard_as.map((h) => (
+                    <tr key={h.topic + h.channel} title={`Regions: ${h.regions.join(' or ') || 'unknown'} · last ${formatLocal(h.last_at)}`}>
+                      <td>{h.topic}</td><td>{h.channel ?? ''}</td><td>{h.preset ? presetName(h.preset) : 'unknown'}</td><td>{h.receptions}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
+          )}
+        </>
+      )}
+      {tab === 'packets' && (
+        <>
+          <dl>
+            <NodeAirtimeRow id={d.id} />
+            {d.delivery && (
+              <>
+                <dt title="Routing packets: the ACKs and errors nodes send back for packets that asked for confirmation, or that could not be delivered or processed">Delivery reports</dt>
+                <dd>
+                  <DeliveryList label="sent" acks={d.delivery.acks_sent} errors={d.delivery.errors_sent} />
+                  <br />
+                  <DeliveryList label="received" acks={d.delivery.acks_received} errors={d.delivery.errors_received} />
+                </dd>
+              </>
+            )}
+            <dt>Signatures</dt>
+            <dd title="One status per packet, its best copy's: relays can strip a signature, so a packet some gateway verified counts as verified">
+              {d.signatures.verified} verified · {d.signatures.unsigned} unsigned · {d.signatures.unverifiable} signed, key unknown · {d.signatures.not_applicable} not signable
+            </dd>
+          </dl>
+          <PacketLogs id={id} names={names} positioned={positioned} moved={moved} />
+          <p className="muted">Message contents are never stored or shown.</p>
+        </>
+      )}
+    </div>
+  )
+}
+
+const TABS: { id: DetailTab; label: string; hint: string }[] = [
+  { id: 'overview', label: 'Overview', hint: 'Identity, position, activity and telemetry' },
+  { id: 'links', label: 'Links', hint: 'Radio links, gateways that heard it, reach and relaying' },
+  { id: 'radio', label: 'Radio', hint: 'Region, preset, channels, MQTT topics and brokers' },
+  { id: 'packets', label: 'Packets', hint: 'Packet log, delivery reports, airtime and signatures' },
+]
+
+/** The node panel's tabs (D-098); the choice is kept when another node is selected. */
+function DetailTabs({ counts }: { counts: Partial<Record<DetailTab, number>> }) {
+  const tab = useStore((s) => s.detailTab)
+  const setTab = useStore((s) => s.setDetailTab)
+  const onKey = (e: React.KeyboardEvent) => {
+    const k = TABS.findIndex((t) => t.id === tab)
+    const next = e.key === 'ArrowRight' ? k + 1 : e.key === 'ArrowLeft' ? k - 1 : -2
+    if (next === -2) return
+    e.preventDefault()
+    const t = TABS[(next + TABS.length) % TABS.length]
+    setTab(t.id)
+    document.getElementById(`detail-tab-${t.id}`)?.focus()
+  }
+  return (
+    <div className="detail-tabs" role="tablist" aria-label="Node details" onKeyDown={onKey}>
+      {TABS.map((t) => (
+        <button key={t.id} id={`detail-tab-${t.id}`} role="tab" aria-selected={tab === t.id} tabIndex={tab === t.id ? 0 : -1} title={t.hint} onClick={() => setTab(t.id)}>
+          {t.label}{counts[t.id] !== undefined && <span className="tab-count">{counts[t.id]}</span>}
+        </button>
+      ))}
     </div>
   )
 }

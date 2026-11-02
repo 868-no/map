@@ -169,6 +169,13 @@ body.resizing { cursor: ew-resize; user-select: none; }
 .node-list, .links { list-style: none; margin: 0; padding: 0; }
 .node-row { display: grid; grid-template-columns: 14px 1fr auto auto; gap: 8px; width: 100%; text-align: left; border: none; background: none; padding: 4px 2px; align-items: center; }
 .node-row:hover { background: var(--panel2); }
+.detail-tabs { display: flex; gap: 2px; margin: 8px 0 10px; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--panel); z-index: 2; }
+.detail-tabs button { flex: 1; background: none; border: 0; border-bottom: 2px solid transparent; margin-bottom: -1px; padding: 7px 4px; color: var(--muted); font: inherit; font-size: 13px; cursor: pointer; white-space: nowrap; }
+.detail-tabs button:hover { color: var(--text); }
+.detail-tabs button[aria-selected='true'] { color: var(--text); border-bottom-color: var(--accent); }
+.tab-count { margin-left: 5px; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.node-health { margin: 4px 0 0; }
+.node-health-toggle { font-size: 13px; }
 .issues { list-style: none; margin: 4px 0 10px; padding: 0; }
 .issue { display: flex; gap: 6px; align-items: baseline; padding: 2px 0; font-size: 13px; }
 .issue-icon { flex: none; width: 1.2em; text-align: center; font-size: 12px; }

@@ -4,6 +4,9 @@ import type { ThemeChoice } from '../theme'
 
 export type Confidence = 'low' | 'medium' | 'high'
 
+/** Tabs of the node Details panel (D-098). */
+export type DetailTab = 'overview' | 'links' | 'radio' | 'packets'
+
 export interface Filters {
   channels: string[]
   brokers: string[]
@@ -60,6 +63,7 @@ interface Store {
   route: string | null // logical key of the packet whose route is drawn
   reach: Reach | null // the selected node's simulated reach, drawn on the map (D-069)
   search: string
+  detailTab: DetailTab // the node panel's tab, kept across selections
   setLive: (durationH?: number) => void
   setFixed: (start: string, end: string) => void
   setFilters: (f: Partial<Filters>) => void
@@ -68,6 +72,7 @@ interface Store {
   showRoute: (lp: string | null) => void
   setReach: (r: Reach | null) => void
   setSearch: (s: string) => void
+  setDetailTab: (t: DetailTab) => void
 }
 
 export const defaultFilters: Filters = { channels: [], brokers: [], types: [], evidence: [], minConfidence: 'low', positionedOnly: false }
@@ -115,6 +120,7 @@ export const useStore = create<Store>((set) => ({
   route: null,
   reach: null,
   search: '',
+  detailTab: 'overview',
   setLive: (durationH) =>
     set((s) => ({ win: { live: true, durationH: durationH ?? s.win.durationH, start: null, end: null } })),
   // A fixed window never creeps forward.
@@ -131,6 +137,7 @@ export const useStore = create<Store>((set) => ({
   showRoute: (route) => set({ route, reach: null }),
   setReach: (reach) => set({ reach, route: null }),
   setSearch: (search) => set({ search }),
+  setDetailTab: (detailTab) => set({ detailTab }),
 }))
 
 // ---- URL sync: the window and filters are shareable links ----
