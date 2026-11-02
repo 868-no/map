@@ -632,8 +632,11 @@ test('only online nodes: offline ones leave the map, and Details says which a no
   if (offline > 0) await expect.poll(count).toBeLessThan(all)
   else await expect.poll(count).toBe(all)
   await expect(page.locator('.rail-btn[aria-label="Filters"] .rail-badge')).toHaveText('1')
+  const filtered = await count()
   await page.getByLabel(/Only online nodes/).uncheck()
-  await expect.poll(count).toBe(all)
+  // Live traffic may add a node meanwhile: compare with the filtered view, not an exact earlier total.
+  if (offline > 0) await expect.poll(count).toBeGreaterThan(filtered)
+  else await expect.poll(count).toBeGreaterThanOrEqual(filtered)
   await openPanel(page)
   await page.locator('.node-row').first().click()
   await expect(page.locator('.node-panel .tag.online, .node-panel .tag.offline')).toHaveCount(1)
