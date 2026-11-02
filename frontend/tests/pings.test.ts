@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { activePings as rawPings, addTransmission, BLIP_LIFE, RING_BANDS, ringProfile, clearPings, distanceM, metresPerPixel, MIN_RING_PX, PING_COLLECT, PING_FADE, PING_GROW, PING_LINGER } from '../src/map/pings'
+import { activePings as rawPings, addTransmission, BLIP_LIFE, RING_BANDS, ringProfile, clearPings, distanceM, metresPerPixel, MIN_RING_PX, PING_COLLECT, PING_FADE, PING_GROW, PING_LINGER, DELIVERY_TRAVEL, pingCount } from '../src/map/pings'
 
 // Attribution (which transmissions a reception proves) lives in the engine
 // and is tested there (frontend/engine/src/packets.rs); these are the animation's.
@@ -17,6 +17,23 @@ describe('ping animation', () => {
   const pos = new Map<string, [number, number]>([[A, [10, 63]], [B, [10.2, 63]], [GW, [10.1, 63]]])
   const AB = distanceM([10, 63], [10.2, 63]), AG = distanceM([10, 63], [10.1, 63])
   const tx = (rx?: string) => ({ key: `p|${A}`, tx: A, rx, rebroadcast: false })
+  it('an ACK animates a delivery from the sender to the node that got it, not a ring', () => {
+    addTransmission({ key: `77|${A}|delivered`, tx: A, rx: B, rebroadcast: false, delivered: true }, pos, 0)
+    expect(pingCount()).toBe(1)
+    const mid = activePings(DELIVERY_TRAVEL / 2)
+    expect(mid.rings).toHaveLength(0)
+    expect(mid.deliveries).toHaveLength(1)
+    expect(mid.deliveries[0].progress).toBeGreaterThan(0.5) // eased: fast start
+    expect(mid.deliveries[0].progress).toBeLessThan(1)
+    expect(mid.arrivals).toHaveLength(0)
+    const arrived = activePings(DELIVERY_TRAVEL + 100)
+    expect(arrived.deliveries[0].progress).toBe(1)
+    expect(arrived.arrivals).toHaveLength(1)
+    // The same ACK delivered again (another gateway) does not restart it.
+    addTransmission({ key: `77|${A}|delivered`, tx: A, rx: B, rebroadcast: false, delivered: true }, pos, DELIVERY_TRAVEL + 200)
+    expect(pingCount()).toBe(1)
+    expect(activePings(60_000).deliveries).toHaveLength(0)
+  })
   it('animates a link to each receiver, broadcast or not', () => {
     addTransmission(tx(B), pos, 0)
     const { rings, trails } = activePings(PING_GROW / 2)

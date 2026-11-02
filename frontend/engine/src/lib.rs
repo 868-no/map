@@ -228,9 +228,21 @@ impl Engine {
             "route" => {
                 let lp = key64(arg);
                 self.build(start, end, filters)?;
-                let rows: Vec<&row::Row> = self.rows().into_iter().filter(|r| r.lp == lp).collect();
+                let all = self.rows();
+                let rows: Vec<&row::Row> = all.iter().copied().filter(|r| r.lp == lp).collect();
+                // ACKs answering it: their senders received it (D-096).
+                let ack = self.i.get("ack");
+                let acked: Vec<u32> = match rows.first().and_then(|r| r.pid.map(|p| (r.src, p))) {
+                    Some((src, pid)) => {
+                        let mut v: Vec<u32> = all.iter().filter(|r| r.dst == Some(src) && r.routing().is_some_and(|rt| Some(rt.kind) == ack && rt.request == pid)).map(|r| r.src).collect();
+                        v.sort();
+                        v.dedup();
+                        v
+                    }
+                    None => vec![],
+                };
                 let b = &self.built.as_ref().unwrap().1;
-                Ok(json(&packets::packet_route(&rows, &b.ctx, &b.roles, &self.i)))
+                Ok(json(&packets::packet_route(&rows, &b.ctx, &b.roles, &self.i, &acked)))
             }
             "reach" => {
                 // arg: node id, with "|internet" to follow MQTT links too (D-069).
@@ -267,7 +279,18 @@ impl Engine {
         let b = self.built.as_ref().map_or(&empty, |(_, b)| b);
         let invalid = self.i.get("invalid");
         // Invalid rows prove nothing, not even a transmission (D-093).
-        let out: Vec<Vec<packets::Transmission>> = rows.iter().map(|r| if Some(r.ty) == invalid { vec![] } else { packets::transmissions(r, &b.ctx, &b.roles) }).collect();
+        let ack = self.i.get("ack");
+        let out: Vec<Vec<packets::Transmission>> = rows
+            .iter()
+            .map(|r| {
+                if Some(r.ty) == invalid {
+                    return vec![];
+                }
+                let mut t = packets::transmissions(r, &b.ctx, &b.roles);
+                t.extend(packets::delivery_ping(r, ack));
+                t
+            })
+            .collect();
         Ok(json(&out))
     }
 }

@@ -187,11 +187,12 @@ test('rejects nothing silently: invalid URL windows fall back, mobile layout wor
   await expect(page.locator('.badge')).toContainText('LIVE')
   await page.setViewportSize({ width: 390, height: 844 })
   await expect(page.locator('#dock')).toBeHidden()
+  // Fit first: an open phone panel covers the map's lower controls.
+  await page.getByRole('button', { name: 'Fit to data' }).click()
   await openPanel(page)
   await expect(page.locator('#dock')).toBeVisible()
   await expect(page.locator('.live-indicator')).toBeVisible()
   await expect(page.locator('.node-row').first()).toBeVisible()
-  await page.getByRole('button', { name: 'Fit to data' }).click()
   await page.waitForTimeout(1500)
   await docShot(page, 'mobile.png')
 })
@@ -349,12 +350,12 @@ test('the packet log combines own and relayed packets, and draws a packet route 
     if (i === 0) await expect(toggle).not.toBeChecked() // own packets only by default
     await toggle.check()
     await page.waitForTimeout(300)
-    if (await log.locator('tbody tr button.linkish').count()) break
+    if (await log.locator('tbody tr[data-kind="relayed"]').count()) break
   }
   const total = async () => Number(/\((\d+)/.exec((await page.getByRole('heading', { name: /^Packet log/ }).textContent()) ?? '')?.[1])
   const all = await total()
   await toggle.uncheck()
-  await expect(log.locator('tbody tr button.linkish')).toHaveCount(0) // only own packets
+  await expect(log.locator('tbody tr[data-kind="relayed"]')).toHaveCount(0) // no relayed packets
   expect(await total()).toBeLessThan(all)
   await toggle.check()
 

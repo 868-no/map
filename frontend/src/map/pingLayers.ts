@@ -1,7 +1,7 @@
 // Per-frame layers for the radar-ping animation (state lives in pings.ts).
 import { LineLayer, ScatterplotLayer } from '@deck.gl/layers'
 import type { Layer } from '@deck.gl/core'
-import { activePings, RING_BANDS, type Blip, type Flash, type Ring, type Trail } from './pings'
+import { activePings, RING_BANDS, type Blip, type DeliveryLine, type Flash, type Ring, type Trail } from './pings'
 import { UNDER_LABELS, type RGBA } from './deckShared'
 import type { MapPalette } from './palette'
 // Rings have no outline: a soft fill whose opacity follows the signal at each
@@ -13,7 +13,8 @@ export function buildPingLayers(now: number, zoom: number, palette: MapPalette):
   // the travelling link's core stands out from its glow.
   const rgb = (r: { rebroadcast: boolean }) => (r.rebroadcast ? palette.pingRelay : palette.pingOrigin)
   const bright = (r: { rebroadcast: boolean }) => palette.pingCore(rgb(r))
-  const { rings, blips, flashes, trails } = activePings(now, zoom)
+  const { rings, blips, flashes, trails, deliveries, arrivals } = activePings(now, zoom)
+  const ok = palette.delivered
   const moving = trails.filter((t) => t.progress < 1)
   return [
     // The links the transmission travels: each grows from the transmitter
@@ -63,6 +64,30 @@ export function buildPingLayers(now: number, zoom: number, palette: MapPalette):
       id: 'ping-hits', ...UNDER_LABELS, data: flashes, getPosition: (f) => f.pos, getRadius: (f) => 7 + 7 * f.scale, radiusUnits: 'pixels',
       filled: false, stroked: true, lineWidthUnits: 'pixels', getLineWidth: 2.5,
       getLineColor: (f) => [...rgb(f), f.alpha] as RGBA,
+      updateTriggers: { getRadius: now, getLineColor: now },
+    }),
+    // Deliveries (D-096): an ACK proved the packet reached this node, by a
+    // path we may not know. A line travels from the sender, the receiver
+    // gets a double flash on arrival.
+    new LineLayer<DeliveryLine>({
+      id: 'delivery-glow', ...UNDER_LABELS, data: deliveries, getSourcePosition: (d) => d.from, getTargetPosition: (d) => d.tip,
+      widthUnits: 'pixels', getWidth: 9, getColor: (d) => [...ok, Math.round(d.alpha * 0.3)] as RGBA,
+      updateTriggers: { getTargetPosition: now, getColor: now },
+    }),
+    new LineLayer<DeliveryLine>({
+      id: 'delivery-lines', ...UNDER_LABELS, data: deliveries, getSourcePosition: (d) => d.from, getTargetPosition: (d) => d.tip,
+      widthUnits: 'pixels', getWidth: 2.5, getColor: (d) => [...ok, d.alpha] as RGBA,
+      updateTriggers: { getTargetPosition: now, getColor: now },
+    }),
+    new ScatterplotLayer<DeliveryLine>({
+      id: 'delivery-heads', ...UNDER_LABELS, data: deliveries.filter((d) => d.progress < 1), getPosition: (d) => d.tip, getRadius: 5, radiusUnits: 'pixels',
+      filled: true, stroked: false, getFillColor: (d) => [...ok, d.alpha] as RGBA,
+      updateTriggers: { getPosition: now, getFillColor: now },
+    }),
+    new ScatterplotLayer<Flash>({
+      id: 'delivery-arrivals', ...UNDER_LABELS, data: [...arrivals, ...arrivals.map((f) => ({ ...f, scale: f.scale * 2 }))],
+      getPosition: (f) => f.pos, getRadius: (f) => 8 + 10 * f.scale, radiusUnits: 'pixels',
+      filled: false, stroked: true, lineWidthUnits: 'pixels', getLineWidth: 3, getLineColor: (f) => [...ok, f.alpha] as RGBA,
       updateTriggers: { getRadius: now, getLineColor: now },
     }),
   ]

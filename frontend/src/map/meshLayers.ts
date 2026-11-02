@@ -167,7 +167,9 @@ export function meshLayerBuilder(): (input: MeshLayerInput) => Layer[] {
   })
   const routeParts = memoLast((route: RouteGeom[]) => {
     const net = (r: RouteGeom) => r.seg.why === 'internet'
-    return { solid: route.filter((r) => !r.dashed && !net(r)), dashed: route.filter((r) => r.dashed && !net(r)), internet: route.filter(net) }
+    const ack = (r: RouteGeom) => r.seg.why === 'delivered'
+    const radio = (r: RouteGeom) => !net(r) && !ack(r)
+    return { solid: route.filter((r) => !r.dashed && radio(r)), dashed: route.filter((r) => r.dashed && radio(r)), internet: route.filter(net), delivered: route.filter(ack) }
   })
   const reachParts = memoLast((segs: ReachGeom['segments']) => ({ solid: segs.filter((r) => !r.gap), gaps: segs.filter((r) => r.gap) }))
   // Draw order: markers without glyphs first, then those with one (stable
@@ -354,11 +356,17 @@ export function meshLayerBuilder(): (input: MeshLayerInput) => Layer[] {
           getColor: [...c.linkMqtt, 230], getDashArray: [1, 2.5], dashJustified: true, extensions: [dashExt], pickable: true,
           updateTriggers: { getColor: [c] },
         }),
+        // Confirmed by an ACK (D-096): the receiver got it, by a path not drawn.
+        new PathLayer<RouteGeom, PathStyleExtensionProps<RouteGeom>>({
+          id: 'route-delivered', ...UNDER_LABELS, data: parts.delivered, getPath: (r) => [r.from, r.to], widthUnits: 'pixels', getWidth: 3,
+          getColor: [...c.delivered, 230], getDashArray: [6, 3], dashJustified: true, extensions: [dashExt], pickable: true,
+          updateTriggers: { getColor: [c] },
+        }),
         // Which way each hop went: transmitter to receiver.
         new IconLayer<RouteGeom>({
           id: 'route-arrows', ...UNDER_LABELS, data: route, getPosition: (r) => chevron(r.from, r.to).pos,
           getAngle: (r) => chevron(r.from, r.to).angle, ...chevronIcon(), getIcon: () => 'chevron', sizeUnits: 'pixels', getSize: 13,
-          getColor: (r) => (r.seg.why === 'internet' ? [...c.linkMqtt, 255] : ROUTE_COLOR) as RGBA, pickable: false, updateTriggers: { getColor: [c] },
+          getColor: (r) => (r.seg.why === 'internet' ? [...c.linkMqtt, 255] : r.seg.why === 'delivered' ? [...c.delivered, 255] : ROUTE_COLOR) as RGBA, pickable: false, updateTriggers: { getColor: [c] },
         }),
       )
     }

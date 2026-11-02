@@ -177,12 +177,14 @@ export function Legend({ snapshot }: { snapshot: SnapshotView | undefined }) {
         <li><span className="ln route" /> Orange, chevrons pointing from transmitter to receiver: a hop the packet took (traceroute, direct reception, or a relay resolved from the last-hop byte)</li>
         <li><span className="ln route dashed" /> Dashed: the path between the two ends is not known (missing or unplaced nodes, or relays that spent no hop)</li>
         <li><span className="ln mqtt" /> Dotted green: over the internet, an MQTT downlink, not radio</li>
+        <li><span className="ln delivered" /> Dashed mint: delivery confirmed, the node sent an ACK for it (the path to it may not be known)</li>
         <li>A ring with a dashed line: a node that has moved, drawn where it was when the packet was heard. Links are hidden while a route is shown.</li>
       </ul>
       <h3>Live traffic (radar pings)</h3>
       <ul>
         <li><span className="ping origin" /> First broadcast, centred on the originating node</li>
         <li><span className="ping relay" /> Rebroadcast, centred on the relay (resolved from the last-hop byte)</li>
+        <li><span className="ln delivered" /> Delivery: an ACK just confirmed that a node received another's packet; a line travels from the sender to it, and it flashes twice. Not radio: the path may have had several hops.</li>
         <li>The ring grows until it encloses every node known to have heard that transmission directly, and a bright line travels along the link to each of them; each one flashes as the ring and its line reach it. A small blip means no direct receiver is known yet.</li>
       </ul>
       <h3>Signatures</h3>

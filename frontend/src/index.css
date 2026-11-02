@@ -240,6 +240,8 @@ table.hear th:not(:first-child), table.hear td:not(:first-child) { white-space: 
 .ln.thick { border-top-width: 3px; }
 .ln.thin { border-top-width: 1px; }
 .ln.mqtt { border-top: 3px dotted var(--mqtt); }
+.ln.delivered { border-top: 3px dashed rgb(90, 245, 190); }
+:root[data-theme="light"] .ln.delivered { border-top-color: rgb(0, 140, 100); }
 .ln.route { border-color: rgb(255, 170, 60); border-top-width: 3px; }
 .age-ramp { height: 10px; border-radius: 3px; }
 .strip-key .key { display: inline-block; width: 10px; height: 8px; border-radius: 2px; vertical-align: baseline; }

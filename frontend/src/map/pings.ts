@@ -120,7 +120,62 @@ export function onPingAdded(fn: () => void): () => void {
   return () => added.delete(fn)
 }
 
+// ---- deliveries (D-096) ----
+//
+// An ACK proves its sender received the packet it answers, by whatever path.
+// It is drawn as a line travelling from the original sender to that node,
+// unlike a radio ping, ending in a flash where it arrived.
+
+interface Delivery { from: string; to: string; fromPos: LngLat; toPos: LngLat; born: number }
+export const DELIVERY_TRAVEL = 2000 // ms
+const DELIVERY_LINGER = 3000 // ms
+const DELIVERY_FADE = 1500 // ms
+const deliveries = new Map<string, Delivery>()
+
+/** A delivery line: `tip` is how far it has travelled. */
+export interface DeliveryLine { from: LngLat; to: LngLat; tip: LngLat; progress: number; alpha: number }
+
+function addDelivery(t: Transmission, pos: Map<string, LngLat>, now: number): void {
+  const from = pos.get(t.tx), to = t.rx ? pos.get(t.rx) : undefined
+  if (!from || !to || !t.rx || deliveries.has(t.key)) return
+  const s = seen.get(t.key)
+  if (s !== undefined && now - s < SEEN_TTL) return
+  if (deliveries.size >= MAX_PINGS) deliveries.delete(deliveries.keys().next().value!)
+  deliveries.set(t.key, { from: t.tx, to: t.rx, fromPos: from, toPos: to, born: now })
+  added.forEach((fn) => fn())
+}
+
+function activeDeliveries(now: number): { lines: DeliveryLine[]; arrivals: Flash[] } {
+  const lines: DeliveryLine[] = [], arrivals: Flash[] = []
+  for (const [k, d] of deliveries) {
+    const age = now - d.born
+    const end = DELIVERY_TRAVEL + DELIVERY_LINGER + DELIVERY_FADE
+    if (age >= end) {
+      deliveries.delete(k)
+      seen.set(k, now)
+      continue
+    }
+    if (drawn.size) {
+      const a = drawn.get(d.from), b = drawn.get(d.to)
+      if (!a || !b) {
+        deliveries.delete(k)
+        continue
+      }
+      d.fromPos = a
+      d.toPos = b
+    }
+    const progress = ease(Math.min(age / DELIVERY_TRAVEL, 1))
+    const fadeStart = end - DELIVERY_FADE
+    const alpha = Math.round(255 * (age < fadeStart ? 1 : 1 - (age - fadeStart) / DELIVERY_FADE))
+    lines.push({ from: d.fromPos, to: d.toPos, tip: along(d.fromPos, d.toPos, progress), progress, alpha })
+    const since = age - DELIVERY_TRAVEL
+    if (since >= 0 && since < FLASH * 1.5) arrivals.push({ pos: d.toPos, alpha: Math.round(255 * (1 - since / (FLASH * 1.5))), scale: since / (FLASH * 1.5), rebroadcast: false })
+  }
+  return { lines, arrivals }
+}
+
 export function addTransmission(t: Transmission, pos: Map<string, LngLat>, now = performance.now()): void {
+  if (t.delivered) return addDelivery(t, pos, now)
   const center = pos.get(t.tx)
   if (!center) return
   let p = pings.get(t.key)
@@ -235,7 +290,7 @@ export function along(a: LngLat, b: LngLat, f: number): LngLat {
   return [a[0] + (b[0] - a[0]) * f, latOf(mercY(a[1]) + (mercY(b[1]) - mercY(a[1])) * f)]
 }
 
-export function activePings(now: number, zoom: number): { rings: Ring[]; blips: Blip[]; flashes: Flash[]; trails: Trail[] } {
+export function activePings(now: number, zoom: number): { rings: Ring[]; blips: Blip[]; flashes: Flash[]; trails: Trail[]; deliveries: DeliveryLine[]; arrivals: Flash[] } {
   const rings: Ring[] = [], blips: Blip[] = [], flashes: Flash[] = [], trails: Trail[] = []
   for (const [k, p] of pings) {
     if (p.waitFor) {
@@ -286,16 +341,18 @@ export function activePings(now: number, zoom: number): { rings: Ring[]; blips: 
       blips.push({ center: p.center, scale: ease(t), alpha: Math.round(255 * (1 - t)), rebroadcast: p.rebroadcast })
     }
   }
+  const { lines, arrivals } = activeDeliveries(now)
   for (const [k, s] of seen) if (now - s > SEEN_TTL) seen.delete(k)
-  return { rings, blips, flashes, trails }
+  return { rings, blips, flashes, trails, deliveries: lines, arrivals }
 }
 
 export function clearPings(): void {
   pings.clear()
+  deliveries.clear()
   seen.clear()
   lastFrame = -Infinity
 }
 
 export function pingCount(): number {
-  return pings.size
+  return pings.size + deliveries.size
 }

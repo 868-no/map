@@ -469,14 +469,14 @@ function PacketLogs({ id, names, positioned, moved }: { id: string; names: Map<s
         <thead><tr><th>Time</th><th>From</th><th>Type</th><th>To</th><th title="Own packets: the fewest hops another gateway's copy shows (hop start minus hop limit; relays over 0-cost links spend none, so it can be fewer than the relays). 'self': only it uplinked it. 'MQTT': a copy came through an MQTT downlink. Relayed: how we know this node passed it on">Hops</th><th title="Other gateways that uplinked it (relayed: that heard this node's rebroadcast)">GWs</th><th title="Delivery reports: ✓ an ACK or ✗ an error answered this packet. Only reports that reached a gateway are known, so a blank never means it was lost. For a routing packet, ↩ selects the packet it answers">Re</th></tr></thead>
         <tbody>
           {entries.slice(0, shown.own).map((p) => (
-            <tr key={p.kind + p.lp} className={route === p.lp ? 'active' : undefined} onClick={() => showRoute(route === p.lp ? null : p.lp)} aria-selected={route === p.lp}>
+            <tr key={p.kind + p.lp} data-kind={p.kind} className={route === p.lp ? 'active' : undefined} onClick={() => showRoute(route === p.lp ? null : p.lp)} aria-selected={route === p.lp}>
               <td title={formatLocal(p.at)}>{formatLogTime(p.at)}</td>
               <td className="wrap" title={p.kind === 'relayed' ? nm(p.origin) : undefined}>
                 {p.kind === 'own' ? <span className="ev-tag own">own</span> : (
                   <button className="linkish" onClick={(e) => { e.stopPropagation(); select({ kind: 'node', id: p.origin }) }}>{nm(p.origin)}</button>
                 )}
               </td>
-              <td title={(TYPE_TIP[p.type] ?? p.type) + (p.kind === 'own' && p.invalid ? `: ${INVALID[p.invalid] ?? p.invalid}` : '') + (p.kind === 'own' && p.type !== 'invalid' ? ` · ${SIG_LABEL[p.signature] ?? p.signature}` : '') + (p.kind !== 'relayed' && p.answers ? ` · answers packet ${p.answers.request_id}` : '')}>
+              <td title={(TYPE_TIP[p.type] ?? p.type) + (p.kind === 'own' && p.invalid ? `: ${INVALID[p.invalid] ?? p.invalid}` : '') + (p.kind === 'own' && p.type !== 'invalid' ? ` · ${SIG_LABEL[p.signature] ?? p.signature}` : '') + (p.kind !== 'relayed' && p.answers ? (p.answers.kind === 'ack' && p.kind === 'own' && p.to ? ` · confirms it received ${nm(p.to)}'s packet ${p.answers.request_id}` : ` · answers packet ${p.answers.request_id}`) : '')}>
                 {p.kind !== 'relayed' && p.answers ? <AnswerTag a={p.answers} /> : p.type === 'invalid' ? <span className="reply-err">invalid</span> : TYPE_SHORT[p.type] ?? p.type}
               </td>
               <td className="wrap" title={p.to && p.to !== 'broadcast' ? nm(p.to) : undefined}>{p.to === 'broadcast' ? 'all' : p.to ? nm(p.to) : ''}</td>
@@ -522,6 +522,7 @@ function RouteNote({ positioned, moved, name }: { positioned: Set<string>; moved
     <p className="route-note">
       Route on the map: {segs.length} segment{segs.length === 1 ? '' : 's'}{dashed ? `, ${dashed} dashed (nodes missing)` : ''}
       {unplaced.length ? `; ${unplaced.map(name).join(', ')} ${unplaced.length === 1 ? 'has' : 'have'} no position, so the route is dashed across ${unplaced.length === 1 ? 'it' : 'them'}` : ''}.
+      {r.data?.delivered?.length ? ` Delivery confirmed by ${r.data.delivered.map(name).join(', ')} (ACK; dashed green where the path is not known).` : ''}
       {movers.length > 0 && ` ${movers.map(name).join(', ')} moved during the window: drawn where ${movers.length === 1 ? 'it was' : 'they were'} when this packet was heard (ring), dashed to where ${movers.length === 1 ? 'it is' : 'they are'} now.`} Links are hidden meanwhile.{' '}
       <button className="linkish" onClick={() => showRoute(null)}>Clear route</button>
     </p>

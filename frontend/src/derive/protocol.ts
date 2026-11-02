@@ -37,6 +37,7 @@ export interface Transmission {
   rx?: string
   rebroadcast: boolean
   strength?: number // 0..1 signal measured at rx, when rx is the reporting gateway
+  delivered?: boolean // not radio: an ACK proving rx received tx's packet (D-096)
 }
 
 export type Response =

@@ -346,7 +346,7 @@ export interface RouteSegment {
   a: string // transmitter
   b: string // receiver
   dashed: boolean // nodes between a and b are missing
-  why: 'direct' | 'traceroute' | 'relay' | 'gap' | 'unknown_relay' | 'internet'
+  why: 'direct' | 'traceroute' | 'relay' | 'gap' | 'unknown_relay' | 'internet' | 'delivered'
 }
 
 export interface PacketRoute {
@@ -356,4 +356,5 @@ export interface PacketRoute {
   type: string
   segments: RouteSegment[]
   receptions: number
+  delivered?: string[] // nodes whose ACK confirms they received it (D-096)
 }
