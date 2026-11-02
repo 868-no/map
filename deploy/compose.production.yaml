@@ -112,6 +112,7 @@ services:
     restart: unless-stopped
     environment:
       BASEMAP_AREA: norway
+      BASEMAP_BOUNDS: world
       BASEMAP_MAX_AGE_DAYS: "30"
       PLANETILER_HEAP: 8g
     volumes:

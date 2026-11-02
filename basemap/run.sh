@@ -4,9 +4,12 @@
 # and again when it is older than BASEMAP_MAX_AGE_DAYS (0: never). The new
 # file replaces the old one in a single rename, so the map never sees a
 # partial archive.
+# OSM detail covers the area; ocean and Natural Earth cover BASEMAP_BOUNDS
+# (default world), so zoomed-out views are not cut off at the area's edges.
 # Data: © OpenStreetMap contributors (ODbL), Natural Earth, OSMData water polygons.
 set -u
 area="${BASEMAP_AREA:-norway}"
+bounds="${BASEMAP_BOUNDS:-world}"
 max_age="${BASEMAP_MAX_AGE_DAYS:-30}"
 out=/data/basemap.pmtiles
 
@@ -16,7 +19,7 @@ build() {
   # Fresh OpenStreetMap data on every build; water and Natural Earth stay cached.
   rm -f /data/sources/*.osm.pbf
   java "-Xmx${PLANETILER_HEAP:-8g}" -cp @/app/jib-classpath-file com.onthegomap.planetiler.Main \
-    --area="$area" --download \
+    --area="$area" --bounds="$bounds" --download \
     --download_dir=/data/sources --tmpdir=/data/tmp \
     --output=/data/basemap.building.pmtiles --force \
     --maxzoom=14 --languages="${BASEMAP_LANGUAGES:-no,nb,nn,se,en}" || return 1

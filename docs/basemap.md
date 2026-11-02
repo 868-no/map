@@ -10,14 +10,15 @@ The `basemap` service (`ghcr.io/868-no/map-basemap`, `basemap/`) keeps the archi
 
 | Variable | Default | |
 |---|---|---|
-| `BASEMAP_AREA` | `norway` | any Geofabrik area name |
+| `BASEMAP_AREA` | `norway` | any Geofabrik area name: the extent of OSM detail |
+| `BASEMAP_BOUNDS` | `world` | extent of ocean and Natural Earth: `world` or `minlon,minlat,maxlon,maxlat` |
 | `BASEMAP_MAX_AGE_DAYS` | `30` | rebuild interval |
 | `BASEMAP_LANGUAGES` | `no,nb,nn,se,en` | name languages kept |
 | `PLANETILER_HEAP` | `8g` | Java heap while building |
 
-`compose.yaml` passes these through from `.env`. Changing the area or languages does not rebuild an existing archive; delete `basemap.pmtiles` and restart the service. Progress is in `docker compose logs basemap`.
+`compose.yaml` passes these through from `.env`. Changing the area, bounds or languages does not rebuild an existing archive; delete `basemap.pmtiles` and restart the service. Progress is in `docker compose logs basemap`.
 
-Norway takes about 10 minutes and writes about 1.7 GB. A build needs about 6 GB of free disk for downloads and temporary files; the OSM extract and temporary files are removed afterwards, while water polygons and Natural Earth stay cached for the next build.
+Without the bounds, Planetiler clips every layer to the area's bounding box, and zoomed-out views show nothing beyond it. With `world`, oceans, coastlines and Natural Earth's countries cover the globe and roads and places come from the area only; this costs build time and archive size over the area alone. Norway with `world` bounds takes about 12 minutes after the downloads on 4 cores (the ocean polygons about 4 of them) and writes about 2.3 GB; Norway alone writes about 1.8 GB. A build needs about 6 GB of free disk for downloads and temporary files; the OSM extract and temporary files are removed afterwards, while water polygons and Natural Earth stay cached for the next build.
 
 To build by hand instead (e.g. on a development machine):
 
