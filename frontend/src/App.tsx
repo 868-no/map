@@ -6,8 +6,9 @@ import { usePwa } from './pwa'
 import { EdgePanel, NodeList, NodePanel } from './features/panels'
 import { activeFilters, FilterPanel, LayersPanel, Legend } from './features/controls'
 import { SettingsPanel } from './features/menu'
+import { HealthPanel } from './features/health'
 import { Dock, Rail, type PanelId } from './features/rail'
-import { useCapabilities, useRetention, useSnapshot, useTraffic } from './state/data'
+import { useCapabilities, useHealth, useRetention, useSnapshot, useTraffic } from './state/data'
 import type { Counts } from './derive/views'
 import { useLiveStream } from './state/live'
 import { initDerive } from './derive/client'
@@ -19,6 +20,8 @@ export default function App() {
   const retention = useRetention()
   const snap = useSnapshot()
   const traffic = useTraffic()
+  const health = useHealth()
+  const serious = (health.data?.issues ?? []).filter((i) => i.severity !== 'notice').length
   const win = useStore((s) => s.win)
   const filters = useStore((s) => s.filters)
   const selection = useStore((s) => s.selection)
@@ -147,13 +150,14 @@ export default function App() {
         <Dock open={panel} onClose={closePanel}>
           {panel === 'nodes' && <NodeList snapshot={snap.data} />}
           {panel === 'details' && (sel?.kind === 'node' ? <NodePanel id={sel.id} snapshot={snap.data} /> : linkSel ? <EdgePanel a={linkSel.src} b={linkSel.dst} mqtt={!!linkSel.mqtt} snapshot={snap.data} /> : <div className="panel muted">Select a node or link on the map, or find one under Nodes.</div>)}
+          {panel === 'health' && <HealthPanel snapshot={snap.data} />}
           {panel === 'period' && <PeriodPanel caps={caps.data} retention={retention.data} snapshot={snap.data} traffic={traffic.data} />}
           {panel === 'filters' && <FilterPanel snapshot={snap.data} />}
           {panel === 'layers' && <LayersPanel />}
           {panel === 'legend' && <Legend snapshot={snap.data} />}
           {panel === 'settings' && <SettingsPanel canInstall={canInstall} install={install} />}
         </Dock>
-        <Rail open={panel} onToggle={togglePanel} badges={{ filters: activeFilters(filters) }} />
+        <Rail open={panel} onToggle={togglePanel} badges={{ filters: activeFilters(filters), health: serious }} />
         <div className="banners">
           {(!online || servedOffline) && (
             <div className="banner hist" role="status">

@@ -163,9 +163,19 @@ button[aria-pressed='true'], button[aria-selected='true'] { background: var(--pr
 .node-list, .links { list-style: none; margin: 0; padding: 0; }
 .node-row { display: grid; grid-template-columns: 14px 1fr auto auto; gap: 8px; width: 100%; text-align: left; border: none; background: none; padding: 4px 2px; align-items: center; }
 .node-row:hover { background: var(--panel2); }
+.issues { list-style: none; margin: 4px 0 10px; padding: 0; }
+.issue { display: flex; gap: 6px; align-items: baseline; padding: 2px 0; font-size: 13px; }
+.issue-icon { flex: none; width: 1.2em; text-align: center; font-size: 12px; }
+.issue-problem > span:last-child { color: var(--err); }
+.shares { list-style: none; margin: 4px 0 10px; padding: 0; }
+.share { display: grid; grid-template-columns: minmax(0, 1fr) 90px 44px; gap: 6px; align-items: center; font-size: 12px; padding: 1px 0; }
+.share-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
+.share-bar { height: 6px; background: var(--line, rgba(127,127,127,.2)); border-radius: 3px; overflow: hidden; }
+.share-bar > span { display: block; height: 100%; background: var(--accent); }
+.share-pct { text-align: right; font-variant-numeric: tabular-nums; }
 .stale-note { color: var(--warn); font-size: 12px; margin-bottom: 2px; }
 .reply-ok { color: var(--ok, #3fb950); }
-.reply-err { color: var(--danger, #f0883e); }
+.reply-err { color: var(--err); }
 .topic { font: 12px ui-monospace, monospace; word-break: break-all; }
 .pubkey { font: 11px ui-monospace, monospace; word-break: break-all; }
 .node-row .id { font: 11px ui-monospace, monospace; color: var(--muted); }

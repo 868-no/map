@@ -1,0 +1,385 @@
+//! Mesh health (D-095): known problems found in the window's rows by rules,
+//! and an airtime estimate of who keeps the channel busy.
+//!
+//! Every rule works only from what gateways reported, so it can miss
+//! things and its numbers are lower bounds; the wording says so where it
+//! matters. Thresholds are constants here so they are easy to find.
+
+use serde::Serialize;
+
+use crate::copies::by_packet;
+use crate::graph::RelayContext;
+use crate::row::{ty, Interner, Row};
+use crate::util::{map, node_id, set, FxMap, FxSet};
+use crate::views::Node;
+
+/// Traceroute requests per hour from one node that count as flooding the
+/// mesh (warning), and as a problem. Each request is flooded and answered.
+pub const TRACEROUTE_WARN_PER_H: f64 = 4.0;
+pub const TRACEROUTE_PROBLEM_PER_H: f64 = 10.0;
+/// Fewest requests before the traceroute rule applies (short windows).
+pub const TRACEROUTE_MIN: usize = 10;
+/// Packets with a known hop count before the hop-limit rule applies, how
+/// many hops more than its packets needed (95th percentile) count as too
+/// many, and the lowest hop limit it applies to. Gateways are only part of
+/// the mesh, so a limit a little above what they needed is fine.
+pub const HOP_MIN_PACKETS: usize = 20;
+pub const HOP_SPARE: i16 = 3;
+pub const HOP_FLAG_FROM: i16 = 6;
+/// Channel utilisation (%) a node reports: firmware stops its own optional
+/// broadcasts above 25 % and goes quiet above 40 %.
+pub const CH_UTIL_WARN: f64 = 25.0;
+pub const CH_UTIL_PROBLEM: f64 = 40.0;
+/// Transmit airtime (%) a node reports: EU 868 MHz allows 10 % per hour.
+pub const AIR_UTIL_WARN: f64 = 10.0;
+/// Own packets before "only its own gateway hears it" applies.
+pub const ISOLATED_MIN_PACKETS: usize = 10;
+/// Broadcast rates per hour above firmware defaults that count as chatty.
+pub const POSITION_PER_H: f64 = 4.0;
+pub const NODEINFO_PER_H: f64 = 1.0;
+pub const TELEMETRY_PER_H: f64 = 4.0;
+/// Battery (%) that counts as low (101 is external power).
+pub const BATTERY_LOW: f64 = 15.0;
+/// Share of the window's estimated airtime one node's packets may cause
+/// before it is flagged.
+pub const AIRTIME_WARN_SHARE: f64 = 0.10;
+/// Distinct nodes refusing its remote-admin requests before it is noted.
+pub const ADMIN_REFUSALS_MIN: usize = 2;
+
+#[derive(Serialize, Debug, Clone, PartialEq)]
+pub struct Issue {
+    pub node: String,
+    pub kind: &'static str,
+    /// problem, warning or notice.
+    pub severity: &'static str,
+    pub summary: String,
+    pub detail: String,
+}
+
+/// One node's share of the window's estimated airtime.
+#[derive(Serialize, Debug, Clone, PartialEq)]
+pub struct NodeAirtime {
+    pub node: String,
+    /// Its packets, including every rebroadcast of them seen (the airtime it causes).
+    pub caused: f64,
+    /// What it transmitted itself: its own packets and others' it relayed.
+    pub transmitted: f64,
+    pub packets: usize,
+    /// Transmissions of its packets seen: its own plus relays'.
+    pub transmissions: usize,
+    /// Its caused airtime by packet type, as shares of `caused`, largest first.
+    pub by_type: Vec<(String, f64)>,
+}
+
+#[derive(Serialize, Debug, Default)]
+pub struct Airtime {
+    pub packets: usize,
+    pub transmissions: usize,
+    /// Share of the window's estimated airtime by packet type, largest first.
+    pub by_type: Vec<(String, f64)>,
+    /// Every node that caused or transmitted any, by caused share.
+    pub nodes: Vec<NodeAirtime>,
+}
+
+#[derive(Serialize, Debug, Default)]
+pub struct Health {
+    pub issues: Vec<Issue>,
+    pub airtime: Airtime,
+}
+
+fn rank(severity: &str) -> u8 {
+    match severity {
+        "problem" => 0,
+        "warning" => 1,
+        _ => 2,
+    }
+}
+
+fn pct(x: f64) -> String {
+    if x >= 0.1 { format!("{:.0} %", x * 100.0) } else { format!("{:.1} %", x * 100.0) }
+}
+
+/// On-air size estimate of one packet: the 16-byte radio header, its
+/// payload, the Data wrapper when we saw it decoded, and a 64-byte XEdDSA
+/// signature plus its tag when it carried one.
+fn wire_bytes(r: &Row, i: &Interner) -> f64 {
+    let decoded = r.crypto != 0 && matches!(i.s(r.crypto), "ctr_unauthenticated" | "ccm_authenticated" | "plaintext_uplink" | "unencrypted_channel");
+    let signed = matches!(i.s(r.sig), "verified" | "unverifiable");
+    16.0 + r.bytes.max(0) as f64 + if decoded { 4.0 } else { 0.0 } + if signed { 66.0 } else { 0.0 }
+}
+
+/// Relative airtime of one transmission: LoRa spends a fixed preamble and
+/// header time on every packet, worth about 20 bytes at the presets used
+/// here, plus time proportional to its size. Only shares are reported, so
+/// the unit cancels out.
+fn cost(r: &Row, i: &Interner) -> f64 {
+    20.0 + wire_bytes(r, i)
+}
+
+/// Estimated airtime: every packet costs one transmission by its originator
+/// plus one per distinct relay seen (resolved last hops, traceroute routes).
+/// A lower bound: relays no gateway heard are missed.
+pub fn airtime(rows: &[&Row], ctx: &RelayContext, i: &Interner) -> Airtime {
+    struct Pkt<'a> {
+        row: &'a Row,
+        relays: FxSet<u32>,
+    }
+    let mut pkts: FxMap<u64, Pkt> = map();
+    for group in by_packet(rows, ctx) {
+        let row = group[0].row;
+        let p = pkts.entry(row.lp).or_insert_with(|| Pkt { row, relays: set() });
+        for h in &group {
+            if let Some(s) = h.sender.filter(|&s| s != row.src) {
+                p.relays.insert(s);
+            }
+            if let Some(t) = h.row.traceroute().filter(|t| t.valid) {
+                let hops = if t.is_reply { &t.route_back } else { &t.route };
+                p.relays.extend(hops.iter().filter(|x| !x.unknown && x.id != row.src && Some(x.id) != h.row.gw).map(|x| x.id));
+            }
+        }
+    }
+    // Packets only its own gateway uplinked were still sent over the air.
+    for &r in rows {
+        if r.gw == Some(r.src) && r.ty != ty::MAPREPORT {
+            pkts.entry(r.lp).or_insert_with(|| Pkt { row: r, relays: set() });
+        }
+    }
+    let mut total = 0.0;
+    let mut tx_total = 0;
+    let mut types: FxMap<u32, f64> = map();
+    #[derive(Default)]
+    struct Acc {
+        caused: f64,
+        transmitted: f64,
+        packets: usize,
+        transmissions: usize,
+        types: FxMap<u32, f64>,
+    }
+    let mut acc: FxMap<u32, Acc> = map();
+    for p in pkts.values() {
+        let c = cost(p.row, i);
+        let n = 1 + p.relays.len();
+        let all = c * n as f64;
+        total += all;
+        tx_total += n;
+        *types.entry(p.row.ty).or_default() += all;
+        let a = acc.entry(p.row.src).or_default();
+        a.caused += all;
+        a.transmitted += c;
+        a.packets += 1;
+        a.transmissions += n;
+        *a.types.entry(p.row.ty).or_default() += all;
+        for &relay in &p.relays {
+            acc.entry(relay).or_default().transmitted += c;
+        }
+    }
+    if total == 0.0 {
+        return Airtime::default();
+    }
+    let shares = |m: FxMap<u32, f64>, of: f64| -> Vec<(String, f64)> {
+        let mut v: Vec<(String, f64)> = m.into_iter().map(|(t, x)| (i.s(t).to_string(), x / of)).collect();
+        v.sort_by(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(&b.0)));
+        v
+    };
+    let mut nodes: Vec<NodeAirtime> = acc
+        .into_iter()
+        .map(|(n, a)| NodeAirtime { node: node_id(n), caused: a.caused / total, transmitted: a.transmitted / total, packets: a.packets, transmissions: a.transmissions, by_type: if a.caused > 0.0 { shares(a.types, a.caused) } else { vec![] } })
+        .collect();
+    nodes.sort_by(|a, b| b.caused.total_cmp(&a.caused).then(b.transmitted.total_cmp(&a.transmitted)).then(a.node.cmp(&b.node)));
+    Airtime { packets: pkts.len(), transmissions: tx_total, by_type: shares(types, total), nodes }
+}
+
+/// The window's known issues and airtime. `hours`: the window's length;
+/// rates use the span its rows cover when that is shorter.
+pub fn health(rows: &[&Row], nodes: &[Node], ctx: &RelayContext, i: &Interner, hours: f64) -> Health {
+    // Rates over the span the data covers, which can be shorter than the
+    // window (the service started later, or was down).
+    let (lo, hi) = rows.iter().fold((i64::MAX, i64::MIN), |(lo, hi), r| (lo.min(r.t), hi.max(r.t)));
+    let span = if hi > lo { (hi - lo) as f64 / 3_600_000.0 } else { 0.0 };
+    let hours = hours.min(span).max(1.0);
+    let mut out: Vec<Issue> = Vec::new();
+    let mut add = |n: u32, kind: &'static str, severity: &'static str, summary: String, detail: String| out.push(Issue { node: node_id(n), kind, severity, summary, detail });
+
+    // Own packets, first copy each, and per-node counts by type.
+    let mut own: FxMap<u32, FxMap<u64, &Row>> = map();
+    for &r in rows {
+        own.entry(r.src).or_default().entry(r.lp).and_modify(|c| if r.t < c.t { *c = r }).or_insert(r);
+    }
+    let count = |n: u32, t: u32, keep: &dyn Fn(&Row) -> bool| own.get(&n).map_or(0, |m| m.values().filter(|r| r.ty == t && keep(r)).count());
+
+    // Traceroute flooding.
+    let traceroutes: FxMap<u32, usize> = own.keys().map(|&n| (n, count(n, ty::TRACEROUTE, &|r| r.traceroute().is_some_and(|t| !t.is_reply)))).filter(|&(_, c)| c > 0).collect();
+    let mut rates: Vec<f64> = traceroutes.values().map(|&c| c as f64 / hours).collect();
+    rates.sort_by(f64::total_cmp);
+    let median = rates.get(rates.len() / 2).copied().unwrap_or(0.0);
+    for (&n, &c) in &traceroutes {
+        let rate = c as f64 / hours;
+        if c >= TRACEROUTE_MIN && rate >= TRACEROUTE_WARN_PER_H {
+            let sev = if rate >= TRACEROUTE_PROBLEM_PER_H { "problem" } else { "warning" };
+            add(n, "traceroute_flood", sev, format!("Sends {rate:.1} traceroutes per hour"), format!("{c} traceroute requests in the window; the median among nodes sending any is {median:.1} per hour. Every request floods the mesh and is answered, so frequent automated traceroutes cost everyone airtime."));
+        }
+    }
+
+    // Hop limit higher than its packets needed.
+    let mut fewest: FxMap<u64, i16> = map();
+    for &r in rows {
+        if r.gw.is_some_and(|g| g != r.src) && r.rr != ty::VIA_MQTT && r.rr != ty::NON_RF {
+            if let Some(h) = r.hops().filter(|&h| h >= 0) {
+                let e = fewest.entry(r.lp).or_insert(h);
+                *e = (*e).min(h);
+            }
+        }
+    }
+    for (&n, pk) in &own {
+        let mut starts: FxMap<i16, usize> = map();
+        let mut needed: Vec<i16> = Vec::new();
+        for r in pk.values() {
+            if let Some(hs) = r.hs {
+                *starts.entry(hs).or_default() += 1;
+            }
+            if let Some(&f) = fewest.get(&r.lp) {
+                needed.push(f);
+            }
+        }
+        let Some((&hs, _)) = starts.iter().max_by_key(|&(h, c)| (*c, *h)) else { continue };
+        if needed.len() < HOP_MIN_PACKETS || hs < HOP_FLAG_FROM {
+            continue;
+        }
+        needed.sort();
+        let p95 = needed[(needed.len() * 95).div_ceil(100).saturating_sub(1)];
+        if hs - p95 >= HOP_SPARE {
+            let suggest = (p95 + 1).max(3);
+            add(n, "hop_limit", "notice", format!("Hop limit {hs}, but its packets needed at most {p95}"), format!("Gateways heard 95 % of its {} packets within {p95} hops, yet it sends with a hop limit of {hs}: every spare hop is another round of rebroadcasts. A limit around {suggest} would likely reach the same gateways (nodes beyond them are not seen here; the reach simulator under Details shows what each limit reaches).", needed.len()));
+        }
+    }
+
+    // Wrong preset: the mesh's preset from its channel names; nodes heard only on another.
+    let mut by_preset: FxMap<&'static str, usize> = map();
+    for &r in rows {
+        if let Some(p) = (r.channel != 0).then(|| crate::radio::preset_of(i.s(r.channel))).flatten() {
+            *by_preset.entry(p).or_default() += 1;
+        }
+    }
+    let mesh = by_preset.iter().max_by_key(|&(p, c)| (*c, *p)).map(|(&p, _)| p);
+    if let Some(mesh) = mesh {
+        for (&n, pk) in &own {
+            let presets: FxSet<&'static str> = pk.values().filter(|r| r.channel != 0).filter_map(|r| crate::radio::preset_of(i.s(r.channel))).collect();
+            let reported = pk.values().filter_map(|r| r.map_report()).find(|m| m.default_channel).map(|m| i.s(m.preset).to_string());
+            let odd = if !presets.is_empty() && !presets.contains(mesh) && pk.len() >= 3 {
+                presets.iter().next().map(|p| p.to_string())
+            } else {
+                reported.filter(|p| p != mesh)
+            };
+            if let Some(p) = odd {
+                add(n, "preset", "warning", format!("Uses {} while the mesh uses {}", label(&p), label(mesh)), format!("Its packets or its own map report show the {} preset, but most of the mesh is heard on {}. Nodes on different presets cannot hear each other, so it is cut off from most of the mesh.", label(&p), label(mesh)));
+            }
+        }
+    }
+
+    // Heard only by its own gateway.
+    let mut heard_by: FxMap<u32, FxSet<u32>> = map();
+    for &r in rows {
+        if let Some(g) = r.gw.filter(|&g| g != r.src) {
+            heard_by.entry(r.src).or_default().insert(g);
+        }
+    }
+    for (&n, pk) in &own {
+        let packets = pk.values().filter(|r| r.ty != ty::MAPREPORT).count();
+        if packets >= ISOLATED_MIN_PACKETS && heard_by.get(&n).is_none_or(|s| s.is_empty()) && pk.values().any(|r| r.gw == Some(n)) {
+            add(n, "isolated", "notice", "No other gateway reports it".into(), format!("None of its {packets} packets were uplinked by another gateway. It may simply have no other gateway in range (nodes that are not gateways can still hear it), or a poor antenna or location, or different radio settings than its neighbours."));
+        }
+    }
+
+    // Admin requests refused.
+    let refused = ["ADMIN_PUBLIC_KEY_UNAUTHORIZED", "NOT_AUTHORIZED"].iter().filter_map(|s| i.get(s)).collect::<FxSet<u32>>();
+    let mut refusals: FxMap<u32, FxSet<u32>> = map();
+    for &r in rows {
+        if let (Some(rt), Some(d)) = (r.routing(), r.dst) {
+            if refused.contains(&rt.error) {
+                refusals.entry(d).or_default().insert(r.src);
+            }
+        }
+    }
+    for (n, by) in refusals {
+        if by.len() >= ADMIN_REFUSALS_MIN {
+            add(n, "admin_refused", "notice", format!("Remote-admin requests refused by {} nodes", by.len()), format!("{} nodes answered its admin messages with \"not authorised\": it is sending remote-administration requests to nodes that have not authorised its key. Often an app's device-info request or a survey script; it costs airtime and never succeeds.", by.len()));
+        }
+    }
+
+    // Unencrypted uplinks.
+    if let Some(plain) = i.get("plaintext_uplink") {
+        let mut gws: FxMap<u32, usize> = map();
+        for &r in rows {
+            if r.crypto == plain {
+                if let Some(g) = r.gw {
+                    *gws.entry(g).or_default() += 1;
+                }
+            }
+        }
+        for (g, c) in gws {
+            add(g, "plaintext_uplink", "notice", "Uplinks to MQTT unencrypted".into(), format!("{c} of its uplinks arrived decrypted (MQTT encryption off): anyone subscribed to the broker reads its channels' traffic in the clear, including channels whose key is not public."));
+        }
+    }
+
+    // Per-node facts from the snapshot.
+    let mut shorts: FxMap<&str, Vec<u32>> = map();
+    for x in nodes {
+        let n = x.num;
+        if let Some(id) = x.identity.as_ref().filter(|id| !id.short_name.is_empty()) {
+            shorts.entry(id.short_name.as_str()).or_default().push(n);
+        }
+        if let Some(d) = &x.mqtt_downlink {
+            add(n, "downlink", "warning", "Probably downlinks from MQTT".into(), format!("{} of {} traceroutes reached it at exactly 0 dB, the reading of a packet taken from the broker. A downlinking node rebroadcasts far-away packets locally, which draws links that do not exist and wastes airtime.", d.zero_snr, d.traceroutes));
+        }
+        if let Some(p) = &x.stale_position {
+            add(n, "stale_position", "notice", "Position report is stale".into(), format!("Its last position report is from {}, more than a day before the newest data. {}", p.observed_at, if x.estimate.is_some() { "It is estimated instead." } else { "It is left off the map." }));
+        }
+        if let Some(t) = &x.telemetry {
+            if let Some(c) = t.ch_util.filter(|&c| c >= CH_UTIL_WARN) {
+                let sev = if c >= CH_UTIL_PROBLEM { "problem" } else { "warning" };
+                add(n, "channel_busy", sev, format!("Channel {c:.0} % busy"), format!("It reports {c:.1} % channel utilisation (the mesh median is usually a few per cent). Above 25 % firmware drops optional broadcasts, above 40 % nodes go quiet: something near it is flooding the channel."));
+            }
+            if let Some(a) = t.air_util.filter(|&a| a >= AIR_UTIL_WARN) {
+                add(n, "airtime_limit", "warning", format!("Transmits {a:.0} % of the time"), format!("It reports {a:.1} % transmit airtime; EU 868 MHz allows 10 % per hour, after which it must stay silent."));
+            }
+            if let Some(b) = t.battery.filter(|&b| b <= BATTERY_LOW) {
+                add(n, "battery_low", "notice", format!("Battery {b:.0} %"), "Its last device telemetry reports a low battery.".into());
+            }
+        }
+        let moving = x.moved_at.is_some();
+        let rate = |t: u32| count(n, t, &|_| true) as f64 / hours;
+        let device = i.get("device");
+        let tel = count(n, ty::TELEMETRY, &|r| r.telemetry().is_some_and(|t| Some(t.kind) == device)) as f64 / hours;
+        for (kind, r, limit, what, default) in [
+            ("chatty_position", if moving { 0.0 } else { rate(ty::POSITION) }, POSITION_PER_H, "positions", "the firmware default is one every 15 minutes at most, less when it is not moving"),
+            ("chatty_nodeinfo", rate(ty::NODEINFO), NODEINFO_PER_H, "NodeInfo announcements", "the default is one every 3 hours"),
+            ("chatty_telemetry", tel, TELEMETRY_PER_H, "device telemetry reports", "the default is one every 30 minutes"),
+        ] {
+            if r > limit {
+                add(n, kind, "notice", format!("Sends {r:.1} {what} per hour"), format!("More often than needed ({default}); each one is flooded through the mesh."));
+            }
+        }
+    }
+    for (s, ns) in shorts.into_iter().filter(|(_, v)| v.len() > 1) {
+        for &n in &ns {
+            let others: Vec<String> = ns.iter().filter(|&&o| o != n).map(|&o| node_id(o)).collect();
+            add(n, "duplicate_name", "notice", format!("Short name \"{s}\" is not unique"), format!("Also used by {}: easy to confuse on the map and in apps.", others.join(", ")));
+        }
+    }
+
+    // Airtime.
+    let air = airtime(rows, ctx, i);
+    for a in air.nodes.iter().filter(|a| a.caused >= AIRTIME_WARN_SHARE) {
+        let top: Vec<String> = a.by_type.iter().take(2).map(|(t, s)| format!("{t} {}", pct(*s))).collect();
+        let n = u32::from_str_radix(&a.node[1..], 16).unwrap_or(0);
+        add(n, "airtime", "warning", format!("Causes {} of the airtime", pct(a.caused)), format!("Its {} packets and their {} transmissions seen make up about {} of the window's estimated airtime ({}).", a.packets, a.transmissions, pct(a.caused), top.join(", ")));
+    }
+
+    out.sort_by(|a, b| rank(a.severity).cmp(&rank(b.severity)).then(a.kind.cmp(b.kind)).then(a.node.cmp(&b.node)));
+    Health { issues: out, airtime: air }
+}
+
+/// NARROW_FAST -> Narrow Fast.
+fn label(p: &str) -> String {
+    p.split('_').map(|w| w[..1].to_uppercase() + &w[1..].to_lowercase()).collect::<Vec<_>>().join(" ")
+}

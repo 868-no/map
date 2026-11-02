@@ -2,7 +2,7 @@ import { keepPreviousData, useQuery, type Query } from '@tanstack/react-query'
 import { useMemo } from 'react'
 import { getJSON } from '../api/client'
 import type { Capabilities, Retention } from '../api/types'
-import type { NodeView, PacketLog, PacketRoute, ReachView, SnapshotView, TrafficView, ViewMeta } from '../derive/views'
+import type { HealthView, NodeView, PacketLog, PacketRoute, ReachView, SnapshotView, TrafficView, ViewMeta } from '../derive/views'
 import { apiParams, useStore } from './store'
 import { create } from 'zustand'
 import { deriveView, onDerivedChange } from '../derive/client'
@@ -96,5 +96,7 @@ export const usePacketLog = (id: string | null) => useWindowQuery<PacketLog>('pa
 /** One packet's routing graph (D-037). */
 export const usePacketRoute = (lp: string | null) => useWindowQuery<PacketRoute>('route', lp ?? undefined, !!lp)
 export const useNodeDetail = (id: string | null) => useWindowQuery<NodeView>('node', id ?? undefined, !!id)
+/** Known issues and airtime for the window (D-095). */
+export const useHealth = () => useWindowQuery<HealthView>('health')
 /** How far the node's packets reach at each hop limit (D-069). */
 export const useReach = (id: string | null, internet: boolean) => useWindowQuery<ReachView>('reach', id ? id + (internet ? '|internet' : '') : undefined, !!id)

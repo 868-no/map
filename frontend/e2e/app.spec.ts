@@ -516,3 +516,15 @@ test('a node link opens that node, and Share link copies a permanent one', async
   await page.getByRole('button', { name: 'Close details' }).click()
   await expect(page).not.toHaveURL(/node=/)
 })
+
+test('the Health panel lists known issues and airtime, and Details shows a node\'s own', async ({ page }) => {
+  await ready(page)
+  await page.getByRole('button', { name: 'Health' }).click()
+  const panel = page.locator('.health-panel')
+  await expect(panel).toContainText('Airtime (estimated)', { timeout: 30_000 })
+  await expect(panel).toContainText(/No known issues|problem|warning|notice/)
+  // Picking a node in the airtime list opens its details, with its health and airtime.
+  await panel.locator('.shares').nth(1).locator('button').first().click()
+  await expect(page.locator('.node-panel h3', { hasText: 'Health' })).toBeVisible()
+  await expect(page.locator('.node-panel')).toContainText('Airtime (est.)')
+})

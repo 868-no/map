@@ -137,6 +137,31 @@ export interface ZeroCost {
   likely: boolean // enough consistent evidence to call the link 0-cost
 }
 
+/** A known problem found by the engine's health rules (D-095). */
+export interface Issue {
+  node: string
+  kind: string
+  severity: 'problem' | 'warning' | 'notice'
+  summary: string
+  detail: string
+}
+
+/** One node's share of the window's estimated airtime (D-095). */
+export interface NodeAirtime {
+  node: string
+  caused: number // its packets, including the rebroadcasts of them seen
+  transmitted: number // what it transmitted: its own packets and others' it relayed
+  packets: number
+  transmissions: number
+  by_type: [string, number][] // shares of caused, largest first
+}
+
+export interface HealthView {
+  meta: ViewMeta
+  issues: Issue[]
+  airtime: { packets: number; transmissions: number; by_type: [string, number][]; nodes: NodeAirtime[] }
+}
+
 /** How far a node's packets reach at each hop limit (D-069). */
 export interface ReachView {
   meta: ViewMeta

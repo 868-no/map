@@ -111,6 +111,7 @@ fn engine_matches_its_recorded_views() {
         "nodes": per(&mut e, "node", &mut expected["nodes"].as_object().unwrap().keys().map(String::as_str)),
         "packetlogs": per(&mut e, "packetlog", &mut LOG_NODES.iter().copied()),
         "routes": per(&mut e, "route", &mut ROUTES.iter().copied()),
+        "health": view(&mut e, "health", json!({}), ""),
     });
     let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/mesh-12h/engine.json");
     if std::env::var_os("UPDATE_GOLDEN").is_some_and(|v| !v.is_empty()) {
@@ -118,7 +119,7 @@ fn engine_matches_its_recorded_views() {
         return;
     }
     let want: Value = serde_json::from_str(&std::fs::read_to_string(path).expect("engine.json (UPDATE_GOLDEN=1 records it)")).unwrap();
-    for k in ["snapshot", "traffic", "snapshot_position_nodeinfo"] {
+    for k in ["snapshot", "traffic", "snapshot_position_nodeinfo", "health"] {
         assert_eq!(norm(&got[k], false), norm(&want[k], false), "{k}");
     }
     for k in ["nodes", "packetlogs", "routes"] {

@@ -3,7 +3,7 @@
 // panel's button again, its close button or Escape closes it.
 import type { ReactNode } from 'react'
 
-export type PanelId = 'nodes' | 'details' | 'period' | 'filters' | 'layers' | 'legend' | 'settings'
+export type PanelId = 'nodes' | 'details' | 'health' | 'period' | 'filters' | 'layers' | 'legend' | 'settings'
 
 const ICON_PROPS = { viewBox: '0 0 20 20', width: 20, height: 20, 'aria-hidden': true, fill: 'none', stroke: 'currentColor', strokeWidth: 1.6, strokeLinecap: 'round', strokeLinejoin: 'round' } as const
 
@@ -13,6 +13,9 @@ const ICONS: Record<PanelId, ReactNode> = {
   ),
   details: (
     <svg {...ICON_PROPS}><circle cx="10" cy="10" r="7.2" /><path d="M10 9v5" /><circle cx="10" cy="6.4" r="0.6" fill="currentColor" /></svg>
+  ),
+  health: (
+    <svg {...ICON_PROPS}><path d="M2.5 10.5h3.2l1.8-4 3 8 2-5.5 1.3 1.5h3.7" /></svg>
   ),
   period: (
     <svg {...ICON_PROPS}><circle cx="10" cy="10" r="7.2" /><path d="M10 5.8V10l2.8 1.8" /></svg>
@@ -32,6 +35,7 @@ const ICONS: Record<PanelId, ReactNode> = {
 export const PANELS: { id: PanelId; label: string; hint: string }[] = [
   { id: 'nodes', label: 'Nodes', hint: 'Find a node by name or ID' },
   { id: 'details', label: 'Details', hint: 'The selected node or link (closing it clears the selection)' },
+  { id: 'health', label: 'Health', hint: 'Known problems in the mesh, and who uses the airtime' },
   { id: 'period', label: 'Period', hint: 'The time window: its length, start and end' },
   { id: 'filters', label: 'Filters', hint: 'Which observations and links count' },
   { id: 'layers', label: 'Layers', hint: 'What the map shows' },
@@ -46,7 +50,7 @@ export function Rail({ open, onToggle, badges }: { open: PanelId | null; onToggl
     const n = badges[p.id] ?? 0
     return (
       <button key={p.id} className="rail-btn" aria-pressed={open === p.id} aria-controls="dock" aria-label={p.label}
-        title={`${p.hint}${n ? ` (${n} active)` : ''}`} onClick={() => onToggle(p.id)}>
+        title={`${p.hint}${n ? ` (${n} ${p.id === 'health' ? 'problems and warnings' : 'active'})` : ''}`} onClick={() => onToggle(p.id)}>
         {ICONS[p.id]}
         <span className="rail-label">{p.label}</span>
         {n > 0 && <span className="rail-badge" aria-hidden>{n}</span>}

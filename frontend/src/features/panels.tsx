@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ApiError, getJSON } from '../api/client'
+import { NodeAirtimeRow, NodeHealth } from './health'
 import type { NodeKey } from '../api/types'
 import type { Answer, Edge, Hearing, MeshNode, Radio, Reply, SnapshotView } from '../derive/views'
 import { useNodeDetail, usePacketLog, usePacketRoute, useReach } from '../state/data'
@@ -198,6 +199,7 @@ export function NodePanel({ id, snapshot }: { id: string; snapshot: SnapshotView
       {d.mqtt_opt_out && (
         <p className="opt-out-note">This node did not allow MQTT uplink, but some of its packets reached us through another gateway. Its name and NodeInfo are not stored.</p>
       )}
+      <NodeHealth id={d.id} />
       <dl>
         <dt>Short name</dt><dd>{d.identity?.short_name || NR}</dd>
         <dt>Hardware</dt><dd>{d.identity?.hw_model || NR}</dd>
@@ -293,6 +295,7 @@ export function NodePanel({ id, snapshot }: { id: string; snapshot: SnapshotView
           {(d.own_uplinks ?? 0) > 0 && <span title="Its own packets it uplinked itself as a gateway, its map reports among them: not radio receptions"> · {d.own_uplinks} uplinked itself</span>}
           {d.is_gateway && <span title="Other nodes' packets it uplinked as a gateway"> · uplinked {d.gateway_receptions - (d.own_uplinks ?? 0)} of others'</span>}
         </dd>
+        <NodeAirtimeRow id={d.id} />
         {d.delivery && (
           <>
             <dt title="Routing packets: the ACKs and errors nodes send back for packets that asked for confirmation, or that could not be delivered or processed">Delivery reports</dt>

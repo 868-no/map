@@ -370,6 +370,22 @@ A segment is **solid** when both nodes are known to be adjacent and **dashed** w
 - **Traffic buckets:** distinct packets and gateway receptions per bucket, the bucket chosen from a fixed ladder (1 min, 5 min, 15 min, 1 h, 6 h) to stay within 600 buckets. Several gateways hearing one packet never inflate packet counts.
 - **Header counters:** nodes heard, only named, positioned (reported in the window), estimated, links (node pairs, as drawn, whatever the link filters show), distinct packets and receptions; each has a tooltip saying what it counts (D-087).
 
+### 6.17 Mesh health and airtime
+
+Rules over the window's rows and snapshot flag known problems per node (`health` view, `engine/src/health.rs`, D-095). Each issue has a severity (problem, warning, notice), a one-line summary and an explanation. Rates use the span the rows cover when shorter than the window. Thresholds are constants in that file:
+
+- **Traceroute flooding:** ≥ 4 requests/h and ≥ 10 in the window (warning), ≥ 10/h (problem).
+- **Large airtime share:** its packets with their rebroadcasts cause ≥ 10 % of the estimated airtime (warning).
+- **Busy channel:** reported channel utilisation ≥ 25 % (warning), ≥ 40 % (problem); transmit airtime ≥ 10 %, the EU hourly duty cycle (warning).
+- **MQTT downlink:** a probable downlinker (§6.5) (warning).
+- **Different preset than the mesh:** the mesh's preset is the one most rows' default channel names imply; a node heard only on another preset's channel, or confirming another in its map report (warning).
+- **Hop limit higher than needed:** a hop limit of 6 or 7 at least 3 above the hops within which gateways heard 95 % of its packets (≥ 20 packets). Gateways are only part of the mesh, so this is a notice with a suggested limit.
+- **Notices:** no other gateway reports it (≥ 10 packets, only its own uplinks); remote-admin requests refused by ≥ 2 nodes; uplinks arriving unencrypted; positions > 4/h (not when moving), NodeInfo > 1/h or device telemetry > 4/h; a stale position (§6.10); battery ≤ 15 %; a short name shared with another node.
+
+**Airtime** is estimated per packet as one transmission by its sender plus one per distinct relay seen (resolved last hops, traceroute routes), each costing its estimated on-air size (16-byte header, payload, Data wrapper when decoded, 66 bytes when signed) plus about 20 bytes' worth of preamble. Only shares are reported: of the window's total by packet type, and per node the share its packets cause and the share it transmitted itself (its own packets and relays). Relays no gateway heard are missed, so it is a lower bound and a guide to proportions.
+
+The **Health panel** lists every issue grouped by kind, most severe first, with node links and the explanation on hover, then airtime by packet type and the ten nodes causing the most. **Details** shows the node's issues under its name and its airtime as a row.
+
 ## 7 Map and user interface
 
 ### 7.1 Layout
@@ -377,7 +393,7 @@ A segment is **solid** when both nodes are known to be adjacent and **dashed** w
 UI chrome floats over the map, which runs edge to edge and never resizes (checked in e2e) (D-029).
 
 - **Header island** (top left): the wordmark, the live indicator (LIVE, LIVE (paused) or HISTORICAL with the window's length, and an updating spinner) on one line, the counters below; on phones the counters are hidden. It is a rounded card with the islands' border, blur and shadow. Its height is published as `--head-h`; MapLibre's zoom buttons, the fit control and banners sit below it, stacked above its shadow, and camera framing keeps content clear of it. Until the first snapshot arrives each counter shows a faint placeholder bar about as wide as a typical value (tabular figures), so the card keeps its size (D-082). Clicking the live indicator opens the Period panel; "Return to live" sits beside it while a fixed window is shown (D-067).
-- **Tool rail** (right edge): Nodes, Details, Period, Filters, Layers, Legend, Settings. Icons carry short labels, which narrow screens drop (kept as accessible names and tooltips). The Filters button shows how many filters differ from the defaults (D-066, D-067).
+- **Tool rail** (right edge): Nodes, Details, Health, Period, Filters, Layers, Legend, Settings. Icons carry short labels, which narrow screens drop (kept as accessible names and tooltips). The Filters button shows how many filters differ from the defaults (D-066, D-067); the Health button, how many problems and warnings the window has (D-095).
 - **Panel:** one at a time, docked beside the rail; its header names and closes it. Pressing the open panel's button again or Escape (unless typing) closes it. It is as tall as its content up to the bottom margin, scrolling inside past that; on phones the rail starts below the header and the panel opens beside it, from the same top and across the rest of the width, over the map controls (D-066, D-071).
 - **Islands:** the rail and panel are translucent, blurred rounded cards inset 10 px from the map's edges (8 px on phones) (D-071). Two elevation tokens are the only drop shadows, `--elev-island` and `--elev-float` (banners, tooltips, map controls); labels on the map stay flat (D-081).
 - **Map controls:** zoom, "Fit to data" (an icon button in the zoom group), scale bar, a coordinate readout on hover and the credits. The coordinates and credits stay in the bottom-right corner whatever opens; a panel may partly cover them (D-082). Banners and camera framing keep clear of the open panel, telling the side panel from the phone panel by width; on phones, framing places content below the panel when at least 160 px of map remain, and banners lie beneath an open panel (D-071).

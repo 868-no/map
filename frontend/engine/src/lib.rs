@@ -6,6 +6,7 @@
 pub mod channels;
 pub mod copies;
 pub mod geo;
+pub mod health;
 pub mod movement;
 pub mod graph;
 pub mod packets;
@@ -197,7 +198,7 @@ impl Engine {
         self.store.export(lo as i64, hi as i64, &self.i)
     }
 
-    /// A view as JSON: kind is snapshot, traffic, node, packetlog, route or reach;
+    /// A view as JSON: kind is snapshot, traffic, node, packetlog, route, reach or health;
     /// arg is the node id (node, packetlog) or packet key (route). "null"
     /// means the node is neither observed nor referenced in the window.
     pub fn view(&mut self, kind: &str, start: f64, end: f64, filters: &str, arg: &str) -> Result<String, JsError> {
@@ -240,6 +241,12 @@ impl Engine {
                 let silent: util::FxSet<u32> = b.roles.iter().filter(|(_, r)| views::is_silent_role(r)).map(|(&n, _)| n).collect();
                 let own: Vec<&row::Row> = self.rows().into_iter().filter(|r| r.src == num).collect();
                 Ok(json(&reach::reach(num, &b.snapshot.edges, &silent, internet, &own)))
+            }
+            "health" => {
+                self.build(start, end, filters)?;
+                let b = &self.built.as_ref().unwrap().1;
+                let hours = (end - start) as f64 / 3_600_000.0;
+                Ok(json(&health::health(&self.rows(), &b.snapshot.nodes, &b.ctx, &self.i, hours)))
             }
             _ => Err(err(format!("unknown view {kind}"))),
         }
