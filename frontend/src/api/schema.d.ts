@@ -377,7 +377,22 @@ export interface components {
             battery?: number;
             /** Format: double */
             ch_util?: number;
+            /**
+             * Format: double
+             * @description Relative humidity, %
+             */
+            humidity?: number;
             kind: string;
+            /**
+             * Format: double
+             * @description Barometric pressure, hPa
+             */
+            pressure?: number;
+            /**
+             * Format: double
+             * @description Temperature, °C
+             */
+            temp?: number;
             /** Format: int32 */
             uptime?: number;
             /** Format: double */

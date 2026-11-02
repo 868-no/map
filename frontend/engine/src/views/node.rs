@@ -187,6 +187,11 @@ pub fn is_device_telemetry(r: &Row) -> bool {
     r.ty == ty::TELEMETRY && r.telemetry().is_some_and(|t| t.kind == ty::DEVICE)
 }
 
+/// Environment telemetry with at least one reading (D-099).
+pub fn is_environment(r: &Row) -> bool {
+    r.ty == ty::TELEMETRY && r.telemetry().is_some_and(|t| t.kind != ty::DEVICE && (t.temp.is_some() || t.humidity.is_some() || t.pressure.is_some()))
+}
+
 pub(super) fn identity_of(r: &Row, i: &Interner) -> Identity {
     let s = |x: Option<u32>| x.map_or(String::new(), |x| i.s(x).to_string());
     let n = r.nodeinfo();

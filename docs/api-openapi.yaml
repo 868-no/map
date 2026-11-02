@@ -550,8 +550,20 @@ components:
         ch_util:
           format: double
           type: number
+        humidity:
+          description: Relative humidity, %
+          format: double
+          type: number
         kind:
           type: string
+        pressure:
+          description: Barometric pressure, hPa
+          format: double
+          type: number
+        temp:
+          description: Temperature, °C
+          format: double
+          type: number
         uptime:
           format: int32
           minimum: 0

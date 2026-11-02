@@ -40,6 +40,14 @@ pub const NODEINFO_PER_H: f64 = 1.0;
 pub const TELEMETRY_PER_H: f64 = 4.0;
 /// Battery (%) that counts as low (101 is external power).
 pub const BATTERY_LOW: f64 = 15.0;
+/// Battery trend (D-099): a least-squares slope over its reports, at least
+/// this many over at least a day; falling this fast (% per day) is flagged,
+/// as a warning when it is at most BATTERY_WARN_AT or empty within a week.
+pub const BATTERY_TREND_MIN_REPORTS: usize = 8;
+pub const BATTERY_FALL_PER_DAY: f64 = 5.0;
+pub const BATTERY_WARN_AT: f64 = 50.0;
+/// Restarts (uptime going backwards between reports) before it is a warning.
+pub const RESTARTS_WARN: usize = 3;
 /// Share of the window's estimated airtime one node's packets may cause
 /// before it is flagged.
 pub const AIRTIME_WARN_SHARE: f64 = 0.10;
@@ -360,6 +368,42 @@ pub fn health(rows: &[&Row], nodes: &[Node], ctx: &RelayContext, i: &Interner, h
             }
         }
     }
+    // Battery trend and restarts, from its device telemetry (D-099).
+    let device = i.get("device");
+    for (&n, pk) in &own {
+        let mut tel: Vec<(i64, &crate::row::Telemetry)> = pk.values().filter_map(|r| r.telemetry().filter(|t| Some(t.kind) == device).map(|t| (r.t, t))).collect();
+        tel.sort_by_key(|x| x.0);
+        let batt: Vec<(f64, f64)> = tel.iter().filter_map(|(t, x)| x.battery.filter(|&b| b <= 100.0).map(|b| (*t as f64 / 86_400_000.0, b))).collect();
+        if batt.len() >= BATTERY_TREND_MIN_REPORTS && batt[batt.len() - 1].0 - batt[0].0 >= 1.0 {
+            let k = batt.len() as f64;
+            let (mx, my) = (batt.iter().map(|p| p.0).sum::<f64>() / k, batt.iter().map(|p| p.1).sum::<f64>() / k);
+            let var: f64 = batt.iter().map(|p| (p.0 - mx).powi(2)).sum();
+            let slope = if var > 0.0 { batt.iter().map(|p| (p.0 - mx) * (p.1 - my)).sum::<f64>() / var } else { 0.0 };
+            let now = batt[batt.len() - 1].1;
+            if slope <= -BATTERY_FALL_PER_DAY {
+                let days = now / -slope;
+                let sev = if now <= BATTERY_WARN_AT || days <= 7.0 { "warning" } else { "notice" };
+                add(n, "battery_falling", sev, format!("Battery falling about {:.0} % a day", -slope), format!("Its battery went from about {:.0} % to {now:.0} % over {:.1} days ({} reports): at this rate it is empty in about {:.0} days. A solar node that does not recover overnight, or a failing battery.", batt[0].1, batt[batt.len() - 1].0 - batt[0].0, batt.len(), days.max(0.0)));
+            }
+        }
+        let mut restarts: Vec<i64> = Vec::new();
+        let mut prev: Option<(i64, u32)> = None;
+        for (t, x) in &tel {
+            let Some(u) = x.uptime else { continue };
+            if let Some((pt, pu)) = prev {
+                // Uptime went backwards, beyond what the time between reports explains.
+                if u < pu && u as i64 * 1000 < t - pt {
+                    restarts.push(t - u as i64 * 1000);
+                }
+            }
+            prev = Some((*t, u));
+        }
+        if let Some(&last) = restarts.last() {
+            let sev = if restarts.len() >= RESTARTS_WARN { "warning" } else { "notice" };
+            let times = if restarts.len() == 1 { "once".to_string() } else { format!("{} times", restarts.len()) };
+            add(n, "restarted", sev, format!("Restarted {times}"), format!("Its uptime went back to zero {times} in the window, last around {}. Repeated restarts point at power trouble (a weak battery or supply) or a crashing firmware.", crate::util::iso(last)));
+        }
+    }
     for (s, ns) in shorts.into_iter().filter(|(_, v)| v.len() > 1) {
         for &n in &ns {
             let others: Vec<String> = ns.iter().filter(|&&o| o != n).map(|&o| node_id(o)).collect();
@@ -382,4 +426,51 @@ pub fn health(rows: &[&Row], nodes: &[Node], ctx: &RelayContext, i: &Interner, h
 /// NARROW_FAST -> Narrow Fast.
 fn label(p: &str) -> String {
     p.split('_').map(|w| w[..1].to_uppercase() + &w[1..].to_lowercase()).collect::<Vec<_>>().join(" ")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::row::JRow;
+
+    const H: i64 = 3_600_000;
+
+    fn telemetry(i: &mut Interner, k: i64, battery: f64, uptime: u32) -> Row {
+        let text = format!(
+            r#"{{"i":{k},"t":{},"b":"x","g":7,"s":5,"y":"telemetry","l":"{k:016x}","o":"{k:016x}","sg":"unsigned","te":{{"kind":"device","battery":{battery},"uptime":{uptime}}}}}"#,
+            k * 3 * H
+        );
+        serde_json::from_str::<JRow>(&text).unwrap().into_row(i)
+    }
+
+    fn issues(rows: &[Row], i: &Interner) -> Vec<Issue> {
+        let refs: Vec<&Row> = rows.iter().collect();
+        health(&refs, &[], &RelayContext::default(), i, 48.0).issues
+    }
+
+    #[test]
+    fn a_battery_falling_fast_is_flagged_and_a_steady_one_is_not() {
+        let mut i = Interner::default();
+        // 12 reports over 33 h, 80 % down to 36 %: 32 % a day.
+        let falling: Vec<Row> = (0..12).map(|k| telemetry(&mut i, k, 80.0 - 4.0 * k as f64, 1000 + k as u32 * 10_800)).collect();
+        let got = issues(&falling, &i);
+        let b = got.iter().find(|x| x.kind == "battery_falling").expect("flagged");
+        assert_eq!(b.severity, "warning");
+        // Swinging around a level, as a solar node does, is not.
+        let steady: Vec<Row> = (0..12).map(|k| telemetry(&mut i, k, if k % 2 == 0 { 90.0 } else { 70.0 }, 1000 + k as u32 * 10_800)).collect();
+        assert!(issues(&steady, &i).iter().all(|x| x.kind != "battery_falling"));
+    }
+
+    #[test]
+    fn uptime_going_back_counts_as_a_restart() {
+        let mut i = Interner::default();
+        // Uptime grows with each report, resets after report 5, grows again.
+        let rows: Vec<Row> = (0..10).map(|k| telemetry(&mut i, k, 100.0, if k < 6 { 50_000 + k as u32 * 10_800 } else { 600 + (k as u32 - 6) * 10_800 })).collect();
+        let got = issues(&rows, &i);
+        let r = got.iter().find(|x| x.kind == "restarted").expect("restart seen");
+        assert_eq!((r.severity, r.summary.as_str()), ("notice", "Restarted once"));
+        // A node reporting uptime 0 every time has not restarted.
+        let zero: Vec<Row> = (0..10).map(|k| telemetry(&mut i, k, 100.0, 0)).collect();
+        assert!(issues(&zero, &i).iter().all(|x| x.kind != "restarted"));
+    }
 }

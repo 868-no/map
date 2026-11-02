@@ -90,6 +90,9 @@ pub struct Telemetry {
     pub ch_util: Option<f64>,
     pub air_util: Option<f64>,
     pub uptime: Option<u32>,
+    pub temp: Option<f64>,
+    pub humidity: Option<f64>,
+    pub pressure: Option<f64>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -261,6 +264,12 @@ struct JTe<'a> {
     air_util: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     uptime: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    temp: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    humidity: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pressure: Option<f64>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -427,7 +436,7 @@ impl JRow<'_> {
                 untrusted: n.identity_untrusted,
             }))
         } else if let Some(t) = self.te {
-            Some(Detail::Telemetry(Telemetry { kind: i.id(&t.kind), battery: t.battery, voltage: t.voltage, ch_util: t.ch_util, air_util: t.air_util, uptime: t.uptime }))
+            Some(Detail::Telemetry(Telemetry { kind: i.id(&t.kind), battery: t.battery, voltage: t.voltage, ch_util: t.ch_util, air_util: t.air_util, uptime: t.uptime, temp: t.temp, humidity: t.humidity, pressure: t.pressure }))
         } else if let Some(v) = self.iv {
             Some(Detail::Invalid(i.id(&v)))
         } else if let Some(r) = self.rt {
@@ -503,7 +512,7 @@ pub fn to_json<'a>(r: &Row, i: &'a Interner) -> JRow<'a> {
         Some(Detail::NodeInfo(n)) => {
             j.ni = Some(JNi { long_name: s(n.long_name), short_name: s(n.short_name), hw_model: s(n.hw_model), role: s(n.role), has_public_key: n.has_public_key, identity_untrusted: n.untrusted })
         }
-        Some(Detail::Telemetry(t)) => j.te = Some(JTe { kind: s(t.kind), battery: t.battery, voltage: t.voltage, ch_util: t.ch_util, air_util: t.air_util, uptime: t.uptime }),
+        Some(Detail::Telemetry(t)) => j.te = Some(JTe { kind: s(t.kind), battery: t.battery, voltage: t.voltage, ch_util: t.ch_util, air_util: t.air_util, uptime: t.uptime, temp: t.temp, humidity: t.humidity, pressure: t.pressure }),
         Some(Detail::Invalid(v)) => j.iv = Some(s(*v)),
         Some(Detail::Routing(r)) => j.rt = Some(JRt { kind: s(r.kind), error: opt(r.error), request_id: (r.request != 0).then_some(r.request) }),
         Some(Detail::Neighbors(n)) => j.nb = Some(JNbs { neighbors: Some(n.iter().map(|&(id, snr)| JNb { id, snr }).collect()) }),

@@ -4012,6 +4012,13 @@
         "node": "!04069f20",
         "severity": "notice",
         "summary": "Uplinks to MQTT unencrypted"
+      },
+      {
+        "detail": "Its uptime went back to zero once in the window, last around 2026-10-31T14:59:00.195Z. Repeated restarts point at power trouble (a weak battery or supply) or a crashing firmware.",
+        "kind": "restarted",
+        "node": "!a9339946",
+        "severity": "notice",
+        "summary": "Restarted once"
       }
     ]
   },

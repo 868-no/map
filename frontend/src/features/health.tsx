@@ -30,6 +30,8 @@ const KIND: Record<string, string> = {
   chatty_telemetry: 'Frequent telemetry',
   stale_position: 'Stale position',
   battery_low: 'Low battery',
+  battery_falling: 'Battery falling',
+  restarted: 'Restarts',
   duplicate_name: 'Duplicate short name',
 }
 

@@ -34,6 +34,18 @@ pub struct TelemetrySample {
     pub air_util: Option<f64>,
 }
 
+/// One environment report (D-099).
+#[derive(Serialize)]
+pub struct EnvironmentSample {
+    pub at: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub temp: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub humidity: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pressure: Option<f64>,
+}
+
 #[derive(Serialize)]
 pub struct Hearing {
     pub node: String,
@@ -66,6 +78,9 @@ pub struct NodeDetail {
     pub node: Node,
     pub positions: Vec<PositionSample>,
     pub telemetry_series: Vec<TelemetrySample>,
+    /// Environment reports in time order, one per packet (D-099).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub environment_series: Vec<EnvironmentSample>,
     pub heard_by: Vec<Hearing>,
     pub heard: Vec<Hearing>,
     pub recent_packets: Vec<PacketSummary>,
@@ -143,7 +158,7 @@ pub fn build_node_detail(rows: &[&Row], num: u32, i: &Interner) -> Option<NodeDe
     radio.channels = crate::channels::channel_use(num, rows, i);
     radio.preset = crate::channels::preset_guess(num, rows, i);
     radio.uplink_topics = crate::radio::uplink_topics(&uplinked, i);
-    let mut d = NodeDetail { node: n, positions: vec![], telemetry_series: vec![], heard_by: vec![], heard: vec![], recent_packets: vec![], truncated: false, radio, delivery: crate::packets::delivery(rows, num, i) };
+    let mut d = NodeDetail { node: n, positions: vec![], telemetry_series: vec![], environment_series: vec![], heard_by: vec![], heard: vec![], recent_packets: vec![], truncated: false, radio, delivery: crate::packets::delivery(rows, num, i) };
     if first == i64::MAX {
         let Some(&t) = referenced(rows).get(&num) else { return None };
         d.node.status = "referenced";
@@ -184,6 +199,13 @@ pub fn build_node_detail(rows: &[&Row], num: u32, i: &Interner) -> Option<NodeDe
         .map(|r| {
             let t = r.telemetry().unwrap();
             TelemetrySample { at: iso(r.t), battery: t.battery, voltage: t.voltage, ch_util: t.ch_util, air_util: t.air_util }
+        })
+        .collect();
+    d.environment_series = per_packet(&super::is_environment, &mut truncated)
+        .into_iter()
+        .map(|r| {
+            let t = r.telemetry().unwrap();
+            EnvironmentSample { at: iso(r.t), temp: t.temp, humidity: t.humidity, pressure: t.pressure }
         })
         .collect();
     d.truncated = truncated;

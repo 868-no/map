@@ -176,6 +176,18 @@ export function NodePanel({ id, snapshot }: { id: string; snapshot: SnapshotView
   const d = data
   const est = snapNode?.estimate
   const pos = d.position // a stale one is never shown as its position (D-094)
+  const env = d.environment_series ?? []
+  // Latest reading of each quantity: one report may carry only some of them.
+  const envLast = {
+    at: env.at(-1)?.at ?? '',
+    temp: env.findLast((e) => e.temp != null)?.temp,
+    humidity: env.findLast((e) => e.humidity != null)?.humidity,
+    pressure: env.findLast((e) => e.pressure != null)?.pressure,
+  }
+  const envRange = (k: 'temp') => {
+    const v = env.map((e) => e[k]).filter((x): x is number => x != null)
+    return v.length > 1 ? `${Math.min(...v).toFixed(1)} to ${Math.max(...v).toFixed(1)} °C` : ''
+  }
   const radio = radioSummary(d.radio, (n) => names.get(n) ?? n)
   return (
     <div className="panel node-panel">
@@ -298,11 +310,28 @@ export function NodePanel({ id, snapshot }: { id: string; snapshot: SnapshotView
                 </>
               ) : NR}
             </dd>
+            {env.length > 0 && (
+              <>
+                <dt title="Sensor readings it reports (environment telemetry). Enclosures in the sun, or the board's own heat, can push temperatures up.">Environment</dt>
+                <dd>
+                  {[
+                    envLast.temp != null && `${envLast.temp.toFixed(1)} °C`,
+                    envLast.humidity != null && `${Math.round(envLast.humidity)} % humidity`,
+                    envLast.pressure != null && `${Math.round(envLast.pressure)} hPa`,
+                  ].filter(Boolean).join(' · ')}
+                  {env.length > 1 && envRange('temp') && <><br /><small className="muted">temperature {envRange('temp')} in the window</small></>}
+                  {' '}<small>· {formatLocal(envLast.at)}</small>
+                </dd>
+              </>
+            )}
           </dl>
-          {(d.telemetry_series ?? []).length > 1 && (
+          {((d.telemetry_series ?? []).length > 1 || env.length > 1) && (
             <div className="charts">
               <Sparkline label="Battery % (external power left out)" points={(d.telemetry_series ?? []).map((s) => [Date.parse(s.at), s.battery !== undefined && s.battery !== null && s.battery <= 100 ? s.battery : null])} />
               <Sparkline label="Channel utilisation %" points={(d.telemetry_series ?? []).map((s) => [Date.parse(s.at), s.ch_util ?? null])} />
+              <Sparkline label="Temperature °C" points={env.map((s) => [Date.parse(s.at), s.temp ?? null])} />
+              <Sparkline label="Humidity %" points={env.map((s) => [Date.parse(s.at), s.humidity ?? null])} />
+              <Sparkline label="Pressure hPa" points={env.map((s) => [Date.parse(s.at), s.pressure ?? null])} />
             </div>
           )}
         </>

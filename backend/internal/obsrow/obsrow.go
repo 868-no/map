@@ -103,6 +103,10 @@ type ObsTelemetry struct {
 	ChUtil  *float64 `json:"ch_util,omitempty"`
 	AirUtil *float64 `json:"air_util,omitempty"`
 	Uptime  *uint32  `json:"uptime,omitempty"`
+	// Environment telemetry (D-099).
+	Temp     *float64 `json:"temp,omitempty" doc:"Temperature, °C"`
+	Humidity *float64 `json:"humidity,omitempty" doc:"Relative humidity, %"`
+	Pressure *float64 `json:"pressure,omitempty" doc:"Barometric pressure, hPa"`
 }
 
 type ObsNeighbor struct {
@@ -159,8 +163,9 @@ type storedMeta struct {
 // New builds them differently. It is part of the generation
 // /observations reports, so browsers holding rows in the old format start
 // over, and stored encodings of an older version are rebuilt (D-046)
-// (2: tp, mr; 3: map report identity and has_default_channel; 4: rt; 5: iv).
-const Version = 5
+// (2: tp, mr; 3: map report identity and has_default_channel; 4: rt; 5: iv;
+// 6: environment telemetry).
+const Version = 6
 
 // Fields are the packet_log columns an ObsRow carries.
 type Fields struct {
@@ -207,7 +212,11 @@ func New(f Fields, meta []byte) ObsRow {
 	case "telemetry":
 		if t := m.Telemetry; t != nil {
 			r.Telemetry = t
-			if t.Kind != "device" {
+			switch t.Kind {
+			case "device":
+			case "environment":
+				r.Telemetry = &ObsTelemetry{Kind: t.Kind, Temp: t.Temp, Humidity: t.Humidity, Pressure: t.Pressure}
+			default:
 				r.Telemetry = &ObsTelemetry{Kind: t.Kind}
 			}
 		}
