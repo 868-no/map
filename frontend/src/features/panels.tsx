@@ -257,11 +257,9 @@ export function NodePanel({ id, snapshot }: { id: string; snapshot: SnapshotView
           return (
             <li key={g.peer + (g.mqtt ? 'm' : '')}>
               <button onClick={() => select({ kind: 'edge', src: id, dst: g.peer, mqtt: g.mqtt })}>
-                <span className="link-peer">{name}</span>
-                <span className="link-dirs">
-                  {dir(g.out, '→', g.mqtt ? `${name} took ${self}'s packets from MQTT` : `${name} heard ${self}`)}
-                  {dir(g.in, '←', g.mqtt ? `${self} took ${name}'s packets from MQTT` : `${self} heard ${name}`)}
-                </span>
+                <span className="link-peer" title={name}>{name}</span>
+                {dir(g.out, '→', g.mqtt ? `${name} took ${self}'s packets from MQTT` : `${name} heard ${self}`)}
+                {dir(g.in, '←', g.mqtt ? `${self} took ${name}'s packets from MQTT` : `${self} heard ${name}`)}
               </button>
             </li>
           )
