@@ -19,7 +19,9 @@ import (
 // broker provenance, and loses its stored client encoding so the backfill
 // rebuilds it. A row the current decoder would reject is left as it is,
 // only marked as checked: nothing stored is ever dropped. Identities are
-// never promoted from old rows. Returns how many rows changed.
+// never promoted from old rows. Rows another worker holds (the encoding
+// backfill locks batches too) are waited for, not skipped: a skipped row would
+// keep its old decoding until the next start. Returns how many rows changed.
 func Redecode(ctx context.Context, pool *pgxpool.Pool, o ingest.Options, log *slog.Logger) (int, error) {
 	const batch = 500
 	below := int64(1) << 62
@@ -54,7 +56,7 @@ func redecodeBatch(ctx context.Context, pool *pgxpool.Pool, o ingest.Options, be
 	defer tx.Rollback(context.WithoutCancel(ctx)) //nolint:errcheck
 	rows, err := tx.Query(ctx, `SELECT id, observed_at, broker_id, mqtt_topic, envelope_bytes, decoded_metadata->'also_via'
 		FROM packet_log WHERE id < $1 AND decode_version < $2
-		ORDER BY id DESC LIMIT $3 FOR UPDATE SKIP LOCKED`, below, ingest.DecodeVersion, limit)
+		ORDER BY id DESC LIMIT $3 FOR UPDATE`, below, ingest.DecodeVersion, limit)
 	if err != nil {
 		return 0, 0, err
 	}
