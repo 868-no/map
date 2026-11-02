@@ -386,7 +386,7 @@ export default function MapView({ caps, snapshot, onPositions }: Props) {
     fittedOnLoad.current = true
     const s = startView.current
     const unmoved = !!s && Math.abs(map.getZoom() - s.zoom) < 0.01 && map.getCenter().distanceTo(s.center) < 100
-    if (!selection && unmoved) fit(0)
+    if (!selection && unmoved) fit(1200) // a smooth zoom from Norway to the mesh
   }, [pos, selection, fit])
 
   return (

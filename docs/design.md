@@ -489,7 +489,7 @@ The default is the server's default rolling window (72 h) in live mode. Choosing
 
 ### 7.10 Start view and camera
 
-The map opens on mainland Norway's bounds (Lindesnes to Nordkapp, Utsira to Grense Jakobselv), padded clear of the header and tool rail, until the data arrives; then it fits the drawn markers once, as "Fit to data" does, unless the view was moved meanwhile. A permanent link to a node flies to that node instead. The box's centre lies over Sweden (Finnmark reaches 31°E), so the view keeps the zoom that fits the box but moves west towards 13.5°E as far as both ends of the country stay in view. The `DEFAULT_MAP_*` settings no longer set the start view. "Fit to data" fits the drawn markers again on demand (D-074). Fitting, flying to a node and framing a route keep content clear of the header and the open panel (D-082).
+The map opens on mainland Norway's bounds (Lindesnes to Nordkapp, Utsira to Grense Jakobselv), padded clear of the header and tool rail, until the data arrives; then it zooms smoothly (1.2 s) to fit the drawn markers once, as "Fit to data" does, unless the view was moved meanwhile. A permanent link to a node flies to that node instead. The box's centre lies over Sweden (Finnmark reaches 31°E), so the view keeps the zoom that fits the box but moves west towards 13.5°E as far as both ends of the country stay in view. The `DEFAULT_MAP_*` settings no longer set the start view. "Fit to data" fits the drawn markers again on demand (D-074). Fitting, flying to a node and framing a route keep content clear of the header and the open panel (D-082).
 
 ### 7.11 URL state and permanent links
 
