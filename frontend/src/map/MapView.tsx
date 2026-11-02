@@ -33,6 +33,27 @@ export function startLon(width: number, zoom: number): number {
   const hi = west + (width / 2 - p.left) * degPerPx // further east and the west coast does
   return lo > hi ? (west + east) / 2 : Math.min(Math.max(NORWAY_FOCUS_LON, lo), hi)
 }
+// The map view (centre and zoom) is remembered per browser (D-111): a
+// convenience, so storage errors only mean starting afresh.
+const VIEW_KEY = 'meshmap.view'
+function savedView(): { center: [number, number]; zoom: number } | null {
+  try {
+    const v = JSON.parse(localStorage.getItem(VIEW_KEY) ?? 'null') as { lng?: number; lat?: number; zoom?: number } | null
+    if (!v || ![v.lng, v.lat, v.zoom].every((x) => typeof x === 'number' && Number.isFinite(x))) return null
+    return { center: [v.lng!, Math.max(-85, Math.min(85, v.lat!))], zoom: v.zoom! }
+  } catch {
+    return null
+  }
+}
+function saveView(map: maplibregl.Map) {
+  try {
+    const c = map.getCenter()
+    localStorage.setItem(VIEW_KEY, JSON.stringify({ lng: +c.lng.toFixed(5), lat: +c.lat.toFixed(5), zoom: +map.getZoom().toFixed(2) }))
+  } catch {
+    /* storage unavailable: the view is not remembered */
+  }
+}
+
 /** Room around the country; on the right, for the floating tool rail. */
 const startPadding = (width = window.innerWidth) => {
   const narrow = width <= 560
@@ -101,7 +122,12 @@ export default function MapView({ caps, snapshot, onPositions }: Props) {
         // zoom, but move the view west towards the country's mass as far as
         // the whole country stays in view (D-074).
         map.jumpTo({ center: [startLon(map.getContainer().clientWidth, map.getZoom()), map.getCenter().lat] })
-        startView.current = { center: map.getCenter(), zoom: map.getZoom() }
+        // The view this browser last left the map at, if any, wins (D-111):
+        // then there is no fit to the data on load.
+        const saved = savedView()
+        if (saved) map.jumpTo(saved)
+        else startView.current = { center: map.getCenter(), zoom: map.getZoom() }
+        map.on('moveend', () => saveView(map))
         map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-left')
         map.addControl(new maplibregl.ScaleControl({ unit: 'metric' }), 'bottom-left')
         map.on('mousemove', (e: maplibregl.MapMouseEvent) => {
@@ -378,7 +404,8 @@ export default function MapView({ caps, snapshot, onPositions }: Props) {
   // On page load, fit the map to the data once its markers are placed (D-074):
   // the Norway view only bridges the wait. A permanent link to a node flies
   // there instead, so it is left alone.
-  // Nor is a view someone already moved away from while the data loaded.
+  // Nor is a view someone already moved away from while the data loaded, or
+  // a view restored from the last visit (no start view then).
   const fittedOnLoad = useRef(false)
   useEffect(() => {
     const map = mapRef.current

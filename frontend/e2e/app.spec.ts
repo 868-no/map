@@ -664,3 +664,18 @@ test('a link shows its signal over the selected period, both directions', async 
   await expect(page.locator('.link-history .tchart').first()).toBeVisible({ timeout: 30_000 })
   await expect(page.locator('.link-history .tchart-legend').first()).toContainText('→')
 })
+
+test('the map view is remembered: a reload opens where it was left, without fitting the data', async ({ page }) => {
+  type M = { map: { jumpTo: (o: object) => void; getCenter: () => { lng: number; lat: number }; getZoom: () => number } }
+  await ready(page)
+  await page.waitForTimeout(1500) // let the fit on first load finish
+  await page.evaluate(() => (window as unknown as { __meshmap: M }).__meshmap.map.jumpTo({ center: [8.5, 61.5], zoom: 9.3 }))
+  await page.waitForTimeout(300)
+  await page.reload()
+  await page.waitForFunction(() => !!(window as unknown as { __meshmap?: unknown }).__meshmap)
+  await page.waitForTimeout(2500) // long enough for a fit, had there been one
+  const v = await page.evaluate(() => { const m = (window as unknown as { __meshmap: M }).__meshmap.map; const c = m.getCenter(); return { lng: c.lng, lat: c.lat, zoom: m.getZoom() } })
+  expect(v.zoom).toBeCloseTo(9.3, 1)
+  expect(v.lng).toBeCloseTo(8.5, 2)
+  expect(v.lat).toBeCloseTo(61.5, 2)
+})
