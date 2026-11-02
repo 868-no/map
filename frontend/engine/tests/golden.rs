@@ -30,7 +30,7 @@ fn norm(v: &Value, server: bool) -> Value {
                     // (count-aware confidence, traceroute and relay evidence counted once): engine.json covers them.
                     || k == "edges" || k == "estimate" || k == "estimate_note" || k == "last_referenced" || k == "own_uplinks"
                     // The server counted a packet under every status any copy had; one per packet now (D-087).
-                    || k == "signatures") {
+                    || k == "signatures" || k == "uptime") {
                     continue;
                 }
                 let mut x = norm(x, server);

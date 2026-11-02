@@ -6,7 +6,7 @@ import type { Answer, Edge, Hearing, MeshNode, Radio, Reply, SnapshotView } from
 import { useNodeDetail, usePacketLog, usePacketRoute, useReach } from '../state/data'
 import { nodeLink, useStore, type DetailTab } from '../state/store'
 import { formatLocal, formatLogTime, relativeAge } from '../lib/time'
-import { Sparkline } from '../components/Sparkline'
+import { TimeChart } from '../components/TimeChart'
 import { ageColor, lastHeardAge, precisionErrorM } from '../map/model'
 import { PALETTES } from '../map/palette'
 import { useTheme } from '../theme'
@@ -177,6 +177,10 @@ export function NodePanel({ id, snapshot }: { id: string; snapshot: SnapshotView
   const est = snapNode?.estimate
   const pos = d.position // a stale one is never shown as its position (D-094)
   const env = d.environment_series ?? []
+  const dev = d.telemetry_series ?? []
+  const telemetryCount = dev.length + env.length
+  const winStart = snapshot ? Date.parse(snapshot.meta.window.start) : Math.min(...[...dev, ...env].map((s) => Date.parse(s.at)))
+  const winEnd = now
   // Latest reading of each quantity: one report may carry only some of them.
   const envLast = {
     at: env.at(-1)?.at ?? '',
@@ -213,7 +217,7 @@ export function NodePanel({ id, snapshot }: { id: string; snapshot: SnapshotView
         <p className="opt-out-note">This node did not allow MQTT uplink, but some of its packets reached us through another gateway. Its name and NodeInfo are not stored.</p>
       )}
       <NodeHealth id={d.id} />
-      <DetailTabs counts={{ links: neighbours.length, packets: d.packets }} />
+      <DetailTabs counts={{ links: neighbours.length, telemetry: telemetryCount, packets: d.packets }} />
       {tab === 'overview' && (
         <>
           <dl>
@@ -299,20 +303,27 @@ export function NodePanel({ id, snapshot }: { id: string; snapshot: SnapshotView
               {(d.own_uplinks ?? 0) > 0 && <span title="Its own packets it uplinked itself as a gateway, its map reports among them: not radio receptions"> · {d.own_uplinks} uplinked itself</span>}
               {d.is_gateway && <span title="Other nodes' packets it uplinked as a gateway"> · uplinked {d.gateway_receptions - (d.own_uplinks ?? 0)} of others'</span>}
             </dd>
-            <dt>Telemetry</dt>
+          </dl>
+        </>
+      )}
+      {tab === 'telemetry' && (
+        <>
+          <dl>
+            <dt title="Its latest device telemetry report">Device (latest)</dt>
             <dd>
               {d.telemetry ? (
                 <>
                   battery {battery(d.telemetry.battery)} · {fmt(d.telemetry.voltage, 'V', 2)}
                   <br />
                   <span title="Share of airtime busy with any traffic it can hear">channel use {fmt(d.telemetry.ch_util, '%')}</span> ·{' '}
-                  <span title="Share of the last hour it spent transmitting itself">own airtime {fmt(d.telemetry.air_util, '%')}</span> · <small>{formatLocal(d.telemetry.observed_at)}</small>
+                  <span title="Share of the last hour it spent transmitting itself">own airtime {fmt(d.telemetry.air_util, '%')}</span>
+                  {d.telemetry.uptime != null && <> · <span title="Time since it last started">up {(d.telemetry.uptime / 86_400).toFixed(1)} days</span></>} · <small>{formatLocal(d.telemetry.observed_at)}</small>
                 </>
               ) : NR}
             </dd>
             {env.length > 0 && (
               <>
-                <dt title="Sensor readings it reports (environment telemetry). Enclosures in the sun, or the board's own heat, can push temperatures up.">Environment</dt>
+                <dt title="Sensor readings it reports (environment telemetry). Enclosures in the sun, or the board's own heat, can push temperatures up.">Environment (latest)</dt>
                 <dd>
                   {[
                     envLast.temp != null && `${envLast.temp.toFixed(1)} °C`,
@@ -325,15 +336,23 @@ export function NodePanel({ id, snapshot }: { id: string; snapshot: SnapshotView
               </>
             )}
           </dl>
-          {((d.telemetry_series ?? []).length > 1 || env.length > 1) && (
-            <div className="charts">
-              <Sparkline label="Battery % (external power left out)" points={(d.telemetry_series ?? []).map((s) => [Date.parse(s.at), s.battery !== undefined && s.battery !== null && s.battery <= 100 ? s.battery : null])} />
-              <Sparkline label="Channel utilisation %" points={(d.telemetry_series ?? []).map((s) => [Date.parse(s.at), s.ch_util ?? null])} />
-              <Sparkline label="Temperature °C" points={env.map((s) => [Date.parse(s.at), s.temp ?? null])} />
-              <Sparkline label="Humidity %" points={env.map((s) => [Date.parse(s.at), s.humidity ?? null])} />
-              <Sparkline label="Pressure hPa" points={env.map((s) => [Date.parse(s.at), s.pressure ?? null])} />
+          {telemetryCount === 0 ? (
+            <p className="muted">No telemetry from this node in the selected period.</p>
+          ) : (
+            <div className="tcharts">
+              <TimeChart label="Battery" unit="%" decimals={0} domain={[0, 100]} start={winStart} end={winEnd}
+                points={dev.map((s) => [Date.parse(s.at), s.battery != null && s.battery <= 100 ? s.battery : null])}
+                empty={dev.some((s) => s.battery != null && s.battery > 100) ? 'on external power' : undefined} />
+              <TimeChart label="Voltage" unit="V" decimals={2} start={winStart} end={winEnd} points={dev.map((s) => [Date.parse(s.at), s.voltage ?? null])} />
+              <TimeChart label="Channel utilisation" unit="%" start={winStart} end={winEnd} points={dev.map((s) => [Date.parse(s.at), s.ch_util ?? null])} />
+              <TimeChart label="Own airtime" unit="%" decimals={2} start={winStart} end={winEnd} points={dev.map((s) => [Date.parse(s.at), s.air_util ?? null])} />
+              <TimeChart label="Uptime" unit="days" decimals={1} start={winStart} end={winEnd} points={dev.map((s) => [Date.parse(s.at), s.uptime != null ? s.uptime / 86_400 : null])} />
+              <TimeChart label="Temperature" unit="°C" start={winStart} end={winEnd} points={env.map((s) => [Date.parse(s.at), s.temp ?? null])} />
+              <TimeChart label="Humidity" unit="%" decimals={0} domain={[0, 100]} start={winStart} end={winEnd} points={env.map((s) => [Date.parse(s.at), s.humidity ?? null])} />
+              <TimeChart label="Pressure" unit="hPa" decimals={0} start={winStart} end={winEnd} points={env.map((s) => [Date.parse(s.at), s.pressure ?? null])} />
             </div>
           )}
+          {d.truncated && <p className="muted small">Long series are thinned to their first 500 reports.</p>}
         </>
       )}
       {tab === 'links' && (
@@ -459,6 +478,7 @@ const TABS: { id: DetailTab; label: string; hint: string }[] = [
   { id: 'overview', label: 'Overview', hint: 'Identity, position, activity and telemetry' },
   { id: 'links', label: 'Links', hint: 'Radio links, gateways that heard it, reach and relaying' },
   { id: 'radio', label: 'Radio', hint: 'Region, preset, channels, MQTT topics and brokers' },
+  { id: 'telemetry', label: 'Telemetry', hint: 'Battery, power, channel use and sensor readings, charted over the selected period' },
   { id: 'packets', label: 'Packets', hint: 'Packet log, delivery reports, airtime and signatures' },
 ]
 

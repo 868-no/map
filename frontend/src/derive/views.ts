@@ -265,7 +265,7 @@ export interface PresetGuess {
 export interface NodeView extends MeshNode {
   meta: ViewMeta
   positions: { at: string; lat: number; lon: number; precision_bits: number; precision_known: boolean; signature: string }[]
-  telemetry_series: { at: string; battery?: number; voltage?: number; ch_util?: number; air_util?: number }[]
+  telemetry_series: { at: string; battery?: number; voltage?: number; ch_util?: number; air_util?: number; uptime?: number }[]
   environment_series?: { at: string; temp?: number; humidity?: number; pressure?: number }[] // environment reports, time order (D-099)
   heard_by: Hearing[]
   heard: Hearing[]

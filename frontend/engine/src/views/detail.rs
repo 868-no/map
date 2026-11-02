@@ -32,6 +32,8 @@ pub struct TelemetrySample {
     pub ch_util: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub air_util: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub uptime: Option<u32>,
 }
 
 /// One environment report (D-099).
@@ -198,7 +200,7 @@ pub fn build_node_detail(rows: &[&Row], num: u32, i: &Interner) -> Option<NodeDe
         .into_iter()
         .map(|r| {
             let t = r.telemetry().unwrap();
-            TelemetrySample { at: iso(r.t), battery: t.battery, voltage: t.voltage, ch_util: t.ch_util, air_util: t.air_util }
+            TelemetrySample { at: iso(r.t), battery: t.battery, voltage: t.voltage, ch_util: t.ch_util, air_util: t.air_util, uptime: t.uptime }
         })
         .collect();
     d.environment_series = per_packet(&super::is_environment, &mut truncated)

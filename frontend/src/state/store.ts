@@ -5,7 +5,7 @@ import type { ThemeChoice } from '../theme'
 export type Confidence = 'low' | 'medium' | 'high'
 
 /** Tabs of the node Details panel (D-098). */
-export type DetailTab = 'overview' | 'links' | 'radio' | 'packets'
+export type DetailTab = 'overview' | 'links' | 'radio' | 'telemetry' | 'packets'
 
 export interface Filters {
   channels: string[]

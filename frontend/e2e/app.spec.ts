@@ -571,10 +571,35 @@ test('node details are split into tabs, and the chosen tab is kept for the next 
   await expect(page.locator('.node-panel')).toContainText('LoRa preset')
   // Arrow keys move between tabs.
   await page.keyboard.press('ArrowRight')
+  await expect(tabs.getByRole('tab', { name: /^Telemetry/ })).toHaveAttribute('aria-selected', 'true')
+  await expect(page.locator('.node-panel')).toContainText(/Device \(latest\)|No telemetry/)
+  await page.keyboard.press('ArrowRight')
   await expect(tabs.getByRole('tab', { name: /^Packets/ })).toHaveAttribute('aria-selected', 'true')
   await expect(page.getByRole('heading', { name: /^Packet log/ })).toBeVisible()
   // Another node opens on the same tab.
   await showPanel(page, 'Nodes')
   await page.locator('.node-row').nth(1).click()
   await expect(page.getByRole('heading', { name: /^Packet log/ })).toBeVisible()
+})
+
+test('the Telemetry tab charts every metric over the whole selected period, with a hover readout', async ({ page }) => {
+  await ready(page)
+  await openPanel(page)
+  // A node that reports telemetry: the tab shows how many reports it has.
+  const tab = page.getByRole('tab', { name: /^Telemetry/ })
+  for (let i = 0; i < 20; i++) {
+    await showPanel(page, 'Nodes')
+    await page.locator('.node-row').nth(i).click()
+    await expect(tab).toBeVisible()
+    if (Number((await tab.locator('.tab-count').textContent()) ?? 0) > 1) break
+  }
+  await tab.click()
+  const chart = page.locator('.tchart').first()
+  await expect(chart).toBeVisible({ timeout: 30_000 })
+  await expect(chart.locator('.tchart-x span')).toHaveCount(3)
+  const plot = chart.locator('.tchart-plot')
+  const box = (await plot.boundingBox())!
+  await page.mouse.move(box.x + box.width * 0.9, box.y + box.height / 2)
+  await expect(chart.locator('.tchart-cursor')).toHaveCount(1)
+  await expect(chart.locator('.tchart-read small')).not.toHaveText('latest')
 })
