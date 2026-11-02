@@ -585,15 +585,15 @@ test('node details are split into tabs, and the chosen tab is kept for the next 
 test('the Telemetry tab charts every metric over the whole selected period, with a hover readout', async ({ page }) => {
   await ready(page)
   await openPanel(page)
-  // A node that reports telemetry: the tab shows how many reports it has.
+  // A node that reports telemetry.
   const tab = page.getByRole('tab', { name: /^Telemetry/ })
   for (let i = 0; i < 20; i++) {
     await showPanel(page, 'Nodes')
     await page.locator('.node-row').nth(i).click()
-    await expect(tab).toBeVisible()
-    if (Number((await tab.locator('.tab-count').textContent()) ?? 0) > 1) break
+    await tab.click()
+    await expect(page.locator('.node-panel')).toContainText(/Device \(latest\)|No telemetry/)
+    if (await page.locator('.tchart').count()) break
   }
-  await tab.click()
   const chart = page.locator('.tchart').first()
   await expect(chart).toBeVisible({ timeout: 30_000 })
   await expect(chart.locator('.tchart-x span')).toHaveCount(3)

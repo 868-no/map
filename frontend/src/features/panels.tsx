@@ -217,7 +217,7 @@ export function NodePanel({ id, snapshot }: { id: string; snapshot: SnapshotView
         <p className="opt-out-note">This node did not allow MQTT uplink, but some of its packets reached us through another gateway. Its name and NodeInfo are not stored.</p>
       )}
       <NodeHealth id={d.id} />
-      <DetailTabs counts={{ links: neighbours.length, telemetry: telemetryCount, packets: d.packets }} />
+      <DetailTabs counts={{ links: neighbours.length, packets: d.packets }} />
       {tab === 'overview' && (
         <>
           <dl>
