@@ -74,20 +74,34 @@ fn err_m(p: &crate::row::Position) -> f64 {
     if p.known { precision_error_m(p.bits, p.lat) } else { 0.0 }
 }
 
-/// Anchored nodes in `rows` (see `Anchor`).
-pub fn anchors(rows: &[&Row]) -> FxMap<u32, Anchor> {
+/// Each node's position reports (Position packets and map reports with a
+/// position) in time order: the input of `anchors_of` and `movements_of`,
+/// grouped once for both.
+pub fn positions_by_node<'a>(rows: &[&'a Row]) -> FxMap<u32, Vec<&'a Row>> {
     let mut by_node: FxMap<u32, Vec<&Row>> = map();
     for &r in rows {
         if (r.ty == ty::POSITION || r.ty == ty::MAPREPORT) && r.pos.is_some() {
             by_node.entry(r.src).or_default().push(r);
         }
     }
-    let mut out = map();
-    for (n, mut rs) in by_node {
+    for rs in by_node.values_mut() {
         rs.sort_by_key(|r| (r.t, r.id));
+    }
+    by_node
+}
+
+/// Anchored nodes in `rows` (see `Anchor`).
+pub fn anchors(rows: &[&Row]) -> FxMap<u32, Anchor> {
+    anchors_of(&positions_by_node(rows))
+}
+
+/// Anchored nodes among grouped position reports (`positions_by_node`).
+pub fn anchors_of(by_node: &FxMap<u32, Vec<&Row>>) -> FxMap<u32, Anchor> {
+    let mut out = map();
+    for (&n, all) in by_node {
         // One report per packet, however many gateways heard it.
         let mut seen = crate::util::set();
-        rs.retain(|r| seen.insert(r.lp));
+        let rs: Vec<&Row> = all.iter().copied().filter(|r| seen.insert(r.lp)).collect();
         if rs.len() < ANCHOR_MIN_REPORTS {
             continue;
         }
@@ -154,25 +168,25 @@ fn narrow(inliers: &[crate::row::Position], mode: &crate::row::Position) -> (f64
 /// (`anchors`: home now, with most reports there) are left out: their
 /// readings away from home are noise, not trips.
 pub fn movements_except(rows: &[&Row], anchored: &FxMap<u32, Anchor>) -> FxMap<u32, Movement> {
-    let mut out = movements(rows);
-    out.retain(|n, _| !anchored.contains_key(n));
-    out
+    movements_of(&positions_by_node(rows), anchored)
 }
 
 /// Nodes that moved within `rows`, with their tracks.
 pub fn movements(rows: &[&Row]) -> FxMap<u32, Movement> {
-    let mut by_node: FxMap<u32, Vec<&Row>> = map();
-    for &r in rows {
-        if (r.ty == ty::POSITION || r.ty == ty::MAPREPORT) && r.pos.is_some() {
-            by_node.entry(r.src).or_default().push(r);
-        }
-    }
+    movements_of(&positions_by_node(rows), &map())
+}
+
+/// Nodes that moved, from grouped position reports (`positions_by_node`),
+/// leaving out anchored nodes (their tracks are not computed at all).
+pub fn movements_of(by_node: &FxMap<u32, Vec<&Row>>, anchored: &FxMap<u32, Anchor>) -> FxMap<u32, Movement> {
     let mut out = map();
-    for (n, mut rs) in by_node {
-        rs.sort_by_key(|r| (r.t, r.id));
+    for (&n, rs) in by_node {
+        if anchored.contains_key(&n) {
+            continue;
+        }
         // One point per distinct place, in order (copies from several gateways collapse).
         let mut pts: Vec<&Row> = Vec::new();
-        for r in rs {
+        for &r in rs {
             let p = r.pos.unwrap();
             if pts.last().is_none_or(|l| {
                 let q = l.pos.unwrap();

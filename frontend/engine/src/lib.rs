@@ -4,6 +4,7 @@
 //! JavaScript objects.
 
 pub mod channels;
+pub mod copies;
 pub mod geo;
 pub mod movement;
 pub mod graph;

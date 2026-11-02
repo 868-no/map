@@ -49,10 +49,6 @@ export function isAmbiguousLocal(v: string, zone = localZone()): boolean {
   return [ms - 3600_000, ms + 3600_000].some((m) => DateTime.fromMillis(m, { zone }).toFormat("yyyy-LL-dd'T'HH:mm") === wall)
 }
 
-export function hoursBetween(a: string, b: string): number {
-  return (Date.parse(b) - Date.parse(a)) / 3600_000
-}
-
 export function relativeAge(iso: string | undefined | null, nowMs: number): string {
   if (!iso) return '—'
   const s = Math.max(0, Math.round((nowMs - Date.parse(iso)) / 1000))

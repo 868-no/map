@@ -171,7 +171,7 @@ describe('painting', () => {
     expect(painting(0)).toBe(false)
     frameArrived(5000)
     expect(painting(5500)).toBe(true)
-    expect(painting(7000)).toBe(false)
+    expect(painting(8000)).toBe(false)
   })
 })
 

@@ -175,6 +175,8 @@ The last-hop byte has only 256 values, so collisions are expected, but only node
 3. **Confirmed links:** if several remain, the single candidate with NeighborInfo, traceroute or direct-RF evidence to the gateway wins. Relay-hint evidence never counts, so inferences cannot reinforce themselves.
 4. Otherwise unresolved.
 
+(Implementation moved: since D-040 the rules live in the WebAssembly engine, `RelayContext::resolve` in `frontend/engine/src/graph.rs`, used by views, packet logs and ping attribution alike. The backend and `pings.ts` copies are gone.)
+
 Measured on 72 h of mqtt.868.no traffic:
 - Ambiguous relay bytes fell from 1,292 to 116, and resolved relay samples rose from 625 to 1,799.
 - Against traceroute ground truth (the route names the true last relay), 378 copies: before 87 correct, 0 wrong, 291 unresolved; after 355 correct, 0 wrong, 23 unresolved. Some confirmed links come from the same traceroutes, which favours step 3; step 2 is independent of them.
@@ -654,3 +656,13 @@ Operator requests the same day, alongside the review:
 - **Header counters keep their size while loading** (D-082).
 - **Basemap defaults:** major roads, minor roads and rail, and city and country names now start on; place names are split at city size into "City and country names" and "Local place names" (towns, villages, hamlets, suburbs, neighbourhoods, off by default). The basemap tiles carry no county names. The saved-settings key moved to v6 so the new defaults reach everyone (saved layer choices and theme start over once).
 - **Link tooltips** name nodes by short name, one line per direction (and the MQTT note on its own line).
+
+Second part of the review (performance and drift guards):
+- **Pings draw in a canvas of their own (operator decision):** the mesh overlay is interleaved with the basemap, so redrawing it for pings at 30 fps redrew every basemap layer too, for as long as any ping was on screen. Pings now live in a separate, non-interleaved deck.gl overlay above the map (and so above the basemap's labels); the basemap and the mesh layers redraw only when they change. The overlay's element is moved out of MapLibre's top-left control corner (which sits below the header) to cover the map exactly. The animation loop runs only while pings are alive and starts when one is added; idle, it probes for a frame about once a second, which is all "is the page painted" (pings are wanted only then) needs.
+- **Rebuild delay follows build time:** live rebuilds wait at least 20× (quiet) and 30× (ceiling) the last snapshot build, beside the window-length table, so rebuilds stay around 5% of the worker's time however large the window grows.
+- **Shared passes in the engine:** each packet's radio copies are grouped once per snapshot with the transmitter each copy was heard from (`copies.rs`), and serve both 0-cost detection and router reliability, which each grouped and resolved last-hop bytes on their own. Position reports are grouped by node once for both anchoring and movement, and anchored nodes' tracks are no longer computed and thrown away. The golden fixtures are unchanged.
+- **Name clustering only while names show:** from zoom 10 with node names on; otherwise it reran on every zoom change for nothing.
+- **Drift guards (operator decision: lightweight):** a type-checked test fits the engine's golden output to the hand-written view types in `derive/views.ts`, and CI regenerates `src/api/schema.d.ts` from `docs/api-openapi.yaml` and fails on a difference (the YAML itself is already checked against the backend).
+- **Housekeeping:** stale pointers fixed (`precisionErrorM` mirrors the engine, not the backend; live `passes()` mirrors the engine's `filter_fn`; D-024's resolver lives in the engine now); two unused exports removed.
+
+Left as they are: a full re-sort when an out-of-order live batch arrives is already a two-run merge; `/retention`'s per-poll min/max is index-served; incremental derivation and splitting `features/panels.tsx` are larger changes not worth it at today's scale.

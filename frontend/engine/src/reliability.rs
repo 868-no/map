@@ -16,8 +16,8 @@
 
 use serde::Serialize;
 
-use crate::graph::{Edge, RelayContext};
-use crate::row::{ty, Row};
+use crate::copies::Heard;
+use crate::graph::Edge;
 use crate::util::{map, set, FxMap, FxSet};
 
 /// Packets needed before a share is shown.
@@ -37,9 +37,10 @@ pub struct Relaying {
 }
 
 /// Routers (ROUTER, ROUTER_LATE) with their relaying, keyed by node.
-pub fn relaying(rows: &[&Row], edges: &[Edge], ctx: &RelayContext, roles: &FxMap<u32, String>) -> FxMap<u32, Relaying> {
+/// packets: every packet's radio copies (`copies::by_packet`); gateways:
+/// every node that uplinked anything in the window.
+pub fn relaying(packets: &[Vec<Heard>], gateways: &FxSet<u32>, edges: &[Edge], roles: &FxMap<u32, String>) -> FxMap<u32, Relaying> {
     let routers: FxSet<u32> = roles.iter().filter(|(_, r)| matches!(r.as_str(), "ROUTER" | "ROUTER_LATE")).map(|(&n, _)| n).collect();
-    let gateways: FxSet<u32> = rows.iter().filter_map(|r| r.gw).collect();
     // Who hears whom: (tx, rx).
     let mut witnesses: FxMap<u32, FxSet<u32>> = map(); // router -> gateways that hear it
     let mut strong: FxSet<(u32, u32)> = set(); // (tx, rx) high-confidence radio links
@@ -51,31 +52,21 @@ pub fn relaying(rows: &[&Row], edges: &[Edge], ctx: &RelayContext, roles: &FxMap
             strong.insert((e.src_num, e.dst_num));
         }
     }
-    let mut by_packet: FxMap<u64, Vec<&Row>> = map();
-    for &r in rows {
-        if r.ty == ty::MAPREPORT || r.rr == ty::VIA_MQTT || r.rr == ty::NON_RF || r.gw.is_none() {
-            continue;
-        }
-        by_packet.entry(r.lp).or_default().push(r);
-    }
     let mut acc: FxMap<u32, (usize, usize, usize)> = map(); // expected, seen, as gateway
-    for copies in by_packet.values() {
-        let origin = copies[0].src;
-        let to = copies[0].dst;
+    for copies in packets {
+        let origin = copies[0].row.src;
+        let to = copies[0].row.dst;
         // Hop limit each transmitter sent, and who uplinked it.
         let mut sent: FxMap<u32, i16> = map();
         let mut uplinked: FxMap<u32, i16> = map(); // gateway -> hop limit it received
         let mut traced: FxSet<u32> = set();
-        for r in copies {
+        for h in copies {
+            let r = h.row;
             let g = r.gw.unwrap();
             if let Some(hl) = r.hl {
                 uplinked.entry(g).or_insert(hl);
-                if g != origin {
-                    if r.dr || r.hs == r.hl {
-                        sent.entry(origin).or_insert(hl);
-                    } else if let Some(Ok(relay)) = r.relay.and_then(|b| ctx.resolve((b & 0xff) as u8, origin, g)) {
-                        sent.entry(relay).or_insert(hl);
-                    }
+                if let Some(sender) = h.sender {
+                    sent.entry(sender).or_insert(hl);
                 }
             }
             if let Some(t) = r.traceroute().filter(|t| t.valid) {

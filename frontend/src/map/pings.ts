@@ -60,8 +60,9 @@ export function pingWanted(observedMs: number, serverNowMs: number, hidden: bool
 
 // A window that is covered or minimised can stop getting animation frames
 // while document.hidden stays false (e.g. on Linux compositors). Pings are
-// only wanted while frames arrive, or they pile up unseen.
-const FRAME_GAP_MS = 1000
+// only wanted while frames arrive, or they pile up unseen. While no ping is
+// on the map the loop probes for a frame about once a second.
+const FRAME_GAP_MS = 2500
 let lastFrame = -Infinity
 
 /** The animation loop calls this on every frame it gets. */
@@ -112,6 +113,13 @@ function regrow(p: Ping, to: number, now: number) {
   p.settled = now + PING_GROW
 }
 
+const added = new Set<() => void>()
+/** Called whenever a ping is added (the animation loop starts on it). Returns an unsubscribe. */
+export function onPingAdded(fn: () => void): () => void {
+  added.add(fn)
+  return () => added.delete(fn)
+}
+
 export function addTransmission(t: Transmission, pos: Map<string, LngLat>, now = performance.now()): void {
   const center = pos.get(t.tx)
   if (!center) return
@@ -131,6 +139,7 @@ export function addTransmission(t: Transmission, pos: Map<string, LngLat>, now =
       }
     }
     pings.set(t.key, p)
+    added.forEach((fn) => fn())
   }
   const rp = t.rx ? pos.get(t.rx) : undefined
   if (!t.rx || !rp) return

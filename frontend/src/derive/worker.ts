@@ -132,7 +132,8 @@ let quantumMs = 10_000
 // Views wait for the operator's geolocation settings from the page.
 let initDone: () => void
 const inited = new Promise<void>((resolve) => (initDone = resolve))
-let startError: string | null = null // the engine could not start: every view fails with it
+let startError: string | null = null
+let lastBuildMs = 0 // the last snapshot build: live rebuilds wait in proportion (rebuildDelay) // the engine could not start: every view fails with it
 
 /**
  * A WebAssembly trap (a Rust panic aborts) leaves the engine unusable: every
@@ -194,8 +195,8 @@ function bounds(win: WindowReq, s: Synced, offline: boolean): { start: number; e
 let liveHours: number | null = null // of the window last requested
 const changed = debounce(
   () => self.postMessage({ type: 'changed' } satisfies Response),
-  () => rebuildDelay(liveHours).quietMs,
-  () => rebuildDelay(liveHours).maxMs,
+  () => rebuildDelay(liveHours, lastBuildMs).quietMs,
+  () => rebuildDelay(liveHours, lastBuildMs).maxMs,
 )
 
 /** Live rows from the stream: merged, plus ping attribution for those the page wants animated. */
@@ -255,7 +256,12 @@ async function view(req: ViewRequest): Promise<{ body: Uint8Array; meta: ViewMet
   const key = `${revision}|${start}|${end}|${fj}|${req.kind}|${req.node ?? ''}`
   let body: Uint8Array
   try {
-    body = remember(key, revision, () => engine.view_bytes(req.kind, start, end, fj, req.node ?? ''))
+    body = remember(key, revision, () => {
+      const t0 = performance.now()
+      const b = engine.view_bytes(req.kind, start, end, fj, req.node ?? '')
+      if (req.kind === 'snapshot') lastBuildMs = performance.now() - t0
+      return b
+    })
   } catch (e) {
     if (e instanceof WebAssembly.RuntimeError) throw e // a trap, not a bad request
     throw new ViewError('bad_request', e instanceof Error ? e.message : String(e))

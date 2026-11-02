@@ -28,9 +28,11 @@ export function debounce(fn: () => void, waitMs: Ms, maxWaitMs: Ms): () => void 
  * most (max), by the rolling window's length: a rebuild costs about the
  * window's row count while one new row changes a long window very little.
  * Up to 6 h: 2 s / 5 s; from 24 h: 10 s / 15 s; linear in between. Fixed
- * windows (null) use the short delays.
+ * windows (null) use the short delays. At least 20 and 30 times the last
+ * snapshot build (buildMs), so rebuilds never take more than about 5% of
+ * the worker's time however large the window grows.
  */
-export function rebuildDelay(liveHours: number | null): { quietMs: number; maxMs: number } {
+export function rebuildDelay(liveHours: number | null, buildMs = 0): { quietMs: number; maxMs: number } {
   const f = liveHours == null ? 0 : Math.min(Math.max((liveHours - 6) / 18, 0), 1)
-  return { quietMs: Math.round(2000 + f * 8000), maxMs: Math.round(5000 + f * 10_000) }
+  return { quietMs: Math.round(Math.max(2000 + f * 8000, 20 * buildMs)), maxMs: Math.round(Math.max(5000 + f * 10_000, 30 * buildMs)) }
 }

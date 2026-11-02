@@ -57,3 +57,11 @@ describe('rebuild delay by live window length', () => {
     expect(rebuildDelay(168)).toEqual({ quietMs: 10_000, maxMs: 15_000 })
   })
 })
+
+describe('rebuild delay scales with build time', () => {
+  it('waits at least 20× (quiet) and 30× (max) the last build', () => {
+    expect(rebuildDelay(1, 0)).toEqual({ quietMs: 2000, maxMs: 5000 })
+    expect(rebuildDelay(1, 500)).toEqual({ quietMs: 10_000, maxMs: 15_000 })
+    expect(rebuildDelay(72, 50)).toEqual({ quietMs: 10_000, maxMs: 15_000 }) // the table wins for fast builds
+  })
+})

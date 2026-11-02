@@ -8,7 +8,7 @@ import type { Edge, SnapshotView } from '../derive/views'
 import { useStore } from '../state/store'
 import { applyStylePaint, loadStyle, registerPMTiles } from './style'
 import { bridgeRoute, positionAt, filterEdges, linkGeometry, placeNodes, visibleLinks, type LinkGeom, type PlacedNode } from './model'
-import { frameArrived, pingCount } from './pings'
+import { frameArrived, onPingAdded, pingCount } from './pings'
 import { BASEMAP_GROUPS } from './layers'
 import { meshLayerBuilder, type ReachGeom, type RouteGeom } from './meshLayers'
 import { buildPingLayers } from './pingLayers'
@@ -53,6 +53,7 @@ export default function MapView({ caps, snapshot, onPositions }: Props) {
   const container = useRef<HTMLDivElement>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
   const overlayRef = useRef<MapboxOverlay | null>(null)
+  const pingOverlayRef = useRef<MapboxOverlay | null>(null)
   const meshLayers = useRef<Layer[] | null>(null) // read by the e2e hook
   const [ready, setReady] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -117,6 +118,16 @@ export default function MapView({ caps, snapshot, onPositions }: Props) {
         map.on('error', (e: maplibregl.ErrorEvent) => console.warn('map error', e.error?.message))
         const overlay = new MapboxOverlay({ interleaved: true, layers: [] })
         map.addControl(overlay as unknown as maplibregl.IControl)
+        // Pings animate in a canvas of their own above the map: redrawing it
+        // at 30 fps leaves the basemap and the mesh layers alone (D-083).
+        const pingOverlay = new MapboxOverlay({ interleaved: false, layers: [], getCursor: () => 'inherit' })
+        map.addControl(pingOverlay as unknown as maplibregl.IControl)
+        // As a control its canvas lands in the top-left control corner, which
+        // sits below the header: move it beside the map canvas, under the controls.
+        // (MapLibre appends a top-left control last in that corner.)
+        const pingEl = map.getContainer().querySelector('.maplibregl-ctrl-top-left')?.lastElementChild
+        if (pingEl) map.getContainer().insertBefore(pingEl, map.getContainer().querySelector('.maplibregl-control-container'))
+        pingOverlayRef.current = pingOverlay
         map.on('load', () => setReady(true))
         mapRef.current = map
         overlayRef.current = overlay
@@ -220,7 +231,10 @@ export default function MapView({ caps, snapshot, onPositions }: Props) {
 
   // Name clusters at this zoom. One fans out while hovered (with a short
   // grace period to reach its names) or while one of its nodes is selected.
-  const clusters = useMemo(() => clusterLabels(placed, zoom), [placed, zoom])
+  // Only while names are drawn (from zoom 10, with the layer on): clustering
+  // reruns on every zoom change and otherwise only feeds hover churn.
+  const namesShown = toggles.labels && zoom >= 10
+  const clusters = useMemo(() => (namesShown ? clusterLabels(placed, zoom) : []), [namesShown, placed, zoom])
   const clusterOf = useRef(new Map<string, Cluster>())
   const nameOf = useRef(new Map<string, string>())
   const shortOf = useRef(new Map<string, string>())
@@ -251,33 +265,62 @@ export default function MapView({ caps, snapshot, onPositions }: Props) {
     [buildMeshLayers, placed, shownLinks, selection, search, toggles, zoom, clusters, exploded, route, routeGhosts, palette, regions, reach],
   )
 
-  // Animation loop: runs only while pings are alive (~30 fps), then settles
-  // so the map can go idle. Paused on hidden tabs; off with reduced motion.
+  // The mesh layers change only with data, filters and selection.
   useEffect(() => {
     if (!ready || !overlayRef.current) return
-    const overlay = overlayRef.current
-    overlay.setProps({ layers: baseLayers })
+    overlayRef.current.setProps({ layers: baseLayers })
     meshLayers.current = baseLayers
-    if (!toggles.animation) return
-    let raf = 0, last = 0, animating = false
-    const render = (now: number) => {
-      raf = requestAnimationFrame(render)
+  }, [ready, baseLayers])
+
+  // Animation loop, in the ping canvas: runs (~30 fps) only while pings are
+  // alive and starts when one is added. Idle, it only probes for a frame
+  // about once a second (pings are wanted only while the page is painted).
+  // Paused on hidden tabs; off with reduced motion.
+  useEffect(() => {
+    const overlay = pingOverlayRef.current
+    if (!ready || !overlay) return
+    if (!toggles.animation) {
+      overlay.setProps({ layers: [] })
+      return
+    }
+    let raf = 0, timer: ReturnType<typeof setTimeout> | undefined, last = 0, running = false
+    const frame = (now: number) => {
       frameArrived(now)
-      if (document.hidden || now - last < 33) return
-      last = now
       if (pingCount() === 0) {
-        if (animating) {
-          animating = false
-          overlay.setProps({ layers: baseLayers })
-        }
+        running = false
+        overlay.setProps({ layers: [] })
+        probe()
         return
       }
-      animating = true
-      overlay.setProps({ layers: [...baseLayers, ...buildPingLayers(now, mapRef.current?.getZoom() ?? 8, palette)] })
+      raf = requestAnimationFrame(frame)
+      if (document.hidden || now - last < 33) return
+      last = now
+      overlay.setProps({ layers: buildPingLayers(now, mapRef.current?.getZoom() ?? 8, palette) })
     }
-    raf = requestAnimationFrame(render)
-    return () => cancelAnimationFrame(raf)
-  }, [ready, baseLayers, toggles.animation, palette])
+    const start = () => {
+      if (running) return
+      running = true
+      clearTimeout(timer)
+      cancelAnimationFrame(raf)
+      raf = requestAnimationFrame(frame)
+    }
+    const probe = () => {
+      timer = setTimeout(() => {
+        raf = requestAnimationFrame((now) => {
+          frameArrived(now)
+          if (pingCount() > 0) start()
+          else probe()
+        })
+      }, 1000)
+    }
+    const off = onPingAdded(start)
+    start()
+    return () => {
+      off()
+      clearTimeout(timer)
+      cancelAnimationFrame(raf)
+    }
+  }, [ready, toggles.animation, palette])
 
   // Picking: hover tooltip + click selection.
   useEffect(() => {

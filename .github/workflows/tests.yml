@@ -53,3 +53,7 @@ jobs:
         run: scripts/wasm.sh
       - run: scripts/node.sh npm ci --no-audit --no-fund
       - run: scripts/node.sh sh -c 'npm run typecheck && npm run lint && npx vitest run && npm run build'
+      # The API types are generated from docs/api-openapi.yaml (itself checked
+      # against the backend by internal/api/openapi_test.go): they must be current.
+      - name: generated API types are current
+        run: scripts/node.sh npm run gen:api && git diff --exit-code frontend/src/api/schema.d.ts

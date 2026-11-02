@@ -1,4 +1,4 @@
-// The views the WebAssembly engine builds (frontend/engine/src/views.rs and
+// The views the WebAssembly engine builds (frontend/engine/src/views/ and
 // packets.rs). Their bodies kept the shapes of the retired server views
 // (D-041); the engine is the source of truth for them now. The worker adds
 // a small `meta` block of its own (ViewMeta).

@@ -157,13 +157,14 @@ pub fn build_snapshot(rows: &[&Row], i: &Interner, g: &GeoOptions, rules: Rules)
     // Nodes whose reports jump around one place get a narrowed position, and
     // their jumps are not movement (D-077). Nodes that moved (D-073): their
     // trails, and links only from after the move.
-    let anchored = if rules.moves { crate::movement::anchors(rows) } else { map() };
+    let tracks = crate::movement::positions_by_node(rows);
+    let anchored = if rules.moves { crate::movement::anchors_of(&tracks) } else { map() };
     for (n, a) in &anchored {
         if let Some(x) = nodes.get_mut(n) {
             x.set_anchor(a);
         }
     }
-    let moves = crate::movement::movements_except(rows, &anchored);
+    let moves = crate::movement::movements_of(&tracks, &anchored);
     for (n, m) in &moves {
         if let Some(x) = nodes.get_mut(n) {
             x.set_movement(m);
@@ -173,12 +174,15 @@ pub fn build_snapshot(rows: &[&Row], i: &Interner, g: &GeoOptions, rules: Rules)
     let (mut er, ctx) = build_edges(rows, &hops, &known, pos, silent, rules.mqtt_links.then_some(&downlinkers), &moved);
     // Directional 0-cost evidence on radio links (D-068).
     let hears: FxSet<(u32, u32)> = er.edges.iter().filter(|e| !e.mqtt).map(|e| (e.src_num, e.dst_num)).collect();
-    let mut zc = crate::zerocost::detect(rows, &ctx, &hears, &roles);
+    // Every packet's copies, with the transmitter each was heard from: once for both passes below.
+    let packets = crate::copies::by_packet(rows, &ctx);
+    let mut zc = crate::zerocost::detect(&packets, &hears, &roles);
     for e in er.edges.iter_mut().filter(|e| !e.mqtt) {
         e.zero_cost = zc.remove(&(e.src_num, e.dst_num));
     }
     // Routers' relaying, from the links and every packet's copies (D-078).
-    for (n, r) in crate::reliability::relaying(rows, &er.edges, &ctx, &roles) {
+    let gateways: FxSet<u32> = rows.iter().filter_map(|r| r.gw).collect();
+    for (n, r) in crate::reliability::relaying(&packets, &gateways, &er.edges, &roles) {
         if let Some(x) = nodes.get_mut(&n) {
             x.relaying = Some(r);
         }

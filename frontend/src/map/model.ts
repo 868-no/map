@@ -54,7 +54,7 @@ export function ageColor(age: number, stops: readonly [number, number, number][]
 /**
  * Worst-case error of a position reported with Meshtastic precision bits:
  * half the diagonal of the precision cell (firmware reports its centre).
- * Mirrors the backend's geo.PrecisionErrorM.
+ * Mirrors the engine's geo::precision_error_m (frontend/engine/src/geo.rs).
  */
 export function precisionErrorM(bits: number, lat: number): number {
   if (bits >= 32) return 0
@@ -64,7 +64,6 @@ export function precisionErrorM(bits: number, lat: number): number {
 
 /** Which way a node moves packets between the mesh and MQTT (D-054). */
 export type MqttFlow = 'up' | 'down' | 'both'
-export const MQTT_GLYPH: Record<MqttFlow, string> = { up: '↑', down: '↓', both: '↕' }
 /** The same arrows as solid shapes (24x24), drawn on the map as tinted icons: fonts differ too much. */
 export const MQTT_ARROW: Record<MqttFlow, string> = {
   up: 'M12 2 20 11h-5v11H9V11H4z',

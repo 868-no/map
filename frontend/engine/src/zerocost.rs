@@ -18,8 +18,8 @@
 
 use serde::Serialize;
 
-use crate::graph::{zero_cost_role, RelayContext};
-use crate::row::{ty, Row};
+use crate::copies::Heard;
+use crate::graph::zero_cost_role;
 use crate::util::{map, FxMap, FxSet};
 
 /// Evidence for one directed link U -> R (R relays what it heard from U).
@@ -37,20 +37,17 @@ pub struct ZeroCost {
 pub const MIN_FREE: u32 = 3;
 pub const MIN_SHARE: f64 = 0.8;
 
-/// Evidence per directed pair (U, R). hears: (tx, rx) pairs where rx heard
-/// tx over the radio; roles: announced roles (unknown roles are allowed).
-pub fn detect(rows: &[&Row], ctx: &RelayContext, hears: &FxSet<(u32, u32)>, roles: &FxMap<u32, String>) -> FxMap<(u32, u32), ZeroCost> {
+/// Evidence per directed pair (U, R). packets: every packet's radio copies
+/// (`copies::by_packet`); hears: (tx, rx) pairs where rx heard tx over the
+/// radio; roles: announced roles (unknown roles are allowed).
+pub fn detect(packets: &[Vec<Heard>], hears: &FxSet<(u32, u32)>, roles: &FxMap<u32, String>) -> FxMap<(u32, u32), ZeroCost> {
     let can = |n: u32| roles.get(&n).is_none_or(|r| r.is_empty() || zero_cost_role(r));
-    let mut by_packet: FxMap<u64, Vec<&Row>> = map();
-    for &r in rows {
-        if r.ty == ty::MAPREPORT || r.rr == ty::VIA_MQTT || r.rr == ty::NON_RF || r.hs.is_none() || r.hl.is_none() || r.gw.is_none() {
-            continue;
-        }
-        by_packet.entry(r.lp).or_default().push(r);
-    }
     let mut out: FxMap<(u32, u32), ZeroCost> = map();
-    for copies in by_packet.values() {
-        let origin = copies[0].src;
+    for all in packets {
+        // Copies with both hop fields only.
+        let copies: Vec<&Heard> = all.iter().filter(|h| h.row.hs.is_some() && h.row.hl.is_some()).collect();
+        let Some(first) = copies.first() else { continue };
+        let origin = first.row.src;
         // The hop limit each transmitter sent; a transmitter seen with two
         // values (two rebroadcasts, or a misresolved byte) is left out.
         let mut sent: FxMap<u32, i16> = map();
@@ -64,16 +61,10 @@ pub fn detect(rows: &[&Row], ctx: &RelayContext, hears: &FxSet<(u32, u32)>, role
                 sent.insert(n, l);
             }
         };
-        note(origin, copies[0].hs.unwrap());
-        for r in copies {
-            let (gw, hs, hl) = (r.gw.unwrap(), r.hs.unwrap(), r.hl.unwrap());
-            if gw == origin {
-                continue;
-            }
-            if r.dr || hs == hl {
-                note(origin, hl);
-            } else if let Some(Ok(relay)) = r.relay.and_then(|b| ctx.resolve((b & 0xff) as u8, origin, gw)) {
-                note(relay, hl);
+        note(origin, first.row.hs.unwrap());
+        for h in &copies {
+            if let Some(sender) = h.sender {
+                note(sender, h.row.hl.unwrap());
             }
         }
         for c in &conflict {

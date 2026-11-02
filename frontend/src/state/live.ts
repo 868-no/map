@@ -10,7 +10,11 @@ import { addTransmission, clearPings, painting, pingWanted } from '../map/pings'
 import { useLiveEpoch } from './data'
 import { apiParams, defaultFilters, useStore, type Filters } from './store'
 
-/** A live row passes the view filters (the stream itself is unfiltered). */
+/**
+ * A live row passes the view filters (the stream itself is unfiltered).
+ * Mirrors the channel, broker and type part of the engine's filter_fn
+ * (frontend/engine/src/views/filters.rs); keep the two in step.
+ */
 export function passes(r: ObsRow, f: Filters): boolean {
   return (!f.channels.length || (r.c != null && f.channels.includes(r.c))) && (!f.brokers.length || f.brokers.includes(r.b)) && (!f.types.length || f.types.includes(r.y))
 }
