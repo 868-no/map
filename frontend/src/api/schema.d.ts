@@ -390,6 +390,8 @@ export interface components {
             /** @description MQTT topic root the reception arrived on (before /2/e/...), e.g. msh/EU_868/NO/Trøndelag */
             tp?: string;
             tr?: components["schemas"]["ObsTraceroute"];
+            /** @description The sender asked for an acknowledgement (D-109) */
+            wa?: boolean;
             y: string;
         };
         ObsStoreForward: {

@@ -180,6 +180,7 @@ pub struct Row {
     pub crypto: u32, // 0 = none
     pub bytes: i32,
     pub nk: bool, // sent without OK-to-MQTT, uplinked by another gateway
+    pub wa: bool, // the sender asked for an acknowledgement (D-109)
     pub topic: u32, // MQTT topic root, 0 = unknown
     pub pos: Option<Position>,
     pub detail: Option<Box<Detail>>,
@@ -426,6 +427,8 @@ pub struct JRow<'a> {
     by: i32,
     #[serde(default, skip_serializing_if = "is_false")]
     nk: bool,
+    #[serde(default, skip_serializing_if = "is_false")]
+    wa: bool,
     #[serde(borrow, default, skip_serializing_if = "Option::is_none")]
     tp: Option<Cow<'a, str>>,
     #[serde(borrow, default, skip_serializing_if = "Option::is_none")]
@@ -533,6 +536,7 @@ impl JRow<'_> {
             crypto: self.cr.map_or(0, |c| i.id(&c)),
             bytes: self.by,
             nk: self.nk,
+            wa: self.wa,
             topic: self.tp.map_or(0, |t| i.id(&t)),
             pos: self.po.map(|p| Position { lat: p.lat, lon: p.lon, alt: p.alt, bits: p.precision_bits, known: p.precision_known }),
             detail: detail.map(Box::new),
@@ -548,7 +552,7 @@ pub fn to_json<'a>(r: &Row, i: &'a Interner) -> JRow<'a> {
     let mut j = JRow {
         i: r.id, t: r.t, b: s(r.broker), g: r.gw, s: r.src, d: r.dst, p: r.pid, c: opt(r.channel), y: s(r.ty),
         l: Cow::Owned(key_hex(r.lp)), o: Cow::Owned(key_hex(r.ok)), sn: r.snr, rs: r.rssi, hs: r.hs, hl: r.hl, r: r.relay,
-        sg: s(r.sig), dr: r.dr, rr: opt(r.rr), cr: opt(r.crypto), by: r.bytes, nk: r.nk, tp: opt(r.topic),
+        sg: s(r.sig), dr: r.dr, rr: opt(r.rr), cr: opt(r.crypto), by: r.bytes, nk: r.nk, wa: r.wa, tp: opt(r.topic),
         ni: None, po: r.pos.map(|p| JPo { lat: p.lat, lon: p.lon, alt: p.alt, precision_bits: p.bits, precision_known: p.known }),
         te: None, nb: None, tr: None, mr: None, rt: None, iv: None, ns: None, sf: None,
     };

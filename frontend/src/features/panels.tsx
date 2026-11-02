@@ -485,6 +485,26 @@ export function NodePanel({ id, snapshot }: { id: string; snapshot: SnapshotView
               {d.signatures.verified} verified · {d.signatures.unsigned} unsigned · {d.signatures.unverifiable} signed, key unknown · {d.signatures.not_applicable} not signable
             </dd>
           </dl>
+          {(d.delivery_by_recipient ?? []).length > 0 && (
+            <>
+              <h3 title="Its direct packets that asked for an acknowledgement, and the ACKs, replies and errors that came back">Delivery by recipient</h3>
+              <table className="hear">
+                <thead><tr><th>To</th><th title="Packets that asked for an ACK">Asked</th><th title="Confirmed by an ACK, or by the recipient's reply (a traceroute is answered with its reply)">Confirmed</th><th title="Answered with an error instead">Errors</th><th title="ACKed only after the sender retried">Retried</th></tr></thead>
+                <tbody>
+                  {d.delivery_by_recipient!.map((p) => (
+                    <tr key={p.to}>
+                      <td><button className="linkish" onClick={() => select({ kind: 'node', id: p.to })}>{names.get(p.to) ?? p.to}</button></td>
+                      <td>{p.asked}</td>
+                      <td>{p.acked} <small className="muted">({Math.round((p.acked / p.asked) * 100)} %)</small></td>
+                      <td className={p.errors ? 'reply-err' : undefined}>{p.errors || ''}</td>
+                      <td>{p.retried || ''}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <p className="muted small">Only what reached a gateway counts: a packet or its ACK no gateway heard is missing here, so a blank never means lost.</p>
+            </>
+          )}
           <PacketLogs id={id} names={names} positioned={positioned} moved={moved} />
           <p className="muted">Message contents are never stored or shown.</p>
         </>

@@ -48,6 +48,21 @@ pub struct EnvironmentSample {
     pub pressure: Option<f64>,
 }
 
+/// Its packets to one node that asked for an acknowledgement, and what came
+/// back (D-109). Lower bounds: only packets and ACKs a gateway reported count.
+#[derive(Serialize, Debug, PartialEq)]
+pub struct PairDelivery {
+    pub to: String,
+    pub asked: usize,
+    /// Confirmed: an ACK, or a reply from the recipient answering it (a
+    /// traceroute is answered with its reply, rarely an ACK).
+    pub acked: usize,
+    /// Answered with an error (and never ACKed).
+    pub errors: usize,
+    /// ACKed only after the sender retried (several ACKs for one packet).
+    pub retried: usize,
+}
+
 /// A status text the node broadcast (NODE_STATUS_APP), and when (D-103).
 #[derive(Serialize)]
 pub struct StatusText {
@@ -87,6 +102,9 @@ pub struct NodeDetail {
     pub node: Node,
     pub positions: Vec<PositionSample>,
     pub telemetry_series: Vec<TelemetrySample>,
+    /// Its packets that asked for an ACK, by recipient, most first (D-109).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub delivery_by_recipient: Vec<PairDelivery>,
     /// Its status texts, newest first: each distinct text once, at its latest (D-103).
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub node_status: Vec<StatusText>,
@@ -170,7 +188,7 @@ pub fn build_node_detail(rows: &[&Row], num: u32, i: &Interner) -> Option<NodeDe
     radio.channels = crate::channels::channel_use(num, rows, i);
     radio.preset = crate::channels::preset_guess(num, rows, i);
     radio.uplink_topics = crate::radio::uplink_topics(&uplinked, i);
-    let mut d = NodeDetail { node: n, positions: vec![], telemetry_series: vec![], environment_series: vec![], node_status: vec![], heard_by: vec![], heard: vec![], recent_packets: vec![], truncated: false, radio, delivery: crate::packets::delivery(rows, num, i) };
+    let mut d = NodeDetail { node: n, positions: vec![], telemetry_series: vec![], environment_series: vec![], node_status: vec![], delivery_by_recipient: vec![], heard_by: vec![], heard: vec![], recent_packets: vec![], truncated: false, radio, delivery: crate::packets::delivery(rows, num, i) };
     if first == i64::MAX {
         let Some(&t) = referenced(rows).get(&num) else { return None };
         d.node.status = "referenced";
@@ -221,6 +239,7 @@ pub fn build_node_detail(rows: &[&Row], num: u32, i: &Interner) -> Option<NodeDe
         })
         .collect();
     d.truncated = truncated;
+    d.delivery_by_recipient = delivery_by_recipient(rows, &own, num, i);
     // Status texts: newest first, each once. Opt-out nodes' texts are never stored (empty).
     let mut texts: Vec<(i64, u32)> = own.iter().filter_map(|r| r.node_status().filter(|&s| !i.s(s).is_empty()).map(|s| (r.t, s))).collect();
     texts.sort_by(|a, b| b.0.cmp(&a.0));
@@ -262,6 +281,39 @@ pub fn build_node_detail(rows: &[&Row], num: u32, i: &Interner) -> Option<NodeDe
     Some(d)
 }
 
+/// Its unicast packets that asked for an ACK, by recipient, with the ACKs
+/// and errors answering them (D-109).
+fn delivery_by_recipient(rows: &[&Row], own: &[&Row], num: u32, i: &Interner) -> Vec<PairDelivery> {
+    let replies = crate::packets::ReplyIndex::new(rows);
+    let mut first: FxMap<u64, &Row> = map();
+    for &r in own {
+        if r.wa && r.pid.is_some() && r.dst.is_some_and(|d| d != crate::util::BROADCAST && d != num) {
+            first.entry(r.lp).or_insert(r);
+        }
+    }
+    // Replies answering one of its packets: (replier, request id).
+    let answered: FxSet<(u32, u32)> = rows.iter().filter(|r| r.dst == Some(num)).filter_map(|r| r.traceroute().filter(|t| t.is_reply && t.request != 0).map(|t| (r.src, t.request))).collect();
+    let mut per: FxMap<u32, PairDelivery> = map();
+    for r in first.values() {
+        let to = r.dst.unwrap();
+        let e = per.entry(to).or_insert_with(|| PairDelivery { to: node_id(to), asked: 0, acked: 0, errors: 0, retried: 0 });
+        e.asked += 1;
+        let reps = replies.replies(r.pid.unwrap(), num, i);
+        let acks: usize = reps.iter().filter(|x| x.kind == "ack").map(|x| x.count).sum();
+        if acks > 0 || answered.contains(&(to, r.pid.unwrap())) {
+            e.acked += 1;
+            if acks > 1 {
+                e.retried += 1;
+            }
+        } else if reps.iter().any(|x| x.kind == "error") {
+            e.errors += 1;
+        }
+    }
+    let mut out: Vec<PairDelivery> = per.into_values().collect();
+    out.sort_by(|a, b| b.asked.cmp(&a.asked).then(a.to.cmp(&b.to)));
+    out
+}
+
 /// Receptions grouped by the other side; radio statistics from direct-RF receptions only.
 fn hearings(rows: &[&Row], keep: impl Fn(&Row) -> bool, other: impl Fn(&Row) -> u32) -> Vec<Hearing> {
     let mut groups: FxMap<u32, Vec<&Row>> = map();
@@ -301,5 +353,27 @@ mod tests {
         let d = build_node_detail(&refs, 5, &i).unwrap();
         let got: Vec<&str> = d.node_status.iter().map(|s| s.status.as_str()).collect();
         assert_eq!(got, vec!["At the cabin", "Back home"]);
+    }
+
+    #[test]
+    fn delivery_by_recipient_counts_confirmed_errors_and_retries() {
+        let mut i = Interner::default();
+        // Node 5 asks 9 three times: one ACKed once, one ACKed twice (retried), one answered with an error.
+        let text = r#"[
+          {"i":1,"t":1,"b":"x","g":7,"s":5,"d":9,"p":101,"y":"direct_message","l":"01","o":"01","sg":"not-applicable","wa":true},
+          {"i":2,"t":2,"b":"x","g":7,"s":5,"d":9,"p":102,"y":"direct_message","l":"02","o":"02","sg":"not-applicable","wa":true},
+          {"i":3,"t":3,"b":"x","g":7,"s":5,"d":9,"p":103,"y":"direct_message","l":"03","o":"03","sg":"not-applicable","wa":true},
+          {"i":4,"t":4,"b":"x","g":7,"s":5,"d":9,"p":104,"y":"direct_message","l":"04","o":"04","sg":"not-applicable"},
+          {"i":5,"t":5,"b":"x","g":7,"s":9,"d":5,"p":201,"y":"routing","l":"05","o":"05","sg":"unsigned","rt":{"kind":"ack","request_id":101}},
+          {"i":6,"t":6,"b":"x","g":7,"s":9,"d":5,"p":202,"y":"routing","l":"06","o":"06","sg":"unsigned","rt":{"kind":"ack","request_id":102}},
+          {"i":7,"t":7,"b":"x","g":7,"s":9,"d":5,"p":203,"y":"routing","l":"07","o":"07","sg":"unsigned","rt":{"kind":"ack","request_id":102}},
+          {"i":8,"t":8,"b":"x","g":7,"s":7,"d":5,"p":204,"y":"routing","l":"08","o":"08","sg":"unsigned","rt":{"kind":"error","error":"NO_RESPONSE","request_id":103}},
+          {"i":9,"t":9,"b":"x","g":7,"s":5,"d":9,"p":105,"y":"traceroute","l":"09","o":"09","sg":"not-applicable","wa":true,"tr":{"valid":true,"is_reply":false}},
+          {"i":10,"t":10,"b":"x","g":7,"s":9,"d":5,"p":205,"y":"traceroute","l":"0a","o":"0a","sg":"not-applicable","tr":{"valid":true,"is_reply":true,"request_id":105}}
+        ]"#;
+        let rows: Vec<Row> = serde_json::from_str::<Vec<JRow>>(text).unwrap().into_iter().map(|r| r.into_row(&mut i)).collect();
+        let refs: Vec<&Row> = rows.iter().collect();
+        let d = build_node_detail(&refs, 5, &i).unwrap();
+        assert_eq!(d.delivery_by_recipient, vec![PairDelivery { to: node_id(9), asked: 4, acked: 3, errors: 1, retried: 1 }], "the traceroute counts as confirmed by its reply; the packet that asked for no ACK is left out");
     }
 }

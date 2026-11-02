@@ -47,6 +47,7 @@ type ObsRow struct {
 	NotOK     bool     `json:"nk,omitempty" doc:"sent without OK-to-MQTT and uplinked by another gateway"`
 	Topic     string   `json:"tp,omitempty" doc:"MQTT topic root the reception arrived on (before /2/e/...), e.g. msh/EU_868/NO/Trøndelag"`
 	Invalid   string   `json:"iv,omitempty" doc:"Type invalid: why its content was not kept (sig_invalid, payload_invalid, ...); its sender may be forged"`
+	WantAck   bool     `json:"wa,omitempty" doc:"The sender asked for an acknowledgement (D-109)"`
 	// Port-specific decoded fields; omitted for types that have none.
 	NodeInfo     *ObsNodeInfo     `json:"ni,omitempty"`
 	Position     *ObsPosition     `json:"po,omitempty"`
@@ -156,6 +157,7 @@ type storedMeta struct {
 	NotOK   bool   `json:"not_ok_to_mqtt"`
 	Topic   string `json:"topic_root"`
 	Invalid string `json:"invalid"`
+	WantAck bool   `json:"want_ack"`
 	Rx      struct {
 		DirectRF bool   `json:"direct_rf"`
 		Reason   string `json:"reason"`
@@ -186,8 +188,8 @@ type storedMeta struct {
 // /observations reports, so browsers holding rows in the old format start
 // over, and stored encodings of an older version are rebuilt (D-046)
 // (2: tp, mr; 3: map report identity and has_default_channel; 4: rt; 5: iv;
-// 6: environment telemetry; 7: ns, sf, traceroute request_id).
-const Version = 7
+// 6: environment telemetry; 7: ns, sf, traceroute request_id; 8: wa).
+const Version = 8
 
 // Fields are the packet_log columns an ObsRow carries.
 type Fields struct {
@@ -217,7 +219,7 @@ func New(f Fields, meta []byte) ObsRow {
 	if err := json.Unmarshal(meta, &m); err != nil {
 		badMeta(r.ID, err)
 	}
-	r.Crypto, r.Bytes, r.DirectRF, r.RxReason, r.NotOK, r.Topic, r.Invalid = m.Crypto, m.Bytes, m.Rx.DirectRF, m.Rx.Reason, m.NotOK, m.Topic, m.Invalid
+	r.Crypto, r.Bytes, r.DirectRF, r.RxReason, r.NotOK, r.Topic, r.Invalid, r.WantAck = m.Crypto, m.Bytes, m.Rx.DirectRF, m.Rx.Reason, m.NotOK, m.Topic, m.Invalid, m.WantAck
 	switch r.Type {
 	case "nodeinfo":
 		if n := m.NodeInfo; n != nil {

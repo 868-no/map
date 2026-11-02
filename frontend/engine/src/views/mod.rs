@@ -87,7 +87,7 @@ pub(crate) mod test_rows {
     pub fn pos(id: i64, ty: u32, lat: f64, bits: u32, t: i64) -> Row {
         Row {
             id, t, broker: 0, gw: None, src: 1, dst: None, pid: None, channel: 0, ty, lp: id as u64, ok: id as u64, snr: None, rssi: None, hs: None, hl: None,
-            relay: None, sig: 0, dr: false, rr: 0, crypto: 0, bytes: 0, nk: false, topic: 0, pos: Some(P { lat, lon: 10.7, alt: None, bits, known: bits > 0 }), detail: None,
+            relay: None, sig: 0, dr: false, rr: 0, crypto: 0, bytes: 0, nk: false, wa: false, topic: 0, pos: Some(P { lat, lon: 10.7, alt: None, bits, known: bits > 0 }), detail: None,
         }
     }
 }

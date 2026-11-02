@@ -538,6 +538,9 @@ components:
           type: string
         tr:
           $ref: "#/components/schemas/ObsTraceroute"
+        wa:
+          description: The sender asked for an acknowledgement (D-109)
+          type: boolean
         "y":
           type: string
       required:
