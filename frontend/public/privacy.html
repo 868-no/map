@@ -81,12 +81,14 @@
       <p><strong>What is kept and shown.</strong> For each packet a gateway received:</p>
       <ul>
         <li>the node ID of the sender, the gateway and, for directed packets, the recipient;</li>
-        <li>what the node announces about itself: name, short name, hardware model, role and public key;</li>
+        <li>what the node announces about itself: name, short name, hardware model, role, public key and any status text it broadcasts;</li>
         <li>positions the node broadcast, at the precision it chose, and its map reports (including region and radio preset);</li>
-        <li>device telemetry: battery level, voltage, channel and airtime utilisation, uptime;</li>
+        <li>device telemetry (battery level, voltage, channel and airtime utilisation, uptime) and sensor readings it broadcasts (temperature, humidity, air pressure);</li>
         <li>lists of neighbouring nodes, and routes recorded by traceroutes;</li>
         <li>reception details: time, signal strength (SNR and RSSI), hop counts, channel name and the MQTT topic it arrived on;</li>
-        <li>whether the packet's signature could be verified.</li>
+        <li>whether the packet's signature could be verified;</li>
+        <li>whether a directed packet asked for an acknowledgement, and the acknowledgements and delivery errors nodes send back, which show that one node received another's packet;</li>
+        <li>for store-and-forward routers, which kind of message they sent (heartbeat, history, replay) and its size.</li>
       </ul>
       <p data-show="geolocation">
         <strong>Estimated positions.</strong> For nodes that do not broadcast a position, the map may show a coarse estimated area, worked out from the positioned nodes that heard them directly.
@@ -96,7 +98,8 @@
         <strong>Messages.</strong> The contents of text messages are never decoded for display, never shown and never served by the API.
         The database does keep each packet exactly as it was received, so it can be decoded again after software updates.
         For a text message, that is the message encrypted with its channel's key, which anyone who has the key can read; the key of the default public channels is publicly known.
-        If a gateway uplinked the packet already decrypted, the stored packet contains the message text itself.
+        If a gateway uplinked the packet already decrypted, the stored packet contains the message text itself. The same applies to messages a store-and-forward router replays.
+        Packets whose signature or contents fail verification are kept with their header only, never their contents, and are not used on the map.
         Only the operator has access to these stored packets.
       </p>
       <p>
@@ -105,11 +108,11 @@
         The same applies to packets on channels whose key this service does not have: only their header, including the channel name, is kept.
       </p>
       <p>
-        <strong>Nodes that did not allow MQTT uplink.</strong> Meshtastic lets a node mark its packets as not OK to forward to MQTT. When such packets still reach this service through another gateway, the names in their announcements (NodeInfo) are removed before anything is stored; hardware model, role and public key are kept.
+        <strong>Nodes that did not allow MQTT uplink.</strong> Meshtastic lets a node mark its packets as not OK to forward to MQTT. When such packets still reach this service through another gateway, the names in their announcements (NodeInfo) and any status text are removed before anything is stored; hardware model, role and public key are kept.
         The node appears only as an unnamed node marked with a red ring. Gateways that forward their own traffic have chosen to do so and are treated normally.
       </p>
       <p>
-        <strong>Who can see it.</strong> The map and its API are public. Everything above, except stored packets, can be viewed by anyone visiting the site, for any time window within the retention period.
+        <strong>Who can see it.</strong> The map and its API are public. Everything above, except stored packets, can be viewed by anyone visiting the site, for any time window within the retention period, along with daily, weekly and monthly totals (nodes, gateways, packets) over the whole retention period.
       </p>
       <p>
         <strong>How long it is kept.</strong> Packets older than <span data-fill="retention-short">the retention period (six months by default)</span> are deleted automatically every day.
