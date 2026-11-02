@@ -156,10 +156,18 @@ export interface NodeAirtime {
   by_type: [string, number][] // shares of caused, largest first
 }
 
+/** Store-and-forward traffic and its airtime (D-103). */
+export interface StoreForwardStats {
+  packets: number
+  share: number
+  by_kind: [string, number, number][] // kind, packets, airtime share
+  nodes: { node: string; packets: number; share: number; by_kind: [string, number][]; heartbeats_per_hour: number; replays: number; replay_bytes: number }[]
+}
+
 export interface HealthView {
   meta: ViewMeta
   issues: Issue[]
-  airtime: { packets: number; transmissions: number; by_type: [string, number][]; nodes: NodeAirtime[] }
+  airtime: { packets: number; transmissions: number; by_type: [string, number][]; nodes: NodeAirtime[]; store_forward: StoreForwardStats }
 }
 
 /** How far a node's packets reach at each hop limit (D-069). */

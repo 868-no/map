@@ -31,6 +31,7 @@ const KIND: Record<string, string> = {
   stale_position: 'Stale position',
   battery_low: 'Low battery',
   battery_falling: 'Battery falling',
+  store_forward: 'Store-and-forward airtime',
   restarted: 'Restarts',
   duplicate_name: 'Duplicate short name',
 }
@@ -117,9 +118,41 @@ export function HealthPanel({ snapshot }: { snapshot: SnapshotView | undefined }
                 title={`${a.packets} packets, ${a.transmissions} transmissions seen · ${a.by_type.slice(0, 3).map(([t, s]) => `${typeName(t)} ${pct(s)}`).join(', ')}`} />
             ))}
           </ul>
+          <StoreForwardSection sf={airtime.store_forward} name={name} />
         </>
       )}
     </div>
+  )
+}
+
+/** Store-and-forward kinds in plain words (D-103). */
+const SF_KIND: Record<string, string> = {
+  router_heartbeat: 'heartbeats', router_text_broadcast: 'replayed broadcasts', router_text_direct: 'replayed direct messages', router_history: 'history announcements',
+  router_stats: 'statistics', router_ping: 'pings', router_pong: 'pongs', router_busy: 'busy replies', router_error: 'errors',
+  client_history: 'history requests', client_stats: 'statistics requests', client_ping: 'client pings', client_pong: 'client pongs', client_abort: 'aborts', client_error: 'client errors',
+  unknown: 'not decoded (older rows)',
+}
+const sfKind = (k: string) => SF_KIND[k] ?? k.replaceAll('_', ' ')
+
+/** What store-and-forward costs in airtime, by kind and by router (D-103). */
+function StoreForwardSection({ sf, name }: { sf: HealthView['airtime']['store_forward']; name: (id: string) => string }) {
+  const select = useStore((s) => s.select)
+  if (!sf || sf.packets === 0) return null
+  const maxKind = sf.by_kind[0]?.[2] ?? 0
+  const maxNode = sf.nodes[0]?.share ?? 0
+  return (
+    <>
+      <h3 title="Store-and-forward routers keep recent messages and replay them to nodes that ask; they also send heartbeats so clients know they exist">Store and forward</h3>
+      <p className="muted small">{sf.packets} packets, about {pct(sf.share)} of the estimated airtime. By kind:</p>
+      <ul className="shares">{sf.by_kind.map(([k, n, share]) => <Share key={k} label={`${sfKind(k)} (${n})`} share={share} max={maxKind} />)}</ul>
+      <p className="muted small">By router (share of all airtime):</p>
+      <ul className="shares">
+        {sf.nodes.map((f) => (
+          <Share key={f.node} label={name(f.node)} share={f.share} max={maxNode} onClick={() => select({ kind: 'node', id: f.node })}
+            title={`${f.packets} packets · ${f.heartbeats_per_hour.toFixed(1)} heartbeats per hour · ${f.replays} replays (${f.replay_bytes} bytes of text) · ${f.by_kind.map(([k, n]) => `${n} ${sfKind(k)}`).join(', ')}`} />
+        ))}
+      </ul>
+    </>
   )
 }
 

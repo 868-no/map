@@ -3814,6 +3814,12 @@
         }
       ],
       "packets": 2701,
+      "store_forward": {
+        "by_kind": [],
+        "nodes": [],
+        "packets": 0,
+        "share": -0.0
+      },
       "transmissions": 7151
     },
     "issues": [

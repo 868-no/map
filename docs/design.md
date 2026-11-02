@@ -387,6 +387,8 @@ Rules over the window's rows and snapshot flag known problems per node (`health`
 
 **Airtime** is estimated per packet as one transmission by its sender plus one per distinct relay seen (resolved last hops, traceroute routes), each costing its estimated on-air size (16-byte header, payload, Data wrapper when decoded, 66 bytes when signed) plus about 20 bytes' worth of preamble. Only shares are reported: of the window's total by packet type, and per node the share its packets cause and the share it transmitted itself (its own packets and relays). Relays no gateway heard are missed, so it is a lower bound and a guide to proportions.
 
+**Store and forward (D-103)** gets its own breakdown: its share of the airtime, packets and share by message kind (heartbeats, replayed broadcasts and direct messages, history announcements, requests, …), and per router its share, heartbeats per hour and history replays with their text size. A router whose store-and-forward takes 2 % of the airtime or more gets a notice.
+
 The **Health panel** lists every issue grouped by kind, most severe first, with node links and the explanation on hover, then airtime by packet type and the ten nodes causing the most. **Details** shows the node's issues under its name and its airtime as a row.
 
 ## 7 Map and user interface
