@@ -234,7 +234,10 @@ test('selecting a node shows only its links, and accuracy circles only for it', 
     return l.length > 0 && l.every(([a, b]) => a === id || b === id)
   }).toBe(true)
   await page.getByRole('button', { name: 'Close details' }).click()
-  // Other nodes' links come back (the count differs: selecting zoomed in, so viewport culling applies).
+  // Other nodes' links come back. Selecting zoomed in and links outside the view
+  // are culled, so zoom out to all of the data first: a sparse mesh may have
+  // none of them near the selected node.
+  await page.getByRole('button', { name: 'Fit to data' }).click()
   await expect.poll(async () => (await layerData()).links.some(([a, b]) => a !== id && b !== id)).toBe(true)
 })
 
@@ -618,25 +621,23 @@ test('the Telemetry tab charts every metric over the whole selected period, with
 
 test('only online nodes: offline ones leave the map, and Details says which a node is', async ({ page }) => {
   await ready(page)
-  const count = () => page.evaluate(() => (window as unknown as { __meshmap: Hook }).__meshmap.layers().filter((l) => l.id === 'nodes' || l.id.startsWith('nodes-over-')).reduce((n, l) => n + l.data.length, 0))
-  await expect.poll(count, { timeout: 30_000 }).toBeGreaterThan(0)
-  const all = await count()
-  // Offline: not heard in the last 3 h of the window. A young database (the CI demo) may have none.
-  const offline = await page.evaluate(() => {
+  // Marker counts move with live traffic (estimates come and go between rebuilds), so the
+  // test checks what is drawn: with the filter on, only nodes heard in the last 3 h.
+  const drawn = () => page.evaluate(() => {
     const mm = window as unknown as { __meshmap: Hook }
-    const l = mm.__meshmap.layers().find((x) => x.id === 'nodes')!.data as { node: { last_seen?: string } }[]
-    return l.filter((p) => !p.node.last_seen || Date.now() - Date.parse(p.node.last_seen) > 3 * 3_600_000).length
+    const ps = mm.__meshmap.layers().filter((l) => l.id === 'nodes' || l.id.startsWith('nodes-over-')).flatMap((l) => l.data) as { node: { last_seen?: string } }[]
+    const offline = ps.filter((p) => !p.node.last_seen || Date.now() - Date.parse(p.node.last_seen) > 3 * 3_600_000).length
+    return { all: ps.length, offline }
   })
+  await expect.poll(async () => (await drawn()).all, { timeout: 30_000 }).toBeGreaterThan(0)
   await showPanel(page, 'Filters')
   await page.getByLabel(/Only online nodes/).check()
-  if (offline > 0) await expect.poll(count).toBeLessThan(all)
-  else await expect.poll(count).toBe(all)
+  await expect.poll(async () => (await drawn()).offline).toBe(0)
+  expect((await drawn()).all).toBeGreaterThan(0)
   await expect(page.locator('.rail-btn[aria-label="Filters"] .rail-badge')).toHaveText('1')
-  const filtered = await count()
+  const filtered = (await drawn()).all
   await page.getByLabel(/Only online nodes/).uncheck()
-  // Live traffic may add a node meanwhile: compare with the filtered view, not an exact earlier total.
-  if (offline > 0) await expect.poll(count).toBeGreaterThan(filtered)
-  else await expect.poll(count).toBeGreaterThanOrEqual(filtered)
+  await expect.poll(async () => (await drawn()).all).toBeGreaterThanOrEqual(filtered)
   await openPanel(page)
   await page.locator('.node-row').first().click()
   await expect(page.locator('.node-panel .tag.online, .node-panel .tag.offline')).toHaveCount(1)
