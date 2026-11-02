@@ -167,6 +167,11 @@ export function meshLayerBuilder(): (input: MeshLayerInput) => Layer[] {
   })
   const routeParts = memoLast((route: RouteGeom[]) => ({ solid: route.filter((r) => !r.dashed), dashed: route.filter((r) => r.dashed) }))
   const reachParts = memoLast((segs: ReachGeom['segments']) => ({ solid: segs.filter((r) => !r.gap), gaps: segs.filter((r) => r.gap) }))
+  // Draw order: markers without glyphs first, then those with one (stable
+  // otherwise). A plain marker drawn later would cover a glyph node at the
+  // same spot entirely, hiding its uplink glyph while the downlink and
+  // airplane badges, beside the marker, still showed.
+  const drawOrder = memoLast((placed: PlacedNode[]) => [...placed.filter((p) => glyphsFor(p).length === 0), ...placed.filter((p) => glyphsFor(p).length > 0)])
   // Stacking levels at this zoom (D-072): per level, the markers drawn again
   // (level > 0) and the glyphs; level 0 markers are the base 'nodes' layer.
   const stackOf = memoLast((placed: PlacedNode[], zoom: number) => {
@@ -408,8 +413,9 @@ export function meshLayerBuilder(): (input: MeshLayerInput) => Layer[] {
     }
     // Every marker, pickable, in one layer; then per stacking level its
     // glyphs, and the markers of the next level drawn again above them.
-    layers.push(new ScatterplotLayer<PlacedNode>({ id: 'nodes', data: placed, pickable: true, autoHighlight: true, highlightColor: [...c.gateway, 160], ...marker }))
-    const stack = stackOf(placed, zoom)
+    const ordered = drawOrder(placed)
+    layers.push(new ScatterplotLayer<PlacedNode>({ id: 'nodes', data: ordered, pickable: true, autoHighlight: true, highlightColor: [...c.gateway, 160], ...marker }))
+    const stack = stackOf(ordered, zoom)
     stack.glyphs.forEach((g, level) => {
       if (level > 0) layers.push(new ScatterplotLayer<PlacedNode>({ id: `nodes-over-${level}`, data: stack.markers[level], pickable: false, ...marker }))
       if (g.length) layers.push(new IconLayer<Glyph>({ id: level ? `mqtt-glyphs-${level}` : 'mqtt-glyphs', data: g, ...arrowIcons(), ...glyph }))

@@ -52,6 +52,16 @@ describe('mesh layer builder', () => {
     expect(glyphs.sort()).toEqual(['!b:down', '!b:up', '!d:down', '!d:upAll', '!g:up', '!o:down', '!u:upAll'])
   })
 
+  it('never draws a plain marker over a glyph node at the same spot', () => {
+    // A downlinking gateway listed first, a plain node at the same position after it.
+    const gw: PlacedNode = { node: { ...node('!g'), is_gateway: true, mqtt_downlink: { zero_snr: 3, traceroutes: 4 } }, kind: 'reported', lon: 10, lat: 60, age: 0 }
+    const plain: PlacedNode = { node: node('!p'), kind: 'reported', lon: 10, lat: 60, age: 0 }
+    const ls = byId(meshLayerBuilder()({ ...base, placed: [gw, plain] }))
+    expect((ls.nodes.data as PlacedNode[]).map((p) => p.node.id)).toEqual(['!p', '!g'])
+    expect(Object.keys(ls).some((id) => id.startsWith('nodes-over'))).toBe(false) // no marker above the glyphs
+    expect((ls['mqtt-glyphs'].data as { flow: string }[]).map((g) => g.flow).sort()).toEqual(['down', 'up'])
+  })
+
   it('draws a fading trail with arrows behind a moving node, and a plane badge when airborne (D-073)', () => {
     const track = [{ lat: 60.2, lon: 10.2, at: 't0' }, { lat: 60.25, lon: 10.25, at: 't1' }]
     const mover: PlacedNode = { node: { ...node('!m'), moved_at: 't1', track, airborne: true }, kind: 'reported', lon: 10.3, lat: 60.3, age: 0 }
