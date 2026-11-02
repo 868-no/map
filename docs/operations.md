@@ -29,7 +29,7 @@ Env values are visible to anyone who can run `docker inspect` on the host; use t
 
 ### Published images
 
-GitHub Actions (`.github/workflows/images.yml`) builds the three images for every pull request and publishes them to GitHub Container Registry from `main` and from version tags, for `linux/amd64` and `linux/arm64`, with provenance and SBOM attestations:
+GitHub Actions (`.github/workflows/images.yml`, called by the tests workflow once every test job, end-to-end included, has passed) builds the three images for every pull request and publishes them to GitHub Container Registry from `main` and from version tags, so nothing untested is published, for `linux/amd64` and `linux/arm64`, with provenance and SBOM attestations:
 
 | Image | Tags |
 |---|---|

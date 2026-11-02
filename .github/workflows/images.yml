@@ -1,23 +1,18 @@
-# Build the container images on every pull request and push; publish them to
-# GitHub Container Registry from main and from version tags (vX.Y.Z).
+# Build the container images; publish them to GitHub Container Registry from
+# main and from version tags (vX.Y.Z). Called by the tests workflow once every
+# test job has passed, so nothing untested is published; run by hand
+# (workflow_dispatch) only to rebuild deliberately.
 #   ghcr.io/868-no/map-backend   backend/Dockerfile (Go API, ingest, maintenance)
 #   ghcr.io/868-no/map-web       web/Dockerfile     (Caddy + built frontend)
 #   ghcr.io/868-no/map-basemap   basemap/Dockerfile (Planetiler basemap builder)
 name: images
 
 on:
-  push:
-    branches: [main]
-    tags: ['v*']
-  pull_request:
+  workflow_call:
   workflow_dispatch:
 
 permissions:
   contents: read
-
-concurrency:
-  group: images-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build:

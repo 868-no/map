@@ -1,5 +1,7 @@
 # Tests on every pull request and push, with the same Docker-wrapped
 # toolchains as local development (scripts/*.sh), so CI and laptops agree.
+# When they all pass, the images workflow builds (and from main and version
+# tags, publishes) the container images: nothing untested reaches ghcr.io.
 # End-to-end tests (frontend/e2e) run against the demo stack: the simulated
 # mesh on a local broker, plus two days of seeded history. The basemap is not
 # built here (it takes GBs and an hour), so tests that need real map labels
@@ -9,6 +11,7 @@ name: tests
 on:
   push:
     branches: [main]
+    tags: ['v*']
   pull_request:
   workflow_dispatch:
 
@@ -74,7 +77,7 @@ jobs:
         run: docker compose run --rm backend seed --nodes 150 --rows 20000 --days 2
       - name: wait for live traffic
         run: |
-          for i in $(seq 1 60); do
+          for _ in $(seq 1 60); do
             n=$(curl -s 'http://localhost:8080/api/v1/observations?limit=5000&duration=1h' | python3 -c 'import json,sys; print(len(json.load(sys.stdin)["rows"]))' 2>/dev/null || echo 0)
             [ "$n" -gt 1000 ] && exit 0
             sleep 5
@@ -95,3 +98,12 @@ jobs:
           name: e2e-results
           path: frontend/e2e/.results
           retention-days: 7
+
+  images:
+    name: images
+    needs: [backend, integration, engine, frontend, e2e]
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/images.yml
+    secrets: inherit
