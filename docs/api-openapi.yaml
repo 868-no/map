@@ -612,6 +612,11 @@ components:
       properties:
         is_reply:
           type: boolean
+        request_id:
+          description: "A reply: the packet id of the request it answers"
+          format: int32
+          minimum: 0
+          type: integer
         route:
           items:
             $ref: "#/components/schemas/ObsHop"

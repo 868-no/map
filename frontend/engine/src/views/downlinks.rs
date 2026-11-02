@@ -52,7 +52,7 @@ mod tests {
     fn trace(id: i64, snr: [f64; 2]) -> Row {
         use crate::row::{Detail, Hop, Traceroute};
         let route = vec![Hop { id: 2, unknown: false }, Hop { id: 3, unknown: false }];
-        let detail = Detail::Traceroute(Traceroute { valid: true, is_reply: false, route, snr_towards: snr.iter().map(|&v| Some(v)).collect(), route_back: vec![], snr_back: vec![] });
+        let detail = Detail::Traceroute(Traceroute { valid: true, is_reply: false, route, snr_towards: snr.iter().map(|&v| Some(v)).collect(), route_back: vec![], snr_back: vec![], request: 0 });
         Row { ty: ty::TRACEROUTE, dst: Some(9), pos: None, detail: Some(Box::new(detail)), ..pos(id, 0, 0.0, 0, 0) }
     }
 

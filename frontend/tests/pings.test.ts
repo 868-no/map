@@ -34,6 +34,20 @@ describe('ping animation', () => {
     expect(pingCount()).toBe(1)
     expect(activePings(60_000).deliveries).toHaveLength(0)
   })
+  it('a traceroute reply replays its request only if the request was not animated already', () => {
+    const live = { key: `lp|${A}`, tx: A, rx: B, rebroadcast: false, packet: 'aa:4d' }
+    const replay = { key: `rqaa:4d|${A}`, tx: A, rx: B, rebroadcast: false, packet: 'aa:4d', replay: true }
+    addTransmission(live, pos, 0)
+    addTransmission(replay, pos, 1000)
+    expect(pingCount()).toBe(1) // the replay was skipped
+    clearPings()
+    addTransmission(replay, pos, 0)
+    expect(pingCount()).toBe(1) // never seen live: replayed
+    addTransmission({ ...replay, key: `rqaa:4d|${B}`, tx: B, rx: A, rebroadcast: true }, pos, 100)
+    expect(pingCount()).toBe(2) // the replay's next hop still plays
+    addTransmission(live, pos, 500)
+    expect(pingCount()).toBe(2) // a late live copy does not animate it twice
+  })
   it('animates a link to each receiver, broadcast or not', () => {
     addTransmission(tx(B), pos, 0)
     const { rings, trails } = activePings(PING_GROW / 2)

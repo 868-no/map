@@ -38,6 +38,8 @@ export interface Transmission {
   rebroadcast: boolean
   strength?: number // 0..1 signal measured at rx, when rx is the reporting gateway
   delivered?: boolean // not radio: an ACK proving rx received tx's packet (D-096)
+  packet?: string // "origin:id" of the packet transmitted (D-106)
+  replay?: boolean // reconstructed from a traceroute reply: skipped if that packet was already animated (D-106)
 }
 
 export type Response =

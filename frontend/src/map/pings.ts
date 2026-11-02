@@ -174,8 +174,20 @@ function activeDeliveries(now: number): { lines: DeliveryLine[]; arrivals: Flash
   return { lines, arrivals }
 }
 
+// Packets already animated, live or replayed, by "origin:id" (D-106): a
+// traceroute reply's replay of its request's route is skipped when the
+// request itself was seen travelling, and the other way round.
+const animated = new Map<string, { at: number; replay: boolean }>()
+export const REPLAY_DEDUPE_MS = 120_000
+
 export function addTransmission(t: Transmission, pos: Map<string, LngLat>, now = performance.now()): void {
   if (t.delivered) return addDelivery(t, pos, now)
+  if (t.packet) {
+    const prior = animated.get(t.packet)
+    if (prior && now - prior.at < REPLAY_DEDUPE_MS && prior.replay !== !!t.replay) return // shown the other way already
+    if (!prior || now - prior.at >= REPLAY_DEDUPE_MS) animated.set(t.packet, { at: now, replay: !!t.replay })
+    if (animated.size > 2000) for (const [k, v] of animated) if (now - v.at >= REPLAY_DEDUPE_MS) animated.delete(k)
+  }
   const center = pos.get(t.tx)
   if (!center) return
   let p = pings.get(t.key)
@@ -349,6 +361,7 @@ export function activePings(now: number, zoom: number): { rings: Ring[]; blips: 
 export function clearPings(): void {
   pings.clear()
   deliveries.clear()
+  animated.clear()
   seen.clear()
   lastFrame = -Infinity
 }

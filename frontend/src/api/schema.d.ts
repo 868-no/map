@@ -420,6 +420,11 @@ export interface components {
         };
         ObsTraceroute: {
             is_reply: boolean;
+            /**
+             * Format: int32
+             * @description A reply: the packet id of the request it answers
+             */
+            request_id?: number;
             route: components["schemas"]["ObsHop"][] | null;
             route_back: components["schemas"]["ObsHop"][] | null;
             snr_back: (number | null)[] | null;

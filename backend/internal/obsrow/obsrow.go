@@ -146,6 +146,7 @@ type ObsTraceroute struct {
 	SNRTowards []*float64 `json:"snr_towards"`
 	RouteBack  []ObsHop   `json:"route_back"`
 	SNRBack    []*float64 `json:"snr_back"`
+	RequestID  uint32     `json:"request_id,omitempty" doc:"A reply: the packet id of the request it answers"`
 }
 
 // storedMeta is the subset of decoded_metadata copied into ObsRow.

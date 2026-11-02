@@ -103,6 +103,8 @@ pub struct Traceroute {
     pub snr_towards: Vec<Option<f64>>,
     pub route_back: Vec<Hop>,
     pub snr_back: Vec<Option<f64>>,
+    /// A reply: the request's packet id (0: unknown).
+    pub request: u32,
 }
 
 /// A store-and-forward message's kind and sizes (D-103).
@@ -358,6 +360,8 @@ struct JTr {
     route_back: Option<Vec<JHop>>,
     #[serde(default)]
     snr_back: Option<Vec<Option<f64>>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    request_id: Option<u32>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -502,6 +506,7 @@ impl JRow<'_> {
                     snr_towards: t.snr_towards.unwrap_or_default(),
                     route_back: hops(t.route_back),
                     snr_back: t.snr_back.unwrap_or_default(),
+                    request: t.request_id.unwrap_or(0),
                 })
             })
         };
@@ -569,7 +574,7 @@ pub fn to_json<'a>(r: &Row, i: &'a Interner) -> JRow<'a> {
         Some(Detail::Routing(r)) => j.rt = Some(JRt { kind: s(r.kind), error: opt(r.error), request_id: (r.request != 0).then_some(r.request) }),
         Some(Detail::Neighbors(n)) => j.nb = Some(JNbs { neighbors: Some(n.iter().map(|&(id, snr)| JNb { id, snr }).collect()) }),
         Some(Detail::Traceroute(t)) => {
-            j.tr = Some(JTr { valid: t.valid, is_reply: t.is_reply, route: jh(&t.route), snr_towards: Some(t.snr_towards.clone()), route_back: jh(&t.route_back), snr_back: Some(t.snr_back.clone()) })
+            j.tr = Some(JTr { valid: t.valid, is_reply: t.is_reply, route: jh(&t.route), snr_towards: Some(t.snr_towards.clone()), route_back: jh(&t.route_back), snr_back: Some(t.snr_back.clone()), request_id: (t.request != 0).then_some(t.request) })
         }
         None => {}
     }

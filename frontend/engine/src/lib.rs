@@ -295,6 +295,7 @@ impl Engine {
                 }
                 let mut t = packets::transmissions(r, &b.ctx, &b.roles);
                 t.extend(packets::delivery_ping(r, ack));
+                t.extend(packets::forward_route(r, &b.ctx));
                 t
             })
             .collect();
