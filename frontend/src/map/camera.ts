@@ -6,15 +6,18 @@ import type { Selection } from '../state/store'
 
 type LngLat = [number, number]
 
-/** Pixels of the map covered by the floating header (top) and the open panel (right edge, or bottom sheet). */
+/** Pixels of the map covered by the floating header (top) and the open panel (right edge, or the top on phones). */
 function covered(container: HTMLElement | null): { top: number; right: number; bottom: number } {
   const head = document.getElementById('topbar')
   const top = head && container ? Math.max(0, head.getBoundingClientRect().bottom - container.getBoundingClientRect().top) : 0
   const panel = document.getElementById('dock')
   if (!panel || panel.hidden || !container) return { top, right: 0, bottom: 0 }
   const a = container.getBoundingClientRect(), b = panel.getBoundingClientRect()
-  // The side panel is narrow; the phone's bottom card spans most of the width.
-  return b.width < a.width * 0.6 ? { top, right: Math.max(0, a.right - b.left), bottom: 0 } : { top, right: 0, bottom: Math.max(0, a.bottom - b.top) }
+  // The side panel is narrow. On phones it spans most of the width from below
+  // the header down: frame content beneath it, unless it leaves too little map.
+  if (b.width < a.width * 0.6) return { top, right: Math.max(0, a.right - b.left), bottom: 0 }
+  const below = Math.max(0, b.bottom - a.top)
+  return { top: a.height - below >= 160 ? Math.max(top, below) : top, right: 0, bottom: 0 }
 }
 
 export function useCamera(
