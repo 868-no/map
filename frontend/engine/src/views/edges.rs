@@ -87,8 +87,10 @@ pub fn build_edges(rows: &[&Row], hops: &[Sample], known: &[u32], pos: FxMap<u32
     let ctx = RelayContext::new(known.iter().copied(), pos, confirmed, silent);
     let (mut ambiguous, mut unmatched) = (0, 0);
     for (s, hint, origin, gw) in pending {
-        match ctx.resolve(hint, origin, gw) {
-            Some(Ok(n)) => {
+        match ctx.resolve_detail(hint, origin, gw) {
+            // Chosen because it already has a link to the gateway: adds nothing to that link.
+            Some(Ok((_, true))) => {}
+            Some(Ok((n, false))) => {
                 let s = Sample { src: n, ev: Ev::RelayHint, ..s };
                 if current(&s) {
                     samples.push(s)

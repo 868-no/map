@@ -238,6 +238,9 @@ export default function MapView({ caps, snapshot, onPositions }: Props) {
   const clusterOf = useRef(new Map<string, Cluster>())
   const nameOf = useRef(new Map<string, string>())
   const shortOf = useRef(new Map<string, string>())
+  // Every edge, before the map's filters: a direction a filter hid is not "no evidence".
+  const allEdges = useRef<Edge[]>([])
+  allEdges.current = snapshot?.edges ?? []
   ;[nameOf.current, shortOf.current] = useMemo(() => {
     const nodes = snapshot?.nodes ?? []
     return [
@@ -337,7 +340,7 @@ export default function MapView({ caps, snapshot, onPositions }: Props) {
         if ('seg' in o) {
           const g = (o as RouteGeom).seg
           const nm = (id: string) => nameOf.current.get(id) ?? id
-          const why = { direct: 'heard directly', traceroute: 'traceroute hop', relay: 'relayed hop', gap: 'nodes in between unknown', unknown_relay: 'relayed by an unknown node' }[g.why]
+          const why = { direct: 'heard directly', traceroute: 'traceroute hop', relay: 'relayed hop', gap: 'path to here not known (direct, or through relays that spent no hop)', unknown_relay: 'relayed by an unknown node', internet: 'over the internet: taken from an MQTT broker, not heard over the air' }[g.why]
           return setHover({ x: info.x, y: info.y, text: `${nm(g.a)} → ${nm(g.b)}: ${why}` })
         }
         if ('label' in o) {
@@ -351,7 +354,9 @@ export default function MapView({ caps, snapshot, onPositions }: Props) {
         } else {
           // One line per direction, nodes by short name.
           const sn = (id: string) => shortOf.current.get(id) ?? id
-          const dir = (e: Edge | undefined, from: string, to: string) => `${sn(from)} → ${sn(to)}: ${e ? `${e.confidence}, ${e.samples} samples${e.zero_cost?.likely ? ', 0-cost' : ''}` : 'no evidence'}`
+          const hidden = (from: string, to: string) => allEdges.current.some((x) => x.src === from && x.dst === to && !!x.mqtt === !!o.mqtt)
+          const dir = (e: Edge | undefined, from: string, to: string) =>
+            `${sn(from)} → ${sn(to)}: ${e ? (e.mqtt ? 'over the internet' : `${e.confidence} confidence, ${e.samples} report${e.samples === 1 ? '' : 's'}${e.zero_cost?.likely ? ', 0-cost' : ''}`) : hidden(from, to) ? 'hidden by the filters' : 'no evidence'}`
           setHover({ x: info.x, y: info.y, text: [o.mqtt ? 'Over the internet (MQTT), not radio' : '', dir(o.ab, o.a, o.b), dir(o.ba, o.b, o.a)].filter(Boolean).join('\n') })
         }
       },

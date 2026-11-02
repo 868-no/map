@@ -25,7 +25,10 @@ function useWindowModel(caps: Capabilities, retention: Retention | undefined, sn
   const setLive = useStore((s) => s.setLive)
   const setFixed = useStore((s) => s.setFixed)
   const now = retention ? Date.parse(retention.now) : Date.now()
-  const minMs = retention ? Date.parse(retention.configured_cutoff) : now - 180 * 24 * H
+  // The slider starts where data does (the oldest kept observation), not at
+  // the retention limit, which can lie months before anything was recorded.
+  const cutoffMs = retention ? Date.parse(retention.configured_cutoff) : now - 180 * 24 * H
+  const minMs = retention?.earliest_observation ? Math.max(cutoffMs, Math.floor(Date.parse(retention.earliest_observation) / H) * H) : cutoffMs
   const maxDur = caps.max_window_hours * H
   const shown = snapshot?.meta.window
   const startMs = win.live ? (shown ? Date.parse(shown.start) : now - win.durationH * H) : Date.parse(win.start!)
@@ -66,10 +69,12 @@ export function PeriodPanel({ caps, retention, snapshot, traffic }: { caps: Capa
     else applyFixed(endMs - hours * H, endMs)
   }
 
-  const bars = useMemo(() => {
+  // Only buckets with traffic come back: each bar is one bucket wide, placed at its start.
+  const { bars, barW, maxRx } = useMemo(() => {
     const b = traffic?.buckets ?? []
     const max = Math.max(1, ...b.map((x) => x.receptions))
-    return b.map((x) => ({ x: (Date.parse(x.start) - startMs) / durMs, p: x.packets / max, r: x.receptions / max }))
+    const w = Math.max((goDurationMs(traffic?.bucket ?? '') / durMs) * 1000 - 1, 1)
+    return { bars: b.map((x) => ({ x: (Date.parse(x.start) - startMs) / durMs, p: x.packets / max, r: x.receptions / max })), barW: w, maxRx: max }
   }, [traffic, startMs, durMs])
 
   const [startInput, setStartInput] = useState(toLocalInput(new Date(startMs)))
@@ -134,12 +139,15 @@ export function PeriodPanel({ caps, retention, snapshot, traffic }: { caps: Capa
         <svg viewBox="0 0 1000 40" preserveAspectRatio="none" role="img">
           {bars.map((b, i) => (
             <g key={i}>
-              <rect x={b.x * 1000} y={40 - b.r * 38} width={Math.max(1000 / Math.max(bars.length, 1) - 1, 1)} height={b.r * 38} style={{ fill: 'var(--bar-dim)' }} />
-              <rect x={b.x * 1000} y={40 - b.p * 38} width={Math.max(1000 / Math.max(bars.length, 1) - 1, 1)} height={b.p * 38} style={{ fill: 'var(--accent)' }} />
+              <rect x={b.x * 1000} y={40 - b.r * 38} width={barW} height={b.r * 38} style={{ fill: 'var(--bar-dim)' }} />
+              <rect x={b.x * 1000} y={40 - b.p * 38} width={barW} height={b.p * 38} style={{ fill: 'var(--accent)' }} />
             </g>
           ))}
         </svg>
       </div>
+      <p className="muted small strip-key">
+        <span className="key packets" /> unique packets · <span className="key receptions" /> gateway receptions, per {traffic?.bucket ? goDurationLabel(traffic.bucket) : 'bucket'} · tallest bar {maxRx} receptions
+      </p>
       <div className="readout" aria-live="polite">
         {formatLocal(new Date(startMs))} → {formatLocal(new Date(endMs))}
         <br />
@@ -147,4 +155,17 @@ export function PeriodPanel({ caps, retention, snapshot, traffic }: { caps: Capa
       </div>
     </div>
   )
+}
+
+/** A Go duration string from the engine ("15m0s", "1h0m0s") in milliseconds. */
+function goDurationMs(s: string): number {
+  let ms = 0
+  for (const [, n, u] of s.matchAll(/(\d+(?:\.\d+)?)(h|m|s)/g)) ms += +n * (u === 'h' ? 3600_000 : u === 'm' ? 60_000 : 1000)
+  return ms
+}
+
+/** "15m0s" -> "15 min", "1h0m0s" -> "1 h". */
+function goDurationLabel(s: string): string {
+  const min = goDurationMs(s) / 60_000
+  return min < 60 ? `${min} min` : `${+(min / 60).toFixed(1)} h`
 }

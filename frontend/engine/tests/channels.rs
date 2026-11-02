@@ -42,7 +42,7 @@ fn channels_come_from_uplinks_and_the_map_report() {
     assert_eq!(g["channels"], json!([{"name": "NarrowFast", "sent": 0, "uplinked": 2, "primary": true}, {"name": "Secret", "sent": 0, "uplinked": 1}]));
     assert_eq!(g["preset"]["basis"], "map_report");
     // A heard G directly: they share radio settings, so A is on G's confirmed preset.
-    assert_eq!(a["preset"], json!({"preset": "NARROW_FAST", "basis": "radio_contact", "via": ["!0c00000c"], "group": 1}));
+    assert_eq!(a["preset"], json!({"preset": "NARROW_FAST", "basis": "radio_contact", "via": ["!0c00000c"], "group": 1, "direct": 1}));
 }
 
 #[test]
@@ -56,7 +56,7 @@ fn separate_meshes_keep_their_own_presets_and_a_bridge_shows_a_conflict() {
     ]);
     let mut e = engine(rows.clone());
     assert_eq!(radio(&mut e, A)["preset"]["preset"], "NARROW_FAST");
-    assert_eq!(radio(&mut e, Y)["preset"], json!({"preset": "LONG_FAST", "basis": "radio_contact", "via": ["!0e00000e"], "group": 1}));
+    assert_eq!(radio(&mut e, Y)["preset"], json!({"preset": "LONG_FAST", "basis": "radio_contact", "via": ["!0e00000e"], "group": 1, "direct": 1}));
 
     // One node heard directly on both meshes would mean they share settings: the evidence conflicts.
     let mut both = rows.as_array().unwrap().clone();
@@ -77,7 +77,7 @@ fn channel_names_are_only_a_hint_and_zero_db_hops_do_not_join_groups() {
     };
     let mut e = engine(json!([rx(1, A, G, "NarrowFast", false), report(2, X, "LongFast", "LONG_FAST", true), tr(3, 0.0)]));
     // A's only evidence is the default channel name it was heard on.
-    assert_eq!(radio(&mut e, A)["preset"], json!({"preset": "NARROW_FAST", "basis": "channel_name", "group": 0}));
+    assert_eq!(radio(&mut e, A)["preset"], json!({"preset": "NARROW_FAST", "basis": "channel_name", "group": 0, "direct": 0}));
     assert!(radio(&mut e, Y)["preset"].is_null(), "a hop at exactly 0 dB may be MQTT: no radio contact");
     let mut e = engine(json!([report(2, Y, "LongFast", "LONG_FAST", true), tr(3, 6.5)]));
     assert_eq!(radio(&mut e, A)["preset"]["basis"], "radio_contact", "a real traceroute hop is radio contact");

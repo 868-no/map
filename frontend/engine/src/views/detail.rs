@@ -97,6 +97,7 @@ pub fn build_node_detail(rows: &[&Row], num: u32, i: &Interner) -> Option<NodeDe
     if let Some(o) = origins(&own).get(&num) {
         n.packets = o.packets.len();
         n.receptions = o.receptions.len();
+        n.own_uplinks = o.own_uplinks.len();
         n.signatures = sig_counts(o, i);
         n.brokers = Some(brokers(o, i));
         n.mqtt_opt_out = o.opt_out;
@@ -109,6 +110,13 @@ pub fn build_node_detail(rows: &[&Row], num: u32, i: &Interner) -> Option<NodeDe
         n.identity = Some(identity_of(r, i));
     } else if let Some(r) = latest_by(&own, is_named_report, |r| r.src).get(&num) {
         n.identity = Some(identity_of_report(r, i));
+    }
+    if n.mqtt_opt_out {
+        // Never named (D-032), whatever an older NodeInfo or map report says.
+        if let Some(id) = n.identity.as_mut() {
+            id.long_name.clear();
+            id.short_name.clear();
+        }
     }
     if let Some(r) = position_rows(&own).get(&num) {
         n.position = Some(position_of(r, i));
@@ -128,10 +136,9 @@ pub fn build_node_detail(rows: &[&Row], num: u32, i: &Interner) -> Option<NodeDe
     radio.preset = crate::channels::preset_guess(num, rows, i);
     let mut d = NodeDetail { node: n, positions: vec![], telemetry_series: vec![], heard_by: vec![], heard: vec![], recent_packets: vec![], truncated: false, radio };
     if first == i64::MAX {
-        if !referenced(rows).contains(&num) {
-            return None;
-        }
+        let Some(&t) = referenced(rows).get(&num) else { return None };
         d.node.status = "referenced";
+        d.node.last_referenced = Some(iso(t));
         return Some(d);
     }
     d.node.first_seen = Some(iso(first));

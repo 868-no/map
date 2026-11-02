@@ -12,7 +12,8 @@ const EXPECTED: &str = include_str!("fixtures/mesh-12h/expected.json");
 
 /// Times to whole milliseconds (the server kept microseconds), numbers to
 /// 1e-4 as f64, heard lists by node, and engine-only fields (`source`, `radio`,
-/// `mqtt_downlink`, `zero_cost`) dropped.
+/// `mqtt_downlink`, `zero_cost`, …) dropped, as are links and estimates, whose
+/// rules have moved on from the server's (D-087).
 fn normalize(v: &Value) -> Value {
     norm(v, true)
 }
@@ -24,7 +25,12 @@ fn norm(v: &Value, server: bool) -> Value {
         Value::Object(o) => {
             let mut out = serde_json::Map::new();
             for (k, x) in o {
-                if server && (k == "source" || k == "radio" || k == "mqtt_downlink" || k == "zero_cost" || k == "moved_at" || k == "track" || k == "airborne" || k == "refined" || k == "relaying" || k == "multi_uplink") {
+                if server && (k == "source" || k == "radio" || k == "mqtt_downlink" || k == "zero_cost" || k == "moved_at" || k == "track" || k == "airborne" || k == "refined" || k == "relaying" || k == "multi_uplink"
+                    // Links and the estimates built on them left the retired server's rules in D-087
+                    // (count-aware confidence, traceroute and relay evidence counted once): engine.json covers them.
+                    || k == "edges" || k == "estimate" || k == "estimate_note" || k == "last_referenced" || k == "own_uplinks"
+                    // The server counted a packet under every status any copy had; one per packet now (D-087).
+                    || k == "signatures") {
                     continue;
                 }
                 let mut x = norm(x, server);

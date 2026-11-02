@@ -87,8 +87,11 @@ pub struct PresetGuess {
     /// Up to five nodes whose evidence it rests on (radio contact bases).
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub via: Vec<String>,
-    /// Other nodes in its radio group (sharing modem settings).
+    /// Other nodes in its radio group (sharing modem settings): everyone
+    /// reachable through chains of radio contact, not only its own contacts.
     pub group: usize,
+    /// Nodes it heard or was heard by itself, over the air.
+    pub direct: usize,
     /// Presets and how many group members each, when they disagree.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub conflict: Vec<(String, usize)>,
@@ -183,7 +186,8 @@ pub fn preset_guess(num: u32, rows: &[&Row], i: &Interner) -> Option<PresetGuess
     // Direct contacts first, then by node number: stable, and the nearest evidence leads.
     members.sort_by_key(|n| (!direct.contains(n), *n));
     let group = members.len();
-    let guess = |preset: Option<String>, basis, via: Vec<String>, conflict| Some(PresetGuess { preset, basis, via, group, conflict });
+    let n_direct = direct.len();
+    let guess = |preset: Option<String>, basis, via: Vec<String>, conflict| Some(PresetGuess { preset, basis, via, group, direct: n_direct, conflict });
 
     if let Some((p, true)) = ev.get(&num) {
         return guess(Some(p.clone()), "map_report", vec![], vec![]);

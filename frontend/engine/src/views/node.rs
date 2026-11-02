@@ -63,6 +63,10 @@ pub struct Signatures {
     pub not_applicable: usize,
 }
 
+fn is_zero(n: &usize) -> bool {
+    *n == 0
+}
+
 fn is_false(b: &bool) -> bool {
     !*b
 }
@@ -82,8 +86,15 @@ pub struct Node {
     pub first_seen: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_seen: Option<String>,
+    /// For a node only named by others (status "referenced"): when it was last named.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_referenced: Option<String>,
     pub packets: usize,
     pub receptions: usize,
+    /// Of `receptions`, those it uplinked itself as a gateway (its own map
+    /// reports among them): not heard over the air by anyone else.
+    #[serde(skip_serializing_if = "is_zero")]
+    pub own_uplinks: usize,
     pub gateway_receptions: usize,
     pub is_gateway: bool,
     /// A gateway that uplinks every copy of a packet it hears, not only the
@@ -148,7 +159,7 @@ impl Node {
 
     pub(super) fn new(n: u32) -> Self {
         Node {
-            id: node_id(n), num: n, status: "observed", identity: None, position: None, telemetry: None, first_seen: None, last_seen: None,
+            id: node_id(n), num: n, status: "observed", identity: None, position: None, telemetry: None, first_seen: None, last_seen: None, last_referenced: None, own_uplinks: 0,
             packets: 0, receptions: 0, gateway_receptions: 0, is_gateway: false, multi_uplink: false, signatures: Signatures::default(), brokers: None,
             mqtt_opt_out: false, estimate: None, estimate_note: None, mqtt_downlink: None, moved_at: None, track: None, airborne: false, refined: None, relaying: None, first: i64::MAX, last: i64::MIN, pos: None,
         }
@@ -245,7 +256,9 @@ pub(super) struct Origin {
     pub(super) last: i64,
     pub(super) packets: FxSet<u64>,
     pub(super) receptions: FxSet<u64>,
-    sig: FxMap<u32, FxSet<u64>>,
+    /// Receptions it uplinked itself, as a gateway (map reports among them).
+    pub(super) own_uplinks: FxSet<u64>,
+    sig_rows: Vec<(u64, u32)>, // (packet, status) of every copy
     brokers: FxSet<u32>,
     pub(super) opt_out: bool,
 }
@@ -253,21 +266,41 @@ pub(super) struct Origin {
 pub(super) fn origins(rows: &[&Row]) -> FxMap<u32, Origin> {
     let mut m: FxMap<u32, Origin> = map();
     for r in rows {
-        let o = m.entry(r.src).or_insert_with(|| Origin { first: r.t, last: r.t, packets: set(), receptions: set(), sig: map(), brokers: set(), opt_out: false });
+        let o = m.entry(r.src).or_insert_with(|| Origin { first: r.t, last: r.t, packets: set(), receptions: set(), own_uplinks: set(), sig_rows: vec![], brokers: set(), opt_out: false });
         o.first = o.first.min(r.t);
         o.last = o.last.max(r.t);
         o.packets.insert(r.lp);
         o.receptions.insert(r.ok);
-        o.sig.entry(r.sig).or_insert_with(set).insert(r.lp);
+        if r.gw == Some(r.src) {
+            o.own_uplinks.insert(r.ok);
+        }
+        o.sig_rows.push((r.lp, r.sig));
         o.brokers.insert(r.broker);
         o.opt_out |= r.nk;
     }
     m
 }
 
+/// One status per packet, its best copy's: relays can strip a signature, so
+/// a packet some gateway verified counts as verified, once.
 pub(super) fn sig_counts(o: &Origin, i: &Interner) -> Signatures {
-    let c = |s: &str| i.get(s).and_then(|id| o.sig.get(&id)).map_or(0, |x| x.len());
-    Signatures { verified: c("verified"), unsigned: c("unsigned"), unverifiable: c("unverifiable"), not_applicable: c("not-applicable") }
+    let mut best: FxMap<u64, u32> = map();
+    for &(lp, s) in &o.sig_rows {
+        let b = best.entry(lp).or_insert(s);
+        if crate::packets::sig_rank(i.s(s)) > crate::packets::sig_rank(i.s(*b)) {
+            *b = s;
+        }
+    }
+    let mut out = Signatures::default();
+    for s in best.values() {
+        match i.s(*s) {
+            "verified" => out.verified += 1,
+            "unsigned" => out.unsigned += 1,
+            "unverifiable" => out.unverifiable += 1,
+            _ => out.not_applicable += 1,
+        }
+    }
+    out
 }
 
 pub(super) fn brokers(o: &Origin, i: &Interner) -> Vec<String> {
@@ -277,14 +310,17 @@ pub(super) fn brokers(o: &Origin, i: &Interner) -> Vec<String> {
 }
 
 /// Nodes mentioned by NeighborInfo, valid traceroute hops or traceroute destinations.
-pub fn referenced(rows: &[&Row]) -> FxSet<u32> {
-    let mut out = set();
-    let mut add = |n: u32| {
-        if n > 0 && n < BROADCAST {
-            out.insert(n);
-        }
-    };
+/// Nodes named in others' NeighborInfo or traceroutes, with when they were
+/// last named.
+pub fn referenced(rows: &[&Row]) -> FxMap<u32, i64> {
+    let mut out: FxMap<u32, i64> = map();
     for r in rows {
+        let mut add = |n: u32| {
+            if n > 0 && n < BROADCAST {
+                let t = out.entry(n).or_insert(r.t);
+                *t = (*t).max(r.t);
+            }
+        };
         if r.ty == ty::NEIGHBORINFO {
             for &(id, _) in r.neighbors() {
                 add(id);

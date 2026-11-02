@@ -92,6 +92,7 @@ pub fn build_snapshot(rows: &[&Row], i: &Interner, g: &GeoOptions, rules: Rules)
         x.last = o.last;
         x.packets = o.packets.len();
         x.receptions = o.receptions.len();
+        x.own_uplinks = o.own_uplinks.len();
         x.signatures = sig_counts(&o, i);
         x.brokers = Some(brokers(&o, i));
         x.mqtt_opt_out = o.opt_out;
@@ -134,12 +135,23 @@ pub fn build_snapshot(rows: &[&Row], i: &Interner, g: &GeoOptions, rules: Rules)
     for (n, r) in latest_by(rows, is_device_telemetry, |r| r.src) {
         nodes.entry(n).or_insert_with(|| Node::new(n)).telemetry = Some(telemetry_of(r));
     }
-    for n in referenced(rows) {
-        nodes.entry(n).or_insert_with(|| {
+    for (n, t) in referenced(rows) {
+        let x = nodes.entry(n).or_insert_with(|| {
             let mut x = Node::new(n);
             x.status = "referenced";
             x
         });
+        if x.status == "referenced" {
+            x.last_referenced = Some(iso(t));
+        }
+    }
+    // A node that did not allow MQTT uplink is never named (D-032), even when
+    // an older NodeInfo or a map report in the window carries its name.
+    for x in nodes.values_mut().filter(|x| x.mqtt_opt_out) {
+        if let Some(id) = x.identity.as_mut() {
+            id.long_name.clear();
+            id.short_name.clear();
+        }
     }
     for x in nodes.values_mut() {
         if x.first != i64::MAX {
@@ -171,7 +183,10 @@ pub fn build_snapshot(rows: &[&Row], i: &Interner, g: &GeoOptions, rules: Rules)
         }
     }
     let moved: FxMap<u32, i64> = if rules.moves { moves.iter().map(|(&n, m)| (n, m.moved_at)).collect() } else { map() };
-    let (mut er, ctx) = build_edges(rows, &hops, &known, pos, silent, rules.mqtt_links.then_some(&downlinkers), &moved);
+    let (mut er, mut ctx) = build_edges(rows, &hops, &known, pos, silent, rules.mqtt_links.then_some(&downlinkers), &moved);
+    if rules.mqtt_links {
+        ctx.downlinkers = downlinkers.clone();
+    }
     // Directional 0-cost evidence on radio links (D-068).
     let hears: FxSet<(u32, u32)> = er.edges.iter().filter(|e| !e.mqtt).map(|e| (e.src_num, e.dst_num)).collect();
     // Every packet's copies, with the transmitter each was heard from: once for both passes below.
@@ -210,7 +225,8 @@ pub fn build_snapshot(rows: &[&Row], i: &Interner, g: &GeoOptions, rules: Rules)
             counts.estimated += 1
         }
     }
-    counts.edges = er.edges.iter().filter(|e| !e.mqtt).count();
+    // Radio links as the map draws them: one per node pair, whichever directions were heard.
+    counts.edges = er.edges.iter().filter(|e| !e.mqtt).map(|e| (e.src_num.min(e.dst_num), e.src_num.max(e.dst_num))).collect::<FxSet<_>>().len();
     list.sort_by(|a, b| (b.packets + b.gateway_receptions).cmp(&(a.packets + a.gateway_receptions)).then(a.num.cmp(&b.num)));
     if list.len() > MAX_NODES {
         list.truncate(MAX_NODES);

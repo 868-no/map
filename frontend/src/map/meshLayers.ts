@@ -165,7 +165,10 @@ export function meshLayerBuilder(): (input: MeshLayerInput) => Layer[] {
     }
     return out
   })
-  const routeParts = memoLast((route: RouteGeom[]) => ({ solid: route.filter((r) => !r.dashed), dashed: route.filter((r) => r.dashed) }))
+  const routeParts = memoLast((route: RouteGeom[]) => {
+    const net = (r: RouteGeom) => r.seg.why === 'internet'
+    return { solid: route.filter((r) => !r.dashed && !net(r)), dashed: route.filter((r) => r.dashed && !net(r)), internet: route.filter(net) }
+  })
   const reachParts = memoLast((segs: ReachGeom['segments']) => ({ solid: segs.filter((r) => !r.gap), gaps: segs.filter((r) => r.gap) }))
   // Draw order: markers without glyphs first, then those with one (stable
   // otherwise). A plain marker drawn later would cover a glyph node at the
@@ -344,6 +347,18 @@ export function meshLayerBuilder(): (input: MeshLayerInput) => Layer[] {
         new PathLayer<RouteGeom, PathStyleExtensionProps<RouteGeom>>({
           id: 'route-gaps', ...UNDER_LABELS, data: parts.dashed, getPath: (r) => [r.from, r.to], widthUnits: 'pixels', getWidth: 3,
           getColor: ROUTE_COLOR, getDashArray: [5, 4], dashJustified: true, extensions: [dashExt], pickable: true,
+        }),
+        // Hops over the internet (an MQTT downlink, D-087): dotted green, like internet links.
+        new PathLayer<RouteGeom, PathStyleExtensionProps<RouteGeom>>({
+          id: 'route-internet', ...UNDER_LABELS, data: parts.internet, getPath: (r) => [r.from, r.to], widthUnits: 'pixels', getWidth: 3,
+          getColor: [...c.linkMqtt, 230], getDashArray: [1, 2.5], dashJustified: true, extensions: [dashExt], pickable: true,
+          updateTriggers: { getColor: [c] },
+        }),
+        // Which way each hop went: transmitter to receiver.
+        new IconLayer<RouteGeom>({
+          id: 'route-arrows', ...UNDER_LABELS, data: route, getPosition: (r) => chevron(r.from, r.to).pos,
+          getAngle: (r) => chevron(r.from, r.to).angle, ...chevronIcon(), getIcon: () => 'chevron', sizeUnits: 'pixels', getSize: 13,
+          getColor: (r) => (r.seg.why === 'internet' ? [...c.linkMqtt, 255] : ROUTE_COLOR) as RGBA, pickable: false, updateTriggers: { getColor: [c] },
         }),
       )
     }

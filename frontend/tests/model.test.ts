@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ageColor, AGE_STOPS, bridgeRoute, filterEdges, glyphInk, relativeLuminance, isInfraRole, mqttDownlink, mqttUplink, LOW_ZOOM_LINKS, precisionErrorM, visibleLinks, lastHeardAge, linkGeometry, placeNodes, roleRadius } from '../src/map/model'
+import { ageColor, AGE_STOPS, bridgeRoute, filterEdges, glyphInk, relativeLuminance, isInfraRole, mqttDownlink, mqttUplink, LOW_ZOOM_LINKS, precisionErrorM, visibleLinks, lastHeardAge, ageMs, linkGeometry, placeNodes, roleRadius } from '../src/map/model'
 
 // WCAG contrast ratio.
 const contrast = (a: readonly number[], b: readonly number[]) => (Math.max(relativeLuminance(a), relativeLuminance(b)) + 0.05) / (Math.min(relativeLuminance(a), relativeLuminance(b)) + 0.05)
@@ -21,12 +21,16 @@ describe('map view model', () => {
     expect(placed[1].radiusM).toBe(3000)
     expect(unplaced).toHaveLength(1)
   })
-  it('scales last-heard age with the selected window', () => {
+  it('scales last-heard age logarithmically over the selected window', () => {
     const end = Date.parse('2026-10-31T04:00:00Z')
     const n = node('!1', { last_seen: '2026-10-31T03:00:00Z' })
-    expect(lastHeardAge(n, end, 4 * 3600_000)).toBeCloseTo(0.25)
-    expect(lastHeardAge(n, end, 72 * 3600_000)).toBeCloseTo(1 / 72)
+    const W = 72 * 3600_000
+    expect(lastHeardAge(node('!1', { last_seen: '2026-10-31T04:00:00Z' }), end, W)).toBe(0)
+    expect(lastHeardAge(n, end, W)).toBeCloseTo(Math.log(7) / Math.log(433)) // an hour ago: about a third along, not 1/72
     expect(lastHeardAge(node('!1', { last_seen: '2026-10-30T00:00:00Z' }), end, 3600_000)).toBe(1)
+    for (const a of [0, 0.25, 0.5, 1]) expect(lastHeardAge(node('!1', { last_seen: new Date(end - ageMs(a, W)).toISOString() }), end, W)).toBeCloseTo(a)
+    // Referenced-only nodes count from when they were last named.
+    expect(lastHeardAge(node('!1', { last_seen: undefined, last_referenced: '2026-10-31T04:00:00Z' }), end, W)).toBe(0)
     expect(ageColor(0)).toEqual(AGE_STOPS[0])
     expect(ageColor(1)).toEqual(AGE_STOPS[AGE_STOPS.length - 1])
     expect(ageColor(0.5)).toEqual(AGE_STOPS[2])

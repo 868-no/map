@@ -20,9 +20,19 @@ pub struct OwnPacket {
     pub to: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub channel: Option<String>,
+    /// The fewest hops any other gateway's copy shows (hop start minus hop
+    /// limit; 0-cost relays do not count). Its own uplink and copies taken
+    /// from MQTT (downlinked) are left out: they say nothing about the path.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub hops: Option<i16>,
+    /// Other gateways that uplinked it.
     pub gateways: usize,
+    /// It uplinked it itself, as a gateway.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub by_itself: bool,
+    /// Some copy reached a gateway through an MQTT downlink (D-087).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub downlinked: bool,
     pub receptions: usize,
     pub signature: String,
 }
@@ -45,6 +55,17 @@ pub struct PacketLog {
     pub own: Vec<OwnPacket>,
     pub relayed: Vec<RelayedPacket>,
     pub truncated: bool,
+}
+
+/// Signature statuses, weakest first: a packet's status is its best copy's
+/// (relays can strip a signature; they cannot add one).
+pub fn sig_rank(s: &str) -> u8 {
+    match s {
+        "verified" => 3,
+        "unverifiable" => 2,
+        "unsigned" => 1,
+        _ => 0, // not-applicable
+    }
 }
 
 /// Relaying is known from a gateway's last-hop byte resolving to the node
@@ -94,7 +115,11 @@ pub fn packet_log(rows: &[&Row], num: u32, ctx: &RelayContext, i: &Interner) -> 
         .into_values()
         .map(|rs| {
             let first = rs.iter().copied().reduce(|a, b| if b.t < a.t { b } else { a }).unwrap();
-            let hops = rs.iter().filter_map(|r| r.hops()).min();
+            use crate::row::ty;
+            let others: Vec<&Row> = rs.iter().copied().filter(|r| r.gw.is_some_and(|g| g != num)).collect();
+            let radio = |r: &&&Row| r.rr != ty::VIA_MQTT && r.rr != ty::NON_RF && !ctx.downlinked(r);
+            let hops = others.iter().filter(radio).filter_map(|r| r.hops()).min();
+            let best = rs.iter().map(|r| i.s(r.sig)).max_by_key(|s| sig_rank(s)).unwrap_or("unsigned");
             (
                 first.t,
                 OwnPacket {
@@ -104,9 +129,11 @@ pub fn packet_log(rows: &[&Row], num: u32, ctx: &RelayContext, i: &Interner) -> 
                     to: dest(first.dst),
                     channel: (first.channel != 0).then(|| i.s(first.channel).to_string()),
                     hops,
-                    gateways: rs.iter().filter_map(|r| r.gw).collect::<FxSet<u32>>().len(),
+                    gateways: others.iter().filter_map(|r| r.gw).collect::<FxSet<u32>>().len(),
+                    by_itself: rs.iter().any(|r| r.gw == Some(num)),
+                    downlinked: others.iter().any(|r| ctx.downlinked(r)),
                     receptions: rs.iter().map(|r| r.ok).collect::<FxSet<u64>>().len(),
-                    signature: i.s(first.sig).to_string(),
+                    signature: best.to_string(),
                 },
             )
         })
@@ -180,18 +207,14 @@ pub fn packet_route(rows: &[&Row], ctx: &RelayContext, roles: &FxMap<u32, String
     use crate::row::ty;
     for r in rows {
         let Some(gw) = r.gw.filter(|&g| g != origin) else { continue };
+        let over_radio = r.rr != ty::VIA_MQTT && r.rr != ty::NON_RF;
         if let Some(t) = r.traceroute().filter(|t| t.valid) {
-            let hops = if t.is_reply { &t.route_back } else { &t.route };
-            let mut chain: Vec<Option<u32>> = std::iter::once(Some(origin)).chain(hops.iter().map(|h| (!h.unknown).then_some(h.id))).collect();
-            if chain.last().copied().flatten() != Some(gw) {
-                chain.push(Some(gw));
-            }
             let (mut last, mut gap) = (origin, false);
-            for n in chain.into_iter().skip(1) {
+            for (n, internet) in traceroute_chain(r, t, gw, over_radio, ctx).into_iter().skip(1) {
                 match n {
                     None => gap = true,
                     Some(n) => {
-                        add(last, n, gap, if gap { "gap" } else { "traceroute" });
+                        add(last, n, gap, if internet { "internet" } else if gap { "gap" } else { "traceroute" });
                         last = n;
                         gap = false;
                     }
@@ -199,7 +222,7 @@ pub fn packet_route(rows: &[&Row], ctx: &RelayContext, roles: &FxMap<u32, String
             }
             continue;
         }
-        if r.rr == ty::VIA_MQTT || r.rr == ty::NON_RF {
+        if !over_radio {
             continue; // not heard over radio
         }
         if r.dr || r.rr == ty::NO_RX_METRICS {
@@ -207,6 +230,11 @@ pub fn packet_route(rows: &[&Row], ctx: &RelayContext, roles: &FxMap<u32, String
             continue;
         }
         match r.relay.and_then(|b| ctx.resolve((b & 0xff) as u8, origin, gw)) {
+            Some(Ok(relay)) if ctx.downlinked(r) => {
+                // Taken from MQTT and transmitted with no hops left (D-087).
+                add(relay, gw, false, "relay");
+                add(origin, relay, true, "internet");
+            }
             Some(Ok(relay)) => {
                 add(relay, gw, false, "relay");
                 // One hop spent, by a relay that cannot receive at zero cost: it heard the sender itself.
@@ -226,6 +254,24 @@ pub fn packet_route(rows: &[&Row], ctx: &RelayContext, roles: &FxMap<u32, String
         }).collect(),
         receptions: rows.iter().map(|r| r.ok).collect::<FxSet<u64>>().len(),
     }
+}
+
+/// A traceroute copy's path, origin first: each node (None where unknown)
+/// with whether the hop into it crossed the internet (exactly 0 dB into a
+/// probable downlinker, D-054). The uplinking gateway ends it when the copy
+/// reached it over the air.
+fn traceroute_chain(r: &Row, t: &crate::row::Traceroute, gw: u32, over_radio: bool, ctx: &RelayContext) -> Vec<(Option<u32>, bool)> {
+    let (hops, snr) = if t.is_reply { (&t.route_back, &t.snr_back) } else { (&t.route, &t.snr_towards) };
+    let mut chain: Vec<(Option<u32>, bool)> = vec![(Some(r.src), false)];
+    for (k, h) in hops.iter().enumerate() {
+        let n = (!h.unknown).then_some(h.id);
+        let internet = n.is_some_and(|n| ctx.downlinkers.contains(&n)) && snr.get(k).copied().flatten() == Some(0.0);
+        chain.push((n, internet));
+    }
+    if over_radio && chain.last().and_then(|c| c.0) != Some(gw) {
+        chain.push((Some(gw), false));
+    }
+    chain
 }
 
 // ---- live pings ----
@@ -260,29 +306,32 @@ pub fn transmissions(r: &Row, ctx: &RelayContext, roles: &FxMap<u32, String>) ->
     let lp = key_hex(r.lp);
     let key = |tx: u32| format!("{lp}|{}", node_id(tx));
     let strength = signal_strength(r.snr, r.rssi);
+    use crate::row::ty;
     if let Some(t) = r.traceroute().filter(|t| t.valid) {
-        let hops = if t.is_reply { &t.route_back } else { &t.route };
-        let mut chain: Vec<Option<u32>> = std::iter::once(Some(r.src)).chain(hops.iter().map(|h| (!h.unknown).then_some(h.id))).collect();
-        if let Some(g) = r.gw {
-            if chain.last().copied().flatten() != Some(g) {
-                chain.push(Some(g));
-            }
-        }
+        let over_radio = r.rr != ty::VIA_MQTT && r.rr != ty::NON_RF;
+        let chain = match r.gw {
+            Some(g) => traceroute_chain(r, t, g, over_radio, ctx),
+            None => traceroute_chain(r, t, r.src, false, ctx),
+        };
         let mut out = vec![];
         for k in 0..chain.len() {
-            let Some(tx) = chain[k] else { continue };
+            let Some(tx) = chain[k].0 else { continue };
             if k > 0 && k == chain.len() - 1 {
                 break; // the last node only received
             }
-            let rx = chain.get(k + 1).copied().flatten();
+            // A hop over the internet is no radio transmission: no ping for it.
+            if chain.get(k + 1).is_some_and(|c| c.1) {
+                continue;
+            }
+            let rx = chain.get(k + 1).and_then(|c| c.0);
             out.push(Transmission { key: key(tx), tx: node_id(tx), rx: rx.map(node_id), rebroadcast: k > 0, strength: rx.filter(|&x| Some(x) == r.gw).and(strength) });
         }
         return out;
     }
     let first = |rx: Option<u32>, s: Option<f64>| Transmission { key: key(r.src), tx: node_id(r.src), rx: rx.map(node_id), rebroadcast: false, strength: s };
     let Some(gw) = r.gw else { return vec![first(None, None)] };
-    if gw == r.src {
-        return vec![first(None, None)];
+    if gw == r.src || r.rr == ty::VIA_MQTT || r.rr == ty::NON_RF {
+        return vec![first(None, None)]; // the gateway did not hear it over the air
     }
     if r.dr || r.hops() == Some(0) {
         return vec![first(Some(gw), strength)];
@@ -291,7 +340,8 @@ pub fn transmissions(r: &Row, ctx: &RelayContext, roles: &FxMap<u32, String>) ->
         Some(Ok(n)) => n,
         _ => return vec![first(None, None)],
     };
-    let heard_origin = r.hops() == Some(1) && roles.get(&relay).is_some_and(|ro| !ro.is_empty() && !zero_cost_role(ro));
+    // A downlinked copy (D-087) carries no hop count: the relay got it from MQTT.
+    let heard_origin = !ctx.downlinked(r) && r.hops() == Some(1) && roles.get(&relay).is_some_and(|ro| !ro.is_empty() && !zero_cost_role(ro));
     vec![
         first(heard_origin.then_some(relay), None),
         Transmission { key: key(relay), tx: node_id(relay), rx: Some(node_id(gw)), rebroadcast: true, strength },

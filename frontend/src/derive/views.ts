@@ -92,6 +92,8 @@ export interface MeshNode {
   receptions: number // gateway receptions of those packets
   gateway_receptions: number // receptions this node uplinked as a gateway
   is_gateway: boolean
+  own_uplinks?: number // of receptions, those it uplinked itself (incl. its map reports)
+  last_referenced?: string // referenced-only nodes: when last named by others
   /** Uplinks every copy of a packet it hears, not only the first (a future firmware option, D-084). */
   multi_uplink?: boolean
   signatures: { verified: number; unsigned: number; unverifiable: number; not_applicable: number }
@@ -222,6 +224,7 @@ export interface PresetGuess {
   basis: 'map_report' | 'radio_contact' | 'channel_name' | 'radio_contact_channel_name' | 'conflict'
   via?: string[] // up to five node ids the evidence rests on
   group: number // other nodes in its radio group
+  direct: number // nodes it heard or was heard by itself, over the air (the group reaches further)
   conflict?: [string, number][] // presets and how many group members each
 }
 
@@ -242,8 +245,10 @@ export interface OwnPacket {
   type: string
   to?: string
   channel?: string
-  hops?: number // fewest hops any gateway saw
-  gateways: number
+  hops?: number // fewest hops any other gateway's radio copy shows (not its own uplink, not downlinked copies)
+  gateways: number // other gateways that uplinked it
+  by_itself?: boolean // it uplinked it itself, as a gateway
+  downlinked?: boolean // some copy reached a gateway through an MQTT downlink (D-087)
   receptions: number
   signature: string
 }
@@ -269,7 +274,7 @@ export interface RouteSegment {
   a: string // transmitter
   b: string // receiver
   dashed: boolean // nodes between a and b are missing
-  why: 'direct' | 'traceroute' | 'relay' | 'gap' | 'unknown_relay'
+  why: 'direct' | 'traceroute' | 'relay' | 'gap' | 'unknown_relay' | 'internet'
 }
 
 export interface PacketRoute {

@@ -18,10 +18,12 @@ export const BASEMAP_GROUPS = [
     info: 'Rivers, streams and canals. Lakes and the sea are always shown.' },
   { id: 'buildings', label: 'Buildings', on: false, layers: ['building'],
     info: 'Building footprints from OpenStreetMap; visible when zoomed far in.' },
-  { id: 'places', label: 'City and country names', on: true, layers: ['place-city', 'place-country'],
-    info: 'Names of countries and cities. (The basemap carries no county names.)' },
-  { id: 'localPlaces', label: 'Local place names', on: false, layers: ['place-town', 'place-village'],
-    info: 'Names of places smaller than a city: towns, villages, hamlets, suburbs and neighbourhoods.' },
+  // OpenStreetMap classes most Norwegian cities (Lillehammer, Molde, Steinkjer…)
+  // as towns; only the largest are cities. Both count as cities here.
+  { id: 'places', label: 'City and country names', on: true, layers: ['place-city', 'place-town', 'place-country'],
+    info: 'Names of countries, cities and towns. (The basemap carries no county names.)' },
+  { id: 'localPlaces', label: 'Local place names', on: false, layers: ['place-village'],
+    info: 'Names of places smaller than a town: villages, hamlets, suburbs and neighbourhoods.' },
   { id: 'peaks', label: 'Peaks', on: false, layers: ['mountain-peak'],
     info: 'Mountain peaks with name and elevation. Useful for spotting likely high sites for routers.' },
   { id: 'roadNames', label: 'Road names and numbers', on: false, layers: ['road-name', 'road-shield'],

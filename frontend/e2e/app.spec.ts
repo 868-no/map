@@ -80,13 +80,13 @@ test('roads and city names show by default, local names on request, and the choi
   await expect.poll(async () => (await labels()).names['place-city'] ?? [], { timeout: 30_000 }).toContain('Trondheim')
   await expect.poll(async () => sum(await labels(), 'road-')).toBeGreaterThan(0)
   const l = await labels()
-  expect(sum(l, 'place-town') + sum(l, 'place-village') + sum(l, 'road-name') + sum(l, 'mountain-peak')).toBe(0)
+  expect(sum(l, 'place-village') + sum(l, 'road-name') + sum(l, 'mountain-peak')).toBe(0)
   expect(l.counts['water'] ?? 0).toBeGreaterThan(0)
   await showLayers(page, ['Local place names'])
   await page.reload()
   await page.waitForFunction(() => !!(window as unknown as { __meshmap?: unknown }).__meshmap, null, { timeout: 30_000 })
   await viewAt(page, 63.43, 10.40, 10)
-  await expect.poll(async () => sum(await labels(), 'place-town') + sum(await labels(), 'place-village'), { timeout: 30_000 }).toBeGreaterThan(0)
+  await expect.poll(async () => sum(await labels(), 'place-village'), { timeout: 30_000 }).toBeGreaterThan(0)
 })
 
 test('genuine place, peak, road and border labels render (self-hosted basemap)', async ({ page }) => {
@@ -170,6 +170,8 @@ test('slide the window back, then return to live', async ({ page }) => {
   await ready(page)
   await page.locator('.live-indicator .badge').click() // the header's indicator opens the Period panel (D-067)
   await expect(page.getByRole('complementary', { name: 'Period' })).toBeVisible()
+  // A short window, so there is older data to slide to however young the database is.
+  await page.getByRole('button', { name: '1h', exact: true }).click()
   await page.getByRole('button', { name: 'Move window back' }).click()
   await expect(page.locator('.badge')).toContainText('HISTORICAL')
   await expect(page).toHaveURL(/start=.*end=/)
@@ -196,12 +198,12 @@ test('legend explains role sizes and a last-heard scale that follows the window'
   await ready(page)
   await openPanel(page)
   await showPanel(page, 'Legend')
-  await expect(page.locator('.age-labels')).toContainText('72 h before')
+  await expect(page.locator('.age-labels')).toContainText('72 h') // logarithmic: 35 min, 3.3 h, 16 h, 72 h
   await expect(page.locator('.legend')).toContainText('ROUTER_LATE')
   await showPanel(page, 'Period')
   await page.getByRole('button', { name: '24h', exact: true }).click()
   await showPanel(page, 'Legend')
-  await expect(page.locator('.age-labels')).toContainText('24 h before')
+  await expect(page.locator('.age-labels')).toContainText('24 h')
 })
 
 test('selecting a node shows only its links, and accuracy circles only for it', async ({ page }) => {

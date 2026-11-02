@@ -35,7 +35,7 @@ export function SettingsPanel({ canInstall, install }: { canInstall: boolean; in
         <a className="menu-item" href={PRIVACY_URL} target="_blank" rel="noreferrer">Privacy policy ↗</a>
       </nav>
       <h3>Reset</h3>
-      <p className="muted">Forget everything this site stored in your browser: layer choices, theme, filters, the saved copy of the mesh data and the offline cache. The page then reloads and fetches the data again.</p>
+      <p className="muted">Forget everything this site stored in your browser: layer choices, theme, the saved copy of the mesh data and the offline cache. The page then reloads and fetches the data again.</p>
       <button className="danger" onClick={() => window.confirm('Clear all stored data and settings, and reload?') && void resetEverything()}>
         Reset and reload
       </button>

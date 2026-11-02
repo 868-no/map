@@ -4,7 +4,7 @@ import { useNodeDetail, usePacketLog, usePacketRoute, useReach } from '../state/
 import { nodeLink, useStore } from '../state/store'
 import { formatLocal, formatLogTime, relativeAge } from '../lib/time'
 import { Sparkline } from '../components/Sparkline'
-import { ageColor, lastHeardAge } from '../map/model'
+import { ageColor, lastHeardAge, precisionErrorM } from '../map/model'
 import { PALETTES } from '../map/palette'
 import { useTheme } from '../theme'
 
@@ -25,6 +25,15 @@ function fmt(v: number | undefined | null, unit: string, digits = 1) {
   return v === undefined || v === null ? '—' : `${v.toFixed(digits)} ${unit}`
 }
 
+/** A distance for people: metres below 1 km, else km with one decimal. */
+const dist = (m: number) => (m < 1000 ? `${Math.round(m)} m` : `${(m / 1000).toFixed(1)} km`)
+
+/** Firmware reports battery level 101 when on external power. */
+const battery = (v: number | undefined) => (v === undefined || v === null ? '—' : v > 100 ? 'external power' : `${Math.round(v)} %`)
+
+const METHOD: Record<string, string> = { weighted_centroid: 'weighted centre of the nodes that hear it', log_distance_wls: 'distances from signal strength' }
+const QUALITY: Record<string, string> = { very_low: 'very rough', low: 'rough' }
+
 export function NodeList({ snapshot }: { snapshot: SnapshotView | undefined }) {
   const search = useStore((s) => s.search)
   const setSearch = useStore((s) => s.setSearch)
@@ -33,10 +42,12 @@ export function NodeList({ snapshot }: { snapshot: SnapshotView | undefined }) {
   const q = search.trim().toLowerCase()
   const match = (n: MeshNode) =>
     !q || n.id.includes(q) || (n.identity?.long_name ?? '').toLowerCase().includes(q) || (n.identity?.short_name ?? '').toLowerCase().includes(q)
-  const positioned = nodes.filter((n) => (n.position || n.estimate) && match(n))
-  const unpositioned = nodes.filter((n) => !n.position && !n.estimate && match(n))
   const w = snapshot?.meta.window
   const endMs = w ? Date.parse(w.end) : 0, windowMs = w ? endMs - Date.parse(w.start) : 0
+  // Most recently heard first (the dot's colour), then by name.
+  const byRecent = (a: MeshNode, b: MeshNode) => lastHeardAge(a, endMs, windowMs) - lastHeardAge(b, endMs, windowMs) || nodeName(a, a.id).localeCompare(nodeName(b, b.id))
+  const positioned = nodes.filter((n) => (n.position || n.estimate) && match(n)).sort(byRecent)
+  const unpositioned = nodes.filter((n) => !n.position && !n.estimate && match(n)).sort(byRecent)
   // Same last-heard colour as the map marker.
   const stops = PALETTES[useTheme()].ageStops
   const dotStyle = (n: MeshNode) => {
@@ -49,14 +60,17 @@ export function NodeList({ snapshot }: { snapshot: SnapshotView | undefined }) {
       <button className="node-row" onClick={() => select({ kind: 'node', id: n.id })}>
         <span className={`dot ${n.position ? 'rep' : n.estimate ? 'est' : n.status === 'referenced' ? 'ref' : 'unp'}`} style={dotStyle(n)} aria-hidden />
         <span className="nm">{nodeName(n, n.id)}</span>
-        <span className="id">{n.id}</span>
-        <span className="ct" title="unique packets / receptions">{n.packets}/{n.receptions}</span>
+        {nodeName(n, n.id) !== n.id && <span className="id">{n.id}</span>}
+        {n.status === 'referenced'
+          ? <span className="ct" title="Never heard itself: only named in others' NeighborInfo or traceroutes">named</span>
+          : <span className="ct" title="Its unique packets / receptions of them by other gateways">{n.packets}/{n.receptions - (n.own_uplinks ?? 0)}</span>}
       </button>
     </li>
   )
   return (
     <div className="panel">
       <input className="search" type="search" placeholder="Search in-window nodes (id or name)" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search nodes" />
+      <p className="muted small">Most recently heard first. Numbers: its unique packets / receptions of them by other gateways.</p>
       <h3>On the map ({positioned.length})</h3>
       <ul className="node-list">{positioned.slice(0, 300).map(row)}</ul>
       {positioned.length > 300 && <p className="muted">Showing 300 of {positioned.length}; refine the search.</p>}
@@ -104,13 +118,13 @@ function radioSummary(r: Radio | undefined, name: (id: string) => string): { reg
       presetNote = 'Its own map report, confirmed by its default channel: firmware reports a preset as in use only then.'
     } else if (p.basis === 'radio_contact') {
       preset = `${q} (radio contact)`
-      presetNote = `It shares radio settings with ${others(p.group)} it hears or is heard by, directly or through them; confirmed map reports from ${via} put that group on ${q} (or identical custom settings).`
+      presetNote = `Nodes that hear each other must share radio settings. It heard or was heard by ${others(p.direct)} itself, and through them and their contacts it is in radio contact with ${others(p.group)} in all; confirmed map reports from ${via} in that group put it on ${q} (or identical custom settings).`
     } else if (p.basis === 'channel_name') {
       preset = `probably ${q} (channel name)`
       presetNote = `It was heard on a channel with ${q}'s default name. Only a hint: a secondary channel can carry that name on any preset.`
     } else {
       preset = `probably ${q} (radio contact, channel names)`
-      presetNote = `It shares radio settings with ${others(p.group)}, among them ${via}, heard on channels with ${q}'s default name. Only a hint: no confirmed map report in the group.`
+      presetNote = `It heard or was heard by ${others(p.direct)} itself, and through chains of radio contact shares radio settings with ${others(p.group)} in all, among them ${via}, heard on channels with ${q}'s default name. Only a hint: no confirmed map report in the group.`
     }
   }
   const rep = r?.reported
@@ -177,10 +191,15 @@ export function NodePanel({ id, snapshot }: { id: string; snapshot: SnapshotView
           {d.position ? (
             <>
               {d.position.lat.toFixed(5)}, {d.position.lon.toFixed(5)}
-              {d.position.alt !== undefined && d.position.alt !== null && <> · {d.position.alt} m</>}
+              {d.position.alt !== undefined && d.position.alt !== null && <> · {d.position.alt} m above sea level</>}
               <br />
               <small>
-                {d.position.source === 'mapreport' ? 'from map report · ' : ''}{d.position.precision_known ? `${d.position.precision_bits} precision bits` : 'precision unknown'} · <SigBadge s={d.position.signature} /> · {formatLocal(d.position.observed_at)}
+                {d.position.source === 'mapreport' ? 'from map report · ' : ''}
+                {d.position.precision_known
+                  ? d.position.precision_bits >= 32
+                    ? 'full precision'
+                    : <span title={`Shared with ${d.position.precision_bits} precision bits: firmware reports the centre of a cell this size, so it is somewhere within this distance`}>± {dist(precisionErrorM(d.position.precision_bits, d.position.lat))}</span>
+                  : 'precision unknown'} · <SigBadge s={d.position.signature} /> · {formatLocal(d.position.observed_at)}
               </small>
               {d.refined && (
                 <div className="refined" title="Its reports jump around one place: combined, they narrow down where it is. The map places it here (D-077).">
@@ -194,9 +213,11 @@ export function NodePanel({ id, snapshot }: { id: string; snapshot: SnapshotView
             </>
           ) : est ? (
             <span className="est-note">
-              Estimated location (not reported): {est.lat.toFixed(3)}, {est.lon.toFixed(3)} ± {(est.uncertainty_radius_m / 1000).toFixed(1)} km
+              Estimated location (not reported): {est.lat.toFixed(3)}, {est.lon.toFixed(3)} ± {dist(est.uncertainty_radius_m)}
               <br />
-              <small>{est.method}, quality {est.quality}, {est.anchor_count} anchors, {est.sample_count} samples. {(est.reasons ?? []).join(' ')}</small>
+              <small title="Anchors: nodes with a precise reported position that heard it directly. Samples: those receptions.">
+                {QUALITY[est.quality] ?? est.quality} estimate from the {METHOD[est.method] ?? est.method}: {est.anchor_count} anchors, {est.sample_count} receptions. {(est.reasons ?? []).join(' ')}
+              </small>
             </span>
           ) : (
             <>
@@ -209,7 +230,7 @@ export function NodePanel({ id, snapshot }: { id: string; snapshot: SnapshotView
           <>
             <dt title="It moved more than a few hundred metres beyond what its position precision explains (D-073)">Moving</dt>
             <dd>
-              last moved {formatLocal(d.moved_at)} · {d.track?.length ?? 0} places in the window{d.airborne && <> · <span className="tag">✈ airborne</span></>}
+              last moved {formatLocal(d.moved_at)} · {d.track?.length ?? 0}{(d.track?.length ?? 0) >= 100 ? '+' : ''} reported places in the window{d.airborne && <> · <span className="tag">✈ airborne</span></>}
               <br /><small className="muted">Its links count only evidence from after that move.</small>
             </dd>
           </>
@@ -226,31 +247,51 @@ export function NodePanel({ id, snapshot }: { id: string; snapshot: SnapshotView
               ))
             : NR}
         </dd>
-        <dt>Seen in window</dt><dd>{d.first_seen ? `${formatLocal(d.first_seen)} → ${formatLocal(d.last_seen)} (${relativeAge(d.last_seen, now)})` : NR}</dd>
-        <dt>Traffic</dt><dd>{d.packets} unique packets · {d.receptions} receptions · uplinked {d.gateway_receptions} as gateway</dd>
-        <dt>Signatures</dt>
+        <dt title="First and last time anything from it, or uplinked by it as a gateway, reached the broker">Seen in window</dt>
         <dd>
-          {d.signatures.verified} verified · {d.signatures.unsigned} unsigned · {d.signatures.unverifiable} unverifiable · {d.signatures.not_applicable} n/a
+          {d.first_seen ? `${formatLocal(d.first_seen)} → ${formatLocal(d.last_seen)} (${relativeAge(d.last_seen, now)})`
+            : d.last_referenced ? <span title="Never heard itself: only named in others' NeighborInfo or traceroutes">named by others, last {formatLocal(d.last_referenced)} ({relativeAge(d.last_referenced, now)})</span> : NR}
+        </dd>
+        <dt>Traffic</dt>
+        <dd>
+          <span title="Distinct packets it sent that reached the broker">{d.packets} unique packets</span> ·{' '}
+          <span title="Receptions of its packets by other gateways, over the air (one per gateway and copy)">{d.receptions - (d.own_uplinks ?? 0)} receptions by other gateways</span>
+          {(d.own_uplinks ?? 0) > 0 && <span title="Its own packets it uplinked itself as a gateway, its map reports among them: not radio receptions"> · {d.own_uplinks} uplinked itself</span>}
+          {d.is_gateway && <span title="Other nodes' packets it uplinked as a gateway"> · uplinked {d.gateway_receptions - (d.own_uplinks ?? 0)} of others'</span>}
+        </dd>
+        <dt>Signatures</dt>
+        <dd title="One status per packet, its best copy's: relays can strip a signature, so a packet some gateway verified counts as verified">
+          {d.signatures.verified} verified · {d.signatures.unsigned} unsigned · {d.signatures.unverifiable} signed, key unknown · {d.signatures.not_applicable} not signable
         </dd>
         <dt>Brokers</dt><dd>{d.brokers?.length ? d.brokers.join(', ') : NR}</dd>
-        <dt>Battery</dt><dd>{d.telemetry ? <>{fmt(d.telemetry.battery, '%', 0)} · {fmt(d.telemetry.voltage, 'V', 2)} · ch util {fmt(d.telemetry.ch_util, '%')} · air {fmt(d.telemetry.air_util, '%')}</> : NR}</dd>
+        <dt>Telemetry</dt>
+        <dd>
+          {d.telemetry ? (
+            <>
+              battery {battery(d.telemetry.battery)} · {fmt(d.telemetry.voltage, 'V', 2)}
+              <br />
+              <span title="Share of airtime busy with any traffic it can hear">channel use {fmt(d.telemetry.ch_util, '%')}</span> ·{' '}
+              <span title="Share of the last hour it spent transmitting itself">own airtime {fmt(d.telemetry.air_util, '%')}</span> · <small>{formatLocal(d.telemetry.observed_at)}</small>
+            </>
+          ) : NR}
+        </dd>
       </dl>
       {(d.telemetry_series ?? []).length > 1 && (
         <div className="charts">
-          <Sparkline label="Battery %" points={(d.telemetry_series ?? []).map((s) => [Date.parse(s.at), s.battery ?? null])} />
+          <Sparkline label="Battery % (external power left out)" points={(d.telemetry_series ?? []).map((s) => [Date.parse(s.at), s.battery !== undefined && s.battery !== null && s.battery <= 100 ? s.battery : null])} />
           <Sparkline label="Channel utilisation %" points={(d.telemetry_series ?? []).map((s) => [Date.parse(s.at), s.ch_util ?? null])} />
         </div>
       )}
       <RelayingSection node={snapNode} snapshot={snapshot} />
       <ReachSection key={d.id} id={d.id} name={(n) => names.get(n) ?? n} />
-      <h3>Links in window ({neighbours.length})</h3>
+      <h3 title="Every link in the window, whatever the map's filters hide; links to nodes without a position and guessed links included">Links in window ({neighbours.length})</h3>
       <ul className="links">
         {neighbours.map((g) => {
           const dir = (e: Edge | undefined, arrow: string, heard: string) => (
             <span className={`link-dir${e ? '' : ' muted'}`} title={heard}>
               {arrow}{' '}
-              {!e ? 'no evidence' : e.mqtt ? <span className="conf conf-mqtt" title="Over the internet through an MQTT broker, not radio">Internet</span> : <span className={`conf conf-${e.confidence}`}>{e.confidence}</span>}
-              {e?.snr.median != null && <small> SNR {e.snr.median} dB</small>}
+              {!e ? 'no evidence' : e.mqtt ? <span className="conf conf-mqtt" title="Over the internet through an MQTT broker, not radio">Internet</span> : <span className={`conf conf-${e.confidence}`} title={e.reason}>{e.confidence}</span>}
+              {e?.snr.median != null && <small title="Median SNR measured at the receiving end, from all evidence for this direction"> SNR {e.snr.median.toFixed(1)} dB</small>}
             </span>
           )
           const name = names.get(g.peer) ?? g.peer
@@ -259,21 +300,21 @@ export function NodePanel({ id, snapshot }: { id: string; snapshot: SnapshotView
             <li key={g.peer + (g.mqtt ? 'm' : '')}>
               <button onClick={() => select({ kind: 'edge', src: id, dst: g.peer, mqtt: g.mqtt })}>
                 <span className="link-peer" title={name}>{name}</span>
-                {dir(g.out, '→', g.mqtt ? `${name} took ${self}'s packets from MQTT` : `${name} heard ${self}`)}
-                {dir(g.in, '←', g.mqtt ? `${self} took ${name}'s packets from MQTT` : `${self} heard ${name}`)}
+                {dir(g.out, '→', g.mqtt ? `${name} got packets ${self} passed on from an MQTT broker, not over the air` : `${name} heard ${self}`)}
+                {dir(g.in, '←', g.mqtt ? `${self} got packets ${name} passed on from an MQTT broker, not over the air` : `${self} heard ${name}`)}
               </button>
             </li>
           )
         })}
       </ul>
-      <h3>Heard by gateways ({(d.heard_by ?? []).length})</h3>
+      <h3 title="Gateways that uplinked its packets, directly or after relays">Uplinked by gateways ({(d.heard_by ?? []).length})</h3>
       <table className="hear">
-        <thead><tr><th>Gateway</th><th title="The radio link from this node to the gateway: its confidence, or — when the gateway only got the packets relayed">Link</th><th>Rx</th><th>Direct</th><th>SNR med</th><th>RSSI med</th></tr></thead>
+        <thead><tr><th>Gateway</th><th title="The radio link from this node to the gateway: its confidence, or — when the gateway only got relayed copies (or its links were reset by a move)">Link</th><th title="Receptions of its packets by this gateway, relayed ones included">Rx</th><th title="Of those, heard directly (no relay in between)">Direct</th><th title="Median SNR of the direct receptions only: a relayed copy's SNR measures the last relay, not this node">SNR med</th><th title="Median RSSI of the direct receptions only">RSSI med</th></tr></thead>
         <tbody>
           {heardBy.slice(0, 30).map(({ h, link }) => (
             <tr key={h.node}>
               <td>{names.get(h.node) ?? h.node}</td>
-              <td>{link ? <span className={`conf conf-${link.confidence}`}>{link.confidence}</span> : <span className="muted" title="No radio link: only relayed copies">—</span>}</td>
+              <td>{link ? <span className={`conf conf-${link.confidence}`} title={link.reason}>{link.confidence}</span> : <span className="muted" title="No radio link: only relayed copies, or its links were reset by a move">—</span>}</td>
               <td>{h.receptions}</td><td>{h.direct_rf}</td><td>{fmt(h.snr.median, 'dB')}</td><td>{fmt(h.rssi.median, 'dBm', 0)}</td>
             </tr>
           ))}
@@ -319,7 +360,7 @@ function PacketLogs({ id, names, positioned, moved }: { id: string; names: Map<s
     traceroute: ['route', "This node is in the traceroute's recorded route"],
   } as const
   type Entry = { lp: string; at: string; type: string; to?: string; gateways: number } & (
-    | { kind: 'own'; hops?: number; signature: string }
+    | { kind: 'own'; hops?: number; signature: string; by_itself?: boolean; downlinked?: boolean }
     | { kind: 'relayed'; origin: string; evidence: ('relay_byte' | 'traceroute')[] }
   )
   // Newest first; times parsed once per log, not inside the comparator on every render.
@@ -337,7 +378,7 @@ function PacketLogs({ id, names, positioned, moved }: { id: string; names: Map<s
       <div className="log-head">
         <h3>Packet log ({own.length + (withRelayed ? relayed.length : 0)}{log.data?.truncated ? '+' : ''})</h3>
         <label title="Other nodes' packets this node passed on: a gateway's last-hop byte resolved to it, or it is in a traceroute's recorded route">
-          <input type="checkbox" checked={withRelayed} onChange={(e) => setWithRelayed(e.target.checked)} /> Include relayed ({relayed.length})
+          <input type="checkbox" checked={withRelayed} onChange={(e) => setWithRelayed(e.target.checked)} /> Include relayed ({relayed.length}{log.data?.truncated && relayed.length >= 200 ? '+' : ''})
         </label>
       </div>
       {log.isLoading && <p className="muted">Loading…</p>}
@@ -345,7 +386,7 @@ function PacketLogs({ id, names, positioned, moved }: { id: string; names: Map<s
       <p className="muted small">Select a packet to draw its route on the map.</p>
       <table className="hear pkt-log" aria-label="Packet log">
         <colgroup><col style={{ width: 60 }} /><col /><col style={{ width: 92 }} /><col /><col style={{ width: 70 }} /><col style={{ width: 30 }} /></colgroup>
-        <thead><tr><th>Time</th><th>From</th><th>Type</th><th>To</th><th title="Own packets: fewest hops any gateway saw. Relayed: how we know this node passed it on">Via</th><th title="Gateways that uplinked it (relayed: that heard this node's rebroadcast)">GWs</th></tr></thead>
+        <thead><tr><th>Time</th><th>From</th><th>Type</th><th>To</th><th title="Own packets: the fewest hops another gateway's copy shows (hop start minus hop limit; relays over 0-cost links spend none, so it can be fewer than the relays). 'self': only it uplinked it. 'MQTT': a copy came through an MQTT downlink. Relayed: how we know this node passed it on">Hops</th><th title="Other gateways that uplinked it (relayed: that heard this node's rebroadcast)">GWs</th></tr></thead>
         <tbody>
           {entries.slice(0, shown.own).map((p) => (
             <tr key={p.kind + p.lp} className={route === p.lp ? 'active' : undefined} onClick={() => showRoute(route === p.lp ? null : p.lp)} aria-selected={route === p.lp}>
@@ -357,7 +398,14 @@ function PacketLogs({ id, names, positioned, moved }: { id: string; names: Map<s
               </td>
               <td title={p.kind === 'own' ? `${p.type} · ${SIG_LABEL[p.signature] ?? p.signature}` : p.type}>{p.type}</td>
               <td className="wrap" title={p.to && p.to !== 'broadcast' ? nm(p.to) : undefined}>{p.to === 'broadcast' ? 'all' : p.to ? nm(p.to) : ''}</td>
-              <td>{p.kind === 'own' ? (p.hops !== undefined ? `${p.hops} hop${p.hops === 1 ? '' : 's'}` : '') : p.evidence.map((e) => <span key={e} className="ev-tag" title={how[e][1]}>{how[e][0]}</span>)}</td>
+              <td>
+                {p.kind === 'own'
+                  ? <>
+                      {p.hops !== undefined ? `${p.hops}` : p.by_itself ? <span className="muted" title="Only it uplinked this packet itself">self</span> : ''}
+                      {p.downlinked && <span className="ev-tag" title="A copy reached a gateway through an MQTT downlink: taken from the broker and transmitted with no hops left, so it carries no hop count"> MQTT</span>}
+                    </>
+                  : p.evidence.map((e) => <span key={e} className="ev-tag" title={how[e][1]}>{how[e][0]}</span>)}
+              </td>
               <td>{p.gateways || ''}</td>
             </tr>
           ))}
@@ -398,26 +446,28 @@ export function EdgePanel({ a, b, mqtt = false, snapshot }: { a: string; b: stri
     <dl>
       <dt>Evidence</dt>
       <dd>
-        NeighborInfo {e.evidence.neighbor} · traceroute {e.evidence.traceroute} · direct gateway RF {e.evidence.direct_rf} · inferred last hop {e.evidence.relay_hint}
+        <span title="NeighborInfo reports listing this neighbour (one per packet)">NeighborInfo {e.evidence.neighbor}</span> ·{' '}
+        <span title="Traceroute hops (a reply repeating its request's hops counts once)">traceroute {e.evidence.traceroute}</span> ·{' '}
+        <span title="Zero-hop receptions by the gateway (one per reception)">heard directly {e.evidence.direct_rf}</span> ·{' '}
+        <span title="Relayed copies whose last-hop byte matched only this node: they point at the link without observing it">guessed from relay byte {e.evidence.relay_hint}</span>
       </dd>
       {e.mqtt ? (
         <><dt>Why internet</dt><dd><span className="conf conf-mqtt">Internet</span> {e.reason}</dd></>
       ) : (
-        <><dt>Confidence</dt><dd><span className={`conf conf-${e.confidence}`}>{e.confidence}</span> — {e.reason}{e.inferred && ' (inferred)'}</dd></>
+        <><dt title="High: observed 3 or more times, or in more than one way. Medium: observed once or twice. Low: only guessed from relay bytes.">Confidence</dt><dd><span className={`conf conf-${e.confidence}`}>{e.confidence}</span> — {e.reason}</dd></>
       )}
-      <dt>Samples</dt><dd>{e.samples}</dd>
       {e.mqtt ? (
         <><dt>Signal</dt><dd>none: not received over radio</dd></>
       ) : (
         <>
-          <dt>SNR at receiver</dt><dd>{e.snr.n ? `median ${e.snr.median} dB (min ${e.snr.min}, max ${e.snr.max}, last ${e.snr.last}; n=${e.snr.n})` : '—'}</dd>
-          <dt>RSSI at receiver</dt><dd>{e.rssi.n ? `median ${e.rssi.median} dBm (min ${e.rssi.min}, max ${e.rssi.max}, last ${e.rssi.last}; n=${e.rssi.n})` : 'only measured by gateway receptions'}</dd>
+          <dt title="Measured by the receiving node: by the gateway for direct receptions, by the next hop for traceroutes and NeighborInfo">SNR at receiver</dt><dd>{e.snr.n ? `median ${e.snr.median?.toFixed(1)} dB (min ${e.snr.min}, max ${e.snr.max}, last ${e.snr.last}; ${e.snr.n} readings)` : '—'}</dd>
+          <dt>RSSI at receiver</dt><dd>{e.rssi.n ? `median ${e.rssi.median} dBm (min ${e.rssi.min}, max ${e.rssi.max}, last ${e.rssi.last}; ${e.rssi.n} readings)` : 'only measured by gateway receptions'}</dd>
         </>
       )}
       <dt>In window</dt><dd>{formatLocal(e.first_at)} → {formatLocal(e.last_at)}</dd>
       {e.zero_cost && (
         <>
-          <dt title="Firmware lets a router relay what it hears from a favourite router without spending a hop (0-cost). Found from the hop limits gateways saw before and after this hop.">0-cost</dt>
+          <dt title="Firmware lets a ROUTER, ROUTER_LATE or CLIENT_BASE relay what it hears from a node it has marked as a favourite (itself one of those roles) without spending a hop: 0-cost. Found from the hop limits gateways saw before and after this hop.">0-cost</dt>
           <dd>
             {e.zero_cost.likely ? <span className="conf conf-zero">0-cost</span> : 'not established'}{' '}
             {name(e.dst)} relayed {e.zero_cost.free} packet{e.zero_cost.free === 1 ? '' : 's'} from {name(e.src)} without spending a hop{e.zero_cost.spent ? `, and spent one on ${e.zero_cost.spent}` : ''}.
@@ -431,8 +481,8 @@ export function EdgePanel({ a, b, mqtt = false, snapshot }: { a: string; b: stri
     return (
       <section className="direction">
         <h3>{name(src)} → {name(dst)}</h3>
-        {e ? <><p className="muted">{mqtt ? `${name(dst)} took ${name(src)}'s packets from MQTT.` : `${name(dst)} heard ${name(src)}.`}</p>{stats(e)}</>
-          : <p className="muted">{mqtt ? `No traceroute shows ${name(dst)} taking ${name(src)}'s packets from MQTT in this window.` : `No evidence that ${name(dst)} heard ${name(src)} in this window.`}</p>}
+        {e ? <><p className="muted">{mqtt ? `${name(dst)} got packets ${name(src)} passed on, from an MQTT broker rather than over the air.` : `${name(dst)} heard ${name(src)}.`}</p>{stats(e)}</>
+          : <p className="muted">{mqtt ? `No traceroute shows ${name(dst)} getting packets from ${name(src)} through an MQTT broker in this window.` : `No evidence that ${name(dst)} heard ${name(src)} in this window.`}</p>}
       </section>
     )
   }
@@ -538,11 +588,15 @@ function RelayingSection({ node, snapshot }: { node: MeshNode | undefined; snaps
     <section className="relaying">
       <h3 title="A ROUTER or ROUTER_LATE rebroadcasts every packet it receives with hops left. Counted only where a gateway that hears it (a witness) also got the packet.">Relaying</h3>
       {r.expected < MIN_EXPECTED ? (
-        <p className="muted">Too few packets to judge: {r.expected} it should have relayed where a witness could have seen it.</p>
+        <p className="muted">Too few packets to judge: {r.expected} it probably received where a witness could have seen it relay them.</p>
+      ) : r.received_as_gateway * 10 < r.expected ? (
+        <p className="muted">
+          Seen relaying {r.seen} of {r.expected} packets it probably received, but {r.expected - r.received_as_gateway} of those are only inferred from links to their senders (hearing a sender sometimes does not mean it got every packet), so no share is shown.
+        </p>
       ) : (
         <>
           <p>
-            Seen relaying <b>{r.seen}</b> of {r.expected} packets it should have relayed (<b>{pct(r.seen, r.expected)} %</b>)
+            Seen relaying <b>{r.seen}</b> of {r.expected} packets it probably received (<b>{pct(r.seen, r.expected)} %</b>)
             {peers && <> · {role} median {peers.median} % ({peers.count} routers)</>}
           </p>
           <p className="muted reach-caveat">

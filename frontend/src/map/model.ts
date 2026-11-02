@@ -13,10 +13,29 @@ export interface PlacedNode {
   radiusM?: number // uncertainty for estimates
 }
 
-/** How long before the window end the node was last heard, as a fraction of the window (0..1). */
+/**
+ * The age scale's knee: ages well below it are told apart about linearly,
+ * longer ones logarithmically (D-087). With a 3-day window the ramp's stops
+ * fall at about 0, 35 min, 3.3 h, 16 h and 72 h, instead of 18 h apart.
+ */
+export const AGE_TAU_MS = 10 * 60_000
+
+/**
+ * How long before the window end the node was last heard (0 = at the end,
+ * 1 = only at its start), on a logarithmic scale over the window, so recent
+ * activity is told apart. A node only named by others counts from when it
+ * was last named.
+ */
 export function lastHeardAge(n: MeshNode, endMs: number, windowMs: number): number {
-  if (!n.last_seen || windowMs <= 0) return 1
-  return Math.min(Math.max((endMs - Date.parse(n.last_seen)) / windowMs, 0), 1)
+  const t = n.last_seen ?? n.last_referenced
+  if (!t || windowMs <= 0) return 1
+  const dt = Math.min(Math.max(endMs - Date.parse(t), 0), windowMs)
+  return Math.log1p(dt / AGE_TAU_MS) / Math.log1p(windowMs / AGE_TAU_MS)
+}
+
+/** The time before the window end that an age fraction stands for (lastHeardAge's inverse). */
+export function ageMs(age: number, windowMs: number): number {
+  return AGE_TAU_MS * Math.expm1(age * Math.log1p(windowMs / AGE_TAU_MS))
 }
 
 /**

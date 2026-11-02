@@ -1,12 +1,17 @@
 import type { SnapshotView } from '../derive/views'
 import { defaultFilters, useStore, type Confidence, type Filters } from '../state/store'
-import { MQTT_ARROW, roleRadius, type MqttFlow } from '../map/model'
+import { ageMs, MQTT_ARROW, roleRadius, type MqttFlow } from '../map/model'
 import { PALETTES } from '../map/palette'
 import { useTheme } from '../theme'
 import { BASEMAP_GROUPS } from '../map/layers'
 
-const TYPES = ['nodeinfo', 'position', 'telemetry', 'neighborinfo', 'traceroute', 'text', 'routing', 'other']
-const EVIDENCE: [string, string][] = [['neighbor', 'NeighborInfo'], ['traceroute', 'Traceroute'], ['direct_rf', 'Direct gateway RF'], ['relay_hint', 'Inferred last hop']]
+const TYPES = ['nodeinfo', 'position', 'telemetry', 'neighborinfo', 'traceroute', 'text', 'routing', 'mapreport', 'other']
+const TYPE_LABEL: Record<string, string> = { mapreport: 'map report' }
+const TYPE_TIP: Record<string, string> = {
+  mapreport: 'Map reports: a node sends these to the MQTT broker itself, not over the radio',
+  other: 'Packets of any other application (admin, store and forward, range test, …)',
+}
+const EVIDENCE: [string, string][] = [['neighbor', 'NeighborInfo'], ['traceroute', 'Traceroute'], ['direct_rf', 'Heard directly by a gateway'], ['relay_hint', 'Guessed from relay byte']]
 
 function toggle(list: string[], v: string): string[] {
   return list.includes(v) ? list.filter((x) => x !== v) : [...list, v]
@@ -41,7 +46,7 @@ export function LayersPanel() {
       {check('Position accuracy', t.uncertainty, (v) => setT({ uncertainty: v }),
         'A circle around each estimated position: the area the node is likely within, from the positioned nodes that heard it directly. With a node selected, only its circle is shown, switched on or not; for a coarse reported position it shows how far off that position may be.')}
       {check('Node names', t.labels, (v) => setT({ labels: v }),
-        'Each node\'s short name from its latest NodeInfo in the selected window, or the last 4 hex digits of its ID. Shown from zoom 10. Names that would overlap are grouped (“+N”) and fan out when hovered.')}
+        'Each node\'s short name from its latest NodeInfo (or its own map report) in the selected window, or the last 4 hex digits of its ID. Shown from zoom 10. Names that would overlap are grouped (“+N”) and fan out when hovered.')}
       {check('Position trails', t.trails, (v) => setT({ trails: v }),
         'Which way moving nodes are going: a short line through their last few reported positions, fading towards the oldest, with chevrons pointing the way they went. With a node selected, only its trail. A node counts as moving once two positions lie further apart than a few hundred metres plus what their precision explains; its links then use only evidence from after its latest move.')}
       {check('Traffic', t.animation, (v) => setT({ animation: v }),
@@ -67,6 +72,7 @@ export function FilterPanel({ snapshot }: { snapshot: SnapshotView | undefined }
       </p>
       <h3>Nodes</h3>
       <label><input type="checkbox" checked={f.positionedOnly} onChange={(e) => set({ positionedOnly: e.target.checked })} /> Only nodes with reported positions</label>
+      <p className="muted">This and the link filters below change what the map draws, not the counts in the header or a node's details.</p>
 
       <h3>Link evidence</h3>
       {EVIDENCE.map(([k, label]) => (
@@ -82,10 +88,10 @@ export function FilterPanel({ snapshot }: { snapshot: SnapshotView | undefined }
       </label>
 
       <h3>Packet types</h3>
-      <p className="muted">Restricts which observations contribute to nodes, links and counts.</p>
+      <p className="muted">These, the channel and the broker restrict which observations count at all: nodes, links, the header's counts and node details.</p>
       <div className="chips">
         {TYPES.map((ty) => (
-          <button key={ty} aria-pressed={f.types.includes(ty)} onClick={() => set({ types: toggle(f.types, ty) })}>{ty}</button>
+          <button key={ty} title={TYPE_TIP[ty]} aria-pressed={f.types.includes(ty)} onClick={() => set({ types: toggle(f.types, ty) })}>{TYPE_LABEL[ty] ?? ty}</button>
         ))}
       </div>
       <h3>Channel</h3>
@@ -105,9 +111,11 @@ export function FilterPanel({ snapshot }: { snapshot: SnapshotView | undefined }
 }
 
 function ago(ms: number): string {
-  const h = ms / 3600_000
-  if (h === 0) return 'window end'
-  return h <= 72 ? `${+h.toFixed(1)} h before` : `${+(h / 24).toFixed(1)} d before`
+  const min = ms / 60_000
+  if (min < 0.5) return 'now'
+  if (min < 90) return `${Math.round(min)} min`
+  const h = min / 60
+  return h <= 72 ? `${+h.toFixed(h < 10 ? 1 : 0)} h` : `${+(h / 24).toFixed(1)} d`
 }
 
 export function Legend({ snapshot }: { snapshot: SnapshotView | undefined }) {
@@ -122,10 +130,12 @@ export function Legend({ snapshot }: { snapshot: SnapshotView | undefined }) {
       <div className="age-ramp" style={{ background: gradient }} aria-hidden />
       <div className="age-labels">
         {stops.map((_, i) => (
-          <span key={i}>{ago((windowMs * i) / (stops.length - 1))}</span>
+          <span key={i}>{ago(ageMs(i / (stops.length - 1), windowMs))}</span>
         ))}
       </div>
-      <p className="muted">The scale spans the selected window{w?.rolling ? ' (window end = now)' : ''}.</p>
+      <p className="muted">
+        Time before the window's end{w?.rolling ? ' (now)' : ''} that it was last heard, or uplinked something as a gateway, on a logarithmic scale across the selected window: recent activity is spread out. A node only named by others counts from when it was last named.
+      </p>
       <h3>Nodes: size is role</h3>
       <ul>
         <li><span className="dot rep" style={size('ROUTER')} /> Router (ROUTER, ROUTER_LATE)</li>
@@ -139,7 +149,7 @@ export function Legend({ snapshot }: { snapshot: SnapshotView | undefined }) {
         <li><span className="dot rep gwring glyph"><FlowIcon flow="upAll" /></span> MQTT gateway that uplinks every copy it hears, each with its own last hop (a firmware option)</li>
         <li><span className="glyph-badged"><span className="dot rep" /><FlowIcon flow="down" className="glyph-badge" /></span> Arrow beside the marker: probably downlinks, transmitting packets it takes from the broker (its traceroute hops read exactly 0 dB, as packets from MQTT do). Shown with either uplink glyph too.</li>
         <li><span className="dot rep optout" /> Red ring: did not allow MQTT uplink; reached us through another gateway, so the name is withheld</li>
-        <li><span className="dot est" /> Estimated location — translucent circle is the uncertainty</li>
+        <li><span className="dot est" /> Estimated location (not reported): a hollow ring in its last-heard colour, name in purple. Its uncertainty circle shows when it is selected or Position accuracy is on.</li>
         <li>Selecting a node shows its accuracy circle (estimate uncertainty, or the precision of a coarse reported position) and only its links.</li>
         <li><span className="dot unp" /> No position: listed under “Without position”</li>
         <li><span className="chev" aria-hidden>✈</span> Airborne: moving and reporting more than 750 m above sea level (fixed mountain sites never get it)</li>
@@ -150,15 +160,22 @@ export function Legend({ snapshot }: { snapshot: SnapshotView | undefined }) {
         <li><span className="ln infra thick" /> Router: both ends are ROUTER or ROUTER_LATE</li>
         <li><span className="ln other thin" /> Client: at least one end has another role (or none reported)</li>
         <li><span className="ln mqtt" /> Internet (dotted green): not radio; the packet crossed an MQTT broker (a traceroute hop recorded at exactly 0 dB)</li>
-        <li><span className="chev" aria-hidden>›</span> 0-cost (gold chevron, pointing at the receiver): it relays what it hears from the sender without spending a hop. One direction only; the other may cost a hop.</li>
+        <li><span className="chev" aria-hidden>›</span> 0-cost (gold chevron, pointing at the receiver): a ROUTER, ROUTER_LATE or CLIENT_BASE that relays what it hears from this sender (a favourite of its own) without spending a hop. One direction only; the other may cost a hop. On router and client links alike.</li>
         <li>Reach (node details): links are replaced by the paths a packet takes, coloured by the hop limit that gets it there (dashed across relays without a position); nodes it cannot reach are dimmed.</li>
       </ul>
       <h3>Link confidence</h3>
       <ul>
-        <li><span className="ln infra c-high" /> High (solid): NeighborInfo or traceroute</li>
-        <li><span className="ln infra c-medium" /> Medium (fainter): direct gateway RF reception</li>
-        <li><span className="ln infra c-low dashed" /> Low, inferred (dashed): unique relay-byte match</li>
+        <li><span className="ln infra c-high" /> High (solid): observed 3 or more times, or in more than one way (NeighborInfo, traceroute, a gateway hearing it directly)</li>
+        <li><span className="ln infra c-medium" /> Medium (fainter): observed once or twice</li>
+        <li><span className="ln infra c-low dashed" /> Low, inferred (dashed): only guessed from relayed copies whose last-hop byte matched one known node</li>
         <li>A line takes the better direction's confidence. Select a link to see which directions were heard and each direction's details.</li>
+      </ul>
+      <h3>Packet route (a packet selected in a node's packet log)</h3>
+      <ul>
+        <li><span className="ln route" /> Orange, chevrons pointing from transmitter to receiver: a hop the packet took (traceroute, direct reception, or a relay resolved from the last-hop byte)</li>
+        <li><span className="ln route dashed" /> Dashed: the path between the two ends is not known (missing or unplaced nodes, or relays that spent no hop)</li>
+        <li><span className="ln mqtt" /> Dotted green: over the internet, an MQTT downlink, not radio</li>
+        <li>A ring with a dashed line: a node that has moved, drawn where it was when the packet was heard. Links are hidden while a route is shown.</li>
       </ul>
       <h3>Live traffic (radar pings)</h3>
       <ul>

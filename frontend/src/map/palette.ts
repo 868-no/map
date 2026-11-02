@@ -1,5 +1,5 @@
-// Overlay colours per theme. The route and opt-out colours read on both
-// basemaps; the node age ramp has a deeper light-theme variant; everything drawn in the basemap's
+// Overlay colours per theme. The route and opt-out colours and the node age
+// ramp (D-085) read on both basemaps; everything drawn in the basemap's
 // own tones (text, outlines, selection, links, pings) changes with it.
 import type { Theme } from '../theme'
 import type { RegionId } from './regionData'

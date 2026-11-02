@@ -175,15 +175,20 @@ export default function App() {
 // Header counters. Until the first snapshot arrives, each number is a
 // placeholder bar about as wide as a typical value, so the header keeps
 // roughly its final size instead of growing when the counts load.
-const COUNTERS: ['packets' | 'receptions' | 'nodes' | 'referenced' | 'positioned' | 'estimated' | 'edges', string, number][] = [
-  ['nodes', ' nodes · ', 3], ['referenced', ' referenced · ', 3], ['positioned', ' positioned · ', 3], ['estimated', ' estimated · ', 2],
-  ['edges', ' links · ', 4], ['packets', ' packets / ', 4], ['receptions', ' receptions', 5],
+const COUNTERS: ['packets' | 'receptions' | 'nodes' | 'referenced' | 'positioned' | 'estimated' | 'edges', string, number, string][] = [
+  ['nodes', ' heard · ', 3, 'Nodes heard in the window: they sent something, or uplinked as a gateway'],
+  ['referenced', ' only named · ', 3, 'Further nodes never heard themselves, only named in others\' NeighborInfo or traceroutes'],
+  ['positioned', ' positioned · ', 3, 'Nodes with a position they reported in the window (of all nodes above)'],
+  ['estimated', ' estimated · ', 2, 'Nodes without a reported position whose location is estimated from who hears them'],
+  ['edges', ' links · ', 4, 'Radio links between node pairs (one per pair, as drawn), whatever the map\'s link filters show'],
+  ['packets', ' packets / ', 4, 'Distinct packets in the window'],
+  ['receptions', ' receptions', 5, 'Gateway receptions of those packets: one per gateway and copy'],
 ]
 function Counters({ counts }: { counts?: Counts }) {
   return (
     <span className="counters" aria-live="polite" aria-busy={!counts}>
-      {COUNTERS.map(([k, label, digits]) => (
-        <span key={k}>
+      {COUNTERS.map(([k, label, digits, title]) => (
+        <span key={k} title={title}>
           {counts ? counts[k] : <span className="counter-ph" style={{ width: `${digits}ch` }} aria-hidden />}
           {label}
         </span>

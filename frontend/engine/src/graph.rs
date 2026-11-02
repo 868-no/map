@@ -186,24 +186,39 @@ pub fn reduce(samples: &[Sample]) -> Vec<Edge> {
     out
 }
 
+/// Independent observations a link needs to count as high confidence.
+pub const HIGH_OBSERVATIONS: u32 = 3;
+
+/// How sure the window makes a link (D-087): by how much measured or reported
+/// evidence there is, not only its kind. NeighborInfo entries, traceroute
+/// hops and direct (zero-hop) gateway receptions are observations of the
+/// link itself; relay hints (a last-hop byte resolved to a node) only point
+/// at it. High: at least `HIGH_OBSERVATIONS` observations, or observations of
+/// two different kinds; medium: one or two; low: relay hints alone (inferred).
 fn confidence(c: &EvidenceCounts) -> (&'static str, bool, &'static str) {
-    let types = [c.neighbor, c.traceroute, c.direct_rf, c.relay_hint].iter().filter(|&&n| n > 0).count();
-    if c.neighbor > 0 || c.traceroute > 0 {
-        if types > 1 {
-            return ("high", false, "reported by NeighborInfo/traceroute and corroborated by other evidence");
-        }
-        if c.neighbor > 0 {
-            return ("high", false, "reported by NeighborInfo");
-        }
-        return ("high", false, "observed traceroute segment");
+    let observed = c.neighbor + c.traceroute + c.direct_rf;
+    let kinds = [c.neighbor, c.traceroute, c.direct_rf].iter().filter(|&&n| n > 0).count();
+    if observed == 0 {
+        return ("low", true, "only guessed: relay bytes matched one known node; never observed directly");
     }
-    if c.direct_rf > 0 {
-        if c.relay_hint > 0 {
-            return ("medium", false, "direct gateway RF reception, corroborated by relay hints");
-        }
-        return ("medium", false, "direct gateway RF reception (zero-hop packet)");
+    if kinds > 1 {
+        return ("high", false, "observed in more than one way (NeighborInfo, traceroutes, direct receptions)");
     }
-    ("low", true, "inferred from unique relay-node byte; not directly confirmed")
+    let what = if c.neighbor > 0 { "NeighborInfo report" } else if c.traceroute > 0 { "traceroute hop" } else { "direct reception at the gateway" };
+    if observed >= HIGH_OBSERVATIONS {
+        let reason = match what {
+            "NeighborInfo report" => "reported repeatedly by NeighborInfo",
+            "traceroute hop" => "seen repeatedly in traceroutes",
+            _ => "heard directly by the gateway repeatedly",
+        };
+        return ("high", false, reason);
+    }
+    let reason = match what {
+        "NeighborInfo report" => "reported by NeighborInfo once or twice",
+        "traceroute hop" => "seen in a traceroute once or twice",
+        _ => "heard directly by the gateway once or twice",
+    };
+    ("medium", false, reason)
 }
 
 /// Median (mean of the middle pair when even), min, max and latest value;
@@ -231,6 +246,12 @@ pub fn stats(v: &[(i64, f64)], round: bool) -> Stats {
 /// endpoint received it too. For a reply the forward path runs to -> route
 /// -> from, and the return path from -> route_back -> to. Segments touching
 /// an unknown hop produce nothing; no shortcut is invented.
+///
+/// A segment's key is the path up to and including it (with its SNRs), not
+/// the packet: a reply repeats its request's forward route and SNRs, and the
+/// partial copies of one traceroute share prefixes, so each RF hop counts
+/// once however many of those packets and copies report it. `lp` is kept
+/// out of the key on purpose (request and reply have different ones).
 #[allow(clippy::too_many_arguments)]
 pub fn traceroute_samples(from: u32, to: u32, is_reply: bool, route: &[Hop], snr_t: &[Option<f64>], route_back: &[Hop], snr_b: &[Option<f64>], t: i64, lp: u64, out: &mut Vec<Sample>) {
     let (fo, fd) = if is_reply { (to, from) } else { (from, to) };
@@ -241,19 +262,24 @@ pub fn traceroute_samples(from: u32, to: u32, is_reply: bool, route: &[Hop], snr
 }
 
 #[allow(clippy::too_many_arguments)]
-fn segments(origin: u32, dest: u32, route: &[Hop], snr: &[Option<f64>], t: i64, lp: u64, dir: u8, out: &mut Vec<Sample>) {
+fn segments(origin: u32, dest: u32, route: &[Hop], snr: &[Option<f64>], t: i64, _lp: u64, dir: u8, out: &mut Vec<Sample>) {
+    use std::hash::{Hash, Hasher};
     let mut seq = Vec::with_capacity(route.len() + 2);
     seq.push(Hop { id: origin, unknown: false });
     seq.extend_from_slice(route);
     if snr.len() == route.len() + 1 {
         seq.push(Hop { id: dest, unknown: false });
     }
+    // The path so far: the traceroute's endpoints, then each hop with its SNR.
+    let mut h = crate::util::Fx::default();
+    (dir, if dir == 0 { (origin, dest) } else { (dest, origin) }).hash(&mut h);
     for k in 0..seq.len().saturating_sub(1) {
         let (a, b) = (seq[k], seq[k + 1]);
+        (b.id, b.unknown, snr.get(k).copied().flatten().map(f64::to_bits)).hash(&mut h);
         if a.unknown || b.unknown {
             continue;
         }
-        out.push(Sample { src: a.id, dst: b.id, ev: Ev::Traceroute, t, snr: snr.get(k).copied().flatten(), rssi: None, key: SKey::Tr(lp, dir, k as u16) });
+        out.push(Sample { src: a.id, dst: b.id, ev: Ev::Traceroute, t, snr: snr.get(k).copied().flatten(), rssi: None, key: SKey::Tr(h.finish(), dir, k as u16) });
     }
 }
 
@@ -290,6 +316,8 @@ pub struct RelayContext {
     confirmed: FxSet<(u32, u32)>,
     silent: FxSet<u32>, // known never to rebroadcast (CLIENT_MUTE)
     pub max_range_m: f64,
+    /// Probable MQTT downlinkers (D-054); empty when MQTT links are off.
+    pub downlinkers: FxSet<u32>,
 }
 
 fn pair(a: u32, b: u32) -> (u32, u32) {
@@ -300,7 +328,7 @@ impl RelayContext {
     /// known: window nodes; pos: reported positions only; confirmed:
     /// non-relay evidence pairs (src, dst); silent: nodes that never rebroadcast.
     pub fn new(known: impl IntoIterator<Item = u32>, pos: FxMap<u32, LatLon>, confirmed: impl IntoIterator<Item = (u32, u32)>, silent: FxSet<u32>) -> Self {
-        let mut c = RelayContext { by_byte: vec![Vec::new(); 256], pos, confirmed: set(), silent, max_range_m: MIN_RELAY_RANGE_M };
+        let mut c = RelayContext { by_byte: vec![Vec::new(); 256], pos, confirmed: set(), silent, max_range_m: MIN_RELAY_RANGE_M, downlinkers: set() };
         for k in known {
             c.by_byte[(k & 0xff) as usize].push(k);
         }
@@ -324,6 +352,26 @@ impl RelayContext {
     /// several remain, the single one with confirmed evidence to the gateway
     /// wins. A byte equal to the gateway's own is the gateway itself.
     pub fn resolve(&self, hint: u8, origin: u32, gw: u32) -> Option<Result<u32, ()>> {
+        self.resolve_detail(hint, origin, gw).map(|r| r.map(|(n, _)| n))
+    }
+
+    /// A copy a downlinker transmitted after taking the packet from MQTT:
+    /// firmware sends downlinked packets with no hops left (D-087), so a
+    /// relayed copy with hop limit 0 whose last hop resolves to a downlinker
+    /// crossed the internet before its last (radio) hop. Its hop count says
+    /// nothing about the path.
+    pub fn downlinked(&self, r: &crate::row::Row) -> bool {
+        !self.downlinkers.is_empty()
+            && !r.dr
+            && r.hl == Some(0)
+            && matches!((r.relay, r.gw), (Some(b), Some(g)) if matches!(self.resolve((b & 0xff) as u8, r.src, g), Some(Ok(n)) if self.downlinkers.contains(&n)))
+    }
+
+    /// Engine::resolve, also telling whether a tie between candidates was
+    /// broken by confirmed evidence to the gateway: such a resolution leans
+    /// on the link it would point at, so it must not count as corroborating
+    /// that link (or add to its SNR).
+    pub fn resolve_detail(&self, hint: u8, origin: u32, gw: u32) -> Option<Result<(u32, bool), ()>> {
         if hint == 0 || hint == (gw & 0xff) as u8 {
             return None; // unmatched
         }
@@ -342,10 +390,10 @@ impl RelayContext {
         }
         match cands.len() {
             0 => None,
-            1 => Some(Ok(cands[0])),
+            1 => Some(Ok((cands[0], false))),
             _ => {
                 let linked: Vec<u32> = cands.into_iter().filter(|&k| self.confirmed.contains(&pair(k, gw))).collect();
-                if linked.len() == 1 { Some(Ok(linked[0])) } else { Some(Err(())) }
+                if linked.len() == 1 { Some(Ok((linked[0], true))) } else { Some(Err(())) }
             }
         }
     }
@@ -427,5 +475,39 @@ mod tests {
         traceroute_samples(1, 9, false, &route, &[Some(1.0), None, Some(2.0), Some(3.0)], &[], &[], 0, 7, &mut out);
         let segs: Vec<(u32, u32)> = out.iter().map(|s| (s.src, s.dst)).collect();
         assert_eq!(segs, vec![(1, 2), (3, 9)]);
+    }
+
+    #[test]
+    fn confidence_counts_observations() {
+        let one = |ev, n: u64| (0..n).map(move |k| Sample { src: 1, dst: 2, ev, t: 1, snr: None, rssi: None, key: SKey::Ok(k) });
+        let conf = |v: Vec<Sample>| reduce(&v)[0].confidence;
+        assert_eq!(conf(one(Ev::Traceroute, 1).collect()), "medium", "one traceroute hop");
+        assert_eq!(conf(one(Ev::Traceroute, 3).collect()), "high", "seen repeatedly");
+        assert_eq!(conf(one(Ev::DirectRf, 3).collect()), "high", "heard directly repeatedly");
+        assert_eq!(conf(one(Ev::DirectRf, 1).chain(one(Ev::Neighbor, 1)).collect()), "high", "two kinds");
+        assert_eq!(conf(one(Ev::DirectRf, 1).chain(one(Ev::RelayHint, 20)).collect()), "medium", "hints only point at a link");
+        assert_eq!(conf(one(Ev::RelayHint, 20).collect()), "low", "guessed");
+    }
+
+    #[test]
+    fn a_traceroute_and_its_reply_count_each_hop_once() {
+        // Request 1 -> 2 -> 9 recorded with SNRs; the reply repeats that
+        // forward route and its SNRs, and adds the way back.
+        let route = [Hop { id: 2, unknown: false }];
+        let mut out = vec![];
+        traceroute_samples(1, 9, false, &route, &[Some(4.0), Some(6.0)], &[], &[], 0, 100, &mut out);
+        traceroute_samples(9, 1, true, &route, &[Some(4.0), Some(6.0)], &[Hop { id: 2, unknown: false }], &[Some(5.0), Some(3.0)], 0, 200, &mut out);
+        let e = reduce(&out);
+        let tr = |a: u32, b: u32| e.iter().find(|x| x.src_num == a && x.dst_num == b).map(|x| x.evidence.traceroute);
+        assert_eq!((tr(1, 2), tr(2, 9)), (Some(1), Some(1)), "forward hops once");
+        assert_eq!((tr(9, 2), tr(2, 1)), (Some(1), Some(1)), "the way back");
+    }
+
+    #[test]
+    fn a_tie_broken_resolution_says_so() {
+        let c = ctx(&[0x1111_1142, 0x2222_2242, 0x0000_aa01], &[(0x2222_2242, 0x0000_aa01)]);
+        assert_eq!(c.resolve_detail(0x42, 5, 0x0000_aa01), Some(Ok((0x2222_2242, true))));
+        let c = ctx(&[0x2222_2242, 0x0000_aa01], &[]);
+        assert_eq!(c.resolve_detail(0x42, 5, 0x0000_aa01), Some(Ok((0x2222_2242, false))));
     }
 }
