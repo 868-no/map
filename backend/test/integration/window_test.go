@@ -654,3 +654,43 @@ func TestTrends(t *testing.T) {
 		t.Fatalf("bad zone: HTTP %d", code)
 	}
 }
+
+// D-107: rows decoded by an older decoder are decoded again from their
+// envelopes; rows the decoder would now reject are kept, only marked.
+func TestRedecodeOldRows(t *testing.T) {
+	pool := freshDB(t)
+	f := newFixture(t, pool)
+	st, _ := proto.Marshal(&pb.StatusMessage{Status: "On the hill"})
+	f.store(base.Add(time.Hour), nodeA, gw1, &pb.Data{Portnum: pb.PortNum_NODE_STATUS_APP, Payload: st}, nil)
+	f.position(base.Add(2*time.Hour), nodeB, gw1, 63.0)
+	ctx := context.Background()
+	// As the previous decoder stored them: node status as "other", without its text;
+	// and a row whose envelope no longer parses.
+	if _, err := pool.Exec(ctx, `UPDATE packet_log SET packet_type = 'other', decoded_metadata = '{"other": {"port_name": "NODE_STATUS_APP"}}', decode_version = 2,
+		obs_row = 'stale', obs_row_version = 6 WHERE source_node_id = $1`, int64(nodeA)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE packet_log SET envelope_bytes = '\xffff'::bytea, decode_version = 1 WHERE source_node_id = $1`, int64(nodeB)); err != nil {
+		t.Fatal(err)
+	}
+	n, err := storage.Redecode(ctx, pool, ingest.Options{Keyring: f.kr, Identities: fixtureIDs(f.ids), KeyBudget: 4}, quiet)
+	if err != nil || n != 1 {
+		t.Fatalf("redecode: %d %v", n, err)
+	}
+	var ty, status string
+	var dv int
+	var obsRow *string
+	if err := pool.QueryRow(ctx, `SELECT packet_type, decoded_metadata->'node_status'->>'status', decode_version, obs_row FROM packet_log WHERE source_node_id = $1`, int64(nodeA)).Scan(&ty, &status, &dv, &obsRow); err != nil {
+		t.Fatal(err)
+	}
+	if ty != "node_status" || status != "On the hill" || dv != ingest.DecodeVersion || obsRow != nil {
+		t.Fatalf("re-decoded row: %s %q v%d obs_row %v", ty, status, dv, obsRow)
+	}
+	if err := pool.QueryRow(ctx, `SELECT packet_type, decode_version FROM packet_log WHERE source_node_id = $1`, int64(nodeB)).Scan(&ty, &dv); err != nil || ty != "position" || dv != ingest.DecodeVersion {
+		t.Fatalf("unparseable row should be kept as it was, marked checked: %s v%d %v", ty, dv, err)
+	}
+	// A second run finds nothing to do.
+	if n, err := storage.Redecode(ctx, pool, ingest.Options{Keyring: f.kr, Identities: fixtureIDs(f.ids), KeyBudget: 4}, quiet); err != nil || n != 0 {
+		t.Fatalf("second run: %d %v", n, err)
+	}
+}

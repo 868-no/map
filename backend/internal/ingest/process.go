@@ -18,9 +18,11 @@ import (
 	"github.com/868-no/map/internal/security"
 )
 
-// DecodeVersion is bumped whenever decoded_metadata semantics change.
+// DecodeVersion is bumped whenever decoded_metadata semantics change; rows of
+// an older version are decoded again from their envelopes (D-107). 3: node
+// status, store-and-forward, header-only rows instead of rejections.
 // 2: map reports stored (mapreport), not_ok_to_mqtt marking (D-032).
-const DecodeVersion = 2
+const DecodeVersion = 3
 
 // RawMessage is one MQTT delivery. ObservedAt is captured in the MQTT
 // callback before queuing and is the authoritative event time (design §3.4).
