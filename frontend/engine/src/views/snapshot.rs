@@ -3,7 +3,7 @@
 use serde::Serialize;
 
 use super::estimate::estimate;
-use super::{brokers, build_edges, downlinks, identity_of, identity_of_report, is_device_telemetry, is_identity, is_named_report, latest_by, origins, position_of, position_rows, referenced, sig_counts, telemetry_of, traceroute_hops, Node};
+use super::{brokers, build_edges, downlinks, identity_of, identity_of_report, is_device_telemetry, is_identity, is_named_report, latest_by, origins, position_of, fresh_position_rows, referenced, sig_counts, telemetry_of, traceroute_hops, Node};
 use crate::geo;
 use crate::graph::{Edge, LatLon, RelayContext};
 use crate::row::{Interner, Row};
@@ -127,10 +127,17 @@ pub fn build_snapshot(rows: &[&Row], i: &Interner, g: &GeoOptions, rules: Rules)
             x.identity = Some(identity_of_report(r, i));
         }
     }
-    for (n, r) in position_rows(rows) {
+    // Positions reported more than a day before the window's latest
+    // observation are stale: no anchor, and the node is estimated (D-094).
+    let now = rows.iter().map(|r| r.t).max().unwrap_or(0);
+    let (fresh, stale) = fresh_position_rows(rows, now);
+    for (n, r) in fresh {
         let x = nodes.entry(n).or_insert_with(|| Node::new(n));
         x.position = Some(position_of(r, i));
         x.pos = r.pos;
+    }
+    for (n, r) in stale {
+        nodes.entry(n).or_insert_with(|| Node::new(n)).stale_position = Some(position_of(r, i));
     }
     for (n, r) in latest_by(rows, is_device_telemetry, |r| r.src) {
         nodes.entry(n).or_insert_with(|| Node::new(n)).telemetry = Some(telemetry_of(r));
@@ -210,6 +217,10 @@ pub fn build_snapshot(rows: &[&Row], i: &Interner, g: &GeoOptions, rules: Rules)
     if g.enabled {
         let radio: Vec<Edge> = er.edges.iter().filter(|e| !e.mqtt).cloned().collect();
         estimate(&mut nodes, &radio, g);
+    }
+    // A stale position still beats none when no estimate could be made.
+    for x in nodes.values_mut().filter(|x| x.estimate.is_none() && x.position.is_none()) {
+        x.position = x.stale_position.clone();
     }
     let mut list: Vec<Node> = nodes.into_values().collect();
     for n in &list {

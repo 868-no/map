@@ -2,7 +2,7 @@
 
 use serde::Serialize;
 
-use super::{brokers, dest, downlinks, first_per_reception, identity_of, identity_of_report, is_device_telemetry, is_identity, is_named_report, is_position, latest_by, origins, position_of, position_rows, referenced, sig_counts, telemetry_of, traceroute_hops, Node};
+use super::{brokers, dest, downlinks, first_per_reception, identity_of, identity_of_report, is_device_telemetry, is_identity, is_named_report, is_position, latest_by, origins, position_of, referenced, sig_counts, telemetry_of, traceroute_hops, Node};
 use crate::graph::{self, Stats};
 use crate::row::{Interner, Row};
 use crate::util::{iso, key_hex, map, node_id, set, FxMap, FxSet};
@@ -121,8 +121,13 @@ pub fn build_node_detail(rows: &[&Row], num: u32, i: &Interner) -> Option<NodeDe
             id.short_name.clear();
         }
     }
-    if let Some(r) = position_rows(&own).get(&num) {
+    // Stale relative to the window's latest observation, as in the snapshot (D-094).
+    let now = rows.iter().map(|r| r.t).max().unwrap_or(0);
+    let (fresh, stale) = super::fresh_position_rows(&own, now);
+    if let Some(r) = fresh.get(&num) {
         n.position = Some(position_of(r, i));
+    } else if let Some(r) = stale.get(&num) {
+        n.stale_position = Some(position_of(r, i));
     }
     let anchored = crate::movement::anchors(&own);
     if let Some(a) = anchored.get(&num) {

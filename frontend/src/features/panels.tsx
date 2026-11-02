@@ -173,6 +173,8 @@ export function NodePanel({ id, snapshot }: { id: string; snapshot: SnapshotView
   if (!data) return null
   const d = data
   const est = snapNode?.estimate
+  // A stale reported position is shown only when no estimate replaces it (D-094).
+  const pos = d.position ?? (est ? undefined : d.stale_position)
   const radio = radioSummary(d.radio, (n) => names.get(n) ?? n)
   return (
     <div className="panel node-panel">
@@ -215,18 +217,24 @@ export function NodePanel({ id, snapshot }: { id: string; snapshot: SnapshotView
         <dd><PublicKey key={d.id} id={d.id} optOut={d.mqtt_opt_out} /></dd>
         <dt>Position</dt>
         <dd>
-          {d.position ? (
+          {d.stale_position && (
+            <div className="stale-note" title="A reported position more than a day older than the newest data in the selected period may no longer be where the node is (D-094)">
+              Last reported position is stale: {formatLocal(d.stale_position.observed_at)}.{' '}
+              {est ? 'Estimated instead:' : pos ? 'No estimate could be made, so the map shows it there.' : ''}
+            </div>
+          )}
+          {pos ? (
             <>
-              {d.position.lat.toFixed(5)}, {d.position.lon.toFixed(5)}
-              {d.position.alt !== undefined && d.position.alt !== null && <> · {d.position.alt} m above sea level</>}
+              {pos.lat.toFixed(5)}, {pos.lon.toFixed(5)}
+              {pos.alt !== undefined && pos.alt !== null && <> · {pos.alt} m above sea level</>}
               <br />
               <small>
-                {d.position.source === 'mapreport' ? 'from map report · ' : ''}
-                {d.position.precision_known
-                  ? d.position.precision_bits >= 32
+                {pos.source === 'mapreport' ? 'from map report · ' : ''}
+                {pos.precision_known
+                  ? pos.precision_bits >= 32
                     ? 'full precision'
-                    : <span title={`Shared with ${d.position.precision_bits} precision bits: firmware reports the centre of a cell this size, so it is somewhere within this distance`}>± {dist(precisionErrorM(d.position.precision_bits, d.position.lat))}</span>
-                  : 'precision unknown'} · <SigBadge s={d.position.signature} /> · {formatLocal(d.position.observed_at)}
+                    : <span title={`Shared with ${pos.precision_bits} precision bits: firmware reports the centre of a cell this size, so it is somewhere within this distance`}>± {dist(precisionErrorM(pos.precision_bits, pos.lat))}</span>
+                  : 'precision unknown'} · <SigBadge s={pos.signature} /> · {formatLocal(pos.observed_at)}
               </small>
               {d.refined && (
                 <div className="refined" title="Its reports jump around one place: combined, they narrow down where it is. The map places it here (D-077).">
@@ -240,7 +248,7 @@ export function NodePanel({ id, snapshot }: { id: string; snapshot: SnapshotView
             </>
           ) : est ? (
             <span className="est-note">
-              Estimated location (not reported): {est.lat.toFixed(3)}, {est.lon.toFixed(3)} ± {dist(est.uncertainty_radius_m)}
+              Estimated location{d.stale_position ? '' : ' (not reported)'}: {est.lat.toFixed(3)}, {est.lon.toFixed(3)} ± {dist(est.uncertainty_radius_m)}
               <br />
               <small title="Anchors: nodes with a precise reported position that heard it directly. Samples: those receptions.">
                 {QUALITY[est.quality] ?? est.quality} estimate from the {METHOD[est.method] ?? est.method}: {est.anchor_count} anchors, {est.sample_count} receptions. {(est.reasons ?? []).join(' ')}

@@ -80,6 +80,12 @@ pub struct Node {
     pub identity: Option<Identity>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub position: Option<Position>,
+    /// Its newest reported position, when that is older than STALE_POSITION_MS
+    /// before the window's latest observation (D-094): it is then no anchor
+    /// and the node is estimated; only without an estimate is it also kept
+    /// as `position` (in the snapshot).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stale_position: Option<Position>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub telemetry: Option<Telemetry>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -159,7 +165,7 @@ impl Node {
 
     pub(super) fn new(n: u32) -> Self {
         Node {
-            id: node_id(n), num: n, status: "observed", identity: None, position: None, telemetry: None, first_seen: None, last_seen: None, last_referenced: None, own_uplinks: 0,
+            id: node_id(n), num: n, status: "observed", identity: None, position: None, stale_position: None, telemetry: None, first_seen: None, last_seen: None, last_referenced: None, own_uplinks: 0,
             packets: 0, receptions: 0, gateway_receptions: 0, is_gateway: false, multi_uplink: false, signatures: Signatures::default(), brokers: None,
             mqtt_opt_out: false, estimate: None, estimate_note: None, mqtt_downlink: None, moved_at: None, track: None, airborne: false, refined: None, relaying: None, first: i64::MAX, last: i64::MIN, pos: None,
         }
@@ -236,6 +242,17 @@ pub fn choose_position<'a>(a: &'a Row, b: &'a Row) -> &'a Row {
         return newer_;
     }
     if older.pos.unwrap().bits > newer_.pos.unwrap().bits { older } else { newer_ }
+}
+
+/// A reported position older than this before the window's latest
+/// observation is stale: the node is estimated instead (D-094).
+pub const STALE_POSITION_MS: i64 = 24 * 3600 * 1000;
+
+/// Each node's position row, unless its newest position report is stale
+/// relative to `now`; stale rows are returned separately.
+pub(super) fn fresh_position_rows<'a>(rows: &[&'a Row], now: i64) -> (FxMap<u32, &'a Row>, FxMap<u32, &'a Row>) {
+    let newest = latest_by(rows, |r| (r.ty == ty::POSITION || r.ty == ty::MAPREPORT) && r.pos.is_some(), |r| r.src);
+    position_rows(rows).into_iter().partition(|(n, _)| newest.get(n).is_some_and(|r| now - r.t <= STALE_POSITION_MS))
 }
 
 /// Each node's position row: latest of each packet type, then choose_position.
@@ -363,5 +380,23 @@ mod tests {
             assert_eq!(choose_position(&a, &b).ty, want, "{name}");
             assert_eq!(choose_position(&b, &a).ty, want, "{name} (swapped)");
         }
+    }
+
+    #[test]
+    fn positions_older_than_a_day_are_stale() {
+        const H: i64 = 3_600_000;
+        let (p, m) = (ty::POSITION, ty::MAPREPORT);
+        let old = pos(1, p, 61.2, 32, 0);
+        let rows = [&old];
+        let (fresh, stale) = fresh_position_rows(&rows, 24 * H);
+        assert!(fresh.contains_key(&1) && stale.is_empty(), "exactly a day old is still fresh");
+        let (fresh, stale) = fresh_position_rows(&rows, 25 * H);
+        assert!(fresh.is_empty() && stale.contains_key(&1));
+        // A recent map report that agrees with an older precise position keeps it fresh,
+        // even though the precise one is what gets shown.
+        let recent = pos(2, m, 61.2001, 14, 24 * H);
+        let rows = [&old, &recent];
+        let (fresh, _) = fresh_position_rows(&rows, 25 * H);
+        assert_eq!(fresh.get(&1).map(|r| r.id), Some(1));
     }
 }

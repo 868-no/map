@@ -85,6 +85,7 @@ export interface MeshNode {
   status: 'observed' | 'referenced'
   identity?: Identity
   position?: Position
+  stale_position?: Position // newest report more than a day before the window's latest data (D-094)
   telemetry?: Telemetry
   first_seen?: string
   last_seen?: string
