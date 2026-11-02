@@ -92,6 +92,8 @@ export interface MeshNode {
   receptions: number // gateway receptions of those packets
   gateway_receptions: number // receptions this node uplinked as a gateway
   is_gateway: boolean
+  /** Uplinks every copy of a packet it hears, not only the first (a future firmware option, D-084). */
+  multi_uplink?: boolean
   signatures: { verified: number; unsigned: number; unverifiable: number; not_applicable: number }
   brokers?: string[]
   mqtt_opt_out?: boolean // sent packets without OK-to-MQTT through another gateway: unnamed

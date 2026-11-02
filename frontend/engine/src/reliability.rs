@@ -13,6 +13,9 @@
 //! stays invisible whenever another copy reached the witness first. The share
 //! is therefore a lower bound on how often it relays: comparable between
 //! routers of the same role and coverage, not an absolute reliability.
+//! A witness that uplinks every copy it hears (D-084) reports the router's
+//! copy even when another arrived first, so with such witnesses the share
+//! comes closer to the real rate.
 
 use serde::Serialize;
 

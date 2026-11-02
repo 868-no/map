@@ -8,7 +8,7 @@ import { IconLayer, LineLayer, PathLayer, ScatterplotLayer, TextLayer } from '@d
 import type { PathStyleExtensionProps } from '@deck.gl/extensions'
 import type { Layer } from '@deck.gl/core'
 import type { Selection, Toggles } from '../state/store'
-import { ageColor, CONFIDENCE_ALPHA, glyphInk, LINK_WIDTH, MQTT_ARROW, mqttFlow, PLANE, type MqttFlow, OPT_OUT_RING, ROUTE_COLOR, precisionErrorM, roleRadius, type LinkGeom, type PlacedNode } from './model'
+import { ageColor, CONFIDENCE_ALPHA, glyphInk, LINK_WIDTH, MQTT_ARROW, mqttBadge, mqttFlow, PLANE, type MqttFlow, OPT_OUT_RING, ROUTE_COLOR, precisionErrorM, roleRadius, type LinkGeom, type PlacedNode } from './model'
 import { dashExt, UNDER_LABELS, type RGBA } from './deckShared'
 import { labelData, toPixels, type Cluster } from './labels'
 import { stackLevels } from './stacking'
@@ -54,8 +54,11 @@ export interface RouteGeom {
 // getIcon is not invalidated on every rebuild.
 const ICON_PX = 64
 // The MQTT arrows inside markers, and the airplane badge beside airborne ones (D-073).
-const ICON_PATHS: Record<MqttFlow | 'plane', string> = { ...MQTT_ARROW, plane: PLANE }
-const FLOWS = Object.keys(ICON_PATHS) as (MqttFlow | 'plane')[]
+// Badges sit beside the marker: the airplane top right, a downlink (for a
+// gateway uplinking every copy, D-084) bottom right.
+type Badge = 'plane' | 'downBadge'
+const ICON_PATHS: Record<MqttFlow | Badge, string> = { ...MQTT_ARROW, plane: PLANE, downBadge: MQTT_ARROW.down }
+const FLOWS = Object.keys(ICON_PATHS) as (MqttFlow | Badge)[]
 const ICON_MAPPING = Object.fromEntries(FLOWS.map((f, k) => [f, { x: k * ICON_PX, y: 0, width: ICON_PX, height: ICON_PX, mask: true }]))
 const FONT_SETTINGS = { sdf: true, fontSize: 64, buffer: 16, radius: 16 }
 // A right-pointing chevron, rotated per link toward its free end (D-068).
@@ -117,12 +120,18 @@ export function memoLast<A extends unknown[], R>(fn: (...a: A) => R): (...a: A) 
 }
 
 type Circle = { pos: [number, number]; r: number; est: boolean }
-type Glyph = { p: PlacedNode; flow: MqttFlow | 'plane' }
-/** A node's glyphs: its MQTT arrow, and the airplane badge when airborne. */
+type Glyph = { p: PlacedNode; flow: MqttFlow | Badge }
+/** A node's glyphs: its MQTT arrow, the airplane badge when airborne, and a downlink badge (see MqttFlow). */
 const glyphsFor = (p: PlacedNode): Glyph[] => {
   const flow = mqttFlow(p.node)
-  return [...(flow ? [{ p, flow }] : []), ...(p.node.airborne ? [{ p, flow: 'plane' as const }] : [])]
+  return [
+    ...(flow ? [{ p, flow }] : []),
+    ...(p.node.airborne ? [{ p, flow: 'plane' as const }] : []),
+    ...(mqttBadge(p.node) ? [{ p, flow: 'downBadge' as const }] : []),
+  ]
 }
+const BADGE_PX: Record<Badge, number> = { plane: 15, downBadge: 10 }
+const isBadge = (f: Glyph['flow']): f is Badge => f === 'plane' || f === 'downBadge'
 /** Places kept per trail before the marker: enough to show which way it goes. */
 const TRAIL_POINTS = 3
 type Trail = { id: string; from: [number, number]; to: [number, number]; alpha: number }
@@ -380,15 +389,20 @@ export function meshLayerBuilder(): (input: MeshLayerInput) => Layer[] {
       updateTriggers: { getFillColor: [q, c, reach], getLineColor: [selId, q, c, reach], getLineWidth: [selId] },
     }
     // MQTT direction inside the marker: ↑ uplinks (gateway), ↓ probably
-    // downlinks (traceroutes reach it at exactly 0 dB), ↕ both (D-054).
+    // downlinks (traceroutes reach it at exactly 0 dB), ↕ both (D-054), a
+    // double chevron uplinks every copy (D-084, a downlink then a badge).
     const glyph = {
       ...UNDER_LABELS, getPosition: ({ p }: Glyph) => [p.lon, p.lat] as [number, number],
       getIcon: ({ flow }: Glyph) => flow, sizeUnits: 'pixels' as const,
-      getSize: ({ p, flow }: Glyph) => (flow === 'plane' ? 15 : roleRadius(p.node.identity?.role) * 1.5),
-      // The airplane sits on the marker's top-right edge, clear of the arrow inside.
-      getPixelOffset: ({ p, flow }: Glyph) => (flow === 'plane' ? [roleRadius(p.node.identity?.role) + 3, -(roleRadius(p.node.identity?.role) + 3)] : [0, 0]) as [number, number],
+      getSize: ({ p, flow }: Glyph) => (isBadge(flow) ? BADGE_PX[flow] : roleRadius(p.node.identity?.role) * 1.5),
+      // Badges sit on the marker's edge, clear of the arrow inside: the
+      // airplane top right, the downlink bottom right.
+      getPixelOffset: ({ p, flow }: Glyph) => {
+        const r = roleRadius(p.node.identity?.role)
+        return (flow === 'plane' ? [r + 3, -(r + 3)] : flow === 'downBadge' ? [r + 3, r + 2] : [0, 0]) as [number, number]
+      },
       // On the fill when there is one; hollow estimate rings get the ring's colour.
-      getColor: ({ p, flow }: Glyph) => (!matches(p) ? c.dimmed : flow === 'plane' ? [...c.trail, 255] : p.kind === 'estimated' ? [...ageColor(p.age, c.ageStops), 255] : [...glyphInk(ageColor(p.age, c.ageStops)), 255]) as RGBA,
+      getColor: ({ p, flow }: Glyph) => (!matches(p) ? c.dimmed : isBadge(flow) ? [...c.trail, 255] : p.kind === 'estimated' ? [...ageColor(p.age, c.ageStops), 255] : [...glyphInk(ageColor(p.age, c.ageStops)), 255]) as RGBA,
       pickable: false,
       updateTriggers: { getColor: [q, c, reach] },
     }

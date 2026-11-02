@@ -45,6 +45,13 @@ describe('mesh layer builder', () => {
     expect(c['links-other'].updateTriggers).toEqual(b['links-other'].updateTriggers) // a node selection leaves links alone
   })
 
+  it('marks a gateway uplinking every copy with a double chevron, its downlink as a badge (D-084)', () => {
+    const gw = (id: string, lon: number, extra: object): PlacedNode => ({ node: { ...node(id), is_gateway: true, ...extra }, kind: 'reported', lon, lat: 61, age: 0 })
+    const ls = byId(meshLayerBuilder()({ ...base, placed: [gw('!u', 5, { multi_uplink: true }), gw('!d', 7, { multi_uplink: true, mqtt_downlink: { zero_snr: 3, traceroutes: 4 } }), gw('!g', 9, {})] }))
+    const glyphs = (ls['mqtt-glyphs'].data as { p: PlacedNode; flow: string }[]).map((g) => `${g.p.node.id}:${g.flow}`)
+    expect(glyphs.sort()).toEqual(['!d:downBadge', '!d:upAll', '!g:up', '!u:upAll'])
+  })
+
   it('draws a fading trail with arrows behind a moving node, and a plane badge when airborne (D-073)', () => {
     const track = [{ lat: 60.2, lon: 10.2, at: 't0' }, { lat: 60.25, lon: 10.25, at: 't1' }]
     const mover: PlacedNode = { node: { ...node('!m'), moved_at: 't1', track, airborne: true }, kind: 'reported', lon: 10.3, lat: 60.3, age: 0 }

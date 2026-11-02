@@ -80,6 +80,7 @@ pub fn build_node_detail(rows: &[&Row], num: u32, i: &Interner) -> Option<NodeDe
     let (mut first, mut last) = (i64::MAX, i64::MIN);
     let mut own: Vec<&Row> = Vec::new();
     let mut gw_rx = set::<u64>();
+    let mut uplinked: Vec<&Row> = Vec::new(); // what it reported as a gateway
     for &r in rows {
         if r.src == num || r.gw == Some(num) {
             first = first.min(r.t);
@@ -90,6 +91,7 @@ pub fn build_node_detail(rows: &[&Row], num: u32, i: &Interner) -> Option<NodeDe
         }
         if r.gw == Some(num) {
             gw_rx.insert(r.ok);
+            uplinked.push(r);
         }
     }
     if let Some(o) = origins(&own).get(&num) {
@@ -101,6 +103,7 @@ pub fn build_node_detail(rows: &[&Row], num: u32, i: &Interner) -> Option<NodeDe
     }
     n.gateway_receptions = gw_rx.len();
     n.is_gateway = !gw_rx.is_empty();
+    n.multi_uplink = n.is_gateway && crate::copies::multi_uplinkers(&uplinked).contains(&num);
     n.mqtt_downlink = downlinks(&traceroute_hops(rows)).remove(&num);
     if let Some(r) = latest_by(&own, is_identity, |r| r.src).get(&num) {
         n.identity = Some(identity_of(r, i));

@@ -62,11 +62,19 @@ export function precisionErrorM(bits: number, lat: number): number {
   return Math.hypot(half, half * Math.cos((lat * Math.PI) / 180))
 }
 
-/** Which way a node moves packets between the mesh and MQTT (D-054). */
-export type MqttFlow = 'up' | 'down' | 'both'
+/**
+ * Which way a node moves packets between the mesh and MQTT (D-054): up,
+ * down, or both. upAll: it uplinks every copy it hears (D-084), drawn as a
+ * double chevron; with a downlink too it keeps the chevron and gets a small
+ * down-arrow badge beside the marker (`mqttBadge`), since three shapes do not
+ * fit in a small marker. So the marker's centre always tells the uplink kind
+ * and a down arrow always means downlink.
+ */
+export type MqttFlow = 'up' | 'upAll' | 'down' | 'both'
 /** The same arrows as solid shapes (24x24), drawn on the map as tinted icons: fonts differ too much. */
 export const MQTT_ARROW: Record<MqttFlow, string> = {
   up: 'M12 2 20 11h-5v11H9V11H4z',
+  upAll: 'M12 2 21.5 11 18.3 14.2 12 7.6 5.7 14.2 2.5 11z M12 10.5 21.5 19.5 18.3 22.7 12 16.1 5.7 22.7 2.5 19.5z',
   down: 'M12 22 4 13h5V2h6v11h5z',
   both: 'M12 1 19 8h-4.5v8H19l-7 7-7-7h4.5V8H5z',
 }
@@ -76,7 +84,13 @@ export const PLANE = 'M11 1.5h2l1 7.5 8.5 4.5v2.2L14 13.5l-.6 5.3 2.6 2v1.7L12 2
 
 export function mqttFlow(n: MeshNode): MqttFlow | undefined {
   const up = n.is_gateway, down = !!n.mqtt_downlink
+  if (up && n.multi_uplink) return 'upAll'
   return up && down ? 'both' : up ? 'up' : down ? 'down' : undefined
+}
+
+/** A gateway uplinking every copy that also downlinks: its downlink shows as a badge (see MqttFlow). */
+export function mqttBadge(n: MeshNode): boolean {
+  return !!(n.is_gateway && n.multi_uplink && n.mqtt_downlink)
 }
 
 /** Ink for a glyph on a marker filled with rgb: dark on light fills, light on dark ones. */

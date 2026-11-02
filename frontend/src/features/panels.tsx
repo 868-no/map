@@ -140,7 +140,14 @@ export function NodePanel({ id, snapshot }: { id: string; snapshot: SnapshotView
       <p className="muted">
         {d.id} · #{d.num} <ShareNode id={d.id} name={d.identity?.long_name || d.id} />{' '}
         {d.status === 'referenced' && <span className="tag">referenced only — not directly observed</span>}
-        {d.is_gateway && <span className="tag gw" title="Uplinks the packets it hears to the MQTT broker">↑ MQTT gateway</span>}
+        {d.is_gateway &&
+          (d.multi_uplink ? (
+            <span className="tag gw" title="Uplinks every copy of a packet it hears, each with the last hop it came from, not only the first (a firmware option): its reports show more of the routes packets take">
+              ⏫ MQTT gateway, every copy
+            </span>
+          ) : (
+            <span className="tag gw" title="Uplinks the packets it hears to the MQTT broker (the first copy of each)">↑ MQTT gateway</span>
+          ))}
         {d.mqtt_downlink && (
           <span className="tag gw" title={`Probably transmits packets it takes from the MQTT broker: ${d.mqtt_downlink.zero_snr} of ${d.mqtt_downlink.traceroutes} traceroutes reached it at exactly 0 dB, the reading a packet from MQTT gets`}>
             ↓ MQTT downlink (probable)

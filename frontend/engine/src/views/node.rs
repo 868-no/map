@@ -86,6 +86,10 @@ pub struct Node {
     pub receptions: usize,
     pub gateway_receptions: usize,
     pub is_gateway: bool,
+    /// A gateway that uplinks every copy of a packet it hears, not only the
+    /// first (a future firmware option, D-084).
+    #[serde(skip_serializing_if = "is_false")]
+    pub multi_uplink: bool,
     pub signatures: Signatures,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub brokers: Option<Vec<String>>,
@@ -145,7 +149,7 @@ impl Node {
     pub(super) fn new(n: u32) -> Self {
         Node {
             id: node_id(n), num: n, status: "observed", identity: None, position: None, telemetry: None, first_seen: None, last_seen: None,
-            packets: 0, receptions: 0, gateway_receptions: 0, is_gateway: false, signatures: Signatures::default(), brokers: None,
+            packets: 0, receptions: 0, gateway_receptions: 0, is_gateway: false, multi_uplink: false, signatures: Signatures::default(), brokers: None,
             mqtt_opt_out: false, estimate: None, estimate_note: None, mqtt_downlink: None, moved_at: None, track: None, airborne: false, refined: None, relaying: None, first: i64::MAX, last: i64::MIN, pos: None,
         }
     }

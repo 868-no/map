@@ -201,6 +201,9 @@ table.hear th, table.hear td { text-align: left; padding: 2px 4px; border-bottom
 .dot.unp { background: var(--unpositioned); }
 .dot.ref { background: transparent; border: 1px dashed var(--muted); }
 .dot.gwring { border: 2px solid var(--accent); }
+.dot.glyph .flow-icon { width: 9px; height: 9px; fill: currentColor; }
+.glyph-badged { position: relative; display: inline-flex; flex: none; vertical-align: middle; margin-right: 6px; }
+.glyph-badged .glyph-badge { position: absolute; right: -7px; bottom: -4px; width: 8px; height: 8px; fill: var(--text); }
 .dot.glyph { width: 14px; height: 14px; font-size: 10px; font-weight: 700; line-height: 1; color: var(--bg); display: inline-flex; align-items: center; justify-content: center; }
 .ln { display: inline-block; width: 26px; height: 0; border-top: 2px solid; vertical-align: middle; margin-right: 4px; }
 .ln.infra { border-color: rgb(76, 201, 240); }

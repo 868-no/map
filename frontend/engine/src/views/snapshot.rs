@@ -177,6 +177,11 @@ pub fn build_snapshot(rows: &[&Row], i: &Interner, g: &GeoOptions, rules: Rules)
     // Every packet's copies, with the transmitter each was heard from: once for both passes below.
     let packets = crate::copies::by_packet(rows, &ctx);
     let mut zc = crate::zerocost::detect(&packets, &hears, &roles);
+    for g in crate::copies::multi_uplinkers(rows) {
+        if let Some(x) = nodes.get_mut(&g) {
+            x.multi_uplink = true;
+        }
+    }
     for e in er.edges.iter_mut().filter(|e| !e.mqtt) {
         e.zero_cost = zc.remove(&(e.src_num, e.dst_num));
     }
