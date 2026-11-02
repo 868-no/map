@@ -218,10 +218,6 @@ pub fn build_snapshot(rows: &[&Row], i: &Interner, g: &GeoOptions, rules: Rules)
         let radio: Vec<Edge> = er.edges.iter().filter(|e| !e.mqtt).cloned().collect();
         estimate(&mut nodes, &radio, g);
     }
-    // A stale position still beats none when no estimate could be made.
-    for x in nodes.values_mut().filter(|x| x.estimate.is_none() && x.position.is_none()) {
-        x.position = x.stale_position.clone();
-    }
     let mut list: Vec<Node> = nodes.into_values().collect();
     for n in &list {
         if n.status == "observed" {

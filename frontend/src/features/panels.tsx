@@ -173,8 +173,7 @@ export function NodePanel({ id, snapshot }: { id: string; snapshot: SnapshotView
   if (!data) return null
   const d = data
   const est = snapNode?.estimate
-  // A stale reported position is shown only when no estimate replaces it (D-094).
-  const pos = d.position ?? (est ? undefined : d.stale_position)
+  const pos = d.position // a stale one is never shown as its position (D-094)
   const radio = radioSummary(d.radio, (n) => names.get(n) ?? n)
   return (
     <div className="panel node-panel">
@@ -220,7 +219,7 @@ export function NodePanel({ id, snapshot }: { id: string; snapshot: SnapshotView
           {d.stale_position && (
             <div className="stale-note" title="A reported position more than a day older than the newest data in the selected period may no longer be where the node is (D-094)">
               Last reported position is stale: {formatLocal(d.stale_position.observed_at)}.{' '}
-              {est ? 'Estimated instead:' : pos ? 'No estimate could be made, so the map shows it there.' : ''}
+              {est ? 'Estimated instead:' : 'No estimate could be made, so it is not on the map.'}
             </div>
           )}
           {pos ? (
@@ -256,8 +255,8 @@ export function NodePanel({ id, snapshot }: { id: string; snapshot: SnapshotView
             </span>
           ) : (
             <>
-              {NR}
-              {snapNode?.estimate_note && <><br /><small>No estimate: {snapNode.estimate_note}</small></>}
+              {!d.stale_position && NR}
+              {snapNode?.estimate_note && <>{!d.stale_position && <br />}<small>No estimate: {snapNode.estimate_note}</small></>}
             </>
           )}
         </dd>

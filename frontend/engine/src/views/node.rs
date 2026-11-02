@@ -82,8 +82,8 @@ pub struct Node {
     pub position: Option<Position>,
     /// Its newest reported position, when that is older than STALE_POSITION_MS
     /// before the window's latest observation (D-094): it is then no anchor
-    /// and the node is estimated; only without an estimate is it also kept
-    /// as `position` (in the snapshot).
+    /// and the node is estimated; without an estimate it is left off the map,
+    /// since links drawn to an old place would mislead.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stale_position: Option<Position>,
     #[serde(skip_serializing_if = "Option::is_none")]
