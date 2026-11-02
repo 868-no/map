@@ -20,28 +20,21 @@ export function lastHeardAge(n: MeshNode, endMs: number, windowMs: number): numb
 }
 
 /**
- * Last-heard colour ramp (inferno, reversed and clipped so the oldest stop
- * stays visible on the dark basemap; colourblind-safe, monotonic lightness).
- * Stops are at age 0, 0.25, 0.5, 0.75 and 1 of the selected window.
+ * Last-heard colour ramp, the same on both basemaps: gold, orange, red,
+ * magenta, violet, with lightness falling throughout (so it reads in order
+ * without colour vision too). Stops are at age 0, 0.25, 0.5, 0.75 and 1 of
+ * the selected window. Every stop sits in a middle band of luminance: at
+ * least 3:1 against the dark background (the old inferno ramp's oldest stop
+ * sank into it at 2.7:1) and 2:1 against the light one (its newest pale
+ * yellow vanished at 1.1:1); markers' dark outlines and the rings' dark halo
+ * carry the rest, also over roads, water and land cover.
  */
 export const AGE_STOPS: [number, number, number][] = [
-  [252, 255, 164],
-  [250, 194, 40],
-  [245, 125, 21],
-  [212, 72, 66],
-  [159, 42, 99],
-]
-
-/**
- * The same ramp for the light basemap, deeper throughout: the pale newest
- * yellow all but vanished on it (worst for estimated nodes, drawn as rings).
- */
-export const AGE_STOPS_LIGHT: [number, number, number][] = [
-  [214, 158, 0],
-  [232, 118, 0],
-  [212, 70, 34],
-  [168, 32, 76],
-  [104, 24, 96],
+  [226, 152, 0],
+  [236, 116, 16],
+  [218, 66, 56],
+  [192, 52, 128],
+  [130, 68, 190],
 ]
 
 export function ageColor(age: number, stops: readonly [number, number, number][] = AGE_STOPS): [number, number, number] {
@@ -92,8 +85,14 @@ export function mqttDownlink(n: MeshNode): boolean {
 
 /** Ink for a glyph on a marker filled with rgb: dark on light fills, light on dark ones. */
 export function glyphInk(rgb: readonly number[]): [number, number, number] {
-  const lum = (0.2126 * rgb[0] + 0.7152 * rgb[1] + 0.0722 * rgb[2]) / 255
-  return lum > 0.55 ? [14, 17, 22] : [250, 250, 248]
+  // Whichever ink contrasts more (WCAG): dark wins above ~18% luminance.
+  return relativeLuminance(rgb) > 0.18 ? [14, 17, 22] : [250, 250, 248]
+}
+
+/** WCAG relative luminance of an sRGB colour (0..255 channels). */
+export function relativeLuminance([r, g, b]: readonly number[]): number {
+  const lin = (v: number) => ((v /= 255) <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4)
+  return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b)
 }
 
 /** Infrastructure roles: links between two of these are infrastructure links. */

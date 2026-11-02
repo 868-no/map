@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { ageColor, AGE_STOPS, AGE_STOPS_LIGHT, bridgeRoute, filterEdges, glyphInk, isInfraRole, mqttDownlink, mqttUplink, LOW_ZOOM_LINKS, precisionErrorM, visibleLinks, lastHeardAge, linkGeometry, placeNodes, roleRadius } from '../src/map/model'
+import { ageColor, AGE_STOPS, bridgeRoute, filterEdges, glyphInk, relativeLuminance, isInfraRole, mqttDownlink, mqttUplink, LOW_ZOOM_LINKS, precisionErrorM, visibleLinks, lastHeardAge, linkGeometry, placeNodes, roleRadius } from '../src/map/model'
+
+// WCAG contrast ratio.
+const contrast = (a: readonly number[], b: readonly number[]) => (Math.max(relativeLuminance(a), relativeLuminance(b)) + 0.05) / (Math.min(relativeLuminance(a), relativeLuminance(b)) + 0.05)
 import { defaultFilters, defaultToggles } from '../src/state/store'
 
 const node = (id: string, extra: object = {}) => ({ id, num: parseInt(id.slice(1), 16), status: 'observed', packets: 1, receptions: 1, gateway_receptions: 0, is_gateway: false,
@@ -100,21 +103,27 @@ describe('MQTT direction glyphs (D-054)', () => {
     expect(mqttDownlink(node(true, true))).toBe(true)
     expect(mqttDownlink(node(true, false))).toBe(false)
   })
-  it('inks dark on the newest (light) fill and light on the oldest (dark) one', () => {
+  it('inks dark on the newest (light) fill and light on the oldest (dark) one, at 4:1 or better', () => {
     expect(glyphInk(AGE_STOPS[0])[0]).toBeLessThan(50)
     expect(glyphInk(AGE_STOPS[AGE_STOPS.length - 1])[0]).toBeGreaterThan(200)
+    for (let k = 0; k <= 20; k++) {
+      const c = ageColor(k / 20)
+      expect(contrast(glyphInk(c), c)).toBeGreaterThan(4)
+    }
   })
 })
 
-describe('age ramp on the light basemap', () => {
-  // WCAG relative luminance and contrast ratio.
-  const lin = (v: number) => ((v /= 255) <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4)
-  const lum = ([r, g, b]: readonly number[]) => 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b)
-  const contrast = (a: readonly number[], b: readonly number[]) => (Math.max(lum(a), lum(b)) + 0.05) / (Math.min(lum(a), lum(b)) + 0.05)
+describe('age ramp on both basemaps', () => {
+  const DARK_BG = [0x0e, 0x11, 0x16] // web/styles/dark.json background
   const LIGHT_BG = [0xf3, 0xf1, 0xec] // web/styles/light.json background
-  it('stands out from the background at every age, unlike the dark-theme ramp', () => {
-    for (let k = 0; k <= 20; k++) expect(contrast(ageColor(k / 20, AGE_STOPS_LIGHT), LIGHT_BG)).toBeGreaterThan(2)
-    expect(contrast(AGE_STOPS[0], LIGHT_BG)).toBeLessThan(1.2) // why it exists
+  it('stands out from both backgrounds at every age', () => {
+    for (let k = 0; k <= 20; k++) {
+      expect(contrast(ageColor(k / 20), DARK_BG)).toBeGreaterThan(3)
+      expect(contrast(ageColor(k / 20), LIGHT_BG)).toBeGreaterThan(2)
+    }
+  })
+  it('falls in lightness from newest to oldest', () => {
+    for (let k = 1; k < AGE_STOPS.length; k++) expect(relativeLuminance(AGE_STOPS[k])).toBeLessThan(relativeLuminance(AGE_STOPS[k - 1]))
   })
 })
 

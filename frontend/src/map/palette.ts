@@ -3,7 +3,7 @@
 // own tones (text, outlines, selection, links, pings) changes with it.
 import type { Theme } from '../theme'
 import type { RegionId } from './regionData'
-import { AGE_STOPS, AGE_STOPS_LIGHT } from './model'
+import { AGE_STOPS } from './model'
 
 type RGB = [number, number, number]
 type RGBA = [number, number, number, number]
@@ -79,7 +79,7 @@ export const PALETTES: Record<Theme, MapPalette> = {
     pingRelay: [222, 128, 0],
     pingCore: (c) => toward(c, 0, 0.25),
     regions: { nord: [60, 90, 200], trondelag: [196, 98, 36], vest: [16, 132, 112], ost: [168, 58, 138], sor: [150, 120, 10] },
-    ageStops: AGE_STOPS_LIGHT,
+    ageStops: AGE_STOPS,
     zeroCost: [176, 118, 0],
     trail: [40, 46, 56],
     reach: [[20, 150, 70], [125, 150, 0], [205, 135, 0], [220, 85, 20], [200, 35, 55], [170, 40, 160], [100, 60, 210], [30, 110, 210]],
