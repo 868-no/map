@@ -283,6 +283,9 @@ table.hear th:not(:first-child), table.hear td:not(:first-child) { white-space: 
   /* Bottom sheet over the map. */
   .app { --gap: 8px; }
   .dock { top: auto; bottom: var(--gap); left: var(--gap); width: auto; max-height: 50vh; }
+  /* The panel is a bottom sheet here: the header keeps its full width beside the rail. */
+  .main:not(.panel-closed) .topbar { max-width: calc(100% - var(--rail) - 4 * var(--gap)); }
+  .topbar-row { white-space: nowrap; }
   .banners, .main:not(.panel-closed) .banners { right: calc(var(--rail) + 3 * var(--gap)); left: 10px; }
   .counters { display: none; }
 }
