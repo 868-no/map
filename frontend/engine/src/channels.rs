@@ -22,7 +22,6 @@ use crate::graph::Ev;
 use crate::radio::preset_of;
 use crate::row::{ty, Interner, Row};
 use crate::util::{map, node_id, set, FxMap, FxSet};
-use crate::views::traceroute_hops;
 
 #[derive(Serialize, Debug, PartialEq)]
 pub struct ChannelUse {
@@ -121,8 +120,9 @@ fn union(p: &mut FxMap<u32, u32>, a: u32, b: u32) {
     }
 }
 
-/// Pairs of nodes that heard each other over the air in `rows`.
-fn radio_contacts(rows: &[&Row]) -> Vec<(u32, u32)> {
+/// Pairs of nodes that heard each other over the air in `rows`. hops:
+/// traceroute_hops of the rows.
+fn radio_contacts(rows: &[&Row], hops: &[crate::graph::Sample]) -> Vec<(u32, u32)> {
     let mut out = Vec::new();
     for &r in rows {
         if let (true, Some(g)) = (r.dr, r.gw) {
@@ -133,7 +133,7 @@ fn radio_contacts(rows: &[&Row]) -> Vec<(u32, u32)> {
         }
     }
     // Exactly 0 dB may be a hop taken from MQTT, not the air (D-054).
-    out.extend(traceroute_hops(rows).into_iter().filter(|s| s.ev == Ev::Traceroute && s.snr != Some(0.0)).map(|s| (s.src, s.dst)));
+    out.extend(hops.iter().filter(|s| s.ev == Ev::Traceroute && s.snr != Some(0.0)).map(|s| (s.src, s.dst)));
     out
 }
 
@@ -165,24 +165,47 @@ fn evidence(rows: &[&Row], i: &Interner) -> FxMap<u32, (String, bool)> {
     out
 }
 
+/// The window's radio groups and every node's own preset evidence: the
+/// same for every node, so made once per build (views::Built).
+pub struct PresetIndex {
+    ev: FxMap<u32, (String, bool)>,
+    contacts: Vec<(u32, u32)>,
+    /// Each node in a radio contact, with its group's root.
+    root: FxMap<u32, u32>,
+    /// Every group's members by root.
+    groups: FxMap<u32, Vec<u32>>,
+}
+
+impl PresetIndex {
+    /// hops: traceroute_hops of the rows.
+    pub fn new(rows: &[&Row], hops: &[crate::graph::Sample], i: &Interner) -> Self {
+        let contacts = radio_contacts(rows, hops);
+        let mut parent: FxMap<u32, u32> = map();
+        for &(a, b) in &contacts {
+            union(&mut parent, a, b);
+        }
+        let keys: Vec<u32> = parent.keys().copied().collect();
+        let root: FxMap<u32, u32> = keys.into_iter().map(|n| (n, find(&mut parent, n))).collect();
+        let mut groups: FxMap<u32, Vec<u32>> = map();
+        for (&n, &r) in &root {
+            groups.entry(r).or_default().push(n);
+        }
+        PresetIndex { ev: evidence(rows, i), contacts, root, groups }
+    }
+}
+
 /// What the window says about `num`'s modem preset; None without evidence.
-pub fn preset_guess(num: u32, rows: &[&Row], i: &Interner) -> Option<PresetGuess> {
-    let ev = evidence(rows, i);
-    let contacts = radio_contacts(rows);
-    let mut parent: FxMap<u32, u32> = map();
-    parent.insert(num, num);
+pub fn preset_guess(num: u32, ix: &PresetIndex) -> Option<PresetGuess> {
+    let ev = &ix.ev;
     let mut direct: FxSet<u32> = set();
-    for &(a, b) in &contacts {
-        union(&mut parent, a, b);
+    for &(a, b) in &ix.contacts {
         if a == num {
             direct.insert(b);
         } else if b == num {
             direct.insert(a);
         }
     }
-    let root = find(&mut parent, num);
-    let keys: Vec<u32> = parent.keys().copied().collect();
-    let mut members: Vec<u32> = keys.into_iter().filter(|&n| n != num && find(&mut parent, n) == root).collect();
+    let mut members: Vec<u32> = ix.root.get(&num).map_or(vec![], |r| ix.groups[r].iter().copied().filter(|&n| n != num).collect());
     // Direct contacts first, then by node number: stable, and the nearest evidence leads.
     members.sort_by_key(|n| (!direct.contains(n), *n));
     let group = members.len();

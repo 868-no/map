@@ -7,8 +7,7 @@
 
 use serde::Serialize;
 
-use crate::copies::by_packet;
-use crate::graph::RelayContext;
+use crate::copies::Copies;
 use crate::row::{ty, Interner, Row};
 use crate::util::{map, node_id, set, FxMap, FxSet};
 use crate::views::Node;
@@ -157,17 +156,19 @@ fn cost(r: &Row, i: &Interner) -> f64 {
 
 /// Estimated airtime: every packet costs one transmission by its originator
 /// plus one per distinct relay seen (resolved last hops, traceroute routes).
-/// A lower bound: relays no gateway heard are missed.
-pub fn airtime(rows: &[&Row], ctx: &RelayContext, i: &Interner, hours: f64) -> Airtime {
+/// A lower bound: relays no gateway heard are missed. copies: every
+/// packet's radio copies (`copies::Copies` of `rows`).
+pub fn airtime(copies: &Copies, rows: &[&Row], i: &Interner, hours: f64) -> Airtime {
     struct Pkt<'a> {
         row: &'a Row,
         relays: FxSet<u32>,
     }
-    let mut pkts: FxMap<u64, Pkt> = map();
-    for group in by_packet(rows, ctx) {
-        let row = group[0].row;
-        let p = pkts.entry(row.lp).or_insert_with(|| Pkt { row, relays: set() });
-        for h in &group {
+    let mut pkts: Vec<Pkt> = Vec::new();
+    for group in copies.packets(rows) {
+        let row = group.first().row;
+        pkts.push(Pkt { row, relays: set() });
+        let p = pkts.last_mut().unwrap();
+        for h in group.iter() {
             if let Some(s) = h.sender.filter(|&s| s != row.src) {
                 p.relays.insert(s);
             }
@@ -201,7 +202,7 @@ pub fn airtime(rows: &[&Row], ctx: &RelayContext, i: &Interner, hours: f64) -> A
     let mut sf: FxMap<u32, Sf> = map();
     let mut sf_kinds: FxMap<u32, (usize, f64)> = map();
     let (heartbeat, text_direct, text_broadcast) = (i.get("router_heartbeat"), i.get("router_text_direct"), i.get("router_text_broadcast"));
-    for p in pkts.values() {
+    for p in &pkts {
         let c = cost(p.row, i);
         let n = 1 + p.relays.len();
         let all = c * n as f64;
@@ -266,8 +267,8 @@ pub fn airtime(rows: &[&Row], ctx: &RelayContext, i: &Interner, hours: f64) -> A
 /// The window's known issues and airtime. `hours`: the window's length;
 /// rates use the span its rows cover when that is shorter. `invalid`: the
 /// window's rows that failed decoding or verification, which the filters
-/// keep out of `rows` (D-093).
-pub fn health(rows: &[&Row], invalid: &[&Row], nodes: &[Node], ctx: &RelayContext, i: &Interner, hours: f64) -> Health {
+/// keep out of `rows` (D-093). nodes, copies: the snapshot's (views::Built).
+pub fn health(rows: &[&Row], invalid: &[&Row], nodes: &[Node], copies: &Copies, i: &Interner, hours: f64) -> Health {
     // Rates over the span the data covers, which can be shorter than the
     // window (the service started later, or was down).
     let (lo, hi) = rows.iter().fold((i64::MAX, i64::MIN), |(lo, hi), r| (lo.min(r.t), hi.max(r.t)));
@@ -510,7 +511,7 @@ pub fn health(rows: &[&Row], invalid: &[&Row], nodes: &[Node], ctx: &RelayContex
     }
 
     // Airtime.
-    let air = airtime(rows, ctx, i, hours);
+    let air = airtime(copies, rows, i, hours);
     for a in air.nodes.iter().filter(|a| a.caused >= AIRTIME_WARN_SHARE) {
         let top: Vec<String> = a.by_type.iter().take(2).map(|(t, s)| format!("{t} {}", pct(*s))).collect();
         let n = u32::from_str_radix(&a.node[1..], 16).unwrap_or(0);
@@ -548,7 +549,7 @@ mod tests {
 
     fn issues(rows: &[Row], i: &Interner) -> Vec<Issue> {
         let refs: Vec<&Row> = rows.iter().collect();
-        health(&refs, &[], &[], &RelayContext::default(), i, 48.0).issues
+        health(&refs, &[], &[], &Copies::default(), i, 48.0).issues
     }
 
     #[test]
@@ -587,14 +588,14 @@ mod tests {
         let forged: Vec<Row> = (1..=3).map(|k| bad(&mut i, k, "sig_invalid")).collect();
         let decode: Vec<Row> = (4..=9).map(|k| bad(&mut i, k, "payload_invalid")).collect();
         let refs: Vec<&Row> = forged.iter().chain(&decode).collect();
-        let got = health(&[], &refs, &[], &RelayContext::default(), &i, 48.0).issues;
+        let got = health(&[], &refs, &[], &Copies::default(), &i, 48.0).issues;
         let s: Vec<&Issue> = got.iter().filter(|x| x.kind == "spoofed").collect();
         assert_eq!(s.len(), 1, "decoding failures alone are not impersonation");
         assert!(s[0].summary.starts_with("3 packets"));
         // A changed key is explained as a likely reset.
         let rekeyed: Vec<Row> = (1..=4).map(|k| bad(&mut i, k, "nodeinfo_key_mismatch")).collect();
         let refs: Vec<&Row> = rekeyed.iter().collect();
-        let got = health(&[], &refs, &[], &RelayContext::default(), &i, 48.0).issues;
+        let got = health(&[], &refs, &[], &Copies::default(), &i, 48.0).issues;
         assert!(got.iter().any(|x| x.kind == "spoofed" && x.detail.contains("reset or reflashed")));
     }
 }

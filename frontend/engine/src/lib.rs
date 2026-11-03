@@ -212,8 +212,9 @@ impl Engine {
             }
             "node" => {
                 let num = parse_node(arg).ok_or_else(|| err("invalid node id"))?;
-                self.filter(start, end, filters)?;
-                Ok(json(&build_node_detail(&self.rows(), num, &self.i)))
+                self.build(start, end, filters)?;
+                let b = &self.built.as_ref().unwrap().1;
+                Ok(json(&build_node_detail(&self.rows(), num, b, &self.i)))
             }
             "packetlog" => {
                 let num = parse_node(arg).ok_or_else(|| err("invalid node id"))?;
@@ -223,8 +224,9 @@ impl Engine {
                 let invalid = self.i.get("invalid");
                 let (a, z) = self.store.range(start, end);
                 let mut rows = self.rows();
+                let replies = b.replies.get_or_init(|| packets::ReplyIndex::new(&rows));
                 rows.extend(self.store.rows[a..z].iter().filter(|r| Some(r.ty) == invalid && r.src == num));
-                Ok(json(&packets::packet_log(&rows, num, &b.ctx, &self.i)))
+                Ok(json(&packets::packet_log(&rows, num, &b.ctx, replies, &self.i)))
             }
             "route" => {
                 let lp = key64(arg);
@@ -270,7 +272,7 @@ impl Engine {
                 let invalid_ty = self.i.get("invalid");
                 let (lo, hi) = self.store.range(start, end);
                 let invalid: Vec<&row::Row> = self.store.rows[lo..hi].iter().filter(|r| Some(r.ty) == invalid_ty).collect();
-                Ok(json(&health::health(&self.rows(), &invalid, &b.snapshot.nodes, &b.ctx, &self.i, hours)))
+                Ok(json(&health::health(&self.rows(), &invalid, &b.snapshot.nodes, &b.copies, &self.i, hours)))
             }
             _ => Err(err(format!("unknown view {kind}"))),
         }
@@ -287,7 +289,7 @@ impl Engine {
     pub fn transmissions(&mut self, rows: &str) -> Result<String, JsError> {
         let parsed: Vec<JRow> = serde_json::from_str(rows).map_err(err)?;
         let rows: Vec<row::Row> = parsed.into_iter().map(|r| r.into_row(&mut self.i)).collect();
-        let empty = Built { snapshot: views::Snapshot { nodes: vec![], edges: vec![], edges_truncated: false, counts: Default::default(), diagnostics: Default::default() }, ctx: Default::default(), roles: util::map(), samples: vec![] };
+        let empty = Built::default();
         let b = self.built.as_ref().map_or(&empty, |(_, b)| b);
         let invalid = self.i.get("invalid");
         // Invalid rows prove nothing, not even a transmission (D-093).

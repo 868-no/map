@@ -116,7 +116,9 @@ pub fn sig_rank(s: &str) -> u8 {
 /// Relaying is known from a gateway's last-hop byte resolving to the node
 /// (same narrowing as links) or from the node in a traceroute's recorded
 /// route; the uplinking gateway's own trailing entry only received it.
-pub fn packet_log(rows: &[&Row], num: u32, ctx: &RelayContext, i: &Interner) -> PacketLog {
+/// replies: made from the start of `rows` (the window's rows; the node's
+/// invalid rows may follow).
+pub fn packet_log(rows: &[&Row], num: u32, ctx: &RelayContext, replies: &ReplyIndex, i: &Interner) -> PacketLog {
     let mut own: FxMap<u64, Vec<&Row>> = map();
     struct Rel<'a> {
         first: i64,
@@ -129,7 +131,7 @@ pub fn packet_log(rows: &[&Row], num: u32, ctx: &RelayContext, i: &Interner) -> 
     let routing_ty = i.get("routing");
     let dm_ty = i.get("direct_message");
     let mut inbound: FxMap<u64, &Row> = map();
-    let replies = ReplyIndex::new(rows);
+    let more = replies.more_ids(&rows[replies.rows.min(rows.len())..]);
     for &r in rows {
         if r.src == num {
             own.entry(r.lp).or_default().push(r);
@@ -186,8 +188,8 @@ pub fn packet_log(rows: &[&Row], num: u32, ctx: &RelayContext, i: &Interner) -> 
                     downlinked: others.iter().any(|r| ctx.downlinked(r)),
                     receptions: rs.iter().map(|r| r.ok).collect::<FxSet<u64>>().len(),
                     signature: best.to_string(),
-                    replies: first.pid.map_or(vec![], |p| replies.replies(p, num, i)),
-                    answers: replies.answer(first, i),
+                    replies: first.pid.map_or(vec![], |p| replies.replies(p, num, rows, i)),
+                    answers: replies.answer(first, &more, i),
                     invalid: first.invalid().map(|v| i.s(v).to_string()),
                 },
             )
@@ -210,7 +212,7 @@ pub fn packet_log(rows: &[&Row], num: u32, ctx: &RelayContext, i: &Interner) -> 
         .collect();
     let n_in = inbound.len();
     let mut in_list: Vec<(i64, InboundPacket)> =
-        inbound.into_values().map(|r| (r.t, InboundPacket { lp: key_hex(r.lp), at: iso(r.t), origin: node_id(r.src), ty: i.s(r.ty).to_string(), answers: replies.answer(r, i) })).collect();
+        inbound.into_values().map(|r| (r.t, InboundPacket { lp: key_hex(r.lp), at: iso(r.t), origin: node_id(r.src), ty: i.s(r.ty).to_string(), answers: replies.answer(r, &more, i) })).collect();
     own_list.sort_by(|a, b| b.0.cmp(&a.0));
     rel_list.sort_by(|a, b| b.0.cmp(&a.0));
     in_list.sort_by(|a, b| b.0.cmp(&a.0));
@@ -229,19 +231,24 @@ pub fn packet_log(rows: &[&Row], num: u32, ctx: &RelayContext, i: &Interner) -> 
 /// to pair ACKs and errors with what they answer (D-092). A routing packet
 /// is addressed to the original's sender and carries its packet id; an
 /// error may come from a relay rather than the destination, so the
-/// answering node is not required to be the original's destination.
-pub struct ReplyIndex<'a> {
-    by_request: FxMap<(u32, u32), Vec<&'a Row>>, // (request id, addressed to)
-    by_id: FxMap<(u32, u32), u64>,               // (sender, packet id) -> packet key
+/// answering node is not required to be the original's destination. Rows
+/// are positions in the rows it was made from, so one index per build
+/// serves every view (views::Built).
+#[derive(Default)]
+pub struct ReplyIndex {
+    by_request: FxMap<(u32, u32), Vec<u32>>, // (request id, addressed to) -> rows
+    by_id: FxMap<(u32, u32), u64>,           // (sender, packet id) -> packet key
+    /// How many rows it was made from.
+    pub rows: usize,
 }
 
-impl<'a> ReplyIndex<'a> {
-    pub fn new(rows: &[&'a Row]) -> Self {
-        let mut ix = ReplyIndex { by_request: map(), by_id: map() };
-        for &r in rows {
+impl ReplyIndex {
+    pub fn new(rows: &[&Row]) -> Self {
+        let mut ix = ReplyIndex { by_request: map(), by_id: map(), rows: rows.len() };
+        for (k, &r) in rows.iter().enumerate() {
             if let (Some(rt), Some(d)) = (r.routing(), r.dst) {
                 if rt.request != 0 {
-                    ix.by_request.entry((rt.request, d)).or_default().push(r);
+                    ix.by_request.entry((rt.request, d)).or_default().push(k as u32);
                 }
             }
             if let Some(p) = r.pid.filter(|&p| p != 0) {
@@ -251,12 +258,26 @@ impl<'a> ReplyIndex<'a> {
         ix
     }
 
+    /// Packet ids of `more` rows (after those it was made from) that the
+    /// index does not know, for `answer`.
+    pub fn more_ids(&self, more: &[&Row]) -> FxMap<(u32, u32), u64> {
+        let mut out: FxMap<(u32, u32), u64> = map();
+        for r in more {
+            if let Some(p) = r.pid.filter(|&p| p != 0 && !self.by_id.contains_key(&(r.src, p))) {
+                out.entry((r.src, p)).or_insert(r.lp);
+            }
+        }
+        out
+    }
+
     /// Replies to `sender`'s packet `pid`, grouped by who answered and how.
-    pub fn replies(&self, pid: u32, sender: u32, i: &Interner) -> Vec<Reply> {
+    /// rows: those it was made from.
+    pub fn replies(&self, pid: u32, sender: u32, rows: &[&Row], i: &Interner) -> Vec<Reply> {
         let Some(rs) = self.by_request.get(&(pid, sender)) else { return vec![] };
         let mut groups: FxMap<(u32, u32, u32), FxSet<u64>> = map();
         let mut order = vec![];
-        for r in rs {
+        for &k in rs {
+            let r = rows[k as usize];
             let rt = r.routing().unwrap();
             let k = (r.src, rt.kind, rt.error);
             groups.entry(k).or_insert_with(|| {
@@ -268,10 +289,11 @@ impl<'a> ReplyIndex<'a> {
         order.into_iter().map(|k| Reply { from: node_id(k.0), kind: i.s(k.1).to_string(), error: (k.2 != 0).then(|| i.s(k.2).to_string()), count: groups[&k].len() }).collect()
     }
 
-    /// What a routing packet says, and the answered packet when known.
-    pub fn answer(&self, r: &Row, i: &Interner) -> Option<Answer> {
+    /// What a routing packet says, and the answered packet when known
+    /// (`more`: ids from more_ids).
+    pub fn answer(&self, r: &Row, more: &FxMap<(u32, u32), u64>, i: &Interner) -> Option<Answer> {
         let rt = r.routing()?;
-        let re = r.dst.and_then(|d| self.by_id.get(&(d, rt.request))).map(|&lp| key_hex(lp));
+        let re = r.dst.and_then(|d| self.by_id.get(&(d, rt.request)).or_else(|| more.get(&(d, rt.request)))).map(|&lp| key_hex(lp));
         Some(Answer { kind: i.s(rt.kind).to_string(), error: (rt.error != 0).then(|| i.s(rt.error).to_string()), request_id: rt.request, re })
     }
 }
@@ -734,13 +756,13 @@ mod tests {
         let answer = |src: u32, lp: u64, kind: u32, error: u32| Row { ty: routing, dst: Some(A), pid: Some(lp as u32 + 1000), lp, detail: Some(Box::new(Detail::Routing(Routing { kind, error, request: 77 }))), ..row(src, GW) };
         let rows = [msg, answer(C, 2, ack, 0), answer(C, 3, ack, 0), Row { ok: 9, ..answer(C, 3, ack, 0) }, answer(GW, 4, err, nr)];
         let refs: Vec<&Row> = rows.iter().collect();
-        let log = packet_log(&refs, A, &ctx(&[A, C, GW], &[]), &it);
+        let log = packet_log(&refs, A, &ctx(&[A, C, GW], &[]), &ReplyIndex::new(&refs), &it);
         let sent = log.own.iter().find(|p| p.lp == key_hex(1)).unwrap();
         assert_eq!(sent.replies, vec![Reply { from: id(C), kind: "ack".into(), error: None, count: 2 }, Reply { from: id(GW), kind: "error".into(), error: Some("NO_RESPONSE".into()), count: 1 }]);
         assert_eq!(log.inbound.len(), 3, "routing packets addressed to it, one per packet");
         assert!(log.inbound.iter().all(|p| p.answers.as_ref().unwrap().re.as_deref() == Some(key_hex(1).as_str())));
         // C's view: its ACKs say what they answer.
-        let clog = packet_log(&refs, C, &ctx(&[A, C, GW], &[]), &it);
+        let clog = packet_log(&refs, C, &ctx(&[A, C, GW], &[]), &ReplyIndex::new(&refs), &it);
         assert_eq!(clog.own[0].answers.as_ref().map(|a| (a.kind.as_str(), a.request_id)), Some(("ack", 77)));
         assert_eq!(delivery(&refs, A, &it), Some(Delivery { acks_sent: 0, acks_received: 2, errors_sent: vec![], errors_received: vec![("NO_RESPONSE".into(), 1)] }));
         assert_eq!(delivery(&refs, C, &it).map(|d| d.acks_sent), Some(2));

@@ -1,9 +1,11 @@
 //! The snapshot: time-isolated nodes, links and counts.
 
+use std::cell::OnceCell;
+
 use serde::Serialize;
 
 use super::estimate::estimate;
-use super::{brokers, build_edges, downlinks, identity_of, identity_of_report, is_device_telemetry, is_identity, is_named_report, latest_by, origins, position_of, fresh_position_rows, referenced, sig_counts, telemetry_of, traceroute_hops, Node};
+use super::{brokers, build_edges, downlinks, Downlink, identity_of, identity_of_report, is_device_telemetry, is_identity, is_named_report, latest_by, origins, position_of, fresh_position_rows, referenced, sig_counts, telemetry_of, traceroute_hops, Node};
 use crate::geo;
 use crate::graph::{Edge, LatLon, RelayContext};
 use crate::row::{Interner, Row};
@@ -34,7 +36,7 @@ pub struct Diagnostics {
     pub relay_unmatched: usize,
 }
 
-#[derive(Serialize, Clone, Debug)]
+#[derive(Serialize, Clone, Debug, Default)]
 pub struct Snapshot {
     pub nodes: Vec<Node>,
     pub edges: Vec<Edge>,
@@ -56,13 +58,28 @@ impl Default for GeoOptions {
     }
 }
 
-/// Snapshot plus the relay context it used (for packet logs, routes and pings).
+/// Snapshot plus the relay context it used (for packet logs, routes and
+/// pings), and what the other views of the same window and filters share:
+/// worked out once per build rather than on every view request. Row
+/// positions index the rows the build was made from (Engine::rows).
+#[derive(Default)]
 pub struct Built {
     pub snapshot: Snapshot,
     pub ctx: RelayContext,
     pub roles: FxMap<u32, String>,
     /// Radio link evidence, for link history (D-105).
     pub samples: Vec<crate::graph::Sample>,
+    /// Every packet's radio copies with their transmitters (health's airtime).
+    pub copies: crate::copies::Copies,
+    /// Traceroute hops (radio groups) and probable downlinks per node (node view).
+    pub hops: Vec<crate::graph::Sample>,
+    pub downlinks: FxMap<u32, Downlink>,
+    /// The window's latest observation (stale positions).
+    pub now: i64,
+    /// Radio groups and preset evidence (node view), made on first use.
+    pub presets: OnceCell<crate::channels::PresetIndex>,
+    /// Routing replies by what they answer (node view, packet log), made on first use.
+    pub replies: OnceCell<crate::packets::ReplyIndex>,
 }
 
 /// Roles that never rebroadcast: a relay byte can never mean them.
@@ -117,7 +134,8 @@ pub fn build_snapshot(rows: &[&Row], i: &Interner, g: &GeoOptions, rules: Rules)
         x.last = x.last.max(last);
     }
     let hops = traceroute_hops(rows);
-    for (n, d) in downlinks(&hops) {
+    let downlinks = downlinks(&hops);
+    for (&n, d) in &downlinks {
         // A node known only from others' traceroutes is named, not heard.
         nodes
             .entry(n)
@@ -126,7 +144,7 @@ pub fn build_snapshot(rows: &[&Row], i: &Interner, g: &GeoOptions, rules: Rules)
                 x.status = "referenced";
                 x
             })
-            .mqtt_downlink = Some(d);
+            .mqtt_downlink = Some(d.clone());
     }
     for (n, r) in latest_by(rows, is_identity, |r| r.src) {
         nodes.entry(n).or_insert_with(|| Node::new(n)).identity = Some(identity_of(r, i));
@@ -209,8 +227,8 @@ pub fn build_snapshot(rows: &[&Row], i: &Interner, g: &GeoOptions, rules: Rules)
     // Directional 0-cost evidence on radio links (D-068).
     let hears: FxSet<(u32, u32)> = er.edges.iter().filter(|e| !e.mqtt).map(|e| (e.src_num, e.dst_num)).collect();
     // Every packet's copies, with the transmitter each was heard from: once for both passes below.
-    let packets = crate::copies::by_packet(rows, &ctx);
-    let mut zc = crate::zerocost::detect(&packets, &hears, &roles);
+    let copies = crate::copies::Copies::new(rows, &ctx);
+    let mut zc = crate::zerocost::detect(&copies, rows, &hears, &roles);
     for g in crate::copies::multi_uplinkers(rows) {
         if let Some(x) = nodes.get_mut(&g) {
             x.multi_uplink = true;
@@ -221,7 +239,7 @@ pub fn build_snapshot(rows: &[&Row], i: &Interner, g: &GeoOptions, rules: Rules)
     }
     // Routers' relaying, from the links and every packet's copies (D-078).
     let gateways: FxSet<u32> = rows.iter().filter_map(|r| r.gw).collect();
-    for (n, r) in crate::reliability::relaying(&packets, &gateways, &er.edges, &roles) {
+    for (n, r) in crate::reliability::relaying(&copies, rows, &gateways, &er.edges, &roles) {
         if let Some(x) = nodes.get_mut(&n) {
             x.relaying = Some(r);
         }
@@ -255,6 +273,12 @@ pub fn build_snapshot(rows: &[&Row], i: &Interner, g: &GeoOptions, rules: Rules)
         ctx,
         roles,
         samples: er.samples,
+        copies,
+        hops,
+        downlinks,
+        now,
+        presets: OnceCell::new(),
+        replies: OnceCell::new(),
     }
 }
 

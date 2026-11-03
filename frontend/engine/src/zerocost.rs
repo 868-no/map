@@ -18,7 +18,8 @@
 
 use serde::Serialize;
 
-use crate::copies::Heard;
+use crate::copies::{Copies, Heard};
+use crate::row::Row;
 use crate::graph::zero_cost_role;
 use crate::util::{map, FxMap, FxSet};
 
@@ -38,14 +39,14 @@ pub const MIN_FREE: u32 = 3;
 pub const MIN_SHARE: f64 = 0.8;
 
 /// Evidence per directed pair (U, R). packets: every packet's radio copies
-/// (`copies::by_packet`); hears: (tx, rx) pairs where rx heard tx over the
+/// (`copies::Copies` of `rows`); hears: (tx, rx) pairs where rx heard tx over the
 /// radio; roles: announced roles (unknown roles are allowed).
-pub fn detect(packets: &[Vec<Heard>], hears: &FxSet<(u32, u32)>, roles: &FxMap<u32, String>) -> FxMap<(u32, u32), ZeroCost> {
+pub fn detect(packets: &Copies, rows: &[&Row], hears: &FxSet<(u32, u32)>, roles: &FxMap<u32, String>) -> FxMap<(u32, u32), ZeroCost> {
     let can = |n: u32| roles.get(&n).is_none_or(|r| r.is_empty() || zero_cost_role(r));
     let mut out: FxMap<(u32, u32), ZeroCost> = map();
-    for all in packets {
+    for all in packets.packets(rows) {
         // Copies with both hop fields only.
-        let copies: Vec<&Heard> = all.iter().filter(|h| h.row.hs.is_some() && h.row.hl.is_some()).collect();
+        let copies: Vec<Heard> = all.iter().filter(|h| h.row.hs.is_some() && h.row.hl.is_some()).collect();
         let Some(first) = copies.first() else { continue };
         let origin = first.row.src;
         // The hop limit each transmitter sent; a transmitter seen with two

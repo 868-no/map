@@ -1,13 +1,15 @@
-//! Each packet's gateway copies, grouped once per snapshot with the
-//! transmitter each copy was heard from (D-083). Zero-cost detection (D-068)
-//! and router reliability (D-078) both walk every packet's copies; grouping
-//! and resolving last-hop bytes (D-024) once serves both, and spotting
-//! gateways that uplink every copy they hear (D-084).
+//! Each packet's gateway copies, grouped once per build with the transmitter
+//! each copy was heard from (D-083). Zero-cost detection (D-068), router
+//! reliability (D-078) and the airtime estimate (D-095) all walk every
+//! packet's copies; grouping and resolving last-hop bytes (D-024) once
+//! serves them all, and spotting gateways that uplink every copy they hear
+//! (D-084).
 
 use crate::graph::RelayContext;
 use crate::row::{ty, Row};
 use crate::util::{map, set, FxMap, FxSet};
 
+#[derive(Clone, Copy)]
 pub struct Heard<'a> {
     pub row: &'a Row,
     /// Who the gateway heard this copy from: the originator for direct
@@ -17,27 +19,78 @@ pub struct Heard<'a> {
 }
 
 /// Radio copies reported by a gateway (no map reports, no copies that came
-/// over MQTT or from outside RF), grouped by packet, in row order.
-pub fn by_packet<'a>(rows: &[&'a Row], ctx: &RelayContext) -> Vec<Vec<Heard<'a>>> {
-    let mut groups: FxMap<u64, Vec<Heard<'a>>> = map();
-    for &r in rows {
-        let Some(gw) = r.gw else { continue };
-        if r.ty == ty::MAPREPORT || r.rr == ty::VIA_MQTT || r.rr == ty::NON_RF {
-            continue;
-        }
-        let sender = match r.hl {
-            Some(_) if gw != r.src => {
-                if r.dr || r.hs == r.hl {
-                    Some(r.src)
-                } else {
-                    r.relay.and_then(|b| ctx.resolve((b & 0xff) as u8, r.src, gw)).and_then(Result::ok)
-                }
-            }
-            _ => None,
-        };
-        groups.entry(r.lp).or_default().push(Heard { row: r, sender });
+/// over MQTT or from outside RF), grouped by packet, in row order within a
+/// packet. Copies are positions in the window's rows rather than references,
+/// so the grouping is kept with the build (views::Built) for its views.
+#[derive(Default)]
+pub struct Copies {
+    heard: Vec<(u32, Option<u32>)>, // (row position, sender), packet by packet
+    ends: Vec<u32>,                 // where each packet's copies end in `heard`
+}
+
+/// One packet's copies.
+#[derive(Clone, Copy)]
+pub struct Packet<'s, 'a> {
+    heard: &'s [(u32, Option<u32>)],
+    rows: &'s [&'a Row],
+}
+
+impl<'s, 'a> Packet<'s, 'a> {
+    pub fn first(&self) -> Heard<'a> {
+        self.get(0)
     }
-    groups.into_values().collect()
+    fn get(&self, k: usize) -> Heard<'a> {
+        let (p, sender) = self.heard[k];
+        Heard { row: self.rows[p as usize], sender }
+    }
+    pub fn iter(&self) -> impl Iterator<Item = Heard<'a>> + '_ {
+        (0..self.heard.len()).map(|k| self.get(k))
+    }
+}
+
+impl Copies {
+    pub fn new(rows: &[&Row], ctx: &RelayContext) -> Self {
+        // Sorting (packet, position) pairs groups the copies with no map or
+        // per-packet allocation, in row order within each packet.
+        let mut keyed: Vec<(u64, u32)> = Vec::new();
+        for (k, &r) in rows.iter().enumerate() {
+            if r.gw.is_some() && r.ty != ty::MAPREPORT && r.rr != ty::VIA_MQTT && r.rr != ty::NON_RF {
+                keyed.push((r.lp, k as u32));
+            }
+        }
+        keyed.sort_unstable();
+        let mut c = Copies { heard: Vec::with_capacity(keyed.len()), ends: Vec::new() };
+        for (k, &(lp, p)) in keyed.iter().enumerate() {
+            if k > 0 && keyed[k - 1].0 != lp {
+                c.ends.push(k as u32);
+            }
+            let r = rows[p as usize];
+            let gw = r.gw.unwrap();
+            let sender = match r.hl {
+                Some(_) if gw != r.src => {
+                    if r.dr || r.hs == r.hl {
+                        Some(r.src)
+                    } else {
+                        r.relay.and_then(|b| ctx.resolve((b & 0xff) as u8, r.src, gw)).and_then(Result::ok)
+                    }
+                }
+                _ => None,
+            };
+            c.heard.push((p, sender));
+        }
+        if !keyed.is_empty() {
+            c.ends.push(keyed.len() as u32);
+        }
+        c
+    }
+
+    /// Every packet's copies, by packet key; `rows`: the rows they were grouped from.
+    pub fn packets<'s, 'a>(&'s self, rows: &'s [&'a Row]) -> impl Iterator<Item = Packet<'s, 'a>> {
+        (0..self.ends.len()).map(move |k| {
+            let a = if k == 0 { 0 } else { self.ends[k - 1] as usize };
+            Packet { heard: &self.heard[a..self.ends[k] as usize], rows }
+        })
+    }
 }
 
 /// Packets a gateway must have uplinked more than one copy of before it

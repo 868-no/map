@@ -19,8 +19,9 @@
 
 use serde::Serialize;
 
-use crate::copies::Heard;
+use crate::copies::Copies;
 use crate::graph::Edge;
+use crate::row::Row;
 use crate::util::{map, set, FxMap, FxSet};
 
 /// Packets needed before a share is shown.
@@ -40,9 +41,9 @@ pub struct Relaying {
 }
 
 /// Routers (ROUTER, ROUTER_LATE) with their relaying, keyed by node.
-/// packets: every packet's radio copies (`copies::by_packet`); gateways:
+/// packets: every packet's radio copies (`copies::Copies` of `rows`); gateways:
 /// every node that uplinked anything in the window.
-pub fn relaying(packets: &[Vec<Heard>], gateways: &FxSet<u32>, edges: &[Edge], roles: &FxMap<u32, String>) -> FxMap<u32, Relaying> {
+pub fn relaying(packets: &Copies, rows: &[&Row], gateways: &FxSet<u32>, edges: &[Edge], roles: &FxMap<u32, String>) -> FxMap<u32, Relaying> {
     let routers: FxSet<u32> = roles.iter().filter(|(_, r)| matches!(r.as_str(), "ROUTER" | "ROUTER_LATE")).map(|(&n, _)| n).collect();
     // Who hears whom: (tx, rx).
     let mut witnesses: FxMap<u32, FxSet<u32>> = map(); // router -> gateways that hear it
@@ -56,14 +57,14 @@ pub fn relaying(packets: &[Vec<Heard>], gateways: &FxSet<u32>, edges: &[Edge], r
         }
     }
     let mut acc: FxMap<u32, (usize, usize, usize)> = map(); // expected, seen, as gateway
-    for copies in packets {
-        let origin = copies[0].row.src;
-        let to = copies[0].row.dst;
+    for copies in packets.packets(rows) {
+        let origin = copies.first().row.src;
+        let to = copies.first().row.dst;
         // Hop limit each transmitter sent, and who uplinked it.
         let mut sent: FxMap<u32, i16> = map();
         let mut uplinked: FxMap<u32, i16> = map(); // gateway -> hop limit it received
         let mut traced: FxSet<u32> = set();
-        for h in copies {
+        for h in copies.iter() {
             let r = h.row;
             let g = r.gw.unwrap();
             if let Some(hl) = r.hl {

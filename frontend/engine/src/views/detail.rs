@@ -2,7 +2,7 @@
 
 use serde::Serialize;
 
-use super::{brokers, dest, downlinks, first_per_reception, identity_of, identity_of_report, is_device_telemetry, is_identity, is_named_report, is_position, latest_by, origins, position_of, referenced, sig_counts, telemetry_of, traceroute_hops, Node};
+use super::{brokers, dest, first_per_reception, identity_of, identity_of_report, is_device_telemetry, is_identity, is_named_report, is_position, latest_by, origins, position_of, referenced, sig_counts, telemetry_of, Built, Node};
 use crate::graph::{self, Stats};
 use crate::row::{Interner, Row};
 use crate::util::{iso, map, node_id, set, FxMap, FxSet};
@@ -122,8 +122,10 @@ pub struct NodeDetail {
     pub delivery: Option<crate::packets::Delivery>,
 }
 
-/// One node's in-window details, or None when it is neither observed nor referenced.
-pub fn build_node_detail(rows: &[&Row], num: u32, i: &Interner) -> Option<NodeDetail> {
+/// One node's in-window details, or None when it is neither observed nor
+/// referenced. b: the build of the same rows, whose window-wide parts
+/// (downlinks, radio groups, replies) it reads rather than redoes.
+pub fn build_node_detail(rows: &[&Row], num: u32, b: &Built, i: &Interner) -> Option<NodeDetail> {
     let mut n = Node::new(num);
     let (mut first, mut last) = (i64::MAX, i64::MIN);
     let mut own: Vec<&Row> = Vec::new();
@@ -153,7 +155,7 @@ pub fn build_node_detail(rows: &[&Row], num: u32, i: &Interner) -> Option<NodeDe
     n.gateway_receptions = gw_rx.len();
     n.is_gateway = !gw_rx.is_empty();
     n.multi_uplink = n.is_gateway && crate::copies::multi_uplinkers(&uplinked).contains(&num);
-    n.mqtt_downlink = downlinks(&traceroute_hops(rows)).remove(&num);
+    n.mqtt_downlink = b.downlinks.get(&num).cloned();
     if let Some(r) = latest_by(&own, is_identity, |r| r.src).get(&num) {
         n.identity = Some(identity_of(r, i));
     } else if let Some(r) = latest_by(&own, is_named_report, |r| r.src).get(&num) {
@@ -167,8 +169,7 @@ pub fn build_node_detail(rows: &[&Row], num: u32, i: &Interner) -> Option<NodeDe
         }
     }
     // Stale relative to the window's latest observation, as in the snapshot (D-094).
-    let now = rows.iter().map(|r| r.t).max().unwrap_or(0);
-    let (fresh, stale) = super::fresh_position_rows(&own, now);
+    let (fresh, stale) = super::fresh_position_rows(&own, b.now);
     if let Some(r) = fresh.get(&num) {
         n.position = Some(position_of(r, i));
     } else if let Some(r) = stale.get(&num) {
@@ -186,7 +187,7 @@ pub fn build_node_detail(rows: &[&Row], num: u32, i: &Interner) -> Option<NodeDe
     }
     let mut radio = crate::radio::radio(&own, i);
     radio.channels = crate::channels::channel_use(num, rows, i);
-    radio.preset = crate::channels::preset_guess(num, rows, i);
+    radio.preset = crate::channels::preset_guess(num, b.presets.get_or_init(|| crate::channels::PresetIndex::new(rows, &b.hops, i)));
     radio.uplink_topics = crate::radio::uplink_topics(&uplinked, i);
     let mut d = NodeDetail { node: n, positions: vec![], telemetry_series: vec![], environment_series: vec![], node_status: vec![], delivery_by_recipient: vec![], heard_by: vec![], heard: vec![], recent_packets: vec![], truncated: false, radio, delivery: crate::packets::delivery(rows, num, i) };
     if first == i64::MAX {
@@ -239,7 +240,7 @@ pub fn build_node_detail(rows: &[&Row], num: u32, i: &Interner) -> Option<NodeDe
         })
         .collect();
     d.truncated = truncated;
-    d.delivery_by_recipient = delivery_by_recipient(rows, &own, num, i);
+    d.delivery_by_recipient = delivery_by_recipient(rows, &own, num, b.replies.get_or_init(|| crate::packets::ReplyIndex::new(rows)), i);
     // Status texts: newest first, each once. Opt-out nodes' texts are never stored (empty).
     let mut texts: Vec<(i64, u32)> = own.iter().filter_map(|r| r.node_status().filter(|&s| !i.s(s).is_empty()).map(|s| (r.t, s))).collect();
     texts.sort_by(|a, b| b.0.cmp(&a.0));
@@ -283,8 +284,7 @@ pub fn build_node_detail(rows: &[&Row], num: u32, i: &Interner) -> Option<NodeDe
 
 /// Its unicast packets that asked for an ACK, by recipient, with the ACKs
 /// and errors answering them (D-109).
-fn delivery_by_recipient(rows: &[&Row], own: &[&Row], num: u32, i: &Interner) -> Vec<PairDelivery> {
-    let replies = crate::packets::ReplyIndex::new(rows);
+fn delivery_by_recipient(rows: &[&Row], own: &[&Row], num: u32, replies: &crate::packets::ReplyIndex, i: &Interner) -> Vec<PairDelivery> {
     let mut first: FxMap<u64, &Row> = map();
     for &r in own {
         if r.wa && r.pid.is_some() && r.dst.is_some_and(|d| d != crate::util::BROADCAST && d != num) {
@@ -298,7 +298,7 @@ fn delivery_by_recipient(rows: &[&Row], own: &[&Row], num: u32, i: &Interner) ->
         let to = r.dst.unwrap();
         let e = per.entry(to).or_insert_with(|| PairDelivery { to: node_id(to), asked: 0, acked: 0, errors: 0, retried: 0 });
         e.asked += 1;
-        let reps = replies.replies(r.pid.unwrap(), num, i);
+        let reps = replies.replies(r.pid.unwrap(), num, rows, i);
         let acks: usize = reps.iter().filter(|x| x.kind == "ack").map(|x| x.count).sum();
         if acks > 0 || answered.contains(&(to, r.pid.unwrap())) {
             e.acked += 1;
@@ -339,6 +339,10 @@ mod tests {
     use super::*;
     use crate::row::JRow;
 
+    fn build(rows: &[&Row], i: &Interner) -> Built {
+        super::super::build_snapshot(rows, i, &Default::default(), Default::default())
+    }
+
     #[test]
     fn status_texts_newest_first_each_once_without_empty_ones() {
         let mut i = Interner::default();
@@ -350,7 +354,7 @@ mod tests {
         ]"#;
         let rows: Vec<Row> = serde_json::from_str::<Vec<JRow>>(text).unwrap().into_iter().map(|r| r.into_row(&mut i)).collect();
         let refs: Vec<&Row> = rows.iter().collect();
-        let d = build_node_detail(&refs, 5, &i).unwrap();
+        let d = build_node_detail(&refs, 5, &build(&refs, &i), &i).unwrap();
         let got: Vec<&str> = d.node_status.iter().map(|s| s.status.as_str()).collect();
         assert_eq!(got, vec!["At the cabin", "Back home"]);
     }
@@ -373,7 +377,7 @@ mod tests {
         ]"#;
         let rows: Vec<Row> = serde_json::from_str::<Vec<JRow>>(text).unwrap().into_iter().map(|r| r.into_row(&mut i)).collect();
         let refs: Vec<&Row> = rows.iter().collect();
-        let d = build_node_detail(&refs, 5, &i).unwrap();
+        let d = build_node_detail(&refs, 5, &build(&refs, &i), &i).unwrap();
         assert_eq!(d.delivery_by_recipient, vec![PairDelivery { to: node_id(9), asked: 4, acked: 3, errors: 1, retried: 1 }], "the traceroute counts as confirmed by its reply; the packet that asked for no ACK is left out");
     }
 }
