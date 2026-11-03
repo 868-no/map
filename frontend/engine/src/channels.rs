@@ -14,7 +14,8 @@
 //! a map report confirmed by `has_default_channel` (firmware reports the
 //! stored preset even under a custom modem config), then a channel with a
 //! preset's default name (a hint only: a secondary channel can carry such a
-//! name on any preset).
+//! name on any preset). One inference (`infer`) serves the node panel
+//! and health alike.
 
 use serde::Serialize;
 
@@ -167,13 +168,18 @@ fn evidence(rows: &[&Row], i: &Interner) -> FxMap<u32, (String, bool)> {
 
 /// The window's radio groups and every node's own preset evidence: the
 /// same for every node, so made once per build (views::Built).
+#[derive(Default)]
 pub struct PresetIndex {
     ev: FxMap<u32, (String, bool)>,
     contacts: Vec<(u32, u32)>,
     /// Each node in a radio contact, with its group's root.
     root: FxMap<u32, u32>,
-    /// Every group's members by root.
+    /// Every group's members by root, in node order.
     groups: FxMap<u32, Vec<u32>>,
+    /// Every group's members' evidence by root: preset -> members (in node
+    /// order), confirmed and named apart.
+    confirmed: FxMap<u32, FxMap<String, Vec<u32>>>,
+    named: FxMap<u32, FxMap<String, Vec<u32>>>,
 }
 
 impl PresetIndex {
@@ -190,13 +196,74 @@ impl PresetIndex {
         for (&n, &r) in &root {
             groups.entry(r).or_default().push(n);
         }
-        PresetIndex { ev: evidence(rows, i), contacts, root, groups }
+        let ev = evidence(rows, i);
+        let (mut confirmed, mut named): (FxMap<u32, FxMap<String, Vec<u32>>>, FxMap<u32, FxMap<String, Vec<u32>>>) = (map(), map());
+        for (r, g) in groups.iter_mut() {
+            g.sort_unstable();
+            for &n in g.iter() {
+                if let Some((p, c)) = ev.get(&n) {
+                    let by = if *c { &mut confirmed } else { &mut named };
+                    by.entry(*r).or_default().entry(p.clone()).or_default().push(n);
+                }
+            }
+        }
+        PresetIndex { ev, contacts, root, groups, confirmed, named }
     }
 }
 
-/// What the window says about `num`'s modem preset; None without evidence.
+/// A node's preset as the window's evidence ranks it, strongest first
+/// (§6.13): its own confirmed map report; its radio group's confirmed
+/// reports, all agreeing; a default channel name it was heard on most (a
+/// hint); the default name most of its group was heard on (a hint). The
+/// one inference behind the node panel (preset_guess) and health's preset
+/// rule, so the two never disagree.
+pub struct Inferred<'x> {
+    /// None on conflict.
+    pub preset: Option<&'x str>,
+    /// As PresetGuess::basis.
+    pub basis: &'static str,
+    /// The group members whose evidence it rests on, in node order (radio contact bases).
+    pub from: &'x [u32],
+    /// Presets and how many group members each, on conflict.
+    pub conflict: Vec<(String, usize)>,
+}
+
+/// None without evidence.
+pub fn infer(num: u32, ix: &PresetIndex) -> Option<Inferred<'_>> {
+    fn it<'x>(preset: Option<&'x str>, basis: &'static str, from: &'x [u32], conflict: Vec<(String, usize)>) -> Option<Inferred<'x>> {
+        Some(Inferred { preset, basis, from, conflict })
+    }
+    match ix.ev.get(&num) {
+        Some((p, true)) => return it(Some(p), "map_report", &[], vec![]),
+        Some((p, false)) => {
+            // Its own hint yields only to confirmed reports of its group (below).
+            if ix.root.get(&num).and_then(|r| ix.confirmed.get(r)).is_none_or(|c| c.is_empty()) {
+                return it(Some(p), "channel_name", &[], vec![]);
+            }
+        }
+        None => {}
+    }
+    // Its own evidence is never among its group's: a confirmed node returned
+    // above, and a node with a hint is not in the named tally consulted below.
+    let root = ix.root.get(&num)?;
+    if let Some(c) = ix.confirmed.get(root).filter(|c| !c.is_empty()) {
+        if c.len() == 1 {
+            let (p, from) = c.iter().next().unwrap();
+            return it(Some(p), "radio_contact", from, vec![]);
+        }
+        let mut v: Vec<(String, usize)> = c.iter().map(|(p, m)| (p.clone(), m.len())).collect();
+        v.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+        return it(None, "conflict", &[], v);
+    }
+    // The default name most of the group was heard on (ties: the first by name).
+    let (p, from) = ix.named.get(root)?.iter().max_by(|a, b| a.1.len().cmp(&b.1.len()).then(b.0.cmp(a.0)))?;
+    it(Some(p), "radio_contact_channel_name", from, vec![])
+}
+
+/// What the window says about `num`'s modem preset (`infer`, with its radio
+/// contacts for the panel); None without evidence.
 pub fn preset_guess(num: u32, ix: &PresetIndex) -> Option<PresetGuess> {
-    let ev = &ix.ev;
+    let inferred = infer(num, ix)?;
     let mut direct: FxSet<u32> = set();
     for &(a, b) in &ix.contacts {
         if a == num {
@@ -205,45 +272,10 @@ pub fn preset_guess(num: u32, ix: &PresetIndex) -> Option<PresetGuess> {
             direct.insert(a);
         }
     }
-    let mut members: Vec<u32> = ix.root.get(&num).map_or(vec![], |r| ix.groups[r].iter().copied().filter(|&n| n != num).collect());
+    let group = ix.root.get(&num).map_or(0, |r| ix.groups[r].len() - 1);
     // Direct contacts first, then by node number: stable, and the nearest evidence leads.
-    members.sort_by_key(|n| (!direct.contains(n), *n));
-    let group = members.len();
-    let n_direct = direct.len();
-    let guess = |preset: Option<String>, basis, via: Vec<String>, conflict| Some(PresetGuess { preset, basis, via, group, direct: n_direct, conflict });
-
-    if let Some((p, true)) = ev.get(&num) {
-        return guess(Some(p.clone()), "map_report", vec![], vec![]);
-    }
-    let tally = |confirmed: bool| -> (FxMap<&str, Vec<u32>>, Vec<&str>) {
-        let mut by: FxMap<&str, Vec<u32>> = map();
-        let mut order = Vec::new();
-        for &m in &members {
-            if let Some((p, _)) = ev.get(&m).filter(|(_, c)| *c == confirmed) {
-                by.entry(p.as_str()).or_insert_with(|| {
-                    order.push(p.as_str());
-                    Vec::new()
-                }).push(m);
-            }
-        }
-        (by, order)
-    };
-    let via = |ns: &[u32]| ns.iter().take(5).map(|&n| node_id(n)).collect::<Vec<_>>();
-    let (confirmed, order) = tally(true);
-    match order.len() {
-        0 => {}
-        1 => return guess(Some(order[0].to_string()), "radio_contact", via(&confirmed[order[0]]), vec![]),
-        _ => {
-            let mut c: Vec<(String, usize)> = order.iter().map(|p| (p.to_string(), confirmed[p].len())).collect();
-            c.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
-            return guess(None, "conflict", vec![], c);
-        }
-    }
-    if let Some((p, false)) = ev.get(&num) {
-        return guess(Some(p.clone()), "channel_name", vec![], vec![]);
-    }
-    let (named, order) = tally(false);
-    // The default name most of the group was heard on.
-    let best = order.iter().max_by_key(|p| named[*p].len())?;
-    guess(Some(best.to_string()), "radio_contact_channel_name", via(&named[*best]), vec![])
+    let mut from: Vec<u32> = inferred.from.iter().copied().filter(|&n| n != num).collect();
+    from.sort_by_key(|n| (!direct.contains(n), *n));
+    let via = from.iter().take(5).map(|&n| node_id(n)).collect();
+    Some(PresetGuess { preset: inferred.preset.map(str::to_string), basis: inferred.basis, via, group, direct: direct.len(), conflict: inferred.conflict })
 }

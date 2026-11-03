@@ -82,3 +82,17 @@ fn channel_names_are_only_a_hint_and_zero_db_hops_do_not_join_groups() {
     let mut e = engine(json!([report(2, Y, "LongFast", "LONG_FAST", true), tr(3, 6.5)]));
     assert_eq!(radio(&mut e, A)["preset"]["basis"], "radio_contact", "a real traceroute hop is radio contact");
 }
+
+#[test]
+fn health_and_the_node_panel_agree_on_a_nodes_preset() {
+    // The mesh is heard on NarrowFast. A confirms LONG_FAST in its own map
+    // report, yet is heard only on a secondary channel named MediumFast.
+    let mut rows: Vec<Value> = (10..20).map(|i| rx(i, Y, G, "NarrowFast", true)).collect();
+    rows.push(report(1, A, "MediumFast", "LONG_FAST", true));
+    rows.extend((2..5).map(|i| rx(i, A, G, "MediumFast", false)));
+    let mut e = engine(Value::Array(rows));
+    assert_eq!(radio(&mut e, A)["preset"]["preset"], "LONG_FAST");
+    let h: Value = serde_json::from_str(&e.view("health", T0 as f64, (T0 + 3_600_000) as f64, "{}", "").unwrap()).unwrap();
+    let issue = h["issues"].as_array().unwrap().iter().find(|x| x["kind"] == "preset" && x["node"] == format!("!{A:08x}")).expect("flagged").clone();
+    assert_eq!(issue["summary"], "Uses Long Fast while the mesh uses Narrow Fast", "the confirmed report outranks the channel name, in both");
+}

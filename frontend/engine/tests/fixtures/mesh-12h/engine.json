@@ -3852,14 +3852,14 @@
         "summary": "Probably downlinks from MQTT"
       },
       {
-        "detail": "Its packets or its own map report show the Long Fast preset, but most of the mesh is heard on Narrow Fast. Nodes on different presets cannot hear each other, so it is cut off from most of the mesh.",
+        "detail": "Its packets were heard on a channel named for the Long Fast preset, but most of the mesh is heard on Narrow Fast. Nodes on different presets cannot hear each other, so it is cut off from most of the mesh.",
         "kind": "preset",
         "node": "!9ee784a0",
         "severity": "warning",
         "summary": "Uses Long Fast while the mesh uses Narrow Fast"
       },
       {
-        "detail": "Its packets or its own map report show the Long Fast preset, but most of the mesh is heard on Narrow Fast. Nodes on different presets cannot hear each other, so it is cut off from most of the mesh.",
+        "detail": "Its packets were heard on a channel named for the Long Fast preset, but most of the mesh is heard on Narrow Fast. Nodes on different presets cannot hear each other, so it is cut off from most of the mesh.",
         "kind": "preset",
         "node": "!f1a8f63f",
         "severity": "warning",

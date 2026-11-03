@@ -272,7 +272,9 @@ impl Engine {
                 let invalid_ty = self.i.get("invalid");
                 let (lo, hi) = self.store.range(start, end);
                 let invalid: Vec<&row::Row> = self.store.rows[lo..hi].iter().filter(|r| Some(r.ty) == invalid_ty).collect();
-                Ok(json(&health::health(&self.rows(), &invalid, &b.snapshot.nodes, &b.copies, &self.i, hours)))
+                let rows = self.rows();
+                let presets = b.presets.get_or_init(|| channels::PresetIndex::new(&rows, &b.hops, &self.i));
+                Ok(json(&health::health(&rows, &invalid, &b.snapshot.nodes, &b.copies, presets, &self.i, hours)))
             }
             _ => Err(err(format!("unknown view {kind}"))),
         }

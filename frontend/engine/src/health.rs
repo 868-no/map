@@ -7,6 +7,7 @@
 
 use serde::Serialize;
 
+use crate::channels::PresetIndex;
 use crate::copies::Copies;
 use crate::row::{ty, Interner, Row};
 use crate::util::{map, node_id, FxMap, FxSet};
@@ -264,8 +265,8 @@ pub fn airtime(copies: &Copies, rows: &[&Row], i: &Interner, hours: f64) -> Airt
 /// The window's known issues and airtime. `hours`: the window's length;
 /// rates use the span its rows cover when that is shorter. `invalid`: the
 /// window's rows that failed decoding or verification, which the filters
-/// keep out of `rows` (D-093). nodes, copies: the snapshot's (views::Built).
-pub fn health(rows: &[&Row], invalid: &[&Row], nodes: &[Node], copies: &Copies, i: &Interner, hours: f64) -> Health {
+/// keep out of `rows` (D-093). nodes, copies, presets: the build's (views::Built).
+pub fn health(rows: &[&Row], invalid: &[&Row], nodes: &[Node], copies: &Copies, presets: &PresetIndex, i: &Interner, hours: f64) -> Health {
     // Rates over the span the data covers, which can be shorter than the
     // window (the service started later, or was down).
     let (lo, hi) = rows.iter().fold((i64::MAX, i64::MIN), |(lo, hi), r| (lo.min(r.t), hi.max(r.t)));
@@ -327,26 +328,27 @@ pub fn health(rows: &[&Row], invalid: &[&Row], nodes: &[Node], copies: &Copies, 
         }
     }
 
-    // Wrong preset: the mesh's preset from its channel names; nodes heard only on another.
+    // Wrong preset: the mesh's preset from its channel names (each packet once
+    // per name); a node the node panel's inference puts on another preset.
+    let named: FxSet<(&'static str, u64)> = rows.iter().filter_map(|r| i.preset(r.channel).map(|p| (p, r.lp))).collect();
     let mut by_preset: FxMap<&'static str, usize> = map();
-    for &r in rows {
-        if let Some(p) = i.preset(r.channel) {
-            *by_preset.entry(p).or_default() += 1;
-        }
+    for &(p, _) in &named {
+        *by_preset.entry(p).or_default() += 1;
     }
     let mesh = by_preset.iter().max_by_key(|&(p, c)| (*c, *p)).map(|(&p, _)| p);
     if let Some(mesh) = mesh {
         for (&n, pk) in &own {
-            let presets: FxSet<&'static str> = pk.values().filter_map(|r| i.preset(r.channel)).collect();
-            let reported = pk.values().filter_map(|r| r.map_report()).find(|m| m.default_channel).map(|m| i.s(m.preset).to_string());
-            let odd = if !presets.is_empty() && !presets.contains(mesh) && pk.len() >= 3 {
-                presets.iter().next().map(|p| p.to_string())
-            } else {
-                reported.filter(|p| p != mesh)
+            let Some(g) = crate::channels::infer(n, presets) else { continue };
+            let Some(p) = g.preset.filter(|&p| p != mesh) else { continue };
+            let why = match g.basis {
+                "map_report" => "Its own map report confirms",
+                "radio_contact" => "Map reports of nodes it shares radio contact with confirm",
+                // Channel names are only a hint (a secondary channel can carry
+                // such a name): never when it was also heard on the mesh's.
+                "channel_name" if pk.len() >= 3 && !pk.values().any(|r| i.preset(r.channel) == Some(mesh)) => "Its packets were heard on a channel named for",
+                _ => continue,
             };
-            if let Some(p) = odd {
-                add(n, "preset", "warning", format!("Uses {} while the mesh uses {}", label(&p), label(mesh)), format!("Its packets or its own map report show the {} preset, but most of the mesh is heard on {}. Nodes on different presets cannot hear each other, so it is cut off from most of the mesh.", label(&p), label(mesh)));
-            }
+            add(n, "preset", "warning", format!("Uses {} while the mesh uses {}", label(p), label(mesh)), format!("{why} the {} preset, but most of the mesh is heard on {}. Nodes on different presets cannot hear each other, so it is cut off from most of the mesh.", label(p), label(mesh)));
         }
     }
 
@@ -541,7 +543,7 @@ mod tests {
 
     fn issues(rows: &[Row], i: &Interner) -> Vec<Issue> {
         let refs: Vec<&Row> = rows.iter().collect();
-        health(&refs, &[], &[], &Copies::default(), i, 48.0).issues
+        health(&refs, &[], &[], &Copies::default(), &PresetIndex::default(), i, 48.0).issues
     }
 
     #[test]
@@ -580,14 +582,14 @@ mod tests {
         let forged: Vec<Row> = (1..=3).map(|k| bad(&mut i, k, "sig_invalid")).collect();
         let decode: Vec<Row> = (4..=9).map(|k| bad(&mut i, k, "payload_invalid")).collect();
         let refs: Vec<&Row> = forged.iter().chain(&decode).collect();
-        let got = health(&[], &refs, &[], &Copies::default(), &i, 48.0).issues;
+        let got = health(&[], &refs, &[], &Copies::default(), &PresetIndex::default(), &i, 48.0).issues;
         let s: Vec<&Issue> = got.iter().filter(|x| x.kind == "spoofed").collect();
         assert_eq!(s.len(), 1, "decoding failures alone are not impersonation");
         assert!(s[0].summary.starts_with("3 packets"));
         // A changed key is explained as a likely reset.
         let rekeyed: Vec<Row> = (1..=4).map(|k| bad(&mut i, k, "nodeinfo_key_mismatch")).collect();
         let refs: Vec<&Row> = rekeyed.iter().collect();
-        let got = health(&[], &refs, &[], &Copies::default(), &i, 48.0).issues;
+        let got = health(&[], &refs, &[], &Copies::default(), &PresetIndex::default(), &i, 48.0).issues;
         assert!(got.iter().any(|x| x.kind == "spoofed" && x.detail.contains("reset or reflashed")));
     }
 }
