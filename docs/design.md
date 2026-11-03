@@ -454,7 +454,7 @@ UI chrome floats over the map, which runs edge to edge and never resizes (checke
 - **Confidence** is opacity (high solid, medium fainter, low fainter still) plus dashes for inferred links.
 - **Internet links** are dotted green, beneath the radio links, one per pair, in both themes. Their panel is titled "Internet link" with "Why internet", and says who passed what on (D-055, D-062, D-087).
 - **0-cost:** a gold chevron on the link near the router that relays for free, pointing at it; a "0-cost" row in that direction of the link panel, ", 0-cost" in the hover text, and a legend entry (D-068).
-- **Hover** names both ends by short name, one line per direction with confidence and sample count (the MQTT note on its own line), and says "hidden by the filters" rather than "no evidence" for a filtered direction (D-083, D-087). A selected link is drawn in the selection colour.
+- **Hover** names both ends by short name, one line per direction with confidence and sample count (the MQTT note on its own line), and says "hidden by the filters" rather than "no evidence" for a filtered direction (D-083, D-087). A selected link is drawn in the selection colour, on top of the others, and always: whatever the filters, link toggles and level of detail leave out, the link open in Details is on the map (between its ends' markers, even where a filter hides a marker).
 - **Level of detail:** below zoom 9 the best-supported 3 000 links (`LOW_ZOOM_LINKS`, by samples); from zoom 9 only links touching the viewport plus a 25 % margin. Counts and lists stay complete.
 
 ### 7.5 Selection and accuracy circles

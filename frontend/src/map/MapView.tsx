@@ -7,7 +7,7 @@ import type { Capabilities } from '../api/types'
 import type { Edge, SnapshotView } from '../derive/views'
 import { useStore } from '../state/store'
 import { applyStylePaint, loadStyle, registerPMTiles } from './style'
-import { bridgeRoute, positionAt, filterEdges, isOnline, linkGeometry, placeNodes, visibleLinks, type LinkGeom, type PlacedNode } from './model'
+import { bridgeRoute, positionAt, filterEdges, isOnline, linkGeometry, placeNodes, visibleLinks, withSelectedLink, type LinkGeom, type PlacedNode } from './model'
 import { frameArrived, onPingAdded, pingCount } from './pings'
 import { BASEMAP_GROUPS } from './layers'
 import { meshLayerBuilder, type ReachGeom, type RouteGeom } from './meshLayers'
@@ -215,7 +215,7 @@ export default function MapView({ caps, snapshot, onPositions }: Props) {
   const windowEnd = snapshot ? Date.parse(snapshot.meta.window.end) : Date.now()
   const windowMs = snapshot ? Date.parse(snapshot.meta.window.end) - Date.parse(snapshot.meta.window.start) : 1
 
-  const { placed, pos, links } = useMemo(() => {
+  const { placed, pos, links, allPos, roles } = useMemo(() => {
     const nodes = snapshot?.nodes ?? []
     const { placed: all } = placeNodes(nodes, windowEnd, windowMs)
     const placed = all.filter((p) => (!filters.positionedOnly || p.kind === 'reported') && (!filters.onlineOnly || isOnline(p.node, windowEnd)))
@@ -225,7 +225,8 @@ export default function MapView({ caps, snapshot, onPositions }: Props) {
     const edges = filterEdges(snapshot?.edges ?? [], filters, toggles)
     const roles = new Map(nodes.map((n) => [n.id, n.identity?.role]))
     const links = linkGeometry(edges, pos, roles).filter((g) => (g.mqtt ? toggles.mqttLinks : g.infra ? toggles.infraLinks : toggles.otherLinks))
-    return { placed, pos, links }
+    const allPos = new Map<string, [number, number]>(all.map((p) => [p.node.id, [p.lon, p.lat]]))
+    return { placed, pos, links, allPos, roles }
   }, [snapshot, filters, toggles.infraLinks, toggles.otherLinks, toggles.mqttLinks, toggles.inferred, windowEnd, windowMs]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => onPositions(pos), [pos, onPositions])
@@ -280,7 +281,12 @@ export default function MapView({ caps, snapshot, onPositions }: Props) {
       }),
     }
   }, [reachOpt, selectedNode, reachQ.data, pos])
-  const shownLinks = useMemo(() => (route || reach ? [] : visibleLinks(links, { selectedNode, zoom, bounds })), [route, reach, links, selectedNode, zoom, bounds])
+  // The link open in Details is always drawn.
+  const selectedEdge = selection?.kind === 'edge' ? selection : null
+  const shownLinks = useMemo(
+    () => (route || reach ? [] : withSelectedLink(visibleLinks(links, { selectedNode, zoom, bounds }), selectedEdge, snapshot?.edges ?? [], allPos, roles)),
+    [route, reach, links, selectedNode, selectedEdge, snapshot, allPos, roles, zoom, bounds],
+  )
 
   // Name clusters at this zoom. One fans out while hovered (with a short
   // grace period to reach its names) or while one of its nodes is selected.

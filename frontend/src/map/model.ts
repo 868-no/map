@@ -245,6 +245,20 @@ export function visibleLinks(links: LinkGeom[], o: { selectedNode: string | null
 }
 
 /**
+ * The links to draw with the link open in Details among them: it is drawn
+ * whatever the filters, link toggles and level of detail leave out, from all
+ * edges and every placed marker, and last, so it lies on top.
+ */
+export function withSelectedLink(shown: LinkGeom[], sel: { src: string; dst: string; mqtt?: boolean } | null, edges: Edge[], pos: Map<string, [number, number]>, roles: Map<string, string | undefined>): LinkGeom[] {
+  if (!sel) return shown
+  const mqtt = !!sel.mqtt
+  const pair = edges.filter((e) => !!e.mqtt === mqtt && ((e.src === sel.src && e.dst === sel.dst) || (e.src === sel.dst && e.dst === sel.src)))
+  const g = linkGeometry(pair, pos, roles)[0]
+  if (!g) return shown
+  return [...shown.filter((x) => !(x.a === g.a && x.b === g.b && x.mqtt === g.mqtt)), g]
+}
+
+/**
  * A packet's route as drawable segments. Nodes without a position cannot be
  * drawn: each placed node is joined to the nearest placed nodes before it in
  * the route, dashed across the ones skipped, so the route stays whole.

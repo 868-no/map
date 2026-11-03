@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ageColor, AGE_STOPS, isOnline, ONLINE_MS, bridgeRoute, filterEdges, glyphInk, relativeLuminance, isInfraRole, mqttDownlink, mqttUplink, LOW_ZOOM_LINKS, precisionErrorM, visibleLinks, lastHeardAge, ageMs, linkGeometry, placeNodes, roleRadius } from '../src/map/model'
+import { ageColor, AGE_STOPS, isOnline, ONLINE_MS, bridgeRoute, filterEdges, glyphInk, relativeLuminance, isInfraRole, mqttDownlink, mqttUplink, LOW_ZOOM_LINKS, precisionErrorM, visibleLinks, withSelectedLink, lastHeardAge, ageMs, linkGeometry, placeNodes, roleRadius } from '../src/map/model'
 
 // WCAG contrast ratio.
 const contrast = (a: readonly number[], b: readonly number[]) => (Math.max(relativeLuminance(a), relativeLuminance(b)) + 0.05) / (Math.min(relativeLuminance(a), relativeLuminance(b)) + 0.05)
@@ -152,5 +152,21 @@ describe('online', () => {
     expect(isOnline({ last_seen: new Date(end - ONLINE_MS).toISOString() }, end)).toBe(true)
     expect(isOnline({ last_seen: new Date(end - ONLINE_MS - 1000).toISOString() }, end)).toBe(false)
     expect(isOnline({}, end)).toBe(false) // only named by others
+  })
+  it('always draws the link open in Details, on top', () => {
+    const pos = new Map<string, [number, number]>([['!a', [10, 63]], ['!b', [10.1, 63.1]], ['!c', [10.2, 63.2]]])
+    const edges = [edge('!a', '!b'), edge('!b', '!a'), edge('!b', '!c')]
+    const all = linkGeometry(edges, pos)
+    const other = all.find((g) => g.a === '!b' && g.b === '!c')!
+    // Filtered or culled away: added back, from both directions.
+    const out = withSelectedLink([other], { src: '!b', dst: '!a' }, edges, pos, new Map())
+    expect(out.map((g) => `${g.a}|${g.b}`)).toEqual(['!b|!c', '!a|!b'])
+    expect(out[1].ab && out[1].ba).toBeTruthy()
+    // Already drawn: moved last, not doubled.
+    expect(withSelectedLink(all, { src: '!a', dst: '!b' }, edges, pos, new Map()).map((g) => `${g.a}|${g.b}`)).toEqual(['!b|!c', '!a|!b'])
+    // The radio link, not an internet link of the same pair; none without positions.
+    expect(withSelectedLink([], { src: '!a', dst: '!b', mqtt: true }, edges, pos, new Map())).toEqual([])
+    expect(withSelectedLink([], { src: '!a', dst: '!b' }, edges, new Map(), new Map())).toEqual([])
+    expect(withSelectedLink([other], null, edges, pos, new Map())).toEqual([other])
   })
 })
