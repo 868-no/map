@@ -64,15 +64,35 @@ jobs:
         run: scripts/node.sh npm run gen:api && git diff --exit-code frontend/src/api/schema.d.ts
 
   e2e:
-    name: end-to-end (demo stack, Playwright)
+    # The map renders in software on these runners, so the suite is split
+    # across parallel jobs, each with its own stack.
+    name: end-to-end ${{ matrix.shard }}/3 (demo stack, Playwright)
     runs-on: ubuntu-24.04
     timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - run: printf 'POSTGRES_PASSWORD=ci\nDEMO_MODE=true\nE2E_HOOKS=true\nDEMO_RATE=10\n' > .env
+      # The stack's images from compose.yaml, with layers cached between runs.
+      - name: build the stack's images
+        uses: docker/bake-action@59cb1203cd42bcefd40a1b6d73b589e48c86040e # v7.5.0
+        env:
+          E2E_HOOKS: 'true'
+        with:
+          files: compose.yaml
+          targets: backend,web
+          load: true
+          set: |
+            backend.cache-from=type=gha,scope=e2e-backend
+            backend.cache-to=type=gha,mode=max,scope=e2e-backend
+            web.cache-from=type=gha,scope=e2e-web
+            web.cache-to=type=gha,mode=max,scope=e2e-web
       - name: start the demo stack
-        run: |
-          printf 'POSTGRES_PASSWORD=ci\nDEMO_MODE=true\nE2E_HOOKS=true\nDEMO_RATE=10\n' > .env
-          docker compose --profile demo up -d --build postgres redis backend web mosquitto demo-publisher
+        run: docker compose --profile demo up -d --no-build postgres redis backend web mosquitto demo-publisher
       - name: seed two days of history
         run: docker compose run --rm backend seed --nodes 150 --rows 20000 --days 2
       - name: wait for live traffic
@@ -87,7 +107,7 @@ jobs:
         # One retry: a few tests time animations and live traffic on a shared runner.
         run: |
           docker run --rm --network host --ipc=host -e MESHMAP_NO_BASEMAP=1 -v "$PWD":/src -w /src/frontend \
-            mcr.microsoft.com/playwright:v1.64.1-noble sh -c 'npm ci --no-audit --no-fund && npx playwright test --retries 1'
+            mcr.microsoft.com/playwright:v1.64.1-noble sh -c 'npm ci --no-audit --no-fund && npx playwright test --retries 1 --shard=${{ matrix.shard }}/3'
       - name: stack logs
         if: failure()
         run: docker compose --profile demo logs --no-color --tail 200
@@ -95,7 +115,7 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: e2e-results
+          name: e2e-results-${{ matrix.shard }}
           path: frontend/e2e/.results
           retention-days: 7
 
