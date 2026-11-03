@@ -419,15 +419,25 @@ export default function MapView({ caps, snapshot, onPositions }: Props) {
           setHover({ x: info.x, y: info.y, text: [o.mqtt ? 'Over the internet (MQTT), not radio' : '', dir(o.ab, o.a, o.b), dir(o.ba, o.b, o.a)].filter(Boolean).join('\n') })
         }
       },
-      onClick: (info: PickingInfo) => {
-        const o = info.object as PlacedNode | LinkGeom | LabelDatum | RouteGeom | undefined
-        if (!o) return select(null) // empty map: clear the selection
-        if ('seg' in o) return
-        if ('label' in o) select({ kind: 'node', id: o.node.node.id })
-        else if ('kind' in o) select({ kind: 'node', id: o.node.id })
-        else select({ kind: 'edge', src: o.a, dst: o.b, mqtt: o.mqtt })
-      },
     })
+    // Clicks come from MapLibre, then deck.gl picks what lies there. deck.gl's
+    // own click is a tap that must end within 250 ms of when the page handled
+    // its start: a frame that takes longer in between (a slow phone, or a
+    // software renderer drawing pings) turns it into a press, and the click is
+    // lost. MapLibre's click has no time limit, only a movement one.
+    const map = mapRef.current
+    if (!ready || !map) return
+    const onClick = (e: maplibregl.MapMouseEvent) => {
+      const info = overlayRef.current?.pickObject({ x: e.point.x, y: e.point.y })
+      const o = info?.object as PlacedNode | LinkGeom | LabelDatum | RouteGeom | undefined
+      if (!o) return select(null) // empty map: clear the selection
+      if ('seg' in o) return
+      if ('label' in o) select({ kind: 'node', id: o.node.node.id })
+      else if ('kind' in o) select({ kind: 'node', id: o.node.id })
+      else select({ kind: 'edge', src: o.a, dst: o.b, mqtt: o.mqtt })
+    }
+    map.on('click', onClick)
+    return () => void map.off('click', onClick)
   }, [ready, select])
 
   const routeFrame = useMemo(() => (routeLp && route?.length ? { key: routeLp, points: route.flatMap((r) => [r.from, r.to]) } : null), [routeLp, route])

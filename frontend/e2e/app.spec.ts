@@ -415,7 +415,7 @@ test('the packet log combines own and relayed packets, and draws a packet route 
     if (await log.locator('tbody tr[data-kind="relayed"]').count()) break
   }
   const total = async () => Number(/\((\d+)/.exec((await page.getByRole('heading', { name: /^Packet log/ }).textContent()) ?? '')?.[1])
-  const all = await total()
+  const relayedCount = async () => Number(/Include relayed \((\d+)/.exec((await page.locator('label', { has: toggle }).textContent()) ?? '')?.[1])
   await toggle.uncheck()
   await expect(log.locator('tbody tr[data-kind="relayed"]')).toHaveCount(0) // no relayed packets
   expect(await total()).toBeLessThan(all)
