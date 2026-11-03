@@ -165,7 +165,7 @@ export function TimeChart({ label, unit, points, series, start, end, decimals = 
             const v = bandAt(b, shown[0])
             return v && <small key={b.label} className="muted"> · {b.label} {fmtB(b, v[1])}</small>
           })}{' '}
-          <small className="muted">{hover ? formatLocal(new Date(shown[0]).toISOString()) : 'latest'}</small>
+          <small className="muted tchart-at">{hover ? formatLocal(new Date(shown[0]).toISOString()) : 'latest'}</small>
         </span>
       </figcaption>
       <div className="tchart-plot" ref={box} onPointerMove={onMove} onPointerDown={onMove} onPointerLeave={() => setT(null)}>
