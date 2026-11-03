@@ -24,9 +24,11 @@ import (
 	"github.com/868-no/map/internal/maintenance"
 	"github.com/868-no/map/internal/mqtt"
 	"github.com/868-no/map/internal/observability"
+	"github.com/868-no/map/internal/query"
 	"github.com/868-no/map/internal/security"
 	"github.com/868-no/map/internal/storage"
 	"github.com/868-no/map/internal/weather"
+	"github.com/868-no/map/internal/window"
 )
 
 func databaseURL(e config.Env) string {
@@ -368,6 +370,13 @@ func serveCmd() *cobra.Command {
 				apiSrv.Weather = weather.New(c.Env.WeatherURL, ua)
 				apiSrv.Weather.Store, apiSrv.Weather.Log = &weather.Store{Pool: pool}, log
 				go apiSrv.Weather.Run(ctx)
+				// Live routers' weather is kept ready over the longest window (D-133).
+				span := time.Duration(c.Env.MaxWindowHours) * time.Hour
+				go apiSrv.Weather.Keep(ctx, 20*time.Minute, span, func(ctx context.Context) ([]weather.Cell, error) {
+					now := time.Now().UTC()
+					sites, err := query.RouterSites(ctx, pool, window.Window{Start: now.Add(-span), End: now}, window.Window{Start: now.Add(-24 * time.Hour), End: now})
+					return weather.Cells(sites), err
+				})
 			}
 			apiSrv.NewHandler(mux)
 			handler := api.Protect(mux, api.Limits{Trusted: c.Proxies, PerSecond: c.Env.APIRatePerSecond, Burst: c.Env.APIRateBurst,

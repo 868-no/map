@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -64,7 +65,7 @@ precipitation_amount.time[1]
 // fill asks until every hour is in, as a browser does.
 func fill(t *testing.T, c *Client, cell Cell, start, end time.Time) []Hour {
 	t.Helper()
-	for i := 0; i < 200; i++ {
+	for i := 0; i < 2000; i++ {
 		hs, inc := c.Series(context.Background(), cell, start, end)
 		if !inc {
 			return hs
@@ -114,8 +115,15 @@ func TestSeries(t *testing.T) {
 		t.Fatalf("hours: %+v", hs)
 	}
 	h := hs[0]
+	// Lead 1's gust: (3, -4) × 2/2.
 	if *h.TempC != 4.25 || *h.PrecipMM != 0.4 || *h.HumidityPct != 87.3 || *h.CloudPct != 100 || *h.WindMS != 3.25 || *h.GustMS != 5 || hs[1].TempC != nil {
 		t.Fatalf("values: %+v %+v", hs[0], hs[1])
+	}
+	if *hs[2].GustMS != 12.5 {
+		t.Fatalf("lead 4's gust: %v", *hs[2].GustMS)
+	}
+	if n := gustRuns.Load(); n != 1 {
+		t.Fatalf("%d requests for the 09Z run, want 1", n)
 	}
 	n := hits.Load()
 	if _, inc := c.Series(context.Background(), cell, start, end); inc || hits.Load() != n {
@@ -129,6 +137,8 @@ func TestSeries(t *testing.T) {
 
 // gusts serves MEPS runs at 09Z and 12Z of 1 November (the 12Z run not
 // archived yet), and checks which run and lead hour is asked for.
+var gustRuns atomic.Int32
+
 func gusts(t *testing.T, w http.ResponseWriter, r *http.Request) {
 	switch {
 	case strings.Contains(r.URL.Path, "20261101T12Z"):
@@ -142,11 +152,22 @@ func gusts(t *testing.T, w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	// Hours 10, 12 and 13 come from the 09Z run's leads 1, 3 and 4, at the MEPS cell.
-	if !strings.Contains(r.URL.RawQuery, "%5B0%5D%5B542%5D%5B330%5D") {
+	// One request reads the 09Z run's first nine hours at the MEPS cell;
+	// hours 10, 12 and 13 are its leads 1, 3 and 4.
+	gustRuns.Add(1)
+	if !strings.Contains(r.URL.RawQuery, "%5B0:8%5D%5B0%5D%5B542%5D%5B330%5D") {
 		t.Errorf("unexpected query %q", r.URL.RawQuery)
 	}
-	fmt.Fprint(w, "x_wind_gust_10m.x_wind_gust_10m[1][1][1][1]\n[0][0][0][0], 3\ny_wind_gust_10m.y_wind_gust_10m[1][1][1][1]\n[0][0][0][0], -4\n")
+	var b strings.Builder
+	for _, name := range []string{"x_wind_gust_10m", "y_wind_gust_10m"} {
+		fmt.Fprintf(&b, "%s.%s[9][1][1][1]\n", name, name)
+		for i := range 9 {
+			v := map[string]float64{"x_wind_gust_10m": 3, "y_wind_gust_10m": -4}[name] * float64(i+1) / 2
+			fmt.Fprintf(&b, "[%d][0][0], %g\n", i, v)
+		}
+		b.WriteString("\n")
+	}
+	fmt.Fprint(w, b.String())
 }
 
 func TestExpiry(t *testing.T) {
@@ -195,5 +216,62 @@ func TestBackOffWhenAsked(t *testing.T) {
 	}
 	if _, inc := c.Series(context.Background(), Cell{1, 1}, start, start.Add(5*time.Hour)); !inc {
 		t.Fatal("still incomplete")
+	}
+}
+
+// Keep fills the sites' cells in the background, and a visitor's request
+// goes ahead of that backlog.
+func TestKeepYieldsToVisitors(t *testing.T) {
+	var mu sync.Mutex
+	var order []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/meps25epsarchive/") {
+			http.NotFound(w, r)
+			return
+		}
+		mu.Lock()
+		order = append(order, r.URL.RawQuery)
+		mu.Unlock()
+		fmt.Fprint(w, sample)
+	}))
+	defer srv.Close()
+	now := time.Date(2026, 11, 3, 15, 30, 0, 0, time.UTC)
+	c := New(srv.URL, "")
+	c.Now, c.Interval = func() time.Time { return now }, time.Millisecond
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	kept, other, visitor := Cell{100, 100}, Cell{150, 150}, Cell{200, 200}
+	// The backlog is queued before the worker starts, so the visitor comes in behind it.
+	go c.Keep(ctx, time.Hour, 48*time.Hour, func(context.Context) ([]Cell, error) { return []Cell{kept, other}, nil })
+	for c.pending() < 96 {
+		time.Sleep(time.Millisecond)
+	}
+	c.Series(ctx, visitor, now.Add(-3*time.Hour), now)
+	go c.Run(ctx)
+	fill(t, c, visitor, now.Add(-3*time.Hour), now)
+	mu.Lock()
+	first := append([]string(nil), order[:3]...)
+	mu.Unlock()
+	for _, q := range first {
+		if !strings.Contains(q, "%5B200%5D%5B200%5D") {
+			t.Fatalf("background work went first: %v", first)
+		}
+	}
+	// Then a day at a time across the kept cells, newest first: both have
+	// their last day before either goes further back.
+	fill(t, c, other, now.Add(-24*time.Hour), now)
+	mu.Lock()
+	firsts := 0
+	for _, q := range order {
+		if strings.Contains(q, "%5B100%5D%5B100%5D") {
+			firsts++
+		}
+	}
+	mu.Unlock()
+	if firsts > 25 {
+		t.Fatalf("the first kept cell had %d hours fetched before the other's last day", firsts)
+	}
+	if hs := fill(t, c, kept, now.Add(-48*time.Hour), now); len(hs) != 48 {
+		t.Fatalf("kept cell: %d hours", len(hs))
 	}
 }

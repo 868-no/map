@@ -11,12 +11,12 @@ const node = (role: string | undefined, extra: Partial<MeshNode> = {}): MeshNode
 })
 
 describe('weather (D-133)', () => {
-  it('reads weather only at stationary routers', () => {
+  it('reads weather only at routers with a current position', () => {
     expect(weatherSite(node('ROUTER'))).toEqual({ lat: 63.4, lon: 10.4 })
     expect(weatherSite(node('ROUTER_LATE', { refined: { lat: 63.5, lon: 10.5, radius_m: 10, reports: 9, agree: 8 } }))).toEqual({ lat: 63.5, lon: 10.5 })
     expect(weatherSite(node('CLIENT'))).toBeNull()
     expect(weatherSite(node(undefined))).toBeNull()
-    expect(weatherSite(node('ROUTER', { track: [{ lat: 63, lon: 10, at: '' }] }))).toBeNull()
+    expect(weatherSite(node('ROUTER', { track: [{ lat: 63, lon: 10, at: '' }] }))).toEqual({ lat: 63.4, lon: 10.4 })
     expect(weatherSite(node('ROUTER', { position: undefined }))).toBeNull()
   })
 

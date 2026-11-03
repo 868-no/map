@@ -11,11 +11,11 @@ const HOUR = 3_600_000
 
 /**
  * Where a node's weather is read, or null. Only ROUTER and ROUTER_LATE nodes
- * standing still at a current reported position qualify: they are few, and
- * their sites do not change, so each hour is fetched once and reused.
+ * with a current reported position qualify: they are few and stay put, and
+ * the server keeps the weather of live ones ready.
  */
 export function weatherSite(n: MeshNode | undefined): { lat: number; lon: number } | null {
-  if (!n || !isInfraRole(n.identity?.role) || !n.position || n.track) return null
+  if (!n || !isInfraRole(n.identity?.role) || !n.position) return null
   const p = n.refined ?? n.position
   return { lat: p.lat, lon: p.lon }
 }

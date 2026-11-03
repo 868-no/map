@@ -14,7 +14,7 @@ export function TelemetryTab({ d, snapshot, now }: { d: NodeView; snapshot: Snap
   const telemetryCount = dev.length + env.length
   const winStart = snapshot ? Date.parse(snapshot.meta.window.start) : Math.min(...[...dev, ...env].map((s) => Date.parse(s.at)))
   const winEnd = now
-  // Stationary routers get the weather at their site behind their own readings (D-133).
+  // Routers get the weather at their site behind their own readings (D-133).
   const [weather] = useWeather([weatherSite(d)], winStart, winEnd)
   const w = weather?.data
   const loading = w?.incomplete ? 'Loading… ' : ''
@@ -28,6 +28,10 @@ export function TelemetryTab({ d, snapshot, now }: { d: NodeView; snapshot: Snap
     { label: 'Gusts', color: 'var(--orange)', points: weatherPoints(w.hours, 'gust_ms') },
   ] : []
   const hasWeather = !!w && w.hours != null && w.hours.length > 0
+  // Until the first hours arrive there is nothing to chart: say so.
+  const weatherLoading = !hasWeather && !!weatherSite(d) && (weather?.isLoading || !!w?.incomplete) && (
+    <p className="muted small">Loading weather from MET Norway…</p>
+  )
   const windChart = hasWeather && (
     <div>
       <TimeChart label="Wind" unit="m/s" start={winStart} end={winEnd} series={wind} />
@@ -78,6 +82,7 @@ export function TelemetryTab({ d, snapshot, now }: { d: NodeView; snapshot: Snap
       {telemetryCount === 0 ? (
         <>
           <p className="muted">No telemetry from this node in the selected period.</p>
+          {weatherLoading}
           {hasWeather && (
             <div className="tcharts">
               <TimeChart label="Voltage" unit="V" decimals={2} start={winStart} end={winEnd} band={cloudBand} />
@@ -102,6 +107,7 @@ export function TelemetryTab({ d, snapshot, now }: { d: NodeView; snapshot: Snap
           {windChart}
         </div>
       )}
+      {telemetryCount > 0 && weatherLoading}
       {d.truncated && <p className="muted small">Long series show only their latest 500 reports.</p>}
     </>
   )

@@ -92,6 +92,7 @@ function LinkHistoryCharts({ a, b, name, snapshot, start, end }: { a: string; b:
         points: meanPoints(loaded.map((w) => weatherPoints(w.data!.hours, 'precip_mm'))),
         note: `${weather.some((w) => w.data?.incomplete) ? 'Loading… ' : ''}per hour, ${ends.length > 1 ? `mean of ${ends.map((n) => name(n!.id)).join(' and ')}` : `at ${name(ends[0]!.id)}`}, MET Norway (CC BY 4.0)` }
     : undefined
+  const rainLoading = ends.length > 0 && !rain?.points.length && weather.some((w) => w.isLoading || w.data?.incomplete)
   if (!h.data) return null
   const { ab, ba } = h.data
   if (ab.length + ba.length === 0) return null
@@ -103,6 +104,7 @@ function LinkHistoryCharts({ a, b, name, snapshot, start, end }: { a: string; b:
   return (
     <section className="link-history">
       <h3 title="Every measured reading of this link in the selected period, each RF event once">Signal over time</h3>
+      {rainLoading && <p className="muted small">Loading precipitation from MET Norway…</p>}
       <p className="muted small">Each reading as the receiving node measured it ({kinds.join(', ')}). A falling line across days can mean a degrading antenna, cable or site; short dips are often weather or traffic.</p>
       <div className="tcharts">
         <TimeChart label="SNR" unit="dB" start={start} end={end} series={series('snr')} band={rain} />

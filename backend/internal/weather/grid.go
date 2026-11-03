@@ -6,7 +6,11 @@
 // indices are sent upstream, never a node or visitor.
 package weather
 
-import "math"
+import (
+	"math"
+
+	"github.com/868-no/map/internal/query"
+)
 
 // grid is a Lambert conformal conic grid on a sphere with one standard
 // parallel (lat0), as both MET Norway products use.
@@ -65,3 +69,16 @@ var (
 
 // CellAt is the analysis cell holding a point, and false outside the grid.
 func CellAt(lat, lon float64) (Cell, bool) { return analysis.cell(lat, lon) }
+
+// Cells are the distinct analysis cells of the sites inside the grid.
+func Cells(sites []query.RouterSite) []Cell {
+	seen := map[Cell]bool{}
+	var out []Cell
+	for _, s := range sites {
+		if c, ok := CellAt(s.Lat, s.Lon); ok && !seen[c] {
+			seen[c] = true
+			out = append(out, c)
+		}
+	}
+	return out
+}

@@ -41,9 +41,10 @@ const (
 	goneTTL    = 6 * time.Hour    // an old hour missing from the archive
 	maxEntries = 200_000          // cached hours, about 20 MB
 	maxQueue   = 20_000           // hours waiting to be fetched
-	// The archive answers 429 to more than about one request at a time, so
-	// one worker fetches every hour in turn, at most every Interval.
-	defaultInterval = 250 * time.Millisecond
+	// The archive answers 429 to more than one request at a time, so one
+	// worker fetches every hour in turn, pausing Interval between requests.
+	defaultInterval = 100 * time.Millisecond
+	maxRuns         = 50_000 // cached MEPS runs (gusts per cell)
 	defaultBackoff  = 30 * time.Second
 )
 
@@ -58,12 +59,27 @@ type Client struct {
 	Store     *Store        // where fetched hours are kept; nil: memory only
 	Log       *slog.Logger
 
-	mu     sync.Mutex
-	cache  map[key]entry
-	order  []key // insertion order, for eviction
-	queue  []key
-	queued map[key]bool
-	wake   chan struct{}
+	mu    sync.Mutex
+	cache map[key]entry
+	order []key // insertion order, for eviction
+	// Hours to fetch: what visitors asked for first, then what Keep queued.
+	urgent, background []key
+	queued             map[key]bool
+	runs               map[runKey]runEntry
+	wake               chan struct{}
+}
+
+// runKey is one MEPS run at one MEPS cell.
+type runKey struct {
+	c   Cell
+	run int64 // Unix hour of the run
+}
+
+// runEntry holds a run's gusts by lead hour (NaN: none), or that the
+// archive lacked it until expires.
+type runEntry struct {
+	gusts   []float64
+	expires time.Time // zero: never
 }
 
 type key struct {
@@ -104,7 +120,7 @@ func New(baseURL, userAgent string) *Client {
 		baseURL = DefaultBaseURL
 	}
 	return &Client{HTTP: &http.Client{Timeout: 15 * time.Second}, BaseURL: strings.TrimRight(baseURL, "/"), UserAgent: userAgent,
-		Interval: defaultInterval, cache: map[key]entry{}, queued: map[key]bool{}, wake: make(chan struct{}, 1)}
+		Interval: defaultInterval, cache: map[key]entry{}, queued: map[key]bool{}, runs: map[runKey]runEntry{}, wake: make(chan struct{}, 1)}
 }
 
 func (c *Client) now() time.Time {
@@ -116,9 +132,38 @@ func (c *Client) now() time.Time {
 
 // Series returns the known hours in [start, end) for a cell, oldest first,
 // leaving out hours the analysis lacks. Hours neither in memory nor in the
-// store are queued for the worker, newest first, and reported as
-// incomplete: asking again later fills them in.
+// store are queued for the worker ahead of background work, newest first,
+// and reported as incomplete: asking again later fills them in.
 func (c *Client) Series(ctx context.Context, cell Cell, start, end time.Time) (hours []Hour, incomplete bool) {
+	return c.series(ctx, cell, start, end, true)
+}
+
+// Keep fills the weather of the cells sites returns, over the span before
+// now, whenever every elapses, so visitors find it ready (D-133). It runs
+// until ctx ends; visitors' requests go first.
+func (c *Client) Keep(ctx context.Context, every, span time.Duration, sites func(context.Context) ([]Cell, error)) {
+	for {
+		cells, err := sites(ctx)
+		if err != nil {
+			c.warn("weather sites failed", err)
+		}
+		// A day at a time across all cells, newest first: every site gets its
+		// latest days before any gets its oldest.
+		now := c.now()
+		for d := time.Duration(0); d < span; d += 24 * time.Hour {
+			for _, cell := range cells {
+				c.series(ctx, cell, now.Add(-min(d+24*time.Hour, span)), now.Add(-d), false)
+			}
+		}
+		select {
+		case <-time.After(every):
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+func (c *Client) series(ctx context.Context, cell Cell, start, end time.Time, urgent bool) (hours []Hour, incomplete bool) {
 	first := start.UTC().Truncate(time.Hour)
 	if first.Before(start) {
 		first = first.Add(time.Hour)
@@ -159,10 +204,16 @@ func (c *Client) Series(ctx context.Context, cell Cell, start, end time.Time) (h
 			hours = append(hours, e.h)
 		}
 	}
+	q := &c.background
+	if urgent {
+		q = &c.urgent
+	}
 	for i := len(want) - 1; i >= 0; i-- {
-		if k := want[i]; !c.queued[k] && len(c.queue) < maxQueue {
+		// A visitor's hour already waiting in the background queue is queued
+		// again in front; the worker skips whichever copy comes second.
+		if k := want[i]; (urgent || !c.queued[k]) && len(*q) < maxQueue {
 			c.queued[k] = true
-			c.queue = append(c.queue, k)
+			*q = append(*q, k)
 		}
 	}
 	if len(want) > 0 {
@@ -172,6 +223,13 @@ func (c *Client) Series(ctx context.Context, cell Cell, start, end time.Time) (h
 		}
 	}
 	return hours, incomplete
+}
+
+// pending is how many hours wait in the queues.
+func (c *Client) pending() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return len(c.urgent) + len(c.background)
 }
 
 // uncached reports whether any hour is missing from memory or outdated there.
@@ -198,10 +256,20 @@ func (c *Client) Run(ctx context.Context) {
 	for {
 		c.mu.Lock()
 		var k key
-		ok := len(c.queue) > 0
-		if ok {
-			k = c.queue[0]
-			c.queue = c.queue[1:]
+		ok := false
+		for !ok && (len(c.urgent) > 0 || len(c.background) > 0) {
+			q := &c.background
+			if len(c.urgent) > 0 {
+				q = &c.urgent
+			}
+			k, *q = (*q)[0], (*q)[1:]
+			// Skip a copy whose hour was fetched (through its other copy) or
+			// loaded from the store since it was queued.
+			if e, cached := c.cache[k]; cached && e.valid(c.now()) {
+				delete(c.queued, k)
+				continue
+			}
+			ok = c.queued[k]
 		}
 		c.mu.Unlock()
 		if !ok {
@@ -221,7 +289,7 @@ func (c *Client) Run(ctx context.Context) {
 		}
 		c.mu.Unlock()
 		if err == nil && c.Store != nil {
-			if err := c.Store.save(ctx, k.c, stored{h, missing, now}); err != nil {
+			if err := c.Store.save(ctx, k.c, stored{h: h, missing: missing, fetched: now}); err != nil {
 				c.warn("weather store write failed", err)
 			}
 		}
@@ -251,7 +319,7 @@ func (c *Client) put(k key, e entry) {
 // get reads single values from an OPeNDAP ASCII URL; missing is true when
 // the file does not exist (not yet, or never, published), and wait is how
 // long to hold off when the server asks us to.
-func (c *Client) get(ctx context.Context, url string) (vals map[string]float64, missing bool, wait time.Duration, err error) {
+func (c *Client) get(ctx context.Context, url string) (vals map[string][]float64, missing bool, wait time.Duration, err error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, false, 0, err
@@ -310,19 +378,19 @@ func (c *Client) fetch(ctx context.Context, cell Cell, t time.Time) (h Hour, mis
 		return Hour{T: t}, missing, wait, err
 	}
 	h = Hour{T: t}
-	if v, ok := vals["air_temperature_2m"]; ok {
+	if v, ok := first(vals, "air_temperature_2m"); ok {
 		h.TempC = round2(v - 273.15)
 	}
-	if v, ok := vals["precipitation_amount"]; ok {
+	if v, ok := first(vals, "precipitation_amount"); ok {
 		h.PrecipMM = round2(math.Max(v, 0))
 	}
-	if v, ok := vals["relative_humidity_2m"]; ok {
+	if v, ok := first(vals, "relative_humidity_2m"); ok {
 		h.HumidityPct = round2(math.Min(math.Max(v, 0), 1) * 100)
 	}
-	if v, ok := vals["cloud_area_fraction"]; ok {
+	if v, ok := first(vals, "cloud_area_fraction"); ok {
 		h.CloudPct = round2(math.Min(math.Max(v, 0), 1) * 100)
 	}
-	if v, ok := vals["wind_speed_10m"]; ok {
+	if v, ok := first(vals, "wind_speed_10m"); ok {
 		h.WindMS = round2(math.Max(v, 0))
 	}
 	h.GustMS, wait, err = c.gust(ctx, cell, t)
@@ -331,7 +399,9 @@ func (c *Client) fetch(ctx context.Context, cell Cell, t time.Time) (h Hour, mis
 
 // gust is the strongest gust in the hour before t at a cell, from the latest
 // MEPS run in the archive that covers it with one of its first hours: runs
-// start every 3 h and reach the archive hours late. Nil when none has it yet.
+// start every 3 h and reach the archive hours late. One request reads a
+// run's first hours at once, so the hours after reuse it. Nil when no run
+// has it yet.
 func (c *Client) gust(ctx context.Context, cell Cell, t time.Time) (*float64, time.Duration, error) {
 	mc, ok := meps.cell(analysis.centre(cell))
 	if !ok {
@@ -339,57 +409,105 @@ func (c *Client) gust(ctx context.Context, cell Cell, t time.Time) (*float64, ti
 	}
 	run := t.Truncate(3 * time.Hour)
 	for range 3 {
-		select {
-		case <-time.After(c.Interval):
-		case <-ctx.Done():
-			return nil, 0, ctx.Err()
-		}
-		at := index(int(t.Sub(run)/time.Hour), 0, mc.Y, mc.X)
-		vals, missing, wait, err := c.get(ctx, fmt.Sprintf("%s/meps25epsarchive/%s/meps_det_2_5km_%s.nc.ascii?x_wind_gust_10m%s,y_wind_gust_10m%s",
-			c.BaseURL, run.Format("2006/01/02"), run.Format("20060102T15Z"), at, at))
+		lead := int(t.Sub(run) / time.Hour)
+		gusts, wait, err := c.run(ctx, mc, run)
 		if err != nil {
 			return nil, wait, err
 		}
-		if !missing {
-			// A vector in the grid's axes: its length is the gust speed.
-			x, okx := vals["x_wind_gust_10m"]
-			y, oky := vals["y_wind_gust_10m"]
-			if !okx || !oky {
-				return nil, 0, nil
-			}
-			return round2(math.Hypot(x, y)), 0, nil
+		if lead < len(gusts) && !math.IsNaN(gusts[lead]) {
+			return round2(gusts[lead]), 0, nil
+		}
+		if gusts != nil {
+			return nil, 0, nil // the run is there, without this hour's gust
 		}
 		run = run.Add(-3 * time.Hour)
 	}
 	return nil, 0, nil
 }
 
-// parseASCII reads an OPeNDAP ASCII response of single-value grids: a line
-// "name.name[1]...[1]" followed by "[0]...[0], value". NaN values are left out.
-func parseASCII(r io.Reader) (map[string]float64, error) {
-	out := map[string]float64{}
+// runLeads are the lead hours read from a run: enough for an hour two runs back.
+const runLeads = 9
+
+// run is a MEPS run's gusts at a cell by lead hour, or nil when the archive
+// does not have the run (yet).
+func (c *Client) run(ctx context.Context, mc Cell, run time.Time) ([]float64, time.Duration, error) {
+	k := runKey{mc, run.Unix() / 3600}
+	now := c.now()
+	c.mu.Lock()
+	e, ok := c.runs[k]
+	c.mu.Unlock()
+	if ok && (e.expires.IsZero() || now.Before(e.expires)) {
+		return e.gusts, 0, nil
+	}
+	select {
+	case <-time.After(c.Interval):
+	case <-ctx.Done():
+		return nil, 0, ctx.Err()
+	}
+	at := fmt.Sprintf("%%5B0:%d%%5D%s", runLeads-1, index(0, mc.Y, mc.X))
+	vals, missing, wait, err := c.get(ctx, fmt.Sprintf("%s/meps25epsarchive/%s/meps_det_2_5km_%s.nc.ascii?x_wind_gust_10m%s,y_wind_gust_10m%s",
+		c.BaseURL, run.Format("2006/01/02"), run.Format("20060102T15Z"), at, at))
+	if err != nil {
+		return nil, wait, err
+	}
+	e = runEntry{expires: now.Add(missingTTL)}
+	if !missing {
+		// A vector in the grid's axes: its length is the gust speed.
+		x, y := vals["x_wind_gust_10m"], vals["y_wind_gust_10m"]
+		e = runEntry{gusts: make([]float64, min(len(x), len(y)))}
+		for i := range e.gusts {
+			e.gusts[i] = math.Hypot(x[i], y[i])
+		}
+	}
+	c.mu.Lock()
+	if len(c.runs) >= maxRuns {
+		clear(c.runs)
+	}
+	c.runs[k] = e
+	c.mu.Unlock()
+	return e.gusts, 0, nil
+}
+
+// parseASCII reads an OPeNDAP ASCII response of grids: a line
+// "name.name[n]..." followed by lines "[i]..., v[, v...]" holding the values
+// in order, up to a blank line. NaN values stay NaN.
+func parseASCII(r io.Reader) (map[string][]float64, error) {
+	out := map[string][]float64{}
 	sc := bufio.NewScanner(r)
 	var grid string
-	seen := false
 	for sc.Scan() {
 		line := strings.TrimSpace(sc.Text())
+		if line == "" {
+			grid = ""
+			continue
+		}
 		if name, _, ok := strings.Cut(line, "."); ok && strings.HasPrefix(line[len(name)+1:], name+"[") {
 			grid = name
 			continue
 		}
 		if i := strings.LastIndex(line, "], "); grid != "" && strings.HasPrefix(line, "[") && i > 0 {
-			seen = true
-			if v, err := strconv.ParseFloat(line[i+3:], 64); err == nil && !math.IsNaN(v) && !math.IsInf(v, 0) {
-				out[grid] = v
+			for _, f := range strings.Split(line[i+3:], ", ") {
+				v, err := strconv.ParseFloat(strings.TrimSpace(f), 64)
+				if err != nil || math.IsInf(v, 0) {
+					v = math.NaN()
+				}
+				out[grid] = append(out[grid], v)
 			}
-			grid = ""
 		}
 	}
 	if err := sc.Err(); err != nil {
 		return nil, err
 	}
-	if !seen {
+	if len(out) == 0 {
 		return nil, errors.New("weather: no values in upstream response")
 	}
 	return out, nil
+}
+
+// first is a grid's first value, if it has one that is a number.
+func first(vals map[string][]float64, name string) (float64, bool) {
+	if v := vals[name]; len(v) > 0 && !math.IsNaN(v[0]) {
+		return v[0], true
+	}
+	return 0, false
 }
