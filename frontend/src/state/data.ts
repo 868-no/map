@@ -45,14 +45,16 @@ type Key = readonly [string, string, string, string]
 
 /**
  * Keep showing the previous result while loading only when that cannot leak
- * data: the same rolling window moving forward. A different window shows a
- * loading state instead.
+ * data: the same view of the same subject, in the same rolling window moving
+ * forward. Anything else shows a loading state instead.
  */
 function safePlaceholder<T>(prev: T | undefined, prevQuery: Query<T, Error, T, Key> | undefined, key: Key): T | undefined {
   if (!prev || !prevQuery) return undefined
-  const [, , pIdentity] = prevQuery.queryKey
-  const [, , identity] = key
-  if (identity.startsWith('live:') && pIdentity === identity) return keepPreviousData(prev)
+  const [pView, , pIdentity] = prevQuery.queryKey
+  const [view, , identity] = key
+  // The same view of the same node or packet only: switching selection must
+  // never show the previous node's details, or frame the previous route.
+  if (pView === view && identity.startsWith('live:') && pIdentity === identity) return keepPreviousData(prev)
   return undefined
 }
 
