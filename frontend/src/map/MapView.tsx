@@ -82,6 +82,8 @@ export default function MapView({ caps, snapshot, onPositions }: Props) {
   const [hover, setHover] = useState<{ x: number; y: number; text: string } | null>(null)
   const coords = useRef<HTMLDivElement>(null) // written directly: a re-render per mousemove is too costly
   const [zoom, setZoom] = useState(caps.map.zoom)
+  // Mouse drag never rotates, but a two-finger twist or Shift+arrow keys do.
+  const [bearing, setBearing] = useState(0)
   const [bounds, setBounds] = useState<[number, number, number, number] | null>(null)
   const filters = useStore((s) => s.filters)
   const toggles = useStore((s) => s.toggles)
@@ -143,6 +145,7 @@ export default function MapView({ caps, snapshot, onPositions }: Props) {
         }
         map.on('moveend', view)
         map.on('load', view)
+        map.on('rotate', () => setBearing(map.getBearing()))
         map.on('error', (e: maplibregl.ErrorEvent) => console.warn('map error', e.error?.message))
         const overlay = new MapboxOverlay({ interleaved: true, layers: [] })
         map.addControl(overlay as unknown as maplibregl.IControl)
@@ -426,6 +429,13 @@ export default function MapView({ caps, snapshot, onPositions }: Props) {
         <button type="button" onClick={() => fit()} disabled={pos.size === 0} aria-label="Fit to data" title="Fit map to nodes with positions">
           <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
             <path d="M3 7V3h4M13 3h4v4M17 13v4h-4M7 17H3v-4" />
+          </svg>
+        </button>
+        <button type="button" onClick={() => mapRef.current?.resetNorth({ duration: 400 })} aria-label="Reset north" title="Turn the map so north is up">
+          {/* The needle points north wherever the map is turned. */}
+          <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden style={{ transform: `rotate(${-bearing}deg)` }}>
+            <path d="M10 1.5 14.5 10h-9z" fill="var(--err)" />
+            <path d="M10 18.5 5.5 10h9z" fill="currentColor" opacity="0.7" />
           </svg>
         </button>
       </div>

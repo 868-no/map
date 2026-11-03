@@ -147,6 +147,7 @@ body.resizing { cursor: ew-resize; user-select: none; }
 .fit-ctrl { position: absolute; top: calc(var(--head-h) + 2 * var(--gap) + 68px); left: 10px; margin: 0 !important; z-index: 11; }
 .fit-ctrl button { display: grid; place-items: center; color: var(--text); border: none; border-radius: 4px; padding: 0; width: 29px; height: 29px; background: transparent; }
 .fit-ctrl button:disabled { opacity: 0.35; }
+.fit-ctrl button + button { border-top: 1px solid var(--line); border-radius: 0 0 4px 4px; }
 .attribution { position: absolute; right: 0; bottom: 0; font-size: 11px; background: var(--overlay); padding: 2px 6px; color: var(--muted); }
 .attribution a { color: var(--muted); }
 .coords { position: absolute; bottom: 28px; right: 10px; font: 12px ui-monospace, monospace; color: var(--muted); background: var(--overlay); padding: 2px 6px; border-radius: 4px; }

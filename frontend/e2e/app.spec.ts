@@ -692,6 +692,15 @@ test('the map view is remembered: a reload opens where it was left, without fitt
   expect(v.lat).toBeCloseTo(61.5, 2)
 })
 
+// A two-finger twist or Shift+arrows can turn the map; one button turns it back.
+test('Reset north turns a rotated map back to north up', async ({ page }) => {
+  type M = { map: { jumpTo: (o: object) => void; getBearing: () => number } }
+  await ready(page)
+  await page.evaluate(() => (window as unknown as { __meshmap: M }).__meshmap.map.jumpTo({ bearing: 60 }))
+  await page.getByRole('button', { name: 'Reset north' }).click()
+  await expect.poll(() => page.evaluate(() => (window as unknown as { __meshmap: M }).__meshmap.map.getBearing()), { timeout: 5000 }).toBe(0)
+})
+
 test('selecting a node on the map with the panel closed centres it beside the panel that opens', async ({ page }) => {
   type M = Hook & { map: { project: (p: [number, number]) => { x: number; y: number }; jumpTo: (o: object) => void } }
   await ready(page)
