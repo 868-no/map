@@ -544,6 +544,7 @@ test('the Health panel lists known issues and airtime, and Details shows a node\
   const panel = page.locator('.health-panel')
   await expect(panel).toContainText('Airtime (estimated)', { timeout: 30_000 })
   await expect(panel).toContainText(/No known issues|problem|warning|notice/)
+  await docShot(page, 'health.png')
   // Picking a node in the airtime list opens its details, with its health and airtime.
   await panel.locator('.shares').nth(1).locator('button').first().click()
   await expect(page.locator('.node-panel .node-health')).toBeVisible()
@@ -615,6 +616,7 @@ test('the Telemetry tab charts every metric over the whole selected period, with
   const chart = page.locator('.tchart').first()
   await expect(chart).toBeVisible({ timeout: 30_000 })
   await expect(chart.locator('.tchart-x span')).toHaveCount(3)
+  await docShot(page, 'telemetry.png')
   const plot = chart.locator('.tchart-plot')
   const box = (await plot.boundingBox())!
   await page.mouse.move(box.x + box.width * 0.9, box.y + box.height / 2)
@@ -652,6 +654,7 @@ test('the rail opens long-term trends by day, week and month', async ({ page }) 
   const panel = page.locator('.trends-panel')
   await expect(panel.locator('.bchart').first()).toBeVisible({ timeout: 30_000 })
   await expect(panel.locator('.trends-table tbody tr').first()).toBeVisible()
+  await docShot(page, 'trends.png')
   await panel.getByRole('radio', { name: 'Monthly' }).click()
   await expect(panel.getByRole('radio', { name: 'Monthly' })).toHaveAttribute('aria-checked', 'true')
   await expect(panel.locator('.trends-table th').first()).toHaveText('Month')
@@ -670,6 +673,8 @@ test('a link shows its signal over the selected period, both directions', async 
   await page.locator('ul.links li button').first().click()
   await expect(page.locator('.link-history .tchart').first()).toBeVisible({ timeout: 30_000 })
   await expect(page.locator('.link-history .tchart-legend').first()).toContainText('→')
+  await page.locator('.link-history').scrollIntoViewIfNeeded()
+  await docShot(page, 'link-history.png')
 })
 
 test('the map view is remembered: a reload opens where it was left, without fitting the data', async ({ page }) => {
