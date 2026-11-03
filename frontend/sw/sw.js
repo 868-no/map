@@ -71,8 +71,16 @@ async function cacheFirst(req, name) {
   const hit = await caches.match(req)
   if (hit) return hit
   const res = await fetch(req)
-  if (res.ok) (await caches.open(name)).put(req, res.clone())
+  if (cacheable(req, res)) (await caches.open(name)).put(req, res.clone())
   return res
+}
+
+// Only what the request asked for: never an HTML page standing in for a
+// script, stylesheet or other file (a fallback for a file of an older build).
+function cacheable(req, res) {
+  if (!res.ok) return false
+  const html = (res.headers.get('content-type') || '').includes('text/html')
+  return !html || req.mode === 'navigate' || req.destination === 'document'
 }
 
 async function staleWhileRevalidate(req, name) {
@@ -80,7 +88,7 @@ async function staleWhileRevalidate(req, name) {
   const hit = await cache.match(req)
   const fresh = fetch(req)
     .then((res) => {
-      if (res.ok) cache.put(req, res.clone())
+      if (cacheable(req, res)) cache.put(req, res.clone())
       return res
     })
     .catch(() => hit)
