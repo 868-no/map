@@ -734,3 +734,81 @@ func TestTrendSummaries(t *testing.T) {
 		t.Fatalf("trends must not add tables: %v", tables)
 	}
 }
+
+// D-107: rows whose envelope was stripped at ingest (header-only, invalid,
+// opt-out NodeInfo) come through a re-decode unchanged: decoding a zeroed
+// payload again could only lose what was kept, or turn an invalid row,
+// whose sender may be forged, into evidence.
+func TestRedecodeLeavesStrippedRowsAlone(t *testing.T) {
+	pool := freshDB(t)
+	f := newFixture(t, pool)
+	ctx := context.Background()
+	o := ingest.Options{Keyring: f.kr, Identities: fixtureIDs(f.ids), KeyBudget: 4}
+	gw := protocol.NodeID(gw1)
+	store := func(topic string, mp *pb.MeshPacket, channel string) {
+		t.Helper()
+		env, _ := proto.Marshal(&pb.ServiceEnvelope{Packet: mp, ChannelId: channel, GatewayId: gw})
+		obs, err := ingest.Process(ingest.RawMessage{BrokerID: "it", Topic: topic, Payload: env, ObservedAt: base.Add(time.Hour)}, o)
+		if err != nil {
+			t.Fatalf("process: %v", err)
+		}
+		if _, err := storage.InsertBatch(ctx, pool, []*ingest.Observation{&obs}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// An end-to-end encrypted DM; a channel without our key; an unencrypted
+	// uplink from a broker not trusted for plaintext (invalid).
+	store("msh/EU_868/2/e/PKI/"+gw, &pb.MeshPacket{From: nodeA, To: nodeB, Id: 7001, PkiEncrypted: true, PayloadVariant: &pb.MeshPacket_Encrypted{Encrypted: make([]byte, 40)}}, "PKI")
+	secret := make([]byte, 32)
+	secret[0] = 9
+	ct, _ := security.EncryptCTR(secret, nodeA, 7002, []byte{8, 1, 18, 2, 'h', 'i'})
+	store("msh/EU_868/2/e/Private/"+gw, &pb.MeshPacket{From: nodeA, To: protocol.Broadcast, Id: 7002, Channel: uint32(security.ChannelHash("Private", secret, security.ModeCTR)), PayloadVariant: &pb.MeshPacket_Encrypted{Encrypted: ct}, HopStart: 3, HopLimit: 3}, "Private")
+	store("msh/EU_868/2/e/LongFast/"+gw, &pb.MeshPacket{From: nodeA, To: protocol.Broadcast, Id: 7003, PayloadVariant: &pb.MeshPacket_Decoded{Decoded: &pb.Data{Portnum: pb.PortNum_TEXT_MESSAGE_APP, Payload: []byte("hi")}}}, "LongFast")
+	// A NodeInfo from a node that did not allow MQTT, uplinked by another gateway.
+	notOK := uint32(0)
+	ub, _ := proto.Marshal(&pb.User{LongName: "Secret", ShortName: "SE", HwModel: pb.HardwareModel_RAK4631})
+	pt, _ := proto.Marshal(&pb.Data{Portnum: pb.PortNum_NODEINFO_APP, Payload: ub, Bitfield: &notOK})
+	ct2, _ := security.EncryptCTR(security.DefaultPSK[:], nodeB, 7004, pt)
+	store("msh/EU_868/2/e/LongFast/"+gw, &pb.MeshPacket{From: nodeB, To: protocol.Broadcast, Id: 7004, Channel: uint32(security.ChannelHash("LongFast", security.DefaultPSK[:], security.ModeCTR)), PayloadVariant: &pb.MeshPacket_Encrypted{Encrypted: ct2}, HopStart: 3, HopLimit: 3}, "LongFast")
+
+	type row struct{ Type, Meta string }
+	read := func() map[int64]row {
+		out := map[int64]row{}
+		rs, err := pool.Query(ctx, `SELECT packet_id, packet_type, decoded_metadata::text FROM packet_log ORDER BY packet_id`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer rs.Close()
+		for rs.Next() {
+			var id int64
+			var r row
+			if err := rs.Scan(&id, &r.Type, &r.Meta); err != nil {
+				t.Fatal(err)
+			}
+			out[id] = r
+		}
+		return out
+	}
+	before := read()
+	want := map[int64]string{7001: "direct_message", 7002: "encrypted", 7003: "invalid", 7004: "nodeinfo"}
+	for id, ty := range want {
+		if before[id].Type != ty {
+			t.Fatalf("packet %d stored as %q, want %q", id, before[id].Type, ty)
+		}
+	}
+	if _, err := pool.Exec(ctx, `UPDATE packet_log SET decode_version = 2`); err != nil {
+		t.Fatal(err)
+	}
+	if n, err := storage.Redecode(ctx, pool, o, quiet); err != nil || n != 0 {
+		t.Fatalf("redecode changed %d stripped rows (%v)", n, err)
+	}
+	after := read()
+	for id := range want {
+		if after[id] != before[id] {
+			t.Fatalf("packet %d changed: %+v -> %+v", id, before[id], after[id])
+		}
+	}
+	if n := count(t, pool, `SELECT count(*) FROM packet_log WHERE decode_version <> $1`, ingest.DecodeVersion); n != 0 {
+		t.Fatalf("%d stripped rows not marked as checked", n)
+	}
+}

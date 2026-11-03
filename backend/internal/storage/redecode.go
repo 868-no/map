@@ -19,7 +19,8 @@ import (
 // broker provenance, and loses its stored client encoding so the backfill
 // rebuilds it. A row the current decoder would reject is left as it is,
 // only marked as checked: nothing stored is ever dropped. Identities are
-// never promoted from old rows. Rows another worker holds (the encoding
+// never promoted from old rows. A row whose envelope was stripped at ingest
+// is only marked: it cannot decode to more than it holds. Rows another worker holds (the encoding
 // backfill locks batches too) are waited for, not skipped: a skipped row would
 // keep its old decoding until the next start. Returns how many rows changed.
 func Redecode(ctx context.Context, pool *pgxpool.Pool, o ingest.Options, log *slog.Logger) (int, error) {
@@ -54,7 +55,9 @@ func redecodeBatch(ctx context.Context, pool *pgxpool.Pool, o ingest.Options, be
 		return 0, 0, err
 	}
 	defer tx.Rollback(context.WithoutCancel(ctx)) //nolint:errcheck
-	rows, err := tx.Query(ctx, `SELECT id, observed_at, broker_id, mqtt_topic, envelope_bytes, decoded_metadata->'also_via'
+	rows, err := tx.Query(ctx, `SELECT id, observed_at, broker_id, mqtt_topic, envelope_bytes, decoded_metadata->'also_via',
+		  packet_type, COALESCE(decoded_metadata->>'crypto', ''), COALESCE(decoded_metadata->>'invalid', ''),
+		  COALESCE((decoded_metadata->>'not_ok_to_mqtt')::boolean, false)
 		FROM packet_log WHERE id < $1 AND decode_version < $2
 		ORDER BY id DESC LIMIT $3 FOR UPDATE`, below, ingest.DecodeVersion, limit)
 	if err != nil {
@@ -62,6 +65,7 @@ func redecodeBatch(ctx context.Context, pool *pgxpool.Pool, o ingest.Options, be
 	}
 	var (
 		ids, kept          []int64
+		ats, keptAts       []time.Time
 		types, sigs, metas []string
 		ports              []int32
 		envs               [][]byte
@@ -75,16 +79,27 @@ func redecodeBatch(ctx context.Context, pool *pgxpool.Pool, o ingest.Options, be
 			topic  string
 			env    []byte
 			also   []byte
+			ty     string
+			crypto string
+			inval  string
+			notOK  bool
 		)
-		if err := rows.Scan(&id, &at, &broker, &topic, &env, &also); err != nil {
+		if err := rows.Scan(&id, &at, &broker, &topic, &env, &also, &ty, &crypto, &inval, &notOK); err != nil {
 			rows.Close()
 			return 0, 0, err
 		}
 		seen++
 		last = id
+		// A stripped envelope (payload zeroed: header-only and invalid rows,
+		// opt-out NodeInfo and status) can never decode to more than the row
+		// already holds; decoding it again would only lose what was kept.
+		if stripped(ty, crypto, inval, notOK) {
+			kept, keptAts = append(kept, id), append(keptAts, at)
+			continue
+		}
 		obs, perr := ingest.Process(ingest.RawMessage{BrokerID: broker, Topic: topic, Payload: env, ObservedAt: at}, o)
 		if perr != nil {
-			kept = append(kept, id)
+			kept, keptAts = append(kept, id), append(keptAts, at)
 			continue
 		}
 		if len(also) > 0 && string(also) != "null" {
@@ -95,7 +110,7 @@ func redecodeBatch(ctx context.Context, pool *pgxpool.Pool, o ingest.Options, be
 			rows.Close()
 			return 0, 0, err
 		}
-		ids, types, ports, sigs = append(ids, id), append(types, obs.PacketType), append(ports, obs.Portnum), append(sigs, string(obs.SignatureStatus))
+		ids, ats, types, ports, sigs = append(ids, id), append(ats, at), append(types, obs.PacketType), append(ports, obs.Portnum), append(sigs, string(obs.SignatureStatus))
 		metas, envs = append(metas, string(meta)), append(envs, obs.EnvelopeBytes)
 	}
 	rows.Close()
@@ -107,16 +122,30 @@ func redecodeBatch(ctx context.Context, pool *pgxpool.Pool, o ingest.Options, be
 	}
 	if len(ids) > 0 {
 		if _, err := tx.Exec(ctx, `UPDATE packet_log p SET packet_type = u.ty, portnum = u.port, signature_status = u.sig,
-			decoded_metadata = u.meta::jsonb, envelope_bytes = u.env, decode_version = $7, obs_row = NULL, obs_row_version = NULL
-			FROM unnest($1::bigint[], $2::text[], $3::int[], $4::text[], $5::text[], $6::bytea[]) AS u(id, ty, port, sig, meta, env)
-			WHERE p.id = u.id`, ids, types, ports, sigs, metas, envs, ingest.DecodeVersion); err != nil {
+			decoded_metadata = u.meta::jsonb, envelope_bytes = u.env, decode_version = $8, obs_row = NULL, obs_row_version = NULL
+			FROM unnest($1::bigint[], $2::timestamptz[], $3::text[], $4::int[], $5::text[], $6::text[], $7::bytea[]) AS u(id, at, ty, port, sig, meta, env)
+			WHERE p.id = u.id AND p.observed_at = u.at`, ids, ats, types, ports, sigs, metas, envs, ingest.DecodeVersion); err != nil {
 			return 0, 0, err
 		}
 	}
 	if len(kept) > 0 {
-		if _, err := tx.Exec(ctx, `UPDATE packet_log SET decode_version = $2 WHERE id = ANY($1)`, kept, ingest.DecodeVersion); err != nil {
+		if _, err := tx.Exec(ctx, `UPDATE packet_log p SET decode_version = $3 FROM unnest($1::bigint[], $2::timestamptz[]) AS u(id, at)
+			WHERE p.id = u.id AND p.observed_at = u.at`, kept, keptAts, ingest.DecodeVersion); err != nil {
 			return 0, 0, err
 		}
 	}
 	return len(ids), last, tx.Commit(ctx)
+}
+
+// stripped reports whether a row's stored envelope had its payload zeroed at
+// ingest (D-091, D-093): header-only rows, rows that failed decoding or
+// verification, and NodeInfo or status from a node that did not allow MQTT.
+func stripped(packetType, crypto, invalid string, notOK bool) bool {
+	switch {
+	case crypto == string(ingest.CryptoPKI), crypto == string(ingest.CryptoUnreadable), invalid != "":
+		return true
+	case notOK && (packetType == "nodeinfo" || packetType == "node_status"):
+		return true
+	}
+	return false
 }

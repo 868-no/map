@@ -17,6 +17,7 @@ func TestObservedAtOnlyViaPredicate(t *testing.T) {
 		"internal/window/window.go":           "defines Predicate",
 		"internal/storage/storage.go":         "ingest dedupe fallback (recent observation lookup)",
 		"internal/maintenance/maintenance.go": "retention delete (observed_at < cutoff)",
+		"internal/storage/redecode.go":        "row identity (id, observed_at) so updates reach one partition, not a window",
 	}
 	cmp := regexp.MustCompile(`observed_at\s*(>=|<=|<|>|=|BETWEEN)`)
 	root := "../.."
