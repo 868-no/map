@@ -106,7 +106,8 @@ button[aria-pressed='true'], button[aria-selected='true'] { background: var(--pr
 .main { position: relative; display: grid; grid-template-columns: 1fr; min-height: 0; }
 /* The tool rail (D-066) and its panel float over the map as islands
    (D-071): rounded cards inset from the edges, the map running beneath.
-   They start below the header, so it keeps its shape whatever is open. */
+   They start below the header, so it keeps its shape whatever is open; the
+   panel stops as far above the bottom edge as it starts below the top. */
 .rail { position: absolute; top: calc(var(--head-h) + 2 * var(--gap)); right: var(--gap); width: var(--rail); box-sizing: border-box; padding: 6px 4px;
   border: 1px solid var(--line); border-radius: var(--island-r); background: var(--overlay-strong); backdrop-filter: blur(8px); box-shadow: var(--elev-island); z-index: 9; }
 .rail-tools { display: flex; flex-direction: column; gap: 2px; }
@@ -118,7 +119,7 @@ button[aria-pressed='true'], button[aria-selected='true'] { background: var(--pr
 .rail-badge { position: absolute; top: 3px; right: 6px; min-width: 15px; height: 15px; padding: 0 4px; border-radius: 8px; background: var(--accent); color: var(--bg); font-size: 10px; font-weight: 700; line-height: 15px; text-align: center; }
 /* The open panel overlays the map beside the rail (no resize). The
    coordinates and credits stay in the bottom-right corner, beneath it if need be (D-082). */
-.dock { position: absolute; top: calc(var(--head-h) + 2 * var(--gap)); right: calc(var(--rail) + 2 * var(--gap)); max-height: calc(100% - var(--head-h) - 3 * var(--gap)); width: var(--dock); z-index: 7; overflow: hidden;
+.dock { position: absolute; top: calc(var(--head-h) + 2 * var(--gap)); right: calc(var(--rail) + 2 * var(--gap)); max-height: calc(100% - 2 * var(--head-h) - 4 * var(--gap)); width: var(--dock); z-index: 7; overflow: hidden;
   border: 1px solid var(--line); border-radius: var(--island-r); background: var(--overlay-strong); backdrop-filter: blur(8px); box-shadow: var(--elev-island); display: flex; flex-direction: column; min-height: 0; }
 .dock[hidden] { display: none; }
 /* Drag handle on the panel's left edge (D-097). */
