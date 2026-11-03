@@ -110,7 +110,9 @@ export const useStore = create<Store>((set) => ({
       windowLimits.defaultH = defaultH
       windowLimits.maxH = maxH
       const w = s.win
-      if (w.live) return { limitsReady: true, win: { ...w, durationH: Math.min(urlDuration ? w.durationH : defaultH, maxH) } }
+      // The default applies once, on the first limits: a later refetch of the
+      // capabilities only clamps, never resets a length the viewer chose.
+      if (w.live) return { limitsReady: true, win: { ...w, durationH: Math.min(urlDuration || s.limitsReady ? w.durationH : defaultH, maxH) } }
       // A fixed window longer than the server serves keeps its end.
       const end = Date.parse(w.end!), start = Math.max(Date.parse(w.start!), end - maxH * 3_600_000)
       return { limitsReady: true, win: { ...w, start: new Date(start).toISOString() } }

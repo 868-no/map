@@ -167,7 +167,9 @@ export default function MapView({ caps, snapshot, onPositions }: Props) {
       mapRef.current?.remove()
       mapRef.current = null
     }
-  }, [caps]) // eslint-disable-line react-hooks/exhaustive-deps
+  // The map is rebuilt only when its style or tiles change, not when an equal
+  // capabilities object arrives again (a refetch after a reconnect).
+  }, [caps.map.style_url, caps.map.style_url_light, caps.map.tile_source]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Theme changes repaint the basemap in place (same layers, other colours).
   useEffect(() => {
