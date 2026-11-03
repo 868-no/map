@@ -113,6 +113,8 @@ const started = (async () => {
   }
   if (persist) {
     for (const chunk of persist.restored.chunks) engine.add_rows(chunk, -Infinity)
+    // The engine holds them now: no copy of the history stays in the worker's heap (§9).
+    persist.restored.chunks = []
     engine.take_dirty() // restored rows are already stored
     persist.attach(source)
     store.load(persist.restored.cov, persist.restored.generation)
@@ -201,6 +203,9 @@ const changed = debounce(
   () => rebuildDelay(liveHours, lastBuildMs).maxMs,
 )
 
+/** Live batches kept before the first load completes (the stream sends about one a second). */
+const MAX_PENDING_LIVE = 600
+
 /** Live rows from the stream: merged, plus ping attribution for those the page wants animated. */
 function liveRows(rows: unknown[], ping: number[]) {
   if (!engine) return
@@ -210,7 +215,9 @@ function liveRows(rows: unknown[], ping: number[]) {
     self.postMessage({ type: 'pings', transmissions: tx.flat() } satisfies Response)
   }
   if (!store.cov) {
+    // Held until the window's first load lands; bounded in case it keeps failing.
     pendingLive.push(text)
+    if (pendingLive.length > MAX_PENDING_LIVE) pendingLive.splice(0, pendingLive.length - MAX_PENDING_LIVE)
     return
   }
   if (store.addLive(text)) changed()
