@@ -204,7 +204,8 @@ pub fn build_node_detail(rows: &[&Row], num: u32, b: &Built, i: &Interner) -> Op
     d.node.first_seen = Some(iso(first));
     d.node.last_seen = Some(iso(last));
 
-    // One sample per logical packet (its first copy), capped in key order like the server.
+    // One sample per logical packet (its first copy), in time order; the
+    // newest MAX_SAMPLES when there are more.
     let per_packet = |keep: &dyn Fn(&Row) -> bool, truncated: &mut bool| -> Vec<&Row> {
         let mut m: FxMap<u64, &Row> = map();
         for &r in &own {
@@ -214,12 +215,11 @@ pub fn build_node_detail(rows: &[&Row], num: u32, b: &Built, i: &Interner) -> Op
             m.entry(r.lp).and_modify(|cur| if r.t < cur.t || (r.t == cur.t && r.id < cur.id) { *cur = r }).or_insert(r);
         }
         let mut list: Vec<&Row> = m.into_values().collect();
-        list.sort_by_key(|r| r.lp); // the same order as the zero-padded hex key
+        list.sort_by_key(|r| (r.t, r.lp));
         if list.len() > MAX_SAMPLES {
-            list.truncate(MAX_SAMPLES);
+            list.drain(..list.len() - MAX_SAMPLES);
             *truncated = true;
         }
-        list.sort_by_key(|r| r.t);
         list
     };
     let mut truncated = false;
@@ -347,6 +347,23 @@ mod tests {
 
     fn build(rows: &[&Row], i: &Interner) -> Built {
         super::super::build_snapshot(rows, i, &Default::default(), Default::default())
+    }
+
+    #[test]
+    fn a_long_series_keeps_its_newest_samples() {
+        let mut i = Interner::default();
+        // Packet keys rise with time, so key order would keep the oldest.
+        let rows: Vec<Row> = (0..MAX_SAMPLES as i64 + 20)
+            .map(|k| {
+                let text = format!(r#"{{"i":{k},"t":{},"b":"x","g":5,"s":5,"y":"position","l":"{:016x}","o":"{k:016x}","sg":"unsigned","po":{{"lat":61.0,"lon":10.0,"precision_bits":32}}}}"#, 1000 * k, 10_000 + k);
+                serde_json::from_str::<JRow>(&text).unwrap().into_row(&mut i)
+            })
+            .collect();
+        let refs: Vec<&Row> = rows.iter().collect();
+        let d = build_node_detail(&refs, 5, &build(&refs, &i), &i).unwrap();
+        assert!(d.truncated);
+        assert_eq!(d.positions.len(), MAX_SAMPLES);
+        assert_eq!((d.positions[0].at.as_str(), d.positions[MAX_SAMPLES - 1].at.as_str()), (iso(20_000).as_str(), iso(1000 * (MAX_SAMPLES as i64 + 19)).as_str()));
     }
 
     #[test]

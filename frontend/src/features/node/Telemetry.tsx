@@ -70,7 +70,7 @@ export function TelemetryTab({ d, snapshot, now }: { d: NodeView; snapshot: Snap
           <TimeChart label="Pressure" unit="hPa" decimals={0} start={winStart} end={winEnd} points={env.map((s) => [Date.parse(s.at), s.pressure ?? null])} />
         </div>
       )}
-      {d.truncated && <p className="muted small">Long series are thinned to their first 500 reports.</p>}
+      {d.truncated && <p className="muted small">Long series show only their latest 500 reports.</p>}
     </>
   )
 }
