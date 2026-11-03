@@ -117,6 +117,7 @@ jobs:
         with:
           name: e2e-results-${{ matrix.shard }}
           path: frontend/e2e/.results
+          include-hidden-files: true # .results is a hidden folder, skipped by default
           retention-days: 7
 
   images:
