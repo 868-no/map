@@ -269,8 +269,13 @@ impl Engine {
                     }
                     None => vec![],
                 };
+                // A traceroute request: its replies record its whole way to the target.
+                let replies: Vec<&row::Row> = match rows.first().filter(|r| r.traceroute().is_some_and(|t| t.valid && !t.is_reply)).and_then(|r| r.pid.map(|p| (r.src, p))) {
+                    Some((src, pid)) => all.iter().copied().filter(|r| r.dst == Some(src) && r.traceroute().is_some_and(|t| t.valid && t.is_reply && t.request == pid)).collect(),
+                    None => vec![],
+                };
                 let b = &self.built.as_ref().unwrap().1;
-                Ok(json(&packets::packet_route(&rows, &b.ctx, &b.roles, &self.i, &acked)))
+                Ok(json(&packets::packet_route(&rows, &b.ctx, &b.roles, &self.i, &acked, &replies)))
             }
             "reach" => {
                 // arg: node id, with "|internet" to follow MQTT links too (D-069).

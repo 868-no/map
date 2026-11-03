@@ -370,7 +370,10 @@ pub struct PacketRoute {
 /// Segments are transmitter -> receiver; dashed where nodes are missing.
 /// `acked`: nodes whose ACK answered it; each gets a "delivered" segment
 /// from the origin (the path is unknown, so dashed) unless one is drawn (D-096).
-pub fn packet_route(rows: &[&Row], ctx: &RelayContext, roles: &FxMap<u32, String>, i: &Interner, acked: &[u32]) -> PacketRoute {
+/// `replies`: for a traceroute request, the replies answering it; each
+/// records the request's whole way to the target, which no gateway's copy
+/// of the request may have seen past where it was uplinked.
+pub fn packet_route(rows: &[&Row], ctx: &RelayContext, roles: &FxMap<u32, String>, i: &Interner, acked: &[u32], replies: &[&Row]) -> PacketRoute {
     let Some(first) = rows.first() else {
         return PacketRoute { origin: String::new(), ty: String::new(), at: String::new(), segments: vec![], receptions: 0, delivered: vec![] };
     };
@@ -434,6 +437,20 @@ pub fn packet_route(rows: &[&Row], ctx: &RelayContext, roles: &FxMap<u32, String
             }
             _ if ctx.downlinked(r) => add(origin, gw, true, "internet"),
             _ => add(origin, gw, true, "unknown_relay"),
+        }
+    }
+    for reply in replies {
+        let Some(chain) = recorded_request(reply, ctx).filter(|(requester, _)| *requester == origin).map(|(_, c)| c) else { continue };
+        let (mut last, mut gap) = (origin, false);
+        for (n, internet) in chain.into_iter().skip(1) {
+            match n {
+                None => gap = true,
+                Some(n) => {
+                    add(last, n, gap, if internet { "internet" } else if gap { "gap" } else { "traceroute" });
+                    last = n;
+                    gap = false;
+                }
+            }
         }
     }
     for &n in acked {
@@ -506,22 +523,34 @@ fn packet_ref(origin: u32, id: u32) -> String {
     format!("{origin:08x}:{id:08x}")
 }
 
+/// The request's whole way as a traceroute reply records it: requester,
+/// route, target (the reply's sender), each node (None where unknown) with
+/// whether the hop into it crossed the internet (exactly 0 dB into a probable
+/// downlinker, D-054). Returns the requester too.
+pub fn recorded_request(r: &Row, ctx: &RelayContext) -> Option<(u32, Vec<(Option<u32>, bool)>)> {
+    let t = r.traceroute().filter(|t| t.valid && t.is_reply && t.request != 0)?;
+    let requester = r.dst.filter(|&d| d != BROADCAST && d != r.src)?;
+    let mut chain = vec![(Some(requester), false)];
+    let hops = t.route.iter().map(|h| (!h.unknown).then_some(h.id)).chain([Some(r.src)]);
+    for (k, n) in hops.enumerate() {
+        let internet = n.is_some_and(|n| ctx.downlinkers.contains(&n)) && t.snr_towards.get(k).copied().flatten() == Some(0.0);
+        chain.push((n, internet));
+    }
+    Some((requester, chain))
+}
+
 /// A traceroute reply records the way its request travelled: requester ->
 /// route -> target, with the SNR at each receiver. Replayed as transmissions
-/// of the request (D-106); hops into a probable downlinker at exactly 0 dB
-/// went over the internet and are not radio.
+/// of the request (D-106); hops over the internet are not radio.
 pub fn forward_route(r: &Row, ctx: &RelayContext) -> Vec<Transmission> {
-    let Some(t) = r.traceroute().filter(|t| t.valid && t.is_reply && t.request != 0) else { return vec![] };
-    let Some(requester) = r.dst.filter(|&d| d != BROADCAST && d != r.src) else { return vec![] };
+    let Some((requester, chain)) = recorded_request(r, ctx) else { return vec![] };
+    let Some(t) = r.traceroute() else { return vec![] };
     let packet = packet_ref(requester, t.request);
-    let mut chain: Vec<Option<u32>> = vec![Some(requester)];
-    chain.extend(t.route.iter().map(|h| (!h.unknown).then_some(h.id)));
-    chain.push(Some(r.src));
     let mut out = vec![];
     for k in 0..chain.len() - 1 {
-        let (Some(tx), rx) = (chain[k], chain[k + 1]) else { continue };
+        let ((Some(tx), _), (rx, internet)) = (chain[k], chain[k + 1]) else { continue };
         let snr = t.snr_towards.get(k).copied().flatten();
-        if rx.is_some_and(|n| ctx.downlinkers.contains(&n)) && snr == Some(0.0) {
+        if internet {
             continue; // over the internet
         }
         out.push(Transmission {
@@ -790,9 +819,31 @@ mod tests {
         assert_eq!(delivery_ping(&row(A, GW), Some(ack)), None, "not a routing packet");
         // The route of the answered packet gains a dashed "delivered" segment to the acker.
         let msg = Row { pid: Some(77), dst: Some(C), dr: true, ..row(A, GW) };
-        let route = packet_route(&[&msg], &ctx(&[A, C, GW], &[]), &map(), &it, &[C]);
+        let route = packet_route(&[&msg], &ctx(&[A, C, GW], &[]), &map(), &it, &[C], &[]);
         assert_eq!(route.delivered, vec![id(C)]);
         assert!(route.segments.iter().any(|s| s.a == id(A) && s.b == id(C) && s.why == "delivered" && s.dashed));
+    }
+
+    #[test]
+    fn a_traceroute_requests_route_runs_to_the_target_as_its_reply_recorded() {
+        use crate::row::Interner;
+        let it = Interner::default();
+        // C asks A (request 77). The only gateway copy, at GW, saw it go C -> GW;
+        // A's reply records the whole way: C -> GW -> C2 -> A.
+        let request = Row { dst: Some(A), pid: Some(77), ..traceroute(row(C, GW), &[]) };
+        let reply = Row {
+            dst: Some(C),
+            pid: Some(500),
+            lp: 0xdef,
+            detail: Some(Box::new(Detail::Traceroute(Traceroute { valid: true, is_reply: true, route: vec![Hop { id: GW, unknown: false }, Hop { id: C2, unknown: false }], snr_towards: vec![Some(4.0), Some(2.0), Some(-6.0)], route_back: vec![], snr_back: vec![], request: 77 }))),
+            ..row(A, GW)
+        };
+        let segs = |replies: &[&Row]| packet_route(&[&request], &ctx(&[A, C, C2, GW], &[]), &map(), &it, &[], replies).segments.iter().map(|s| (s.a.clone(), s.b.clone(), s.dashed)).collect::<Vec<_>>();
+        assert_eq!(segs(&[]), vec![(id(C), id(GW), false)]);
+        assert_eq!(segs(&[&reply]), vec![(id(C), id(GW), false), (id(GW), id(C2), false), (id(C2), id(A), false)]);
+        // A reply to someone else's request with the same id adds nothing.
+        let other = Row { dst: Some(GW), ..reply.clone() };
+        assert_eq!(segs(&[&other]), vec![(id(C), id(GW), false)]);
     }
 
     #[test]
