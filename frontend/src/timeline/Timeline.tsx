@@ -165,7 +165,7 @@ export function PeriodPanel({ caps, retention, snapshot }: { caps: Capabilities;
       <p className="muted small strip-key">
         <span className="key packets" /> unique packets · <span className="key receptions" /> gateway receptions, per {traffic?.bucket ? goDurationLabel(traffic.bucket) : 'bucket'} · tallest bar {maxRx} receptions
       </p>
-      <div className="readout" aria-live="polite">
+      <div className="readout">
         {formatLocal(new Date(startMs))} → {formatLocal(new Date(endMs))}
         <br />
         <small>Times are when this service received each observation (not RF transmission time).</small>

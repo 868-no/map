@@ -79,7 +79,7 @@ export function TimeChart({ label, unit, points, series, start, end, decimals = 
     <figure className="tchart">
       <figcaption>
         <span className="tchart-label">{label}</span>
-        <span className="tchart-read" aria-live="polite">
+        <span className="tchart-read">
           {shownX.l && <small className="muted">{shownX.l} </small>}{fmt(shown[1])} <small className="muted">{hover ? formatLocal(new Date(shown[0]).toISOString()) : 'latest'}</small>
         </span>
       </figcaption>

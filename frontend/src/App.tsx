@@ -101,7 +101,9 @@ export default function App() {
     if (!panel) return
     const esc = (e: KeyboardEvent) => {
       const t = e.target as HTMLElement
-      if (e.key === 'Escape' && !(t instanceof HTMLInputElement && t.type === 'text') && !(t instanceof HTMLTextAreaElement)) closePanel()
+      // Escape in a text field (search, dates) is the field's own: it clears or leaves it, not the panel.
+      const typing = t instanceof HTMLTextAreaElement || (t instanceof HTMLInputElement && ['text', 'search', 'datetime-local', 'date', 'time', 'number'].includes(t.type))
+      if (e.key === 'Escape' && !typing) closePanel()
     }
     document.addEventListener('keydown', esc)
     return () => document.removeEventListener('keydown', esc)
@@ -191,7 +193,7 @@ const COUNTERS: ['packets' | 'receptions' | 'nodes' | 'referenced' | 'positioned
 ]
 function Counters({ counts }: { counts?: Counts }) {
   return (
-    <span className="counters" aria-live="polite" aria-busy={!counts}>
+    <span className="counters" aria-busy={!counts}>
       {COUNTERS.map(([k, label, digits, title]) => (
         <span key={k} title={title}>
           {counts ? counts[k] : <span className="counter-ph" style={{ width: `${digits}ch` }} aria-hidden />}

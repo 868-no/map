@@ -615,7 +615,8 @@ function PacketLogs({ id, names, positioned, moved }: { id: string; names: Map<s
         <thead><tr><th>Time</th><th>From</th><th>Type</th><th>To</th><th title="Own packets: the fewest hops another gateway's copy shows (hop start minus hop limit; relays over 0-cost links spend none, so it can be fewer than the relays). 'self': only it uplinked it. 'MQTT': a copy came through an MQTT downlink. Relayed: how we know this node passed it on">Hops</th><th title="Other gateways that uplinked it (relayed: that heard this node's rebroadcast)">GWs</th><th title="Delivery reports: ✓ an ACK or ✗ an error answered this packet. Only reports that reached a gateway are known, so a blank never means it was lost. For a routing packet, ↩ selects the packet it answers">Re</th></tr></thead>
         <tbody>
           {entries.slice(0, shown.own).map((p) => (
-            <tr key={p.kind + p.lp} data-kind={p.kind} className={route === p.lp ? 'active' : undefined} onClick={() => showRoute(route === p.lp ? null : p.lp)} aria-selected={route === p.lp}>
+            <tr key={p.kind + p.lp} data-kind={p.kind} className={route === p.lp ? 'active' : undefined} onClick={() => showRoute(route === p.lp ? null : p.lp)} aria-selected={route === p.lp}
+              tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); showRoute(route === p.lp ? null : p.lp) } }} title="Select (click, Enter or Space) to draw this packet's route on the map">
               <td title={formatLocal(p.at)}>{formatLogTime(p.at)}</td>
               <td className="wrap" title={p.kind === 'relayed' ? nm(p.origin) : undefined}>
                 {p.kind === 'own' ? <span className="ev-tag own">own</span> : (
