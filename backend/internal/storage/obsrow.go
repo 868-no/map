@@ -106,7 +106,7 @@ func backfillBatch(ctx context.Context, pool *pgxpool.Pool, below int64, limit i
 	}
 	defer tx.Rollback(context.WithoutCancel(ctx)) //nolint:errcheck
 	rows, err := tx.Query(ctx, `SELECT `+ObsColumns("$1")+` FROM packet_log
-		WHERE id < $2 AND obs_row_version IS DISTINCT FROM $1
+		WHERE id < $2 AND `+staleObsRowPred+` -- served by the partial index
 		ORDER BY id DESC LIMIT $3 FOR UPDATE SKIP LOCKED`, int16(obsrow.Version), below, limit)
 	if err != nil {
 		return 0, 0, err

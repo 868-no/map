@@ -58,8 +58,8 @@ func redecodeBatch(ctx context.Context, pool *pgxpool.Pool, o ingest.Options, be
 	rows, err := tx.Query(ctx, `SELECT id, observed_at, broker_id, mqtt_topic, envelope_bytes, decoded_metadata->'also_via',
 		  packet_type, COALESCE(decoded_metadata->>'crypto', ''), COALESCE(decoded_metadata->>'invalid', ''),
 		  COALESCE((decoded_metadata->>'not_ok_to_mqtt')::boolean, false)
-		FROM packet_log WHERE id < $1 AND decode_version < $2
-		ORDER BY id DESC LIMIT $3 FOR UPDATE`, below, ingest.DecodeVersion, limit)
+		FROM packet_log WHERE id < $1 AND `+staleDecodePred+` -- served by the partial index
+		ORDER BY id DESC LIMIT $2 FOR UPDATE`, below, limit)
 	if err != nil {
 		return 0, 0, err
 	}

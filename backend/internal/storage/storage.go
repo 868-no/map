@@ -65,6 +65,9 @@ func InitSchema(ctx context.Context, pool *pgxpool.Pool) error {
 	if _, err := conn.Exec(ctx, schemaSQL); err != nil {
 		return fmt.Errorf("apply schema: %w", err)
 	}
+	if err := ensureStaleIndexes(ctx, conn); err != nil {
+		return fmt.Errorf("stale-row indexes: %w", err)
+	}
 	now := time.Now()
 	return EnsurePartitions(ctx, conn, now.AddDate(0, -1, 0), now.AddDate(0, 2, 0))
 }

@@ -68,5 +68,7 @@ DROP INDEX IF EXISTS packet_log_type_time_idx;
 -- One row per reception (D-056): a batch retried after a commit whose
 -- outcome was lost inserts nothing twice. Also the ingest dedupe lookup.
 CREATE UNIQUE INDEX IF NOT EXISTS packet_log_observation_key ON packet_log (observation_key, observed_at);
+-- The partial indexes on stale rows carry version numbers in their predicate
+-- and name, so they are created from Go (stale.go, D-116).
 
 COMMENT ON TABLE packet_log IS 'meshmap-schema:2';
