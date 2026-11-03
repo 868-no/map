@@ -6,7 +6,10 @@ import { useQueryClient } from '@tanstack/react-query'
 import { subscribeLive } from '../api/client'
 import type { ObsRow } from '../api/types'
 import { onTransmissions, sendLiveRows } from '../derive/client'
-import { addTransmission, clearPings, painting, PING_MAX_AGE_MS, pingWanted } from '../map/pings'
+import { addTransmission, clearPings, painting, PING_MAX_AGE_MS, pingWanted, type Transmission } from '../map/pings'
+
+/** Transmission batches kept for the next frame while the page is not painted. */
+const MAX_DEFERRED = 50
 import { useLiveEpoch } from './data'
 import { apiParams, defaultFilters, useStore, type Filters } from './store'
 
@@ -42,18 +45,27 @@ export function useLiveStream(positions: RefObject<Map<string, [number, number]>
   // frame, if that comes while the rows are still recent. A slow frame (a busy
   // machine) then delays a ping instead of losing it, and a frozen window,
   // which gets no frame, piles nothing up (D-113).
-  useEffect(
-    () =>
-      onTransmissions((ts) => {
-        const add = () => ts.forEach((t) => addTransmission(t, positions.current))
-        if (painting()) return add()
-        const received = Date.now()
-        requestAnimationFrame(() => {
-          if (Date.now() - received < PING_MAX_AGE_MS) add()
-        })
-      }),
-    [positions],
-  )
+  useEffect(() => {
+    // One pending frame and a bounded buffer: a covered window that gets no
+    // frames holds at most the last MAX_DEFERRED batches, none older than
+    // PING_MAX_AGE_MS when they finally play.
+    const deferred: { at: number; ts: Transmission[] }[] = []
+    let pending = false
+    const flush = () => {
+      pending = false
+      const now = Date.now()
+      for (const d of deferred.splice(0)) if (now - d.at < PING_MAX_AGE_MS) d.ts.forEach((t) => addTransmission(t, positions.current))
+    }
+    onTransmissions((ts) => {
+      if (painting()) return ts.forEach((t) => addTransmission(t, positions.current))
+      deferred.push({ at: Date.now(), ts })
+      if (deferred.length > MAX_DEFERRED) deferred.shift()
+      if (!pending) {
+        pending = true
+        requestAnimationFrame(flush)
+      }
+    })
+  }, [positions])
 
   // Live updates for the rolling window only. The stream carries every new
   // row (unfiltered: the browser's copy needs them all); filters apply here.
