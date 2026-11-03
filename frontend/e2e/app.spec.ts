@@ -705,10 +705,15 @@ test('selecting a node on the map with the panel closed centres it beside the pa
     const best = nodes.reduce((a, b) => (gap(b) > gap(a) ? b : a))
     return { lon: best.lon, lat: best.lat }
   })
-  await page.evaluate(([lon, lat]) => (window as unknown as { __meshmap: M }).__meshmap.map.jumpTo({ center: [lon, lat], zoom: 10 }), [hit.lon, hit.lat])
-  await page.waitForTimeout(500)
+  await page.evaluate(([lon, lat]) => (window as unknown as { __meshmap: M }).__meshmap.map.jumpTo({ center: [lon, lat], zoom: 11 }), [hit.lon, hit.lat])
+  await page.waitForTimeout(800)
   const box = (await page.locator('.map').boundingBox())!
   const pt = await page.evaluate(([lon, lat]) => (window as unknown as { __meshmap: M }).__meshmap.map.project([lon, lat]), [hit.lon, hit.lat])
+  // As a user would: hover first (a tooltip, or its name cluster fanning out), then click,
+  // again if the headless renderer took the click for a long press.
+  await page.mouse.move(box.x + pt.x, box.y + pt.y)
+  await expect.poll(async () => (await page.locator('.tooltip').isVisible()) || (await page.evaluate(() =>
+    (window as unknown as { __meshmap: Hook }).__meshmap.layers().some((l) => l.id === 'label-leaders')))).toBe(true)
   await expect(async () => {
     await page.mouse.click(box.x + pt.x, box.y + pt.y)
     await expect(page.locator('#dock')).toBeVisible({ timeout: 2000 })
