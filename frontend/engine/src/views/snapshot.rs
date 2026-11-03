@@ -118,7 +118,15 @@ pub fn build_snapshot(rows: &[&Row], i: &Interner, g: &GeoOptions, rules: Rules)
     }
     let hops = traceroute_hops(rows);
     for (n, d) in downlinks(&hops) {
-        nodes.entry(n).or_insert_with(|| Node::new(n)).mqtt_downlink = Some(d);
+        // A node known only from others' traceroutes is named, not heard.
+        nodes
+            .entry(n)
+            .or_insert_with(|| {
+                let mut x = Node::new(n);
+                x.status = "referenced";
+                x
+            })
+            .mqtt_downlink = Some(d);
     }
     for (n, r) in latest_by(rows, is_identity, |r| r.src) {
         nodes.entry(n).or_insert_with(|| Node::new(n)).identity = Some(identity_of(r, i));
@@ -171,7 +179,6 @@ pub fn build_snapshot(rows: &[&Row], i: &Interner, g: &GeoOptions, rules: Rules)
 
     let mut counts = window_counts(rows, i);
     let known: Vec<u32> = nodes.keys().copied().collect();
-    let pos: FxMap<u32, LatLon> = nodes.iter().filter_map(|(&n, x)| x.pos.map(|p| (n, LatLon { lat: p.lat, lon: p.lon }))).collect();
     let roles: FxMap<u32, String> = nodes.iter().filter_map(|(&n, x)| x.identity.as_ref().filter(|id| !id.role.is_empty()).map(|id| (n, id.role.clone()))).collect();
     let silent: FxSet<u32> = if rules.silent { roles.iter().filter(|(_, r)| is_silent_role(r)).map(|(&n, _)| n).collect() } else { set() };
     let downlinkers: FxSet<u32> = nodes.iter().filter(|(_, x)| x.mqtt_downlink.is_some()).map(|(&n, _)| n).collect();
@@ -185,6 +192,9 @@ pub fn build_snapshot(rows: &[&Row], i: &Interner, g: &GeoOptions, rules: Rules)
             x.set_anchor(a);
         }
     }
+    // Relay range checks use the narrowed positions (§6.10): a single GPS
+    // spike as the latest report must not widen the range for the window.
+    let pos: FxMap<u32, LatLon> = nodes.iter().filter_map(|(&n, x)| x.pos.map(|p| (n, LatLon { lat: p.lat, lon: p.lon }))).collect();
     let moves = crate::movement::movements_of(&tracks, &anchored);
     for (n, m) in &moves {
         if let Some(x) = nodes.get_mut(n) {
@@ -267,5 +277,31 @@ fn window_counts(rows: &[&Row], i: &Interner) -> Counts {
         first_event: (!rows.is_empty()).then(|| iso(first)),
         last_event: (!rows.is_empty()).then(|| iso(last)),
         ..Default::default()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::row::JRow;
+
+    #[test]
+    fn a_node_known_only_as_a_downlinker_is_named_not_heard() {
+        // Traceroutes from three nodes (uplinked by gateway 7) reach node 9 at
+        // exactly 0 dB; 9 itself never sends or uplinks anything.
+        let mut i = Interner::default();
+        let text: Vec<String> = (1..=3)
+            .map(|k| (k, 10 + k))
+            .map(|(k, s)| format!(r#"{{"i":{k},"t":{k},"b":"x","g":7,"s":{s},"d":4,"p":{k},"y":"traceroute","l":"{k:016x}","o":"{k:016x}","sg":"not-applicable","tr":{{"valid":true,"is_reply":false,"route":[{{"id":9}}],"snr_towards":[0.0,{k}.5]}}}}"#))
+            .collect();
+        let rows: Vec<Row> = text.iter().map(|t| serde_json::from_str::<JRow>(t).unwrap().into_row(&mut i)).collect();
+        let refs: Vec<&Row> = rows.iter().collect();
+        let g = GeoOptions { enabled: false, min_precision_bits: 15, exclude: set(), params: Default::default() };
+        let b = build_snapshot(&refs, &i, &g, Rules::default());
+        let n = b.snapshot.nodes.iter().find(|n| n.num == 9).expect("node 9 is listed");
+        assert!(n.mqtt_downlink.is_some(), "it downlinks");
+        assert_eq!(n.status, "referenced");
+        assert!(n.last_referenced.is_some());
+        assert_eq!(b.snapshot.counts.nodes, 4, "only the three senders and gateway 7 were heard");
     }
 }
