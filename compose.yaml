@@ -86,6 +86,8 @@ services:
         E2E_HOOKS: ${E2E_HOOKS:-false}
         # Where the map links for its source (GPL-3.0); set it for a modified version.
         SOURCE_URL: ${SOURCE_URL:-https://github.com/868-no/map}
+        # The commit shown as the version in Settings, e.g. SOURCE_REVISION=$(git rev-parse HEAD).
+        SOURCE_REVISION: ${SOURCE_REVISION:-}
     image: ${WEB_IMAGE:-meshmap-web:local}
     restart: unless-stopped
     ports:

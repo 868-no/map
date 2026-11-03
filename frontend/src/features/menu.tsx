@@ -2,7 +2,7 @@
 // app, and what the site is: source code, license and privacy policy.
 import { useStore } from '../state/store'
 import type { ThemeChoice } from '../theme'
-import { LICENSE_HREF, PRIVACY_URL, SOURCE_HREF, SOURCE_REVISION } from '../links'
+import { LICENSE_HREF, PRIVACY_URL, REVISION_HREF, SOURCE_HREF, SOURCE_REVISION } from '../links'
 import { resetEverything } from '../reset'
 
 const THEMES: [ThemeChoice, string][] = [['system', 'Auto'], ['light', 'Light'], ['dark', 'Dark']]
@@ -34,12 +34,19 @@ export function SettingsPanel({ canInstall, install }: { canInstall: boolean; in
         <a className="menu-item" href={LICENSE_HREF} target="_blank" rel="noreferrer">License: GNU GPL v3 ↗</a>
         <a className="menu-item" href={PRIVACY_URL} target="_blank" rel="noreferrer">Privacy policy ↗</a>
       </nav>
+      <p className="muted small version">
+        Version{' '}
+        {SOURCE_REVISION ? (
+          <a href={REVISION_HREF} target="_blank" rel="noreferrer" title={`Built from commit ${SOURCE_REVISION}`}><code>{SOURCE_REVISION.slice(0, 7)}</code></a>
+        ) : (
+          <span title="Built without a source revision (set SOURCE_REVISION when building the web image)">development build</span>
+        )}
+      </p>
       <h3>Reset</h3>
       <p className="muted">Forget everything this site stored in your browser: layer choices, theme, the saved copy of the mesh data and the offline cache. The page then reloads and fetches the data again.</p>
       <button className="danger" onClick={() => window.confirm('Clear all stored data and settings, and reload?') && void resetEverything()}>
         Reset and reload
       </button>
-      {SOURCE_REVISION && <p className="muted menu-foot">Version {SOURCE_REVISION.slice(0, 7)}</p>}
     </div>
   )
 }

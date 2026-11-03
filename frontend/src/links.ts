@@ -6,6 +6,8 @@
 export const REPO_URL = import.meta.env.VITE_SOURCE_URL || 'https://github.com/868-no/map'
 export const SOURCE_REVISION = import.meta.env.VITE_SOURCE_REVISION || ''
 export const SOURCE_HREF = SOURCE_REVISION ? `${REPO_URL}/tree/${SOURCE_REVISION}` : REPO_URL
+/** The commit itself, for the version line in Settings. */
+export const REVISION_HREF = SOURCE_REVISION ? `${REPO_URL}/commit/${SOURCE_REVISION}` : ''
 export const LICENSE_HREF = `${REPO_URL}/blob/${SOURCE_REVISION || 'main'}/LICENSE`
 /** The privacy policy: a static page next to the app (public/privacy.html). */
 export const PRIVACY_URL = '/privacy.html'

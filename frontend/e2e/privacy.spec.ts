@@ -10,6 +10,8 @@ test('settings hold the theme, source code, license and privacy policy', async (
   await expect(menu.getByRole('link', { name: /Source code on GitHub/ })).toHaveAttribute('href', /^https:\/\/github\.com\/868-no\/map/)
   await expect(menu.getByRole('link', { name: /License/ })).toHaveAttribute('href', /\/LICENSE$/)
   await expect(menu.getByRole('link', { name: /Privacy policy/ })).toHaveAttribute('href', '/privacy.html')
+  // The version: the commit the image was built from, or a development build.
+  await expect(menu.locator('.version')).toHaveText(/^Version ([0-9a-f]{7}|development build)$/)
   // One panel at a time; Escape closes it.
   await page.getByRole('button', { name: 'Layers', exact: true }).click()
   await expect(menu).toHaveCount(0)
