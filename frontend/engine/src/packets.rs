@@ -350,6 +350,10 @@ pub struct RouteSegment {
     pub b: String,
     pub dashed: bool,
     pub why: &'static str,
+    /// A traceroute's way there ("forward": the request, requester to
+    /// target) or back ("back": the reply, target to requester).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub leg: Option<&'static str>,
 }
 
 #[derive(Serialize)]
@@ -370,54 +374,65 @@ pub struct PacketRoute {
 /// Segments are transmitter -> receiver; dashed where nodes are missing.
 /// `acked`: nodes whose ACK answered it; each gets a "delivered" segment
 /// from the origin (the path is unknown, so dashed) unless one is drawn (D-096).
-/// `replies`: for a traceroute request, the replies answering it; each
-/// records the request's whole way to the target, which no gateway's copy
-/// of the request may have seen past where it was uplinked.
+/// `replies`: for a traceroute request, the replies answering it. A
+/// traceroute is drawn both ways, each hop tagged with its leg: the way there
+/// (each reply records the request's whole way to the target, which no
+/// gateway's copy of the request may have seen past where it was uplinked)
+/// and the way back (the replies' own copies).
 pub fn packet_route(rows: &[&Row], ctx: &RelayContext, roles: &FxMap<u32, String>, i: &Interner, acked: &[u32], replies: &[&Row]) -> PacketRoute {
     let Some(first) = rows.first() else {
         return PacketRoute { origin: String::new(), ty: String::new(), at: String::new(), segments: vec![], receptions: 0, delivered: vec![] };
     };
     let origin = first.src;
-    let mut order: Vec<(u32, u32)> = Vec::new();
-    let mut segs: FxMap<(u32, u32), (bool, &'static str)> = map();
-    let mut add = |a: u32, b: u32, dashed: bool, why: &'static str| {
+    type Key = (u32, u32, Option<&'static str>);
+    let mut order: Vec<Key> = Vec::new();
+    let mut segs: FxMap<Key, (bool, &'static str)> = map();
+    let mut add = |a: u32, b: u32, dashed: bool, why: &'static str, leg: Option<&'static str>| {
         if a == b {
             return;
         }
-        match segs.get_mut(&(a, b)) {
+        match segs.get_mut(&(a, b, leg)) {
             Some(cur) => {
                 if cur.0 && !dashed {
                     *cur = (false, why)
                 }
             }
             None => {
-                segs.insert((a, b), (dashed, why));
-                order.push((a, b));
+                segs.insert((a, b, leg), (dashed, why));
+                order.push((a, b, leg));
             }
         }
     };
+    // A traceroute's recorded chain of nodes, None where one is unknown.
+    let mut add_chain = |chain: Vec<(Option<u32>, bool)>, leg: &'static str| {
+        let mut it = chain.into_iter();
+        let Some((Some(mut last), _)) = it.next() else { return };
+        let mut gap = false;
+        for (n, internet) in it {
+            match n {
+                None => gap = true,
+                Some(n) => {
+                    add(last, n, gap, if internet { "internet" } else if gap { "gap" } else { "traceroute" }, Some(leg));
+                    last = n;
+                    gap = false;
+                }
+            }
+        }
+    };
+    let leg = |t: &crate::row::Traceroute| if t.is_reply { "back" } else { "forward" };
     use crate::row::ty;
+    let mut add_seg: Vec<(u32, u32, bool, &'static str)> = vec![];
     for r in rows {
         let Some(gw) = r.gw.filter(|&g| g != origin) else { continue };
         let over_radio = r.rr != ty::VIA_MQTT && r.rr != ty::NON_RF;
         if let Some(t) = r.traceroute().filter(|t| t.valid) {
-            let (mut last, mut gap) = (origin, false);
-            for (n, internet) in traceroute_chain(r, t, gw, over_radio, ctx).into_iter().skip(1) {
-                match n {
-                    None => gap = true,
-                    Some(n) => {
-                        add(last, n, gap, if internet { "internet" } else if gap { "gap" } else { "traceroute" });
-                        last = n;
-                        gap = false;
-                    }
-                }
-            }
+            add_chain(traceroute_chain(r, t, gw, over_radio, ctx), leg(t));
             continue;
         }
         let byte = match r.heard_from() {
             HeardFrom::NotRadio => continue, // not heard over radio
             HeardFrom::Direct => {
-                add(origin, gw, false, "direct");
+                add_seg.push((origin, gw, false, "direct"));
                 continue;
             }
             HeardFrom::Relayed(b) | HeardFrom::Downlinked(b) => b,
@@ -426,43 +441,47 @@ pub fn packet_route(rows: &[&Row], ctx: &RelayContext, roles: &FxMap<u32, String
         match byte.and_then(|b| ctx.resolve(b, origin, gw)) {
             Some(Ok(relay)) if ctx.downlinked(r) => {
                 // Taken from MQTT and transmitted with no hops left (D-087).
-                add(relay, gw, false, "relay");
-                add(origin, relay, true, "internet");
+                add_seg.push((relay, gw, false, "relay"));
+                add_seg.push((origin, relay, true, "internet"));
             }
             Some(Ok(relay)) => {
-                add(relay, gw, false, "relay");
+                add_seg.push((relay, gw, false, "relay"));
                 // One hop spent, by a relay that cannot receive at zero cost: it heard the sender itself.
                 let direct = r.hops() == Some(1) && roles.get(&relay).is_some_and(|ro| !ro.is_empty() && !zero_cost_role(ro));
-                add(origin, relay, !direct, if direct { "relay" } else { "gap" });
+                add_seg.push((origin, relay, !direct, if direct { "relay" } else { "gap" }));
             }
-            _ if ctx.downlinked(r) => add(origin, gw, true, "internet"),
-            _ => add(origin, gw, true, "unknown_relay"),
+            _ if ctx.downlinked(r) => add_seg.push((origin, gw, true, "internet")),
+            _ => add_seg.push((origin, gw, true, "unknown_relay")),
         }
     }
+    // A reply: the way there, as it recorded its request's.
+    if let Some((_, chain)) = recorded_request(first, ctx) {
+        add_chain(chain, "forward");
+    }
+    // A request: the way there as its replies recorded it, and the way back
+    // as their copies show it.
     for reply in replies {
         let Some(chain) = recorded_request(reply, ctx).filter(|(requester, _)| *requester == origin).map(|(_, c)| c) else { continue };
-        let (mut last, mut gap) = (origin, false);
-        for (n, internet) in chain.into_iter().skip(1) {
-            match n {
-                None => gap = true,
-                Some(n) => {
-                    add(last, n, gap, if internet { "internet" } else if gap { "gap" } else { "traceroute" });
-                    last = n;
-                    gap = false;
-                }
-            }
+        add_chain(chain, "forward");
+        if let (Some(gw), Some(t)) = (reply.gw.filter(|&g| g != reply.src), reply.traceroute().filter(|t| t.valid)) {
+            let over_radio = reply.rr != ty::VIA_MQTT && reply.rr != ty::NON_RF;
+            add_chain(traceroute_chain(reply, t, gw, over_radio, ctx), "back");
         }
     }
+    drop(add_chain);
+    for (a, b, dashed, why) in add_seg {
+        add(a, b, dashed, why, None);
+    }
     for &n in acked {
-        add(origin, n, true, "delivered");
+        add(origin, n, true, "delivered", None);
     }
     PacketRoute {
         origin: node_id(origin),
         ty: i.s(first.ty).to_string(),
         at: iso(rows.iter().map(|r| r.t).min().unwrap_or(first.t)),
-        segments: order.into_iter().map(|(a, b)| {
-            let (dashed, why) = segs[&(a, b)];
-            RouteSegment { a: node_id(a), b: node_id(b), dashed, why }
+        segments: order.into_iter().map(|(a, b, leg)| {
+            let (dashed, why) = segs[&(a, b, leg)];
+            RouteSegment { a: node_id(a), b: node_id(b), dashed, why, leg }
         }).collect(),
         receptions: rows.iter().map(|r| r.ok).collect::<FxSet<u64>>().len(),
         delivered: acked.iter().map(|&n| node_id(n)).collect(),
@@ -838,12 +857,22 @@ mod tests {
             detail: Some(Box::new(Detail::Traceroute(Traceroute { valid: true, is_reply: true, route: vec![Hop { id: GW, unknown: false }, Hop { id: C2, unknown: false }], snr_towards: vec![Some(4.0), Some(2.0), Some(-6.0)], route_back: vec![], snr_back: vec![], request: 77 }))),
             ..row(A, GW)
         };
-        let segs = |replies: &[&Row]| packet_route(&[&request], &ctx(&[A, C, C2, GW], &[]), &map(), &it, &[], replies).segments.iter().map(|s| (s.a.clone(), s.b.clone(), s.dashed)).collect::<Vec<_>>();
-        assert_eq!(segs(&[]), vec![(id(C), id(GW), false)]);
-        assert_eq!(segs(&[&reply]), vec![(id(C), id(GW), false), (id(GW), id(C2), false), (id(C2), id(A), false)]);
+        let segs = |rows: &[&Row], replies: &[&Row]| packet_route(rows, &ctx(&[A, C, C2, GW], &[]), &map(), &it, &[], replies).segments.iter().map(|s| (s.a.clone(), s.b.clone(), s.dashed, s.leg)).collect::<Vec<_>>();
+        let f = Some("forward");
+        assert_eq!(segs(&[&request], &[]), vec![(id(C), id(GW), false, f)]);
+        // The way there as the reply recorded it, and the way back as its copy shows: A -> GW.
+        let both = vec![(id(C), id(GW), false, f), (id(GW), id(C2), false, f), (id(C2), id(A), false, f), (id(A), id(GW), false, Some("back"))];
+        assert_eq!(segs(&[&request], &[&reply]), both);
+        // The reply's own route shows both legs as well, the way back first.
+        let mut from_reply = segs(&[&reply], &[]);
+        from_reply.sort();
+        let mut want = both[1..].to_vec();
+        want.push((id(C), id(GW), false, f));
+        want.sort();
+        assert_eq!(from_reply, want);
         // A reply to someone else's request with the same id adds nothing.
         let other = Row { dst: Some(GW), ..reply.clone() };
-        assert_eq!(segs(&[&other]), vec![(id(C), id(GW), false)]);
+        assert_eq!(segs(&[&request], &[&other]), vec![(id(C), id(GW), false, f)]);
     }
 
     #[test]

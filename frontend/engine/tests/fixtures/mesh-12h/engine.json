@@ -15858,30 +15858,35 @@
           "a": "!6e9f1e6c",
           "b": "!f6a6fd67",
           "dashed": false,
+          "leg": "forward",
           "why": "traceroute"
         },
         {
           "a": "!6e9f1e6c",
           "b": "!672f1873",
           "dashed": false,
+          "leg": "forward",
           "why": "traceroute"
         },
         {
           "a": "!672f1873",
           "b": "!b1610d41",
           "dashed": false,
+          "leg": "forward",
           "why": "traceroute"
         },
         {
           "a": "!672f1873",
           "b": "!9b0f4bd5",
           "dashed": false,
+          "leg": "forward",
           "why": "traceroute"
         },
         {
           "a": "!b1610d41",
           "b": "!3afab911",
           "dashed": false,
+          "leg": "forward",
           "why": "traceroute"
         }
       ],
@@ -15958,36 +15963,42 @@
           "a": "!84965cf6",
           "b": "!94ed7591",
           "dashed": false,
+          "leg": "forward",
           "why": "traceroute"
         },
         {
           "a": "!94ed7591",
           "b": "!997b0449",
           "dashed": false,
+          "leg": "forward",
           "why": "traceroute"
         },
         {
           "a": "!997b0449",
           "b": "!b1610d41",
           "dashed": false,
+          "leg": "forward",
           "why": "traceroute"
         },
         {
           "a": "!997b0449",
           "b": "!f6a6fd67",
           "dashed": false,
+          "leg": "forward",
           "why": "traceroute"
         },
         {
           "a": "!b1610d41",
           "b": "!3afab911",
           "dashed": false,
+          "leg": "forward",
           "why": "traceroute"
         },
         {
           "a": "!b1610d41",
           "b": "!9b0f4bd5",
           "dashed": false,
+          "leg": "forward",
           "why": "traceroute"
         }
       ],
