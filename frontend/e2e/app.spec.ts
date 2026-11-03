@@ -670,6 +670,13 @@ test('the Telemetry tab charts every metric over the whole selected period, with
   await page.mouse.move(box.x + box.width * 0.9, box.y + box.height / 2)
   await expect(chart.locator('.tchart-cursor')).toHaveCount(1)
   await expect(chart.locator('.tchart-read small')).not.toHaveText('latest')
+  // Every chart of the tab inspects the same moment, each with its own reading near it.
+  const charts = page.locator('.node-panel .tchart')
+  await expect(page.locator('.node-panel .tchart-cursor')).toHaveCount(await charts.count())
+  await expect(page.locator('.node-panel .tchart-read', { hasText: 'latest' })).toHaveCount(0)
+  // Leaving the chart lets them all go back to the latest reading.
+  await page.mouse.move(box.x - 40, box.y + box.height / 2)
+  await expect(page.locator('.node-panel .tchart-cursor')).toHaveCount(0)
 })
 
 test('only online nodes: offline ones leave the map, and Details says which a node is', async ({ page }) => {

@@ -1,7 +1,8 @@
 // A telemetry time series over the selected period (D-100): the x axis is the
 // whole window, so charts of one node line up and gaps show when it was
-// silent. Hovering (or touching) reads off the nearest report.
-import { useRef, useState, type PointerEvent } from 'react'
+// silent. Hovering (or touching) reads off the nearest report; charts in one
+// ChartGroup all read off the same moment.
+import { createContext, useContext, useRef, useState, type PointerEvent, type ReactNode } from 'react'
 import { formatLocal } from '../lib/time'
 
 const W = 300, H = 80 // viewBox units; the plot stretches to the panel width
@@ -48,6 +49,15 @@ export interface TimeChartProps {
   nights?: [number, number][]
 }
 
+/** The moment (ms) being inspected in a group of charts, shared by all of them. */
+const Sync = createContext<{ t: number | null; set: (t: number | null) => void } | null>(null)
+
+/** Charts that inspect one moment together: hovering one shows the same time in all. */
+export function ChartGroup({ children }: { children: ReactNode }) {
+  const [t, set] = useState<number | null>(null)
+  return <Sync.Provider value={{ t, set }}><div className="tcharts">{children}</div></Sync.Provider>
+}
+
 const short = new Intl.DateTimeFormat(undefined, { weekday: 'short', hour: '2-digit', minute: '2-digit' })
 
 /** Breaks the line where reports stop for much longer than usual. */
@@ -75,7 +85,11 @@ export function TimeChart({ label, unit, points, series, start, end, decimals = 
   const all = lines0.flatMap((l) => l.pts.map((p) => ({ p, l })))
   const pts = all.map((x) => x.p).sort((a, b) => a[0] - b[0])
   const box = useRef<HTMLDivElement>(null)
-  const [hover, setHover] = useState<{ p: [number, number]; l: string } | null>(null)
+  // The moment inspected: the group's, or this chart's own outside a group.
+  const sync = useContext(Sync)
+  const [ownT, setOwnT] = useState<number | null>(null)
+  const t = sync ? sync.t : ownT
+  const setT = sync ? sync.set : setOwnT
   const bands = (bands0 ?? []).filter((b): b is Band => !!b)
     .map((b) => ({ ...b, pts: clean(b.points).filter((p) => p[0] > start - HOUR && p[0] <= end + HOUR) }))
     .filter((b) => b.pts.length > 0)
@@ -121,11 +135,14 @@ export function TimeChart({ label, unit, points, series, start, end, decimals = 
   const last = read.reduce((a, b) => (b.p[0] > a.p[0] ? b : a))
   const onMove = (e: PointerEvent<HTMLDivElement>) => {
     const r = box.current!.getBoundingClientRect()
-    const t = start + ((e.clientX - r.left) / r.width) * span
-    let best = read[0]
-    for (const x of read) if (Math.abs(x.p[0] - t) < Math.abs(best.p[0] - t)) best = x
-    setHover({ p: best.p, l: best.l.label })
+    setT(start + (Math.min(Math.max(e.clientX - r.left, 0), r.width) / r.width) * span)
   }
+  // The reading nearest the inspected moment; none when this chart has no
+  // report near it (another chart of the group is being read where this one was silent).
+  const near = Math.max(HOUR, span / 50)
+  let hit: (typeof read)[number] | undefined
+  if (t !== null) for (const x of read) if (Math.abs(x.p[0] - t) <= near && (!hit || Math.abs(x.p[0] - t) < Math.abs(hit.p[0] - t))) hit = x
+  const hover = t === null ? null : hit ? { p: hit.p, l: hit.l.label } : { p: [t, NaN] as [number, number], l: '' }
   const shownX = hover ?? { p: last.p, l: last.l.label }
   const shown = shownX.p
   const bandPath = (b: B) => {
@@ -143,7 +160,7 @@ export function TimeChart({ label, unit, points, series, start, end, decimals = 
       <figcaption>
         <span className="tchart-label">{label}</span>
         <span className="tchart-read">
-          {shownX.l && <small className="muted">{shownX.l} </small>}{fmt(shown[1])}
+          {shownX.l && <small className="muted">{shownX.l} </small>}{Number.isNaN(shown[1]) ? <small className="muted">no reading</small> : fmt(shown[1])}
           {bands.filter((b) => b !== main).map((b) => {
             const v = bandAt(b, shown[0])
             return v && <small key={b.label} className="muted"> · {b.label} {fmtB(b, v[1])}</small>
@@ -151,7 +168,7 @@ export function TimeChart({ label, unit, points, series, start, end, decimals = 
           <small className="muted">{hover ? formatLocal(new Date(shown[0]).toISOString()) : 'latest'}</small>
         </span>
       </figcaption>
-      <div className="tchart-plot" ref={box} onPointerMove={onMove} onPointerDown={onMove} onPointerLeave={() => setHover(null)}>
+      <div className="tchart-plot" ref={box} onPointerMove={onMove} onPointerDown={onMove} onPointerLeave={() => setT(null)}>
         <span className="tchart-y top">{fmt(y1)}</span>
         <span className="tchart-y bottom">{fmt(y0)}</span>
         {offAxis.map((b, i) => <span key={b.label} className="tchart-y top band" style={{ color: b.color, top: 2 + 12 * i }}>{fmtB(b, scale(b)[1])}</span>)}

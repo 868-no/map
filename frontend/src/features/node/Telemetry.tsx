@@ -1,6 +1,6 @@
 import type { NodeView, SnapshotView } from '../../derive/views'
 import { formatLocal } from '../../lib/time'
-import { TimeChart, type Band, type Series } from '../../components/TimeChart'
+import { ChartGroup, TimeChart, type Band, type Series } from '../../components/TimeChart'
 import { useWeather, weatherPoints, weatherSite } from '../../state/weather'
 import { nights as nightsAt } from '../../lib/sun'
 import { NR, fmt } from './shared'
@@ -91,16 +91,16 @@ export function TelemetryTab({ d, snapshot, now }: { d: NodeView; snapshot: Snap
           <p className="muted">No telemetry from this node in the selected period.</p>
           {weatherLoading}
           {hasWeather && (
-            <div className="tcharts">
+            <ChartGroup>
               <TimeChart label="Voltage" unit="V" decimals={2} start={winStart} end={winEnd} bands={[cloudBand, sunBand]} nights={nights} />
               <TimeChart label="Temperature" unit="°C" start={winStart} end={winEnd} bands={[tempBand]} />
               <TimeChart label="Humidity" unit="%" decimals={0} domain={[0, 100]} start={winStart} end={winEnd} bands={[humidityBand]} />
               {windChart}
-            </div>
+            </ChartGroup>
           )}
         </>
       ) : (
-        <div className="tcharts">
+        <ChartGroup>
           <TimeChart label="Battery" unit="%" decimals={0} domain={[0, 100]} start={winStart} end={winEnd}
             points={dev.map((s) => [Date.parse(s.at), s.battery != null && s.battery <= 100 ? s.battery : null])}
             empty={dev.some((s) => s.battery != null && s.battery > 100) ? 'on external power' : undefined} />
@@ -112,7 +112,7 @@ export function TelemetryTab({ d, snapshot, now }: { d: NodeView; snapshot: Snap
           <TimeChart label="Humidity" unit="%" decimals={0} domain={[0, 100]} start={winStart} end={winEnd} points={env.map((s) => [Date.parse(s.at), s.humidity ?? null])} bands={[humidityBand]} />
           <TimeChart label="Pressure" unit="hPa" decimals={0} start={winStart} end={winEnd} points={env.map((s) => [Date.parse(s.at), s.pressure ?? null])} />
           {windChart}
-        </div>
+        </ChartGroup>
       )}
       {telemetryCount > 0 && weatherLoading}
       {d.truncated && <p className="muted small">Long series show only their latest 500 reports.</p>}

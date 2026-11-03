@@ -2,7 +2,7 @@ import type { Edge, SnapshotView } from '../derive/views'
 import { useLinkHistory } from '../state/data'
 import { useStore } from '../state/store'
 import { formatLocal } from '../lib/time'
-import { TimeChart, type Band } from '../components/TimeChart'
+import { ChartGroup, TimeChart, type Band } from '../components/TimeChart'
 import { meanPoints, useWeather, weatherPoints, weatherSite } from '../state/weather'
 import { nodeName } from '../map/model'
 
@@ -106,10 +106,10 @@ function LinkHistoryCharts({ a, b, name, snapshot, start, end }: { a: string; b:
       <h3 title="Every measured reading of this link in the selected period, each RF event once">Signal over time</h3>
       {rainLoading && <p className="muted small">Loading precipitation from MET Norway…</p>}
       <p className="muted small">Each reading as the receiving node measured it ({kinds.join(', ')}). A falling line across days can mean a degrading antenna, cable or site; short dips are often weather or traffic.</p>
-      <div className="tcharts">
+      <ChartGroup>
         <TimeChart label="SNR" unit="dB" start={start} end={end} series={series('snr')} bands={[rain]} />
         <TimeChart label="RSSI" unit="dBm" decimals={0} start={start} end={end} series={series('rssi')} empty="only measured by gateway receptions" />
-      </div>
+      </ChartGroup>
     </section>
   )
 }
