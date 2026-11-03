@@ -42,9 +42,10 @@ export function useLiveStream(positions: RefObject<Map<string, [number, number]>
 
   // The worker attributes live rows to transmissions; the animation places them.
   // Animated at once while the page is being painted; otherwise on the next
-  // frame, if that comes while the rows are still recent. A slow frame (a busy
-  // machine) then delays a ping instead of losing it, and a frozen window,
-  // which gets no frame, piles nothing up (D-113).
+  // frame, if that comes while the rows are still recent, each on its own
+  // timeline: started when it arrived, so after a covered or frozen window
+  // gets frames again its last seconds of traffic play out staggered as they
+  // happened, mostly already fading, rather than all bursting at once (D-113).
   useEffect(() => {
     // One pending frame and a bounded buffer: a covered window that gets no
     // frames holds at most the last MAX_DEFERRED batches, none older than
@@ -53,8 +54,8 @@ export function useLiveStream(positions: RefObject<Map<string, [number, number]>
     let pending = false
     const flush = () => {
       pending = false
-      const now = Date.now()
-      for (const d of deferred.splice(0)) if (now - d.at < PING_MAX_AGE_MS) d.ts.forEach((t) => addTransmission(t, positions.current))
+      const now = Date.now(), perf = performance.now()
+      for (const d of deferred.splice(0)) if (now - d.at < PING_MAX_AGE_MS) d.ts.forEach((t) => addTransmission(t, positions.current, perf - (now - d.at)))
     }
     onTransmissions((ts) => {
       if (painting()) return ts.forEach((t) => addTransmission(t, positions.current))

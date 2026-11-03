@@ -217,6 +217,19 @@ describe('rebroadcast ordering', () => {
     while (!ring(t, [10.2, 63]) && t < PING_GROW * 2) t += 20
     expect(ring(t, [10.0, 63])!.radiusPx * MPP).toBeGreaterThanOrEqual(distanceM([10, 63], [10.2, 63]) * 0.98)
   })
+  it('a transmission handed over late starts where it would be by now, not from the beginning', () => {
+    // Arrived 8 s ago in a window without frames: ringed and fading, not just starting.
+    addTransmission({ key: `p|${A}`, tx: A, rx: C, rebroadcast: false }, pos, 1000 - 8000)
+    addTransmission({ key: `q|${A}`, tx: A, rx: C, rebroadcast: false }, pos, 1000)
+    const rings = rawPings(1000 + 16, Z).rings
+    expect(rings).toHaveLength(2)
+    const [late, fresh] = rings
+    expect(late.radiusPx).toBeGreaterThan(fresh.radiusPx)
+    expect(late.alpha).toBeLessThan(255)
+    // And one handed over after its whole life has passed never shows.
+    addTransmission({ key: `r|${A}`, tx: A, rx: C, rebroadcast: false }, pos, 1000 - PING_COLLECT - 1000)
+    expect(rawPings(1000 + 32, Z).rings).toHaveLength(2)
+  })
   it('after a pause without frames, waiting relays do not all start at once', () => {
     addTransmission({ key: `p|${A}`, tx: A, rx: C, rebroadcast: false }, pos, 0)
     addTransmission({ key: `p|${C}`, tx: C, rx: GW, rebroadcast: true }, pos, 0)
