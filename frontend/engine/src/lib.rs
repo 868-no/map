@@ -83,11 +83,16 @@ pub struct Engine {
     /// The filtered window's rows as indices into the store, shared by the
     /// views of one rebuild (snapshot, traffic, node, packet log, route).
     rows: Option<(Key, Vec<u32>)>,
+    /// Interned strings at which to drop those no row holds any more (compact).
+    compact_at: usize,
 }
+
+/// Interned strings below which the interner is never compacted.
+const COMPACT_MIN: usize = 4096;
 
 impl Default for Engine {
     fn default() -> Self {
-        Engine { i: Interner::default(), store: Store::default(), geo: GeoOptions::default(), rules: Rules::default(), built: None, rows: None }
+        Engine { i: Interner::default(), store: Store::default(), geo: GeoOptions::default(), rules: Rules::default(), built: None, rows: None, compact_at: COMPACT_MIN }
     }
 }
 
@@ -112,6 +117,23 @@ impl Engine {
             self.rows = Some((Key { start, end, filters: filters.to_string(), version }, idx));
         }
         Ok(())
+    }
+
+    /// Drops interned strings that no row holds any more, once the interner
+    /// has doubled since it last was: names, status texts and ping rows'
+    /// strings would otherwise pile up over a long session as rows leave.
+    /// Called after rows are dropped; amortised, since a compaction that
+    /// frees little doubles the threshold.
+    fn compact(&mut self) {
+        if self.i.len() < self.compact_at {
+            return;
+        }
+        let mut keep = vec![false; self.i.len()];
+        self.store.for_each_id(|x| keep[*x as usize] = true);
+        let new = self.i.retain(&keep);
+        self.store.for_each_id(|x| *x = new[*x as usize]);
+        self.store.version += 1; // memos hold ids: rebuild them
+        self.compact_at = (2 * self.i.len()).max(COMPACT_MIN);
     }
 
     /// The rows selected by the last Engine::filter.
@@ -170,13 +192,16 @@ impl Engine {
         self.store.add_json(rows, lo as i64, &mut self.i).map(|n| n as u32).map_err(err)
     }
     pub fn reset(&mut self) {
-        self.store.reset()
+        self.store.reset();
+        self.compact();
     }
     pub fn trim_before(&mut self, t: f64) {
-        self.store.trim_before(t as i64)
+        self.store.trim_before(t as i64);
+        self.compact();
     }
     pub fn keep_only(&mut self, lo: f64, hi: f64) {
-        self.store.keep_only(lo as i64, hi as i64)
+        self.store.keep_only(lo as i64, hi as i64);
+        self.compact();
     }
     pub fn newest_t(&self) -> f64 {
         self.store.newest_t() as f64
@@ -309,5 +334,40 @@ impl Engine {
             })
             .collect();
         Ok(json(&out))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn strings_only_dropped_rows_held_are_compacted_away() {
+        let mut e = Engine::new();
+        // 5000 status texts, one per second, then one row of every kind with strings of its own.
+        let mut rows: Vec<String> = (0..5000)
+            .map(|k| format!(r#"{{"i":{k},"t":{},"b":"x","g":7,"s":5,"y":"node_status","l":"{k:016x}","o":"{k:016x}","sg":"unsigned","ns":{{"status":"text {k}"}}}}"#, k * 1000))
+            .collect();
+        let t = 5_000_000;
+        let base = |k: i64, ty: &str| format!(r#""i":{k},"t":{},"b":"b{k}","g":7,"s":5,"c":"c{k}","y":"{ty}","l":"{k:016x}","o":"{k:016x}","sg":"s{k}","rr":"r{k}","cr":"cr{k}","tp":"tp{k}""#, t + k);
+        rows.push(format!(r#"{{{},"mr":{{"region":"rg","modem_preset":"mp","long_name":"ln1","short_name":"sn1","hw_model":"hw1","role":"ro1"}}}}"#, base(9001, "mapreport")));
+        rows.push(format!(r#"{{{},"ni":{{"long_name":"ln2","short_name":"sn2","hw_model":"hw2","role":"ro2"}}}}"#, base(9002, "nodeinfo")));
+        rows.push(format!(r#"{{{},"te":{{"kind":"tk","battery":50}}}}"#, base(9003, "telemetry")));
+        rows.push(format!(r#"{{{},"rt":{{"kind":"rk","error":"re","request_id":3}}}}"#, base(9004, "routing")));
+        rows.push(format!(r#"{{{},"sf":{{"kind":"sk"}}}}"#, base(9005, "store_forward")));
+        rows.push(format!(r#"{{{},"iv":"why"}}"#, base(9006, "invalid")));
+        e.add_rows(&format!("[{}]", rows.join(",")), f64::NEG_INFINITY).unwrap();
+        let kept = e.export(t as f64, f64::MAX);
+        let before = e.i.len();
+        e.trim_before(t as f64);
+        assert!(e.i.len() < before - 4900, "{} strings left of {before}", e.i.len());
+        assert_eq!(e.export(t as f64, f64::MAX), kept, "kept rows read the same");
+        // Kept in place, rows and their strings unchanged.
+        e.keep_only((t + 9002) as f64, (t + 9005) as f64);
+        assert_eq!(e.count(), 3);
+        assert_eq!(e.take_dirty(), vec![(t / 3_600_000 * 3_600_000) as f64]);
+        let v: Vec<serde_json::Value> = serde_json::from_str(&e.export(0.0, f64::MAX)).unwrap();
+        assert_eq!(v.iter().map(|r| r["y"].as_str().unwrap()).collect::<Vec<_>>(), vec!["nodeinfo", "telemetry", "routing"]);
+        assert_eq!(v[2]["rt"]["error"], "re");
     }
 }

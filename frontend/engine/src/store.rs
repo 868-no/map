@@ -154,11 +154,26 @@ impl Store {
         self.version += 1;
     }
 
-    /// Keeps only [lo, hi) (the row cap).
+    /// Keeps only [lo, hi) (the row cap), in place: no copy of the kept
+    /// rows, so memory does not peak at twice the cap. The kept hours count
+    /// as changed, as after starting over with them.
     pub fn keep_only(&mut self, lo: i64, hi: i64) {
-        let keep: Vec<Row> = self.slice(lo, hi).to_vec();
-        self.reset();
-        self.merge(keep);
+        let (a, b) = self.range(lo, hi);
+        self.rows.truncate(b);
+        self.rows.drain(..a);
+        self.ids.clear();
+        self.ids.extend(self.rows.iter().map(|r| r.id));
+        self.dirty.clear();
+        self.dirty.extend(self.rows.iter().map(|r| r.t.div_euclid(HOUR_MS) * HOUR_MS));
+        self.max_id = self.rows.iter().map(|r| r.id).max();
+        self.version += 1;
+    }
+
+    /// Calls `f` on every interned id held, committed or staged (Interner::retain).
+    pub fn for_each_id(&mut self, mut f: impl FnMut(&mut u32)) {
+        for r in self.rows.iter_mut().chain(self.staged.values_mut().flatten()) {
+            r.for_each_id(&mut f);
+        }
     }
 
     pub fn newest_t(&self) -> i64 {

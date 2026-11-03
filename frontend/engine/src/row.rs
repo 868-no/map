@@ -53,10 +53,13 @@ pub mod ty {
     pub const DEVICE: u32 = 11; // telemetry kind
 }
 
+/// The well-known strings, in `ty` order.
+const WELL_KNOWN: [&str; 12] = ["", "position", "mapreport", "nodeinfo", "telemetry", "neighborinfo", "traceroute", "relayed", "via_mqtt", "non_rf_transport", "no_rx_metrics", "device"];
+
 impl Default for Interner {
     fn default() -> Self {
         let mut i = Interner { strs: Vec::new(), ids: map(), facts: Vec::new() };
-        for s in ["", "position", "mapreport", "nodeinfo", "telemetry", "neighborinfo", "traceroute", "relayed", "via_mqtt", "non_rf_transport", "no_rx_metrics", "device"] {
+        for s in WELL_KNOWN {
             i.id(s);
         }
         i
@@ -76,6 +79,31 @@ impl Interner {
     }
     pub fn get(&self, s: &str) -> Option<u32> {
         self.ids.get(s).copied()
+    }
+    pub fn len(&self) -> usize {
+        self.strs.len()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.strs.is_empty()
+    }
+    /// Keeps only the strings marked in `keep` (by id), and the well-known
+    /// ones with their fixed ids, renumbered in order. Returns each old id's
+    /// new one (u32::MAX for a dropped string), for the caller to remap
+    /// every id it holds.
+    pub fn retain(&mut self, keep: &[bool]) -> Vec<u32> {
+        let strs = std::mem::take(&mut self.strs);
+        let facts = std::mem::take(&mut self.facts);
+        self.ids = map();
+        let mut new = vec![u32::MAX; strs.len()];
+        for (k, (s, f)) in strs.into_iter().zip(facts).enumerate() {
+            if k < WELL_KNOWN.len() || keep.get(k).copied().unwrap_or(false) {
+                new[k] = self.strs.len() as u32;
+                self.ids.insert(s.clone(), new[k]);
+                self.strs.push(s);
+                self.facts.push(f);
+            }
+        }
+        new
     }
     pub fn s(&self, i: u32) -> &str {
         &self.strs[i as usize]
@@ -246,6 +274,33 @@ impl Row {
     pub fn hops(&self) -> Option<i16> {
         Some(self.hs? - self.hl?)
     }
+    /// Calls `f` on every interned id the row holds (Interner::retain).
+    pub fn for_each_id(&mut self, f: &mut impl FnMut(&mut u32)) {
+        for x in [&mut self.broker, &mut self.channel, &mut self.ty, &mut self.sig, &mut self.rr, &mut self.crypto, &mut self.topic] {
+            f(x);
+        }
+        match self.detail.as_deref_mut() {
+            Some(Detail::Routing(r)) => {
+                f(&mut r.kind);
+                f(&mut r.error);
+            }
+            Some(Detail::NodeStatus(v)) | Some(Detail::Invalid(v)) => f(v),
+            Some(Detail::StoreForward(s)) => f(&mut s.kind),
+            Some(Detail::MapReport(m)) => {
+                for x in [&mut m.region, &mut m.preset, &mut m.long_name, &mut m.short_name, &mut m.hw_model, &mut m.role] {
+                    f(x);
+                }
+            }
+            Some(Detail::NodeInfo(n)) => {
+                for x in [&mut n.long_name, &mut n.short_name, &mut n.hw_model, &mut n.role] {
+                    f(x);
+                }
+            }
+            Some(Detail::Telemetry(t)) => f(&mut t.kind),
+            Some(Detail::Neighbors(_)) | Some(Detail::Traceroute(_)) | None => {}
+        }
+    }
+
     /// Whom its gateway heard it from (HeardFrom). The ingest's reception
     /// reason decides; rows without one fall back on the hop fields.
     pub fn heard_from(&self) -> HeardFrom {

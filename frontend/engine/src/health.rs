@@ -73,6 +73,8 @@ pub struct Issue {
 #[derive(Serialize, Debug, Clone, PartialEq)]
 pub struct NodeAirtime {
     pub node: String,
+    #[serde(skip)]
+    pub num: u32,
     /// Its packets, including every rebroadcast of them seen (the airtime it causes).
     pub caused: f64,
     /// What it transmitted itself: its own packets and others' it relayed.
@@ -88,6 +90,8 @@ pub struct NodeAirtime {
 #[derive(Serialize, Debug, Clone, PartialEq)]
 pub struct StoreForwardNode {
     pub node: String,
+    #[serde(skip)]
+    pub num: u32,
     pub packets: usize,
     /// Share of the window's estimated airtime (its packets with rebroadcasts).
     pub share: f64,
@@ -116,7 +120,8 @@ pub struct Airtime {
     pub store_forward: StoreForwardStats,
     /// Share of the window's estimated airtime by packet type, largest first.
     pub by_type: Vec<(String, f64)>,
-    /// Every node that caused or transmitted any, by caused share.
+    /// Every node that caused or transmitted any, by caused share: the
+    /// node panel shows any node's, so the list is never cut.
     pub nodes: Vec<NodeAirtime>,
 }
 
@@ -243,7 +248,7 @@ pub fn airtime(copies: &Copies, rows: &[&Row], i: &Interner, hours: f64) -> Airt
     };
     let mut nodes: Vec<NodeAirtime> = acc
         .into_iter()
-        .map(|(n, a)| NodeAirtime { node: node_id(n), caused: a.caused / total, transmitted: a.transmitted / total, packets: a.packets, transmissions: a.transmissions, by_type: if a.caused > 0.0 { shares(a.types, a.caused) } else { vec![] } })
+        .map(|(n, a)| NodeAirtime { node: node_id(n), num: n, caused: a.caused / total, transmitted: a.transmitted / total, packets: a.packets, transmissions: a.transmissions, by_type: if a.caused > 0.0 { shares(a.types, a.caused) } else { vec![] } })
         .collect();
     nodes.sort_by(|a, b| b.caused.total_cmp(&a.caused).then(b.transmitted.total_cmp(&a.transmitted)).then(a.node.cmp(&b.node)));
     let hours = hours.max(1.0);
@@ -252,7 +257,7 @@ pub fn airtime(copies: &Copies, rows: &[&Row], i: &Interner, hours: f64) -> Airt
         .map(|(n, e)| {
             let mut by_kind: Vec<(String, usize)> = e.kinds.into_iter().map(|(k, c)| (i.s(k).to_string(), c)).collect();
             by_kind.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
-            StoreForwardNode { node: node_id(n), packets: e.packets, share: e.air / total, by_kind, heartbeats_per_hour: e.heartbeats as f64 / hours, replays: e.replays, replay_bytes: e.replay_bytes }
+            StoreForwardNode { node: node_id(n), num: n, packets: e.packets, share: e.air / total, by_kind, heartbeats_per_hour: e.heartbeats as f64 / hours, replays: e.replays, replay_bytes: e.replay_bytes }
         })
         .collect();
     sf_nodes.sort_by(|a, b| b.share.total_cmp(&a.share).then(a.node.cmp(&b.node)));
@@ -508,14 +513,12 @@ pub fn health(rows: &[&Row], invalid: &[&Row], nodes: &[Node], copies: &Copies, 
     let air = airtime(copies, rows, i, hours);
     for a in air.nodes.iter().filter(|a| a.caused >= AIRTIME_WARN_SHARE) {
         let top: Vec<String> = a.by_type.iter().take(2).map(|(t, s)| format!("{t} {}", pct(*s))).collect();
-        let n = u32::from_str_radix(&a.node[1..], 16).unwrap_or(0);
-        add(n, "airtime", "warning", format!("Causes {} of the airtime", pct(a.caused)), format!("Its {} packets and their {} transmissions seen make up about {} of the window's estimated airtime ({}).", a.packets, a.transmissions, pct(a.caused), top.join(", ")));
+        add(a.num, "airtime", "warning", format!("Causes {} of the airtime", pct(a.caused)), format!("Its {} packets and their {} transmissions seen make up about {} of the window's estimated airtime ({}).", a.packets, a.transmissions, pct(a.caused), top.join(", ")));
     }
 
     for f in air.store_forward.nodes.iter().filter(|f| f.share >= STORE_FORWARD_SHARE) {
-        let n = u32::from_str_radix(&f.node[1..], 16).unwrap_or(0);
         let kinds: Vec<String> = f.by_kind.iter().take(3).map(|(k, c)| format!("{c} {}", k.replace('_', " "))).collect();
-        add(n, "store_forward", "notice", format!("Store-and-forward takes {} of the airtime", pct(f.share)), format!("{} store-and-forward packets ({}), {:.1} heartbeats per hour, {} history replays. Each heartbeat and replay is flooded like any packet; a longer heartbeat interval or a smaller history window would free airtime.", f.packets, kinds.join(", "), f.heartbeats_per_hour, f.replays));
+        add(f.num, "store_forward", "notice", format!("Store-and-forward takes {} of the airtime", pct(f.share)), format!("{} store-and-forward packets ({}), {:.1} heartbeats per hour, {} history replays. Each heartbeat and replay is flooded like any packet; a longer heartbeat interval or a smaller history window would free airtime.", f.packets, kinds.join(", "), f.heartbeats_per_hour, f.replays));
     }
     out.sort_by(|a, b| rank(a.severity).cmp(&rank(b.severity)).then(a.kind.cmp(b.kind)).then(a.node.cmp(&b.node)));
     Health { issues: out, airtime: air }
