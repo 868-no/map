@@ -86,9 +86,8 @@ button[aria-pressed='true'], button[aria-selected='true'] { background: var(--pr
      lying on the map (scale, coordinates, credits) stay flat. */
   --elev-island: 0 8px 24px var(--shadow); --elev-float: 0 2px 8px var(--shadow); }
 .topbar { position: absolute; top: var(--gap); left: var(--gap); z-index: 10; display: flex; flex-direction: column; gap: 2px; padding: 7px 12px;
-  max-width: calc(100% - var(--rail) - 4 * var(--gap)); box-sizing: border-box;
+  max-width: calc(100% - 2 * var(--gap)); box-sizing: border-box;
   border: 1px solid var(--line); border-radius: var(--island-r); background: var(--overlay-strong); backdrop-filter: blur(8px); box-shadow: var(--elev-island); }
-.main:not(.panel-closed) .topbar { max-width: calc(100% - var(--rail) - var(--dock) - 5 * var(--gap)); }
 .topbar-row { display: flex; align-items: center; gap: 12px; }
 .topbar h1 { font-size: 16px; margin: 0; letter-spacing: 0.02em; white-space: nowrap; }
 /* Wordmark: the band (868 MHz) in the accent colour, the domain muted. */
@@ -106,8 +105,9 @@ button[aria-pressed='true'], button[aria-selected='true'] { background: var(--pr
 
 .main { position: relative; display: grid; grid-template-columns: 1fr; min-height: 0; }
 /* The tool rail (D-066) and its panel float over the map as islands
-   (D-071): rounded cards inset from the edges, the map running beneath. */
-.rail { position: absolute; top: var(--gap); right: var(--gap); width: var(--rail); box-sizing: border-box; padding: 6px 4px;
+   (D-071): rounded cards inset from the edges, the map running beneath.
+   They start below the header, so it keeps its shape whatever is open. */
+.rail { position: absolute; top: calc(var(--head-h) + 2 * var(--gap)); right: var(--gap); width: var(--rail); box-sizing: border-box; padding: 6px 4px;
   border: 1px solid var(--line); border-radius: var(--island-r); background: var(--overlay-strong); backdrop-filter: blur(8px); box-shadow: var(--elev-island); z-index: 9; }
 .rail-tools { display: flex; flex-direction: column; gap: 2px; }
 .rail-more { display: none; }
@@ -118,7 +118,7 @@ button[aria-pressed='true'], button[aria-selected='true'] { background: var(--pr
 .rail-badge { position: absolute; top: 3px; right: 6px; min-width: 15px; height: 15px; padding: 0 4px; border-radius: 8px; background: var(--accent); color: var(--bg); font-size: 10px; font-weight: 700; line-height: 15px; text-align: center; }
 /* The open panel overlays the map beside the rail (no resize). The
    coordinates and credits stay in the bottom-right corner, beneath it if need be (D-082). */
-.dock { position: absolute; top: var(--gap); right: calc(var(--rail) + 2 * var(--gap)); max-height: calc(100% - 2 * var(--gap)); width: var(--dock); z-index: 7; overflow: hidden;
+.dock { position: absolute; top: calc(var(--head-h) + 2 * var(--gap)); right: calc(var(--rail) + 2 * var(--gap)); max-height: calc(100% - var(--head-h) - 3 * var(--gap)); width: var(--dock); z-index: 7; overflow: hidden;
   border: 1px solid var(--line); border-radius: var(--island-r); background: var(--overlay-strong); backdrop-filter: blur(8px); box-shadow: var(--elev-island); display: flex; flex-direction: column; min-height: 0; }
 .dock[hidden] { display: none; }
 /* Drag handle on the panel's left edge (D-097). */
@@ -396,7 +396,6 @@ table.hear th:not(:first-child), table.hear td:not(:first-child) { white-space: 
   .dock { top: auto; bottom: calc(var(--rail-h) + 2 * var(--gap)); left: var(--gap); right: var(--gap); width: auto; max-height: calc(100% - var(--head-h) - var(--rail-h) - 4 * var(--gap)); z-index: 12; }
   .dock-resize { display: none; } /* spans the width: nothing to resize */
   /* Nothing beside the header now: it may take the full width. */
-  .topbar, .main:not(.panel-closed) .topbar { max-width: calc(100% - 2 * var(--gap)); }
   .topbar-row { white-space: nowrap; }
   .banners, .main:not(.panel-closed) .banners { right: 10px; left: 10px; }
   .counters { display: none; }
