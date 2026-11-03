@@ -20,6 +20,11 @@ export interface PlacedNode {
  */
 export const AGE_TAU_MS = 10 * 60_000
 
+/** A node's display name: long name, else short name, else its id. */
+export function nodeName(n: Pick<MeshNode, 'identity'> | undefined, id: string): string {
+  return n?.identity?.long_name || n?.identity?.short_name || id
+}
+
 /** A node heard within this long before the window's end is online (D-101). */
 export const ONLINE_MS = 3 * 3_600_000
 

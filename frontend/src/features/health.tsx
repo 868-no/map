@@ -6,6 +6,7 @@ import type { HealthView, Issue, NodeAirtime, SnapshotView } from '../derive/vie
 import { useHealth } from '../state/data'
 import { useStore } from '../state/store'
 import { TYPE_LABEL } from './controls'
+import { nodeName } from '../map/model'
 
 const SEVERITY: Record<Issue['severity'], { label: string; plural: string; icon: string }> = {
   problem: { label: 'problem', plural: 'problems', icon: '⛔' },
@@ -42,7 +43,7 @@ const typeName = (t: string) => TYPE_LABEL[t] ?? t
 
 function nameMap(snapshot: SnapshotView | undefined): Map<string, string> {
   const m = new Map<string, string>()
-  for (const n of snapshot?.nodes ?? []) m.set(n.id, n.identity?.long_name || n.id)
+  for (const n of snapshot?.nodes ?? []) m.set(n.id, nodeName(n, n.id)) // the same names as Details and the node list
   return m
 }
 

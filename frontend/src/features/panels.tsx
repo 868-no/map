@@ -2,20 +2,16 @@ import { Fragment, useEffect, useMemo, useState } from 'react'
 import { ApiError, getJSON } from '../api/client'
 import { NodeAirtimeRow, NodeHealth } from './health'
 import type { NodeKey } from '../api/types'
-import type { Answer, Edge, Hearing, MeshNode, Radio, Reply, SnapshotView } from '../derive/views'
+import { ViewError, type Answer, type Edge, type Hearing, type MeshNode, type Radio, type Reply, type SnapshotView } from '../derive/views'
 import { useLinkHistory, useNodeDetail, usePacketLog, usePacketRoute, useReach } from '../state/data'
 import { nodeLink, useStore, type DetailTab } from '../state/store'
 import { formatLocal, formatLogTime, relativeAge } from '../lib/time'
 import { TimeChart } from '../components/TimeChart'
-import { ageColor, isOnline, lastHeardAge, precisionErrorM } from '../map/model'
+import { ageColor, isOnline, lastHeardAge, nodeName, precisionErrorM } from '../map/model'
 import { PALETTES } from '../map/palette'
 import { useTheme } from '../theme'
 
 const NR = <span className="nr">not reported in selected period</span>
-
-function nodeName(n: MeshNode | undefined, id: string): string {
-  return n?.identity?.long_name || n?.identity?.short_name || id
-}
 
 /** Packet log type labels and tooltips for header-only rows (D-091, D-093). */
 const TYPE_SHORT: Record<string, string> = { direct_message: 'DM 🔒', encrypted: 'encrypted 🔒' }
@@ -171,7 +167,7 @@ export function NodePanel({ id, snapshot }: { id: string; snapshot: SnapshotView
   const positioned = useMemo(() => new Set((snapshot?.nodes ?? []).filter((n) => n.position || n.estimate).map((n) => n.id)), [snapshot])
   const moved = useMemo(() => new Set((snapshot?.nodes ?? []).filter((n) => n.moved_at).map((n) => n.id)), [snapshot])
   if (isLoading) return <div className="panel">Loading {id}…</div>
-  if (error) return <div className="panel">No data for {id} in the selected window.</div>
+  if (error) return <div className="panel">{error instanceof ViewError && error.kind === 'not_found' ? `No data for ${id} in the selected window.` : `Details for ${id} could not be built right now (${error.message}). They will load again with the next update.`}</div>
   if (!data) return null
   const d = data
   const est = snapNode?.estimate
@@ -505,7 +501,7 @@ export function NodePanel({ id, snapshot }: { id: string; snapshot: SnapshotView
               <p className="muted small">Only what reached a gateway counts: a packet or its ACK no gateway heard is missing here, so a blank never means lost.</p>
             </>
           )}
-          <PacketLogs id={id} names={names} positioned={positioned} moved={moved} />
+          <PacketLogs key={id} id={id} names={names} positioned={positioned} moved={moved} />
           <p className="muted">Message contents are never stored or shown.</p>
         </>
       )}
