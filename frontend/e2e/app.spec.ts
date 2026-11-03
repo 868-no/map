@@ -258,10 +258,19 @@ test('selecting a node shows only its links, and accuracy circles only for it', 
     const l = (await layerData()).links
     return l.length > 0 && l.every(([a, b]) => a === id || b === id)
   }).toBe(true)
+  // Closing Details keeps the selection: still only its links.
   await page.getByRole('button', { name: 'Close details' }).click()
-  // Other nodes' links come back. Selecting zoomed in and links outside the view
-  // are culled, so zoom out to all of the data first: a sparse mesh may have
-  // none of them near the selected node.
+  await expect(page.locator('#dock')).toBeHidden()
+  expect((await layerData()).links.every(([a, b]) => a === id || b === id)).toBe(true)
+  // Clicking empty sea clears it, and other nodes' links come back. Selecting
+  // zoomed in and links outside the view are culled, so zoom out to all of
+  // the data first: a sparse mesh may have none of them near the selected node.
+  await page.evaluate(() => (window as unknown as { __meshmap: { map: { jumpTo: (o: object) => void } } }).__meshmap.map.jumpTo({ center: [3.0, 66.0], zoom: 8 }))
+  await page.waitForTimeout(500)
+  const box = (await page.locator('.map').boundingBox())!
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2)
+  await expect(page).not.toHaveURL(/node=/)
   await page.getByRole('button', { name: 'Fit to data' }).click()
   await expect.poll(async () => (await layerData()).links.some(([a, b]) => a !== id && b !== id)).toBe(true)
 })
@@ -273,7 +282,12 @@ test('the panel is closed until something is selected, and closes again when the
   await expect(page.locator('#dock')).toBeVisible()
   await page.locator('.node-row').first().click()
   await expect(page.getByRole('button', { name: 'Details', exact: true })).toHaveAttribute('aria-pressed', 'true')
-  await page.getByRole('button', { name: 'Details', exact: true }).click() // its rail button closes it, and clears the selection
+  await page.getByRole('button', { name: 'Details', exact: true }).click() // its rail button closes it, keeping the selection
+  await expect(page.locator('#dock')).toBeHidden()
+  await expect(page).toHaveURL(/node=/)
+  await page.getByRole('button', { name: 'Details', exact: true }).click() // and opens it again on the same node
+  await expect(page.locator('.node-panel')).toBeVisible()
+  await page.getByRole('button', { name: 'Details', exact: true }).click()
   await expect(page.locator('#dock')).toBeHidden()
   // Select a node on the map itself: the panel opens on Details, and closing the details hides it again.
   await page.waitForFunction(() => {
@@ -558,8 +572,10 @@ test('a node link opens that node, and Share copies a permanent one', async ({ p
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(`${new URL(page.url()).origin}/?node=${id}`)
   // The address bar follows the selection.
   await expect(page).toHaveURL(new RegExp(`node=(%21|!)${id.slice(1)}`))
+  // Closing Details keeps the node selected, and in the address bar.
   await page.getByRole('button', { name: 'Close details' }).click()
-  await expect(page).not.toHaveURL(/node=/)
+  await expect(page.locator('#dock')).toBeHidden()
+  await expect(page).toHaveURL(new RegExp(`node=(%21|!)${id.slice(1)}`))
 })
 
 test('the Health panel lists known issues and airtime, and Details shows a node\'s own', async ({ page }) => {

@@ -82,10 +82,11 @@ export default function App() {
       setPanel((p) => (p === 'details' ? null : p))
     }
   }, [selection])
-  // Details shows the selection: closing it (its button, ×, Escape) clears it.
+  // Closing Details (its button, ×, Escape) keeps the selection on the map:
+  // on a phone it is how to see the map again without losing what was picked.
+  // Clicking empty map clears it; clicking it again, or Details, reopens it.
   const closePanel = () => {
     autoOpened.current = false
-    if (panel === 'details' && useStore.getState().selection) useStore.getState().select(null)
     setPanel(null)
   }
   const togglePanel = (p: PanelId) => {
@@ -109,7 +110,7 @@ export default function App() {
     }
     document.addEventListener('keydown', esc)
     return () => document.removeEventListener('keydown', esc)
-  }, [panel]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [panel])
 
   // Fixed windows that fall out of retention while open: notify and clamp.
   useEffect(() => {
