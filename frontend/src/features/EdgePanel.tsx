@@ -107,7 +107,7 @@ function LinkHistoryCharts({ a, b, name, snapshot, start, end }: { a: string; b:
       {rainLoading && <p className="muted small">Loading precipitation from MET Norway…</p>}
       <p className="muted small">Each reading as the receiving node measured it ({kinds.join(', ')}). A falling line across days can mean a degrading antenna, cable or site; short dips are often weather or traffic.</p>
       <div className="tcharts">
-        <TimeChart label="SNR" unit="dB" start={start} end={end} series={series('snr')} band={rain} />
+        <TimeChart label="SNR" unit="dB" start={start} end={end} series={series('snr')} bands={[rain]} />
         <TimeChart label="RSSI" unit="dBm" decimals={0} start={start} end={end} series={series('rssi')} empty="only measured by gateway receptions" />
       </div>
     </section>

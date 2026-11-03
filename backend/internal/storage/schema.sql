@@ -85,11 +85,17 @@ CREATE TABLE IF NOT EXISTS weather_hour (
     precip_mm    REAL,
     humidity_pct REAL,
     cloud_pct    REAL,
+    sun_wm2      REAL,
     wind_ms      REAL,
     gust_ms      REAL, -- from MEPS: NULL until its run is archived, hours late
     missing      BOOLEAN NOT NULL DEFAULT false,
     fetched_at   TIMESTAMPTZ NOT NULL,
+    -- weather.rowVersion when stored: older rows lack later quantities and are fetched again.
+    version      SMALLINT NOT NULL DEFAULT 1,
     CONSTRAINT weather_hour_pkey PRIMARY KEY (cell_x, cell_y, valid_at)
 );
+-- Columns added after the table was first created.
+ALTER TABLE weather_hour ADD COLUMN IF NOT EXISTS sun_wm2 REAL;
+ALTER TABLE weather_hour ADD COLUMN IF NOT EXISTS version SMALLINT NOT NULL DEFAULT 1;
 
 COMMENT ON TABLE packet_log IS 'meshmap-schema:3';

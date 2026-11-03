@@ -50,7 +50,7 @@ export function useWeather(sites: ({ lat: number; lon: number } | null)[], start
 }
 
 /** [ms, value] points of one quantity. */
-export const weatherPoints = (hours: WeatherHour[] | null | undefined, k: 'temp_c' | 'precip_mm' | 'humidity_pct' | 'cloud_pct' | 'wind_ms' | 'gust_ms'): [number, number][] =>
+export const weatherPoints = (hours: WeatherHour[] | null | undefined, k: 'temp_c' | 'precip_mm' | 'humidity_pct' | 'cloud_pct' | 'sun_wm2' | 'wind_ms' | 'gust_ms'): [number, number][] =>
   (hours ?? []).flatMap((h) => (h[k] != null ? [[Date.parse(h.t), h[k]!] as [number, number]] : []))
 
 /** The hourly mean of several sites' series, over the hours any of them has. */

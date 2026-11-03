@@ -287,6 +287,11 @@ export interface components {
              */
             precip_mm?: number;
             /**
+             * Format: double
+             * @description Sunlight reaching the ground (downwelling shortwave radiation), mean over the hour before t, W/m²
+             */
+            sun_wm2?: number;
+            /**
              * Format: date-time
              * @description Valid time (UTC, on the hour)
              */

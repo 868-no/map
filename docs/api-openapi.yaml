@@ -273,6 +273,10 @@ components:
           description: Precipitation in the hour before t, mm
           format: double
           type: number
+        sun_wm2:
+          description: Sunlight reaching the ground (downwelling shortwave radiation), mean over the hour before t, W/m²
+          format: double
+          type: number
         t:
           description: Valid time (UTC, on the hour)
           format: date-time

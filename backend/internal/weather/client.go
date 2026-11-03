@@ -29,6 +29,7 @@ type Hour struct {
 	PrecipMM    *float64  `json:"precip_mm,omitempty" doc:"Precipitation in the hour before t, mm"`
 	HumidityPct *float64  `json:"humidity_pct,omitempty" doc:"Relative humidity 2 m above ground, %"`
 	CloudPct    *float64  `json:"cloud_pct,omitempty" doc:"Cloud cover, %"`
+	SunWM2      *float64  `json:"sun_wm2,omitempty" doc:"Sunlight reaching the ground (downwelling shortwave radiation), mean over the hour before t, W/m²"`
 	WindMS      *float64  `json:"wind_ms,omitempty" doc:"Wind speed 10 m above ground, m/s"`
 	GustMS      *float64  `json:"gust_ms,omitempty" doc:"Strongest gust 10 m above ground, m/s, from the first hours of a MEPS forecast run (the analysis has none)"`
 }
@@ -184,7 +185,11 @@ func (c *Client) series(ctx context.Context, cell Cell, start, end time.Time, ur
 		}
 		c.mu.Lock()
 		for _, r := range rows {
-			c.put(key{cell, r.h.T.Unix() / 3600}, entry{r.h, r.missing, expiry(r.h, r.fetched, r.missing)})
+			exp := expiry(r.h, r.fetched, r.missing)
+			if r.old {
+				exp = r.fetched // already due: lacks what this version fetches
+			}
+			c.put(key{cell, r.h.T.Unix() / 3600}, entry{r.h, r.missing, exp})
 		}
 		c.mu.Unlock()
 	}
@@ -367,7 +372,8 @@ func round2(v float64) *float64 {
 // is true when the analysis has no file for that hour.
 func (c *Client) fetch(ctx context.Context, cell Cell, t time.Time) (h Hour, missing bool, wait time.Duration, err error) {
 	at := index(0, cell.Y, cell.X)
-	vars := []string{"air_temperature_2m", "precipitation_amount", "relative_humidity_2m", "cloud_area_fraction", "wind_speed_10m"}
+	vars := []string{"air_temperature_2m", "precipitation_amount", "relative_humidity_2m", "cloud_area_fraction", "wind_speed_10m",
+		"integral_of_surface_downwelling_shortwave_flux_in_air_wrt_time"}
 	q := make([]string, len(vars))
 	for i, v := range vars {
 		q[i] = v + at
@@ -389,6 +395,9 @@ func (c *Client) fetch(ctx context.Context, cell Cell, t time.Time) (h Hour, mis
 	}
 	if v, ok := first(vals, "cloud_area_fraction"); ok {
 		h.CloudPct = round2(math.Min(math.Max(v, 0), 1) * 100)
+	}
+	if v, ok := first(vals, "integral_of_surface_downwelling_shortwave_flux_in_air_wrt_time"); ok {
+		h.SunWM2 = round2(math.Max(v, 0) / 3600) // W s/m² over the hour
 	}
 	if v, ok := first(vals, "wind_speed_10m"); ok {
 		h.WindMS = round2(math.Max(v, 0))

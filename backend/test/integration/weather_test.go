@@ -65,6 +65,13 @@ func TestWeatherStore(t *testing.T) {
 	if inc || len(hs) != 6 || *hs[5].TempC != -2.5 || hits.Load() != n {
 		t.Fatalf("after a restart: %d hours, incomplete %v, %d more fetches", len(hs), inc, hits.Load()-n)
 	}
+	// Rows stored by an older version lack later quantities: due again.
+	if _, err := pool.Exec(ctx, `UPDATE weather_hour SET version = 1, sun_wm2 = NULL WHERE valid_at = $1`, hs[0].T); err != nil {
+		t.Fatal(err)
+	}
+	if _, inc := client().Series(ctx, cell, start, end); !inc {
+		t.Fatal("an old row was served as complete")
+	}
 }
 
 // Only routers heard lately have their weather kept (D-133): a router that

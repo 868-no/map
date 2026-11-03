@@ -58,6 +58,9 @@ cloud_area_fraction.cloud_area_fraction[1][1][1]
 wind_speed_10m.wind_speed_10m[1][1][1]
 [0][0], 3.25
 
+integral_of_surface_downwelling_shortwave_flux_in_air_wrt_time.integral_of_surface_downwelling_shortwave_flux_in_air_wrt_time[1][1][1]
+[0][0], 409000.0
+
 precipitation_amount.time[1]
 1.7935344E9
 `
@@ -116,7 +119,7 @@ func TestSeries(t *testing.T) {
 	}
 	h := hs[0]
 	// Lead 1's gust: (3, -4) × 2/2.
-	if *h.TempC != 4.25 || *h.PrecipMM != 0.4 || *h.HumidityPct != 87.3 || *h.CloudPct != 100 || *h.WindMS != 3.25 || *h.GustMS != 5 || hs[1].TempC != nil {
+	if *h.TempC != 4.25 || *h.PrecipMM != 0.4 || *h.HumidityPct != 87.3 || *h.CloudPct != 100 || *h.WindMS != 3.25 || *h.SunWM2 != 113.61 || *h.GustMS != 5 || hs[1].TempC != nil {
 		t.Fatalf("values: %+v %+v", hs[0], hs[1])
 	}
 	if *hs[2].GustMS != 12.5 {
