@@ -317,9 +317,9 @@ test('the panel is closed until something is selected, and closes again when the
   // Hovering the node first, as a user would: a tooltip, or its name cluster fanning out.
   await expect.poll(async () => (await page.locator('.tooltip').isVisible()) || (await page.evaluate(() =>
     (window as unknown as { __meshmap: Hook }).__meshmap.layers().some((l) => l.id === 'label-leaders')))).toBe(true)
-  // The headless renderer sometimes keeps the page busy long enough between
-  // mouse down and up that the map takes it for a long press, not a click:
-  // click again (a no-op once selected) until the panel opens.
+  // Clicks no longer depend on how quickly the page handles mouse down and
+  // up (MapLibre's click, then deck.gl's pick); clicking again is a no-op once
+  // selected, so retrying only covers a click that landed mid-flight.
   await expect(async () => {
     await page.mouse.click(box.x + pt.x, box.y + pt.y)
     await expect(page.locator('#dock')).toBeVisible({ timeout: 2000 })
@@ -418,8 +418,11 @@ test('the packet log combines own and relayed packets, and draws a packet route 
   const relayedCount = async () => Number(/Include relayed \((\d+)/.exec((await page.locator('label', { has: toggle }).textContent()) ?? '')?.[1])
   await toggle.uncheck()
   await expect(log.locator('tbody tr[data-kind="relayed"]')).toHaveCount(0) // no relayed packets
-  expect(await total()).toBeLessThan(all)
+  // Live traffic keeps adding own packets, so compare the toggle's effect, not two moments' totals.
+  const own = await total(), relayed = await relayedCount()
+  expect(relayed).toBeGreaterThan(0)
   await toggle.check()
+  await expect.poll(async () => (await total()) - own).toBeGreaterThanOrEqual(relayed)
 
   const layers = () => page.evaluate(() => Object.fromEntries((window as unknown as { __meshmap: Hook }).__meshmap.layers().map((l) => [l.id, l.data.length])))
   const links = async () => Object.entries(await layers()).reduce((n, [k, v]) => n + (k.startsWith('links-') ? v : 0), 0)
