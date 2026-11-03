@@ -444,7 +444,7 @@ func (p *Pipeline) giveUp(rows []*Observation, err error) {
 func (p *Pipeline) afterCommit(obs []*Observation, ids []int64) {
 	now := time.Now()
 	keys := make([][16]byte, len(obs))
-	events := make([]LiveEvent, len(obs))
+	events := make([]LiveEvent, 0, len(obs))
 	p.inflightMu.Lock()
 	for i, o := range obs {
 		k := o.ObservationKey
@@ -473,7 +473,13 @@ func (p *Pipeline) afterCommit(obs []*Observation, ids []int64) {
 			id.Since, id.RowID = o.ObservedAt, ids[i]
 			p.promote.Promote(id)
 		}
-		events[i] = toLive(o, ids[i])
+		if ev := toLive(o, ids[i]); ev.Row != nil {
+			events = append(events, ev)
+		} else {
+			// Stored, but not encodable for the stream: browsers get it from
+			// their next sync rather than a row-less event.
+			p.m.Rejected.WithLabelValues("live_unencodable").Inc()
+		}
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()

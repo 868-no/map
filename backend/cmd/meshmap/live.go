@@ -25,7 +25,7 @@ func (p *livePublisher) PublishLive(ctx context.Context, events []ingest.LiveEve
 	}
 	if err := p.c.Publish(ctx, cache.LiveChannel, b); err != nil {
 		if !p.failed.Swap(true) {
-			p.log.Warn("live publish failing; SSE clients will see live-unavailable", "err", err)
+			p.log.Warn("live publish to Redis failing; API-only processes see no live rows (this process serves its own)", "err", err)
 		}
 		return
 	}
