@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
+import { directReception, mockObservations, nodeRows } from './mock'
 import { docShot } from './shots'
 
 type Labels = { counts: Record<string, number>; names: Record<string, string[]> }
@@ -336,16 +337,18 @@ test('every layer switch explains its data in a tooltip', async ({ page }) => {
 })
 
 test('live rows from the stream update the views without fetching', async ({ page }) => {
-  test.setTimeout(120_000)
+  // A mocked mesh and stream: deterministic, unlike waiting for the real mesh to speak.
+  const O = 0x31000001, GW = 0x31000002
+  let release!: (make: () => ReturnType<typeof directReception>[]) => void
+  const live = new Promise<() => ReturnType<typeof directReception>[]>((r) => (release = r))
+  await mockObservations(page, [...nodeRows(O, 'ORIG', { lat: 59.91, lon: 10.75 }), ...nodeRows(GW, 'GATE', { lat: 59.95, lon: 11.05, role: 'ROUTER' })], live)
   await ready(page)
-  await expect(page.locator('.counters')).toContainText(/\d+ packets/)
   const packets = async () => Number(/(\d+) packets/.exec((await page.locator('.counters').textContent()) ?? '')?.[1] ?? 0)
-  await page.waitForTimeout(2000) // initial sync settled
+  await expect.poll(packets, { timeout: 30_000 }).toBe(4)
   const fetches: string[] = []
   page.on('request', (r) => r.url().includes('/api/v1/observations') && fetches.push(r.url()))
-  const before = await packets()
-  // The real mesh sends a packet every few seconds; the stream delivers it as a row.
-  await expect.poll(packets, { timeout: 50_000, intervals: [1000] }).toBeGreaterThan(before)
+  release(() => [directReception(O, GW)])
+  await expect.poll(packets, { timeout: 15_000 }).toBe(5)
   expect(fetches).toEqual([])
 })
 

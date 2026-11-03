@@ -23,7 +23,6 @@ async function receive(page: Page, dest?: number) {
   await page.waitForTimeout(500)
   release(() => [directReception(O, GW, dest)]) // the stream delivers it now
   await expect.poll(() => page.evaluate(() => (window as unknown as { __meshmap: Hook }).__meshmap.pings()), { timeout: 10_000 }).toBeGreaterThan(0)
-  await page.waitForTimeout(1200) // mid-growth
 }
 const frame = (page: Page) => page.evaluate(() => (window as unknown as { __meshmap: Hook }).__meshmap.pingFrame())
 
@@ -31,12 +30,13 @@ const frame = (page: Page) => page.evaluate(() => (window as unknown as { __mesh
 // the receiver, the link's head riding the ring's edge (D-042, D-053).
 test('a reception pings, and its link animates toward the receiver', async ({ page }) => {
   await receive(page, GW)
-  const mid = await frame(page)
+  // Mid-growth: one ring, its link part of the way to the receiver. Polled, not
+  // timed: a busy machine starts or paints the animation late.
+  await expect.poll(async () => {
+    const f = await frame(page)
+    return f.rings === 1 && f.trails.length === 1 && f.trails[0] > 0 && f.trails[0] < 1
+  }, { timeout: 5000, intervals: [50] }).toBe(true)
   await docShot(page, 'ping-link.png')
-  expect(mid.rings).toBe(1)
-  expect(mid.trails).toHaveLength(1)
-  expect(mid.trails[0]).toBeGreaterThan(0)
-  expect(mid.trails[0]).toBeLessThan(1)
   // The link arrives with the ring, then stays while the ring lingers.
   await expect.poll(async () => (await frame(page)).trails[0], { timeout: 5000 }).toBe(1)
 })
@@ -44,7 +44,8 @@ test('a reception pings, and its link animates toward the receiver', async ({ pa
 // Broadcasts animate their links too (D-053).
 test('a broadcast reception pings, and its link animates too', async ({ page }) => {
   await receive(page)
-  const mid = await frame(page)
-  expect(mid.rings).toBe(1)
-  expect(mid.trails).toHaveLength(1)
+  await expect.poll(async () => {
+    const f = await frame(page)
+    return f.rings === 1 && f.trails.length === 1
+  }, { timeout: 5000, intervals: [50] }).toBe(true)
 })
