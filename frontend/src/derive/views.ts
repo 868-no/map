@@ -373,6 +373,7 @@ export interface RouteSegment {
   b: string // receiver
   dashed: boolean // nodes between a and b are missing
   why: 'direct' | 'traceroute' | 'relay' | 'gap' | 'unknown_relay' | 'internet' | 'delivered'
+  leg?: 'forward' | 'back' // a traceroute's way there (request) or back (reply)
 }
 
 export interface PacketRoute {

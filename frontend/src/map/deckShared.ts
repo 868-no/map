@@ -7,5 +7,7 @@ import { LABELS_BEFORE } from './style'
 export const UNDER_LABELS: { beforeId?: string } = { beforeId: LABELS_BEFORE }
 
 export const dashExt = new PathStyleExtension({ dash: true })
+/** Dashes, and paths drawn beside their centre line (the two legs of a traceroute). */
+export const dashOffsetExt = new PathStyleExtension({ dash: true, offset: true })
 
 export type RGBA = [number, number, number, number]

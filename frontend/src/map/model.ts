@@ -216,6 +216,8 @@ export function linkGeometry(edges: Edge[], pos: Map<string, [number, number]>, 
 /** Link opacity by confidence (low links are also dashed). */
 /** A selected packet's route (D-037). */
 export const ROUTE_COLOR: [number, number, number, number] = [255, 170, 60, 240]
+/** A traceroute's two legs, drawn side by side: the way there and the way back. */
+export const TRACE_COLOR: Record<'forward' | 'back', [number, number, number, number]> = { forward: [255, 92, 200, 240], back: [90, 150, 255, 240] }
 
 /** Ring around nodes that did not allow MQTT uplink (D-032). */
 export const OPT_OUT_RING: [number, number, number, number] = [255, 77, 77, 255]
@@ -264,12 +266,14 @@ export function withSelectedLink(shown: LinkGeom[], sel: { src: string; dst: str
  * the route, dashed across the ones skipped, so the route stays whole.
  */
 export function bridgeRoute(segs: RouteSegment[], pos: Map<string, [number, number]>): { from: [number, number]; to: [number, number]; dashed: boolean; seg: RouteSegment }[] {
+  // Per traceroute leg: a bridge never joins the way there to the way back.
   const into = new Map<string, RouteSegment[]>()
-  for (const g of segs) into.set(g.b, [...(into.get(g.b) ?? []), g])
-  const placedBefore = (n: string, seen: Set<string>): string[] => {
+  const k = (leg: string | undefined, n: string) => `${leg ?? ''}|${n}`
+  for (const g of segs) into.set(k(g.leg, g.b), [...(into.get(k(g.leg, g.b)) ?? []), g])
+  const placedBefore = (n: string, leg: string | undefined, seen: Set<string>): string[] => {
     if (seen.has(n)) return []
     seen.add(n)
-    return (into.get(n) ?? []).flatMap((g) => (pos.has(g.a) ? [g.a] : placedBefore(g.a, seen)))
+    return (into.get(k(leg, n)) ?? []).flatMap((g) => (pos.has(g.a) ? [g.a] : placedBefore(g.a, leg, seen)))
   }
   const out: ReturnType<typeof bridgeRoute> = []
   const drawn = new Set<string>()
@@ -278,9 +282,10 @@ export function bridgeRoute(segs: RouteSegment[], pos: Map<string, [number, numb
   for (const g of ordered) {
     const b = pos.get(g.b)
     if (!b) continue
-    for (const a of pos.has(g.a) ? [g.a] : placedBefore(g.a, new Set())) {
-      if (drawn.has(`${a}>${g.b}`)) continue
-      drawn.add(`${a}>${g.b}`)
+    for (const a of pos.has(g.a) ? [g.a] : placedBefore(g.a, g.leg, new Set())) {
+      const key = `${a}>${g.b}>${g.leg ?? ''}`
+      if (drawn.has(key)) continue
+      drawn.add(key)
       const bridged = a !== g.a
       out.push({ from: pos.get(a)!, to: b, dashed: g.dashed || bridged, seg: bridged ? { ...g, a, dashed: true, why: 'gap' } : g })
     }

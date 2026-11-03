@@ -8,8 +8,8 @@ import { IconLayer, LineLayer, PathLayer, ScatterplotLayer, TextLayer } from '@d
 import type { PathStyleExtensionProps } from '@deck.gl/extensions'
 import type { Layer } from '@deck.gl/core'
 import type { Selection, Toggles } from '../state/store'
-import { ageColor, CONFIDENCE_ALPHA, glyphInk, LINK_WIDTH, MQTT_ARROW, mqttDownlink, mqttUplink, PLANE, type MqttFlow, OPT_OUT_RING, ROUTE_COLOR, precisionErrorM, roleRadius, type LinkGeom, type PlacedNode } from './model'
-import { dashExt, UNDER_LABELS, type RGBA } from './deckShared'
+import { ageColor, CONFIDENCE_ALPHA, glyphInk, LINK_WIDTH, MQTT_ARROW, mqttDownlink, mqttUplink, PLANE, type MqttFlow, OPT_OUT_RING, ROUTE_COLOR, TRACE_COLOR, precisionErrorM, roleRadius, type LinkGeom, type PlacedNode } from './model'
+import { dashExt, dashOffsetExt, UNDER_LABELS, type RGBA } from './deckShared'
 import { labelData, toPixels, type Cluster } from './labels'
 import { stackLevels } from './stacking'
 import type { RouteSegment } from '../derive/views'
@@ -88,6 +88,13 @@ function chevron(from: [number, number], to: [number, number]): Chevron {
   const angle = (Math.atan2(mercY(to[1]) - mercY(from[1]), ((to[0] - from[0]) * Math.PI) / 180) * 180) / Math.PI
   return { pos: [from[0] + (to[0] - from[0]) * f, from[1] + (to[1] - from[1]) * f], angle }
 }
+/** A traceroute leg's offset from the line between its nodes, in line widths (right of its direction). */
+const LEG_OFFSET = 0.8
+/** The same offset in pixels for a chevron at `angle` (degrees, counter-clockwise from east). */
+function legShift(angle: number): [number, number] {
+  const a = (angle * Math.PI) / 180, d = LEG_OFFSET * 3
+  return [Math.sin(a) * d, Math.cos(a) * d] // right of the direction, screen y pointing down
+}
 let arrowAtlas: HTMLCanvasElement | undefined
 function arrowIcons() {
   if (!arrowAtlas) {
@@ -165,11 +172,13 @@ export function meshLayerBuilder(): (input: MeshLayerInput) => Layer[] {
     }
     return out
   })
-  const routeParts = memoLast((route: RouteGeom[]) => {
+  const routeParts = memoLast((all: RouteGeom[]) => {
+    // A traceroute's legs are drawn apart, in colours of their own.
+    const route = all.filter((r) => !r.seg.leg)
     const net = (r: RouteGeom) => r.seg.why === 'internet'
     const ack = (r: RouteGeom) => r.seg.why === 'delivered'
     const radio = (r: RouteGeom) => !net(r) && !ack(r)
-    return { solid: route.filter((r) => !r.dashed && radio(r)), dashed: route.filter((r) => r.dashed && radio(r)), internet: route.filter(net), delivered: route.filter(ack) }
+    return { solid: route.filter((r) => !r.dashed && radio(r)), dashed: route.filter((r) => r.dashed && radio(r)), internet: route.filter(net), delivered: route.filter(ack), legs: all.filter((r) => !!r.seg.leg) }
   })
   const reachParts = memoLast((segs: ReachGeom['segments']) => ({ solid: segs.filter((r) => !r.gap), gaps: segs.filter((r) => r.gap) }))
   // Draw order: markers without glyphs first, then those with one (stable
@@ -362,11 +371,21 @@ export function meshLayerBuilder(): (input: MeshLayerInput) => Layer[] {
           getColor: [...c.delivered, 230], getDashArray: [6, 3], dashJustified: true, extensions: [dashExt], pickable: true,
           updateTriggers: { getColor: [c] },
         }),
+        // A traceroute both ways: the way there and the way back each in a
+        // colour of its own, beside the line between two nodes (each to the
+        // right of its own direction), so a hop taken both ways shows both.
+        // Dashed across missing nodes, dotted over the internet.
+        new PathLayer<RouteGeom, PathStyleExtensionProps<RouteGeom>>({
+          id: 'route-legs', ...UNDER_LABELS, data: parts.legs, getPath: (r) => [r.from, r.to], widthUnits: 'pixels', getWidth: 3,
+          getColor: (r) => TRACE_COLOR[r.seg.leg!], getOffset: LEG_OFFSET, getDashArray: (r) => (r.seg.why === 'internet' ? [1, 2.5] : r.dashed ? [5, 4] : [0, 0]),
+          dashJustified: true, extensions: [dashOffsetExt], pickable: true,
+        }),
         // Which way each hop went: transmitter to receiver.
         new IconLayer<RouteGeom>({
           id: 'route-arrows', ...UNDER_LABELS, data: route, getPosition: (r) => chevron(r.from, r.to).pos,
           getAngle: (r) => chevron(r.from, r.to).angle, ...chevronIcon(), getIcon: () => 'chevron', sizeUnits: 'pixels', getSize: 13,
-          getColor: (r) => (r.seg.why === 'internet' ? [...c.linkMqtt, 255] : r.seg.why === 'delivered' ? [...c.delivered, 255] : ROUTE_COLOR) as RGBA, pickable: false, updateTriggers: { getColor: [c] },
+          getPixelOffset: (r) => (r.seg.leg ? legShift(chevron(r.from, r.to).angle) : [0, 0]),
+          getColor: (r) => (r.seg.leg ? TRACE_COLOR[r.seg.leg] : r.seg.why === 'internet' ? [...c.linkMqtt, 255] : r.seg.why === 'delivered' ? [...c.delivered, 255] : ROUTE_COLOR) as RGBA, pickable: false, updateTriggers: { getColor: [c] },
         }),
       )
     }

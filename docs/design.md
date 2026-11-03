@@ -371,7 +371,7 @@ The selected node's panel lists its packets, built from the window's filtered ro
 
 Selecting a packet in the log draws its routing graph from every in-window reception of it (rows sharing its logical key), as directed transmitter → receiver segments (D-037):
 
-- **Traceroute:** the recorded route, with the gateway appended unless it recorded itself. A request's copies end where each was uplinked, so the request also gets the route its replies recorded (requester → route → target, the reply's record of the way there): its whole way to the target, when a reply was heard.
+- **Traceroute:** the recorded route, with the gateway appended unless it recorded itself. A request's copies end where each was uplinked, so the request also gets the route its replies recorded (requester → route → target, the reply's record of the way there): its whole way to the target, when a reply was heard. A traceroute is drawn both ways, each segment tagged with its `leg`: the way there (`forward`: the request's copies and the route each reply recorded) in pink, the way back (`back`: the replies' copies, ending where each was uplinked) in blue, neither in the orange of other routes. A reply's own route has both legs too. Each leg is drawn beside the line between two nodes, to the right of its own direction, so a hop taken both ways shows twice, and unplaced nodes are bridged within a leg, never across the two (D-134).
 - **Zero-hop reception:** sender → gateway.
 - **Resolved relay:** relay → gateway, and sender → relay, solid only when one hop was spent by a relay whose known role cannot receive at zero cost (the ping rule, §7.7).
 - **Unresolved relay byte:** sender → gateway, dashed.

@@ -144,6 +144,16 @@ describe('packet routes across nodes without a position', () => {
     const out = bridgeRoute([seg('a', 'b'), seg('b', 'c'), seg('b', 'd'), seg('a', 'c', 'relay')], pos)
     expect(out.map((s) => `${s.seg.a}>${s.seg.b}${s.dashed ? '~' : ''}`)).toEqual(['a>c', 'a>d~'])
   })
+  it("keeps a traceroute's two legs apart: both drawn, a bridge never joining one to the other", () => {
+    const leg = (a: string, b: string, l: 'forward' | 'back') => ({ ...seg(a, b), leg: l })
+    // There: r -> t; back: t -> u(unplaced) -> r. A hop taken both ways is drawn twice.
+    const pos = new Map<string, [number, number]>([['r', [0, 0]], ['t', [1, 1]]])
+    const out = bridgeRoute([leg('r', 't', 'forward'), leg('t', 'u', 'back'), leg('u', 'r', 'back'), leg('t', 'r', 'back')], pos)
+    expect(out.map((s) => `${s.seg.a}>${s.seg.b}:${s.seg.leg}${s.dashed ? '~' : ''}`).sort()).toEqual(['r>t:forward', 't>r:back'])
+    // With no real way back, the bridge stays on the back leg, dashed.
+    const bridged = bridgeRoute([leg('r', 't', 'forward'), leg('t', 'u', 'back'), leg('u', 'r', 'back')], pos)
+    expect(bridged.map((s) => `${s.seg.a}>${s.seg.b}:${s.seg.leg}${s.dashed ? '~' : ''}`).sort()).toEqual(['r>t:forward', 't>r:back~'])
+  })
 })
 
 describe('online', () => {

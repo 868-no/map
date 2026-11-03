@@ -188,6 +188,7 @@ function RouteNote({ positioned, moved, name }: { positioned: Set<string>; moved
     <p className="route-note">
       Route on the map: {segs.length} segment{segs.length === 1 ? '' : 's'}{dashed ? `, ${dashed} dashed (nodes missing)` : ''}
       {unplaced.length ? `; ${unplaced.map(name).join(', ')} ${unplaced.length === 1 ? 'has' : 'have'} no position, so the route is dashed across ${unplaced.length === 1 ? 'it' : 'them'}` : ''}.
+      {segs.some((g) => g.leg) && <> Traceroute both ways: <span className="leg-forward">pink</span> the way there (request), <span className="leg-back">blue</span> the way back (reply), each beside the line between two nodes.</>}
       {r.data?.delivered?.length ? ` Delivery confirmed by ${r.data.delivered.map(name).join(', ')} (ACK; dashed green where the path is not known).` : ''}
       {movers.length > 0 && ` ${movers.map(name).join(', ')} moved during the window: drawn where ${movers.length === 1 ? 'it was' : 'they were'} when this packet was heard (ring), dashed to where ${movers.length === 1 ? 'it is' : 'they are'} now.`} Links are hidden meanwhile.{' '}
       <button className="linkish" onClick={() => showRoute(null)}>Clear route</button>

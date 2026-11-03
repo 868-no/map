@@ -246,6 +246,8 @@ table.pkt-log tbody tr:hover { background: rgba(255, 255, 255, 0.04); }
 table.pkt-log tbody tr.active { background: rgba(255, 170, 60, 0.18); }
 .ev-tag.own { background: transparent; border: 1px solid var(--line); }
 .route-note { border-left: 3px solid rgb(255, 170, 60); padding: 4px 8px; margin: 6px 0; font-size: 12px; }
+.route-note .leg-forward { color: rgb(255, 92, 200); font-weight: 600; }
+.route-note .leg-back { color: rgb(90, 150, 255); font-weight: 600; }
 .ev-tag { display: inline-block; padding: 0 4px; margin-right: 2px; border-radius: 3px; background: var(--line); font-size: 11px; }
 button.linkish { background: none; border: 0; padding: 0; color: var(--accent); cursor: pointer; font: inherit; text-align: left; }
 button.more { margin: 4px 0 8px; font-size: 12px; }

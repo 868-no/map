@@ -400,7 +400,8 @@ export default function MapView({ caps, snapshot, onPositions }: Props) {
           const g = (o as RouteGeom).seg
           const nm = (id: string) => nameOf.current.get(id) ?? id
           const why = { direct: 'heard directly', traceroute: 'traceroute hop', relay: 'relayed hop', gap: 'path to here not known (direct, or through relays that spent no hop)', unknown_relay: 'relayed by an unknown node', internet: 'over the internet: taken from an MQTT broker, not heard over the air', delivered: 'delivery confirmed: it sent an ACK for this packet (the path may not be known)' }[g.why]
-          return setHover({ x: info.x, y: info.y, text: `${nm(g.a)} → ${nm(g.b)}: ${why}` })
+          const leg = g.leg === 'forward' ? 'Traceroute, the way there (request)\n' : g.leg === 'back' ? 'Traceroute, the way back (reply)\n' : ''
+          return setHover({ x: info.x, y: info.y, text: `${leg}${nm(g.a)} → ${nm(g.b)}: ${why}` })
         }
         if ('label' in o) {
           const n = o.node.node
