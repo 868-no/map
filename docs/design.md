@@ -490,7 +490,7 @@ On a rolling window, each RF transmission attributable to a placed node is one e
 
 ### 7.9 Period and live mode
 
-The default is the server's default rolling window (72 h) in live mode. Choosing a preset keeps live mode; setting start or end, or sliding, switches to a fixed window, which never creeps forward. "Return to live" restores rolling mode. UTC is the internal representation; the UI shows local time with a visible zone and handles DST. Time controls, panels, counters and the traffic strip always reflect the same window. Rows that expire by retention during a session are dropped; an empty window shows a "no observed data" state. The live badge shows "paused" when the stream is down. Offline, a banner says "Offline: showing the data last received (time)".
+The default is the server's default rolling window (72 h) in live mode. Choosing a preset keeps live mode; setting start or end, or sliding, switches to a fixed window, which never creeps forward. "Return to live" restores rolling mode. UTC is the internal representation; the UI shows local time with a visible zone and handles DST: a typed local time that occurs twice (fall-back) means the earlier instant and is flagged, one skipped by spring-forward is moved forward by the jump. Time controls, panels, counters and the traffic strip always reflect the same window. Rows that expire by retention during a session are dropped; an empty window shows a "no observed data" state. The live badge shows "paused" when the stream is down. Offline, a banner says "Offline: showing the data last received (time)".
 
 ### 7.10 Start view and camera
 

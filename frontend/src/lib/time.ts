@@ -1,52 +1,118 @@
-import { DateTime } from 'luxon'
-
 // All state is UTC; display is in the viewer's zone with a visible indicator.
+// Plain Intl: the zone rules come from the browser, as they did through Luxon.
 
 export const localZone = (): string => Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
 
+const MIN = 60_000
+const pad = (n: number, w = 2) => String(n).padStart(w, '0')
+
+// Formatters are costly to build: one of each per zone.
+const cache = new Map<string, Intl.DateTimeFormat>()
+function fmt(kind: 'parts' | 'month' | 'name', zone: string): Intl.DateTimeFormat {
+  const key = `${kind}|${zone}`
+  let f = cache.get(key)
+  if (!f) {
+    const opts: Intl.DateTimeFormatOptions =
+      kind === 'parts'
+        ? { year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric', second: 'numeric', hourCycle: 'h23' }
+        : kind === 'month'
+          ? { month: 'short' } // the viewer's locale, as Luxon's "LLL"
+          : { timeZoneName: 'short' }
+    f = new Intl.DateTimeFormat(kind === 'parts' ? 'en-US' : undefined, { ...opts, timeZone: zone })
+    cache.set(key, f)
+  }
+  return f
+}
+
+interface Wall { y: number; mo: number; d: number; h: number; mi: number; s: number }
+
+/** The wall-clock time at an instant in a zone. */
+function wall(ms: number, zone: string): Wall {
+  const p: Record<string, number> = {}
+  for (const x of fmt('parts', zone).formatToParts(ms)) if (x.type !== 'literal') p[x.type] = Number(x.value)
+  return { y: p.year, mo: p.month, d: p.day, h: p.hour % 24, mi: p.minute, s: p.second }
+}
+
+/** The zone's UTC offset at an instant, in minutes. */
+function offset(ms: number, zone: string): number {
+  const w = wall(ms, zone)
+  return Math.round((Date.UTC(w.y, w.mo - 1, w.d, w.h, w.mi, w.s) - Math.floor(ms / 1000) * 1000) / MIN)
+}
+
+const ymd = (w: Wall) => `${w.y}-${pad(w.mo)}-${pad(w.d)}`
+const hm = (w: Wall) => `${pad(w.h)}:${pad(w.mi)}`
+const ms = (iso: string | Date) => new Date(iso).getTime()
+const month = (t: number, zone: string) => fmt('month', zone).format(t)
+
 /** Zone label for a given instant, e.g. "Europe/Oslo (CET, UTC+1)" — changes across DST. */
 export function zoneLabel(iso: string | Date, zone = localZone()): string {
-  const dt = DateTime.fromJSDate(new Date(iso)).setZone(zone)
-  return `${zone} (${dt.offsetNameShort ?? ''}, UTC${dt.toFormat('ZZ')})`
+  const t = ms(iso)
+  const name = fmt('name', zone).formatToParts(t).find((x) => x.type === 'timeZoneName')?.value ?? ''
+  const o = offset(t, zone)
+  const a = Math.abs(o)
+  return `${zone} (${name}, UTC${o < 0 ? '-' : '+'}${pad(Math.floor(a / 60))}:${pad(a % 60)})`
 }
 
 export function formatLocal(iso: string | Date | undefined | null, zone = localZone()): string {
   if (!iso) return '—'
-  return DateTime.fromJSDate(new Date(iso)).setZone(zone).toFormat('yyyy-LL-dd HH:mm:ss')
+  const w = wall(ms(iso), zone)
+  return `${ymd(w)} ${hm(w)}:${pad(w.s)}`
 }
 
 export function formatShort(iso: string | Date, zone = localZone()): string {
-  return DateTime.fromJSDate(new Date(iso)).setZone(zone).toFormat('LLL dd HH:mm')
+  const t = ms(iso)
+  const w = wall(t, zone)
+  return `${month(t, zone)} ${pad(w.d)} ${hm(w)}`
+}
+
+/** Compact log time: HH:mm:ss today, otherwise "LLL dd HH:mm". */
+export function formatLogTime(iso: string | Date, nowMs = Date.now(), zone = localZone()): string {
+  const w = wall(ms(iso), zone)
+  return ymd(w) === ymd(wall(nowMs, zone)) ? `${hm(w)}:${pad(w.s)}` : formatShort(iso, zone)
 }
 
 /** Value for <input type="datetime-local"> in the given zone (minute precision). */
-/** Compact log time: HH:mm:ss today, otherwise "LLL dd HH:mm". */
-export function formatLogTime(iso: string | Date, nowMs = Date.now(), zone = localZone()): string {
-  const t = DateTime.fromJSDate(new Date(iso)).setZone(zone)
-  return t.hasSame(DateTime.fromMillis(nowMs).setZone(zone), 'day') ? t.toFormat('HH:mm:ss') : t.toFormat('LLL dd HH:mm')
+export function toLocalInput(iso: string | Date, zone = localZone()): string {
+  const w = wall(ms(iso), zone)
+  return `${ymd(w)}T${hm(w)}`
 }
 
-export function toLocalInput(iso: string | Date, zone = localZone()): string {
-  return DateTime.fromJSDate(new Date(iso)).setZone(zone).toFormat("yyyy-LL-dd'T'HH:mm")
+const LOCAL_INPUT = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3})\d*)?)?$/
+
+/**
+ * The instants a datetime-local value names in a zone: none when it does not
+ * parse, one normally, two (earlier first) when it occurs twice (fall-back),
+ * and none either for a time skipped by spring-forward, with `gap` set to
+ * that time shifted forward by the jump.
+ */
+function resolveLocal(v: string, zone: string): { at: number[]; gap?: number } | null {
+  const m = LOCAL_INPUT.exec(v)
+  if (!m) return null
+  const [y, mo, d, h, mi, s = 0] = m.slice(1, 7).map((x) => Number(x ?? 0))
+  const local = Date.UTC(y, mo - 1, d, h, mi, s, Number((m[7] ?? '').padEnd(3, '0')))
+  const back = new Date(local)
+  // Out-of-range fields (Feb 30, 25:00) would roll over: reject them.
+  if (back.getUTCFullYear() !== y || back.getUTCMonth() !== mo - 1 || back.getUTCDate() !== d || back.getUTCHours() !== h || back.getUTCMinutes() !== mi) return null
+  // The offsets either side of this wall time; real zones change at most once a day.
+  const offs = [...new Set([offset(local - 1440 * MIN, zone), offset(local + 1440 * MIN, zone)])].sort((a, b) => b - a)
+  const at = offs.filter((o) => offset(local - o * MIN, zone) === o).map((o) => local - o * MIN)
+  return at.length ? { at } : { at, gap: local - Math.min(...offs) * MIN }
 }
 
 /**
  * Parse a datetime-local value in the given zone. Nonexistent local times
- * (spring-forward gap) are shifted forward by Luxon; ambiguous ones
- * (fall-back overlap) resolve to the earlier offset. Returns UTC ISO or null.
+ * (spring-forward gap) are shifted forward by the jump; ambiguous ones
+ * (fall-back overlap) resolve to the earlier instant. Returns UTC ISO or null.
  */
 export function fromLocalInput(v: string, zone = localZone()): string | null {
-  const dt = DateTime.fromISO(v, { zone })
-  return dt.isValid ? dt.toUTC().toISO({ suppressMilliseconds: true }) : null
+  const r = resolveLocal(v, zone)
+  if (!r) return null
+  return new Date(r.at[0] ?? r.gap!).toISOString().replace('.000Z', 'Z')
 }
 
 /** True when a local wall time occurs twice (DST fall-back), for UI warnings. */
 export function isAmbiguousLocal(v: string, zone = localZone()): boolean {
-  const dt = DateTime.fromISO(v, { zone })
-  if (!dt.isValid) return false
-  const wall = dt.toFormat("yyyy-LL-dd'T'HH:mm")
-  const ms = dt.toMillis()
-  return [ms - 3600_000, ms + 3600_000].some((m) => DateTime.fromMillis(m, { zone }).toFormat("yyyy-LL-dd'T'HH:mm") === wall)
+  return (resolveLocal(v, zone)?.at.length ?? 0) > 1
 }
 
 export function relativeAge(iso: string | undefined | null, nowMs: number): string {
