@@ -382,7 +382,8 @@ func (c *Config) SecurityChannels() []security.ChannelConfig {
 }
 
 // Revision is a digest of everything that changes decoding or derived
-// results (channel keys, modes, policy, retention). It is part of the data
+// results (channel keys, modes, policy, retention, the key-attempt budget,
+// which decides which packets decode when many keys are candidates). It is part of the data
 // generation, which is public. Everything else in it is public too, so a plain
 // hash would let anyone test guessed keys offline: it is an HMAC keyed with
 // the database credentials, a secret every deployment must set (and rotating
@@ -393,7 +394,7 @@ func (c *Config) Revision() string {
 	for _, ch := range c.Channels {
 		fmt.Fprintf(h, "%s|%v|%s|%v|%v\n", ch.Name, ch.BrokerIDs, ch.Mode, ch.PSKs, ch.AcceptPlaintext)
 	}
-	fmt.Fprintf(h, "fallback=%v|", c.Env.DefaultKeyFallback)
+	fmt.Fprintf(h, "fallback=%v|budget=%d|", c.Env.DefaultKeyFallback, c.Env.KeyAttemptBudget)
 	fmt.Fprintf(h, "%s|%d|%d|%v", c.Env.SignaturePolicy, c.Env.RetentionMonths, c.Env.GeolocationMinPrec, c.Env.GeolocationExclude)
 	return hex.EncodeToString(h.Sum(nil))[:12]
 }

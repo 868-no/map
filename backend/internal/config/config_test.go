@@ -140,7 +140,13 @@ func TestRevisionIsKeyedWithTheDatabaseSecret(t *testing.T) {
 		t.Fatal("revision does not depend on the database secret")
 	}
 	c.Channels[0].PSKs = []string{"secret"}
-	if b := c.Revision(); b == two || len(b) != 12 {
-		t.Fatalf("revision %q does not follow the keys", b)
+	three := c.Revision()
+	if three == two || len(three) != 12 {
+		t.Fatalf("revision %q does not follow the keys", three)
+	}
+	// The budget decides which packets decode when many keys are candidates.
+	c.Env.KeyAttemptBudget = 8
+	if c.Revision() == three {
+		t.Fatal("revision does not follow KEY_ATTEMPT_BUDGET")
 	}
 }
