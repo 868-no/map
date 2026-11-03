@@ -13,6 +13,7 @@ export interface ViewRequest {
   filters: { channels: string[]; brokers: string[]; types: string[] }
   node?: string // node id for kinds 'node', 'packetlog' and 'reach' (with '|internet' to follow MQTT links); logical packet key for 'route'
   epoch: string // changes when a rolling window should look for new rows
+  rev: number // the page's data revision: one rolling-window end per (epoch, rev)
 }
 
 export interface InitRequest {

@@ -181,15 +181,31 @@ function synced(win: WindowReq, epoch: string): Promise<{ synced: Synced; offlin
   return result
 }
 
+// Rolling-window ends pinned per page revision (window, epoch, rev): rows
+// merge as they stream in, so without the pin a view of one rebuild handled
+// after more rows landed would get a later end than the snapshot of the same
+// rebuild, miss the memo and show counts that disagree with it. A few recent
+// keys are kept, for requests of an older revision still in flight.
+const PINNED_MAX = 8
+const pinned = new Map<string, number>()
+
 /**
  * The window to build. A rolling one ends just after the newest row held (or
  * at the last sync, which runs at least once a minute): it follows the data,
- * so every view requested for one rebuild gets the same window and shares one
- * memoised snapshot, and a streamed row counts as soon as it is merged.
+ * and a streamed row counts as soon as it is merged. The end is fixed by the
+ * first request of a page revision, so every view of one rebuild gets the
+ * same window and shares one memoised snapshot.
  */
-function bounds(win: WindowReq, s: Synced, offline: boolean): { start: number; end: number } {
+function bounds(req: ViewRequest, s: Synced, offline: boolean): { start: number; end: number } {
+  const win = req.win
   if (!win.live || offline) return { start: s.start, end: s.end }
-  const end = Math.max(s.end, engine.newest_t() + 1)
+  const key = `${win.durationH}|${req.epoch}|${req.rev}`
+  let end = pinned.get(key)
+  if (end === undefined) {
+    end = Math.max(s.end, engine.newest_t() + 1)
+    pinned.set(key, end)
+    for (const k of pinned.keys()) if (pinned.size > PINNED_MAX) pinned.delete(k) // oldest first
+  }
   return { start: end - win.durationH * 3_600_000, end }
 }
 
@@ -253,7 +269,7 @@ async function view(req: ViewRequest): Promise<{ body: Uint8Array; meta: ViewMet
   if (startError) throw new ViewError('internal', `the derivation engine failed to start: ${startError}`)
   liveHours = req.win.live ? req.win.durationH : null
   const { synced: sy, offline } = await synced(req.win, req.epoch)
-  const { start, end } = bounds(req.win, sy, offline)
+  const { start, end } = bounds(req, sy, offline)
   const f = { channels: req.filters.channels, brokers: req.filters.brokers, types: req.filters.types }
   const fj = JSON.stringify(f)
   const revision = `${store.generation}.${engine.revision(start, end)}`
@@ -298,6 +314,7 @@ self.onmessage = async (e: MessageEvent<Request>) => {
       quantumMs = msg.liveQuantumMs
       memo.clear()
       memoChars = 0
+      pinned.clear()
     } catch (err) {
       startError = err instanceof Error ? err.message : String(err)
       fatal(err)

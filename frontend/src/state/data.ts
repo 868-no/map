@@ -71,7 +71,7 @@ function useWindowQuery<T extends { meta: ViewMeta }>(kind: ViewKind, node?: str
     enabled: enabled && limitsReady,
     queryFn: async ({ signal }) => {
       const r = await deriveView({
-        kind, node, epoch,
+        kind, node, epoch, rev,
         win: win.live ? { live: true, durationH: win.durationH } : { live: false, start: win.start!, end: win.end! },
         filters: { channels: filters.channels, brokers: filters.brokers, types: filters.types },
       }, signal)
