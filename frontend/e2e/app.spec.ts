@@ -289,7 +289,12 @@ test('the panel is closed until something is selected, and closes again when the
   await expect(page.locator('.node-panel')).toBeVisible()
   await page.getByRole('button', { name: 'Details', exact: true }).click()
   await expect(page.locator('#dock')).toBeHidden()
-  // Select a node on the map itself: the panel opens on Details, and closing the details hides it again.
+  // Select a node on the map itself, from a page with nothing selected (the
+  // node above stays selected, and may be the one picked below, whose name
+  // label then replaces the hover tooltip): the panel opens on Details, and
+  // closing the details hides it again.
+  await ready(page)
+  await expect(page).not.toHaveURL(/node=/)
   await page.waitForFunction(() => {
     const l = (window as unknown as { __meshmap: Hook }).__meshmap.layers()
     return (l.find((x) => x.id === 'nodes')?.data.length ?? 0) > 0

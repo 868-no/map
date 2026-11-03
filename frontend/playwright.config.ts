@@ -15,6 +15,9 @@ export default defineConfig({
     // Request interception (page.route) does not see service-worker fetches;
     // the offline test opts back in.
     serviceWorkers: 'block',
+    // What a failure looked like, for the uploaded CI results.
+    screenshot: 'only-on-failure',
+    trace: 'retain-on-failure',
     launchOptions: { args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] },
   },
   outputDir: './e2e/.results',
