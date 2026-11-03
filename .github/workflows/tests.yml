@@ -65,14 +65,16 @@ jobs:
 
   e2e:
     # The map renders in software on these runners, so the suite is split
-    # across parallel jobs, each with its own stack.
-    name: end-to-end ${{ matrix.shard }}/3 (demo stack, Playwright)
+    # across parallel jobs, each with its own stack, running one test at a
+    # time: two at once starve the page, and the map takes clicks for long
+    # presses.
+    name: end-to-end ${{ matrix.shard }}/4 (demo stack, Playwright)
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3]
+        shard: [1, 2, 3, 4]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
@@ -107,7 +109,7 @@ jobs:
         # One retry: a few tests time animations and live traffic on a shared runner.
         run: |
           docker run --rm --network host --ipc=host -e MESHMAP_NO_BASEMAP=1 -v "$PWD":/src -w /src/frontend \
-            mcr.microsoft.com/playwright:v1.64.1-noble sh -c 'npm ci --no-audit --no-fund && npx playwright test --retries 1 --shard=${{ matrix.shard }}/3'
+            mcr.microsoft.com/playwright:v1.64.1-noble sh -c 'npm ci --no-audit --no-fund && npx playwright test --retries 1 --workers 1 --shard=${{ matrix.shard }}/4'
       - name: stack logs
         if: failure()
         run: docker compose --profile demo logs --no-color --tail 200
