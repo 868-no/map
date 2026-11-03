@@ -9,7 +9,7 @@ import { SettingsPanel } from './features/menu'
 import { HealthPanel } from './features/health'
 import { Dock, Rail, type PanelId } from './features/rail'
 import { TrendsPanel } from './features/trends'
-import { useCapabilities, useHealth, useRetention, useSnapshot, useTraffic } from './state/data'
+import { useCapabilities, useHealth, useRetention, useSnapshot } from './state/data'
 import type { Counts } from './derive/views'
 import { useLiveStream } from './state/live'
 import { initDerive } from './derive/client'
@@ -20,7 +20,6 @@ export default function App() {
   const caps = useCapabilities()
   const retention = useRetention()
   const snap = useSnapshot()
-  const traffic = useTraffic()
   const health = useHealth()
   const serious = (health.data?.issues ?? []).filter((i) => i.severity !== 'notice').length
   const win = useStore((s) => s.win)
@@ -153,7 +152,7 @@ export default function App() {
           {panel === 'details' && (sel?.kind === 'node' ? <NodePanel id={sel.id} snapshot={snap.data} /> : linkSel ? <EdgePanel a={linkSel.src} b={linkSel.dst} mqtt={!!linkSel.mqtt} snapshot={snap.data} /> : <div className="panel muted">Select a node or link on the map, or find one under Nodes.</div>)}
           {panel === 'health' && <HealthPanel snapshot={snap.data} />}
           {panel === 'trends' && <TrendsPanel />}
-          {panel === 'period' && <PeriodPanel caps={caps.data} retention={retention.data} snapshot={snap.data} traffic={traffic.data} />}
+          {panel === 'period' && <PeriodPanel caps={caps.data} retention={retention.data} snapshot={snap.data} />}
           {panel === 'filters' && <FilterPanel snapshot={snap.data} />}
           {panel === 'layers' && <LayersPanel />}
           {panel === 'legend' && <Legend snapshot={snap.data} />}

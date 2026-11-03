@@ -1,8 +1,9 @@
 // The period: the header's live indicator and the Period panel on the tool
 // rail (D-067), which replaced the time bar along the bottom of the map.
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Capabilities, Retention } from '../api/types'
-import type { SnapshotView, TrafficView } from '../derive/views'
+import type { SnapshotView } from '../derive/views'
+import { useTraffic } from '../state/data'
 import { useStore } from '../state/store'
 import { formatLocal, formatShort, fromLocalInput, isAmbiguousLocal, toLocalInput, zoneLabel } from '../lib/time'
 
@@ -62,7 +63,9 @@ export function LiveIndicator({ caps, retention, snapshot, liveOK, onOpen }: { c
 }
 
 /** The Period panel: window length, start and end, sliding through retention, and the window's traffic. */
-export function PeriodPanel({ caps, retention, snapshot, traffic }: { caps: Capabilities; retention: Retention | undefined; snapshot: SnapshotView | undefined; traffic: TrafficView | undefined }) {
+export function PeriodPanel({ caps, retention, snapshot }: { caps: Capabilities; retention: Retention | undefined; snapshot: SnapshotView | undefined }) {
+  // Built only while this panel is open: nothing else shows the traffic strip.
+  const traffic = useTraffic().data
   const { win, setLive, now, minMs, startMs, endMs, durMs, applyFixed } = useWindowModel(caps, retention, snapshot)
   const preset = (hours: number) => {
     if (win.live) setLive(hours)
@@ -77,9 +80,23 @@ export function PeriodPanel({ caps, retention, snapshot, traffic }: { caps: Capa
     return { bars: b.map((x) => ({ x: (Date.parse(x.start) - startMs) / durMs, p: x.packets / max, r: x.receptions / max })), barW: w, maxRx: max }
   }, [traffic, startMs, durMs])
 
+  // The slider shows a draft while dragged and applies it on release (or per
+  // key press): every tick as a window of its own would queue a sync each,
+  // and one far back in retention would replace the stored live window.
+  const [draft, setDraft] = useState<[number, number] | null>(null)
+  const [selStart, selEnd] = draft ?? [startMs, endMs]
+  const commitDraft = {
+    onPointerUp: () => { if (draft) applyFixed(draft[0], draft[1]); setDraft(null) },
+    onKeyUp: () => { if (draft) applyFixed(draft[0], draft[1]); setDraft(null) },
+    onBlur: () => { if (draft) applyFixed(draft[0], draft[1]); setDraft(null) },
+  }
   const [startInput, setStartInput] = useState(toLocalInput(new Date(startMs)))
   const [endInput, setEndInput] = useState(toLocalInput(new Date(endMs)))
+  // Follow the window, but not while someone is typing: a live window moves
+  // on every rebuild and would wipe a half-typed date.
+  const editing = useRef(false)
   useEffect(() => {
+    if (editing.current) return
     setStartInput(toLocalInput(new Date(startMs)))
     setEndInput(toLocalInput(new Date(endMs)))
   }, [startMs, endMs])
@@ -106,11 +123,11 @@ export function PeriodPanel({ caps, retention, snapshot, traffic }: { caps: Capa
       <h3>From and to</h3>
       <label className="dt">
         <span>Start</span>
-        <input type="datetime-local" value={startInput} onChange={(e) => setStartInput(e.target.value)} onBlur={() => commitInputs()} onKeyDown={(e) => e.key === 'Enter' && commitInputs()} />
+        <input type="datetime-local" value={startInput} onChange={(e) => setStartInput(e.target.value)} onFocus={() => (editing.current = true)} onBlur={() => { editing.current = false; commitInputs() }} onKeyDown={(e) => e.key === 'Enter' && commitInputs()} />
       </label>
       <label className="dt">
         <span>End</span>
-        <input type="datetime-local" value={endInput} onChange={(e) => setEndInput(e.target.value)} onBlur={() => commitInputs()} onKeyDown={(e) => e.key === 'Enter' && commitInputs()} />
+        <input type="datetime-local" value={endInput} onChange={(e) => setEndInput(e.target.value)} onFocus={() => (editing.current = true)} onBlur={() => { editing.current = false; commitInputs() }} onKeyDown={(e) => e.key === 'Enter' && commitInputs()} />
       </label>
       <p className="tz" title="Times are shown in your local time zone; the server works in UTC">
         {zoneLabel(new Date(endMs))}
@@ -124,9 +141,9 @@ export function PeriodPanel({ caps, retention, snapshot, traffic }: { caps: Capa
         </button>
         <div className="dual" title={`Selectable: ${formatShort(new Date(minMs))} – now`}>
           <div className="dual-track" />
-          <div className="dual-sel" style={{ left: `${pct(startMs)}%`, width: `${Math.max(pct(endMs) - pct(startMs), 0.3)}%` }} />
-          <input type="range" aria-label="Window start" min={minMs} max={now} step={60_000} value={startMs} onChange={(e) => applyFixed(+e.target.value, endMs)} />
-          <input type="range" aria-label="Window end" min={minMs} max={now} step={60_000} value={endMs} onChange={(e) => applyFixed(startMs, +e.target.value)} />
+          <div className="dual-sel" style={{ left: `${pct(selStart)}%`, width: `${Math.max(pct(selEnd) - pct(selStart), 0.3)}%` }} />
+          <input type="range" aria-label="Window start" min={minMs} max={now} step={60_000} value={selStart} onChange={(e) => setDraft([+e.target.value, selEnd])} {...commitDraft} />
+          <input type="range" aria-label="Window end" min={minMs} max={now} step={60_000} value={selEnd} onChange={(e) => setDraft([selStart, +e.target.value])} {...commitDraft} />
         </div>
         <button aria-label="Move window forward" title="Move window forward by half its length" onClick={() => applyFixed(startMs + durMs / 2, endMs + durMs / 2)} disabled={endMs >= now - 60_000}>
           ▶
