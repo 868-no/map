@@ -68,32 +68,44 @@ func (c *trendsCache) put(key string, b TrendsBody) {
 	c.byKey[key] = b
 }
 
+// zones caches parsed time zones: LoadLocation reads tzdata each time.
+var zones sync.Map
+
+func zone(name string) (*time.Location, bool) {
+	if l, ok := zones.Load(name); ok {
+		return l.(*time.Location), true
+	}
+	if name == "" || name == "Local" {
+		return nil, false
+	}
+	l, err := time.LoadLocation(name)
+	if err != nil {
+		return nil, false
+	}
+	zones.Store(name, l)
+	return l, true
+}
+
 func (s *Server) trends(ctx context.Context, in *TrendsInput) (*TrendsOutput, error) {
-	if _, err := time.LoadLocation(in.TZ); err != nil || in.TZ == "" || in.TZ == "Local" {
+	loc, ok := zone(in.TZ)
+	if !ok {
 		return nil, huma.Error400BadRequest("unknown time zone")
 	}
 	key := in.Bucket + "|" + in.TZ
 	if b, ok := s.trendsMemo.get(key, s.now()); ok {
-		return &TrendsOutput{CacheControl: "public, max-age=300", Body: b}, nil
+		return &TrendsOutput{CacheControl: "public, max-age=60", Body: b}, nil
 	}
-	release, err := s.acquire(ctx)
-	if err != nil {
+	// Hourly summaries in memory keep this fast however long retention is
+	// (D-112). They are refreshed at most once per TrendsTTL whatever bucket
+	// or zone is asked for, so trends never compete with /observations for
+	// read slots; a request in between only sums from memory.
+	if err := s.trendHours.RefreshEvery(ctx, s.Pool, s.now(), TrendsTTL); err != nil {
 		return nil, err
 	}
-	defer release()
-
-	body := TrendsBody{Bucket: in.Bucket, TZ: in.TZ, Buckets: []TrendBucket{}, Computed: s.now()}
-	// Hourly summaries in memory keep this fast however long retention is (D-112).
-	if err := s.trendHours.Refresh(ctx, s.Pool, s.now()); err != nil {
-		return nil, err
-	}
-	loc, _ := time.LoadLocation(in.TZ)
+	body := TrendsBody{Bucket: in.Bucket, TZ: in.TZ, Buckets: []TrendBucket{}, Computed: s.now(), Since: s.trendHours.Oldest()}
 	for _, b := range s.trendHours.Buckets(in.Bucket, loc) {
 		body.Buckets = append(body.Buckets, TrendBucket{Start: b.Start, Nodes: b.Nodes, Gateways: b.Gateways, NewNodes: b.NewNodes, Packets: b.Packets, Receptions: b.Receptions, ByType: b.ByType})
 	}
-	if err := s.Pool.QueryRow(ctx, `SELECT min(observed_at) FROM packet_log`).Scan(&body.Since); err != nil {
-		return nil, err
-	}
 	s.trendsMemo.put(key, body)
-	return &TrendsOutput{CacheControl: "public, max-age=300", Body: body}, nil
+	return &TrendsOutput{CacheControl: "public, max-age=60", Body: body}, nil
 }

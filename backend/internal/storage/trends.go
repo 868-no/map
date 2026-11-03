@@ -33,22 +33,24 @@ type HourSummary struct {
 // scan. Daily, weekly and monthly totals in any whole-hour time zone are
 // unions of hours.
 type TrendHours struct {
-	mu    sync.Mutex
-	hours map[time.Time]*HourSummary
+	mu     sync.Mutex
+	hours  map[time.Time]*HourSummary
+	oldest *time.Time // the oldest retained row at the last refresh
+	last   time.Time  // wall clock of the last refresh
 }
 
 // Rows that failed verification never count (D-093); rows stored as "other"
 // before node status and store-and-forward were decoded count as those (D-103).
 var trendRangeSQL = `
 	WITH r AS (
-	  SELECT date_trunc('hour', observed_at) AS h, source_node_id AS s, gateway_node_id AS g, logical_packet_key AS l,
+	  SELECT date_trunc('hour', observed_at) AS h, source_node_id AS s, gateway_node_id AS g, logical_packet_key AS l, decode_version AS dv,
 	    CASE WHEN packet_type = 'other' AND decoded_metadata->'other'->>'port_name' = 'STORE_FORWARD_APP' THEN 'store_forward'
 	         WHEN packet_type = 'other' AND decoded_metadata->'other'->>'port_name' = 'NODE_STATUS_APP' THEN 'node_status'
 	         ELSE packet_type END AS ty
 	  FROM packet_log WHERE ` + window.Predicate(1, 2) + ` AND packet_type <> 'invalid'),
-	agg AS (SELECT h, array_agg(DISTINCT s ORDER BY s) AS nodes, array_remove(array_agg(DISTINCT g ORDER BY g), NULL) AS gws, count(DISTINCT l) AS p, count(*) AS rc FROM r GROUP BY h),
+	agg AS (SELECT h, array_agg(DISTINCT s ORDER BY s) AS nodes, array_remove(array_agg(DISTINCT g ORDER BY g), NULL) AS gws, count(DISTINCT l) AS p, count(*) AS rc, bool_or(dv < $3) AS stale FROM r GROUP BY h),
 	types AS (SELECT h, jsonb_object_agg(ty, c) AS j FROM (SELECT h, ty, count(DISTINCT l) AS c FROM r GROUP BY h, ty) x GROUP BY h)
-	SELECT agg.h, agg.nodes, agg.gws, agg.p, agg.rc, COALESCE(types.j, '{}'::jsonb) FROM agg LEFT JOIN types USING (h)`
+	SELECT agg.h, agg.nodes, agg.gws, agg.p, agg.rc, COALESCE(types.j, '{}'::jsonb), agg.stale FROM agg LEFT JOIN types USING (h)`
 
 // Refresh brings the summaries up to date: hours never summed, the most
 // recent TrendRecent, and hours summed under an older decoder are read from
@@ -64,6 +66,8 @@ func (t *TrendHours) Refresh(ctx context.Context, pool *pgxpool.Pool, now time.T
 	if err := pool.QueryRow(ctx, `SELECT min(observed_at), max(observed_at) FROM packet_log`).Scan(&oldest, &newest); err != nil {
 		return err
 	}
+	t.oldest = oldest
+	t.last = time.Now()
 	if oldest == nil {
 		t.hours = map[time.Time]*HourSummary{}
 		return nil
@@ -111,7 +115,7 @@ func (t *TrendHours) Refresh(ctx context.Context, pool *pgxpool.Pool, now time.T
 }
 
 func (t *TrendHours) readRange(ctx context.Context, pool *pgxpool.Pool, lo, hi time.Time) error {
-	rows, err := pool.Query(ctx, trendRangeSQL, lo, hi)
+	rows, err := pool.Query(ctx, trendRangeSQL, lo, hi, ingest.DecodeVersion)
 	if err != nil {
 		return err
 	}
@@ -120,8 +124,13 @@ func (t *TrendHours) readRange(ctx context.Context, pool *pgxpool.Pool, lo, hi t
 	for rows.Next() {
 		var h time.Time
 		s := &HourSummary{DecodeVersion: ingest.DecodeVersion}
-		if err := rows.Scan(&h, &s.Nodes, &s.Gateways, &s.Packets, &s.Receptions, &s.ByType); err != nil {
+		var stale bool
+		if err := rows.Scan(&h, &s.Nodes, &s.Gateways, &s.Packets, &s.Receptions, &s.ByType, &stale); err != nil {
 			return err
+		}
+		if stale {
+			// Some rows are still to be decoded again: read this hour again later.
+			s.DecodeVersion = 0
 		}
 		fresh[h.UTC()] = s
 	}
@@ -135,6 +144,25 @@ func (t *TrendHours) readRange(ctx context.Context, pool *pgxpool.Pool, lo, hi t
 		t.hours[h] = s
 	}
 	return nil
+}
+
+// RefreshEvery refreshes at most once per every (wall clock): requests in
+// between, whatever bucket or zone they ask for, reuse the summaries.
+func (t *TrendHours) RefreshEvery(ctx context.Context, pool *pgxpool.Pool, now time.Time, every time.Duration) error {
+	t.mu.Lock()
+	fresh := t.hours != nil && time.Since(t.last) < every
+	t.mu.Unlock()
+	if fresh {
+		return nil
+	}
+	return t.Refresh(ctx, pool, now)
+}
+
+// Oldest is the oldest retained row as of the last refresh (nil: none).
+func (t *TrendHours) Oldest() *time.Time {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.oldest
 }
 
 // Len is how many hours are summarised.
