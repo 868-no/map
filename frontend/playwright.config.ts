@@ -2,6 +2,8 @@ import { defineConfig } from '@playwright/test'
 
 export default defineConfig({
   testDir: './e2e',
+  // Tests are independent: workers and CI shards split them one by one, not by file.
+  fullyParallel: true,
   timeout: 90_000,
   expect: { timeout: 20_000 },
   reporter: [['list']],
