@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Edge, Hearing } from '../src/derive/views'
-import { linkNeighbours, sortHearings } from '../src/features/panels'
+import { linkNeighbours, sortHearings } from '../src/features/node/sort'
 
 const edge = (src: string, dst: string, confidence: string, snr?: number, mqtt = false) =>
   ({ src, dst, confidence, mqtt, snr: { median: snr } }) as unknown as Edge
