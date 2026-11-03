@@ -2,7 +2,8 @@ import type { Edge, SnapshotView } from '../derive/views'
 import { useLinkHistory } from '../state/data'
 import { useStore } from '../state/store'
 import { formatLocal } from '../lib/time'
-import { TimeChart } from '../components/TimeChart'
+import { TimeChart, type Band } from '../components/TimeChart'
+import { meanPoints, useWeather, weatherPoints, weatherSite } from '../state/weather'
 import { nodeName } from '../map/model'
 
 export function EdgePanel({ a, b, mqtt = false, snapshot }: { a: string; b: string; mqtt?: boolean; snapshot: SnapshotView | undefined }) {
@@ -71,7 +72,7 @@ export function EdgePanel({ a, b, mqtt = false, snapshot }: { a: string; b: stri
       )}
       {direction(a, b)}
       {direction(b, a)}
-      {!mqtt && snapshot && <LinkHistoryCharts a={a} b={b} name={name} start={Date.parse(snapshot.meta.window.start)} end={Date.parse(snapshot.meta.window.end)} />}
+      {!mqtt && snapshot && <LinkHistoryCharts a={a} b={b} name={name} snapshot={snapshot} start={Date.parse(snapshot.meta.window.start)} end={Date.parse(snapshot.meta.window.end)} />}
     </div>
   )
 }
@@ -79,8 +80,18 @@ export function EdgePanel({ a, b, mqtt = false, snapshot }: { a: string; b: stri
 const EV_LABEL: Record<string, string> = { neighbor: 'NeighborInfo', traceroute: 'traceroute', direct_rf: 'heard directly', relay_hint: 'relay guess' }
 
 /** The link's signal over the selected period, both directions (D-105). */
-function LinkHistoryCharts({ a, b, name, start, end }: { a: string; b: string; name: (id: string) => string; start: number; end: number }) {
+function LinkHistoryCharts({ a, b, name, snapshot, start, end }: { a: string; b: string; name: (id: string) => string; snapshot: SnapshotView; start: number; end: number }) {
   const h = useLinkHistory(a, b)
+  // Precipitation behind the SNR (D-133): the mean of the ends that are
+  // stationary routers, as rain or snow anywhere along the path may matter.
+  const ends = [a, b].map((id) => snapshot.nodes.find((n) => n.id === id)).filter((n) => weatherSite(n))
+  const weather = useWeather(ends.map(weatherSite), start, end)
+  const loaded = weather.filter((w) => w.data)
+  const rain: Band | undefined = loaded.length
+    ? { label: 'Precipitation', unit: 'mm', color: 'var(--purple)', kind: 'amount', decimals: 1,
+        points: meanPoints(loaded.map((w) => weatherPoints(w.data!.hours, 'precip_mm'))),
+        note: `${weather.some((w) => w.data?.incomplete) ? 'Loading… ' : ''}per hour, ${ends.length > 1 ? `mean of ${ends.map((n) => name(n!.id)).join(' and ')}` : `at ${name(ends[0]!.id)}`}, MET Norway (CC BY 4.0)` }
+    : undefined
   if (!h.data) return null
   const { ab, ba } = h.data
   if (ab.length + ba.length === 0) return null
@@ -94,7 +105,7 @@ function LinkHistoryCharts({ a, b, name, start, end }: { a: string; b: string; n
       <h3 title="Every measured reading of this link in the selected period, each RF event once">Signal over time</h3>
       <p className="muted small">Each reading as the receiving node measured it ({kinds.join(', ')}). A falling line across days can mean a degrading antenna, cable or site; short dips are often weather or traffic.</p>
       <div className="tcharts">
-        <TimeChart label="SNR" unit="dB" start={start} end={end} series={series('snr')} />
+        <TimeChart label="SNR" unit="dB" start={start} end={end} series={series('snr')} band={rain} />
         <TimeChart label="RSSI" unit="dBm" decimals={0} start={start} end={end} series={series('rssi')} empty="only measured by gateway receptions" />
       </div>
     </section>

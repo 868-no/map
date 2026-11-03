@@ -1,6 +1,7 @@
 import type { NodeView, SnapshotView } from '../../derive/views'
 import { formatLocal } from '../../lib/time'
-import { TimeChart } from '../../components/TimeChart'
+import { TimeChart, type Band, type Series } from '../../components/TimeChart'
+import { useWeather, weatherPoints, weatherSite } from '../../state/weather'
 import { NR, fmt } from './shared'
 
 /** Firmware reports battery level 101 when on external power. */
@@ -13,6 +14,26 @@ export function TelemetryTab({ d, snapshot, now }: { d: NodeView; snapshot: Snap
   const telemetryCount = dev.length + env.length
   const winStart = snapshot ? Date.parse(snapshot.meta.window.start) : Math.min(...[...dev, ...env].map((s) => Date.parse(s.at)))
   const winEnd = now
+  // Stationary routers get the weather at their site behind their own readings (D-133).
+  const [weather] = useWeather([weatherSite(d)], winStart, winEnd)
+  const w = weather?.data
+  const loading = w?.incomplete ? 'Loading… ' : ''
+  const band = (b: Omit<Band, 'points' | 'note'>, k: Parameters<typeof weatherPoints>[1], what: string): Band | undefined =>
+    w ? { ...b, points: weatherPoints(w.hours, k), note: `${loading}${what} at its site, MET Norway (CC BY 4.0)` } : undefined
+  const tempBand = band({ label: 'Weather', unit: '°C', color: 'var(--orange)', kind: 'level' }, 'temp_c', 'Air temperature')
+  const humidityBand = band({ label: 'Weather', unit: '%', color: 'var(--orange)', kind: 'level', decimals: 0 }, 'humidity_pct', 'Relative humidity')
+  const cloudBand = band({ label: 'Cloud cover', unit: '%', color: 'var(--muted)', kind: 'share', decimals: 0 }, 'cloud_pct', 'Cloud cover')
+  const wind: Series[] = w ? [
+    { label: 'Wind', color: 'var(--accent)', points: weatherPoints(w.hours, 'wind_ms') },
+    { label: 'Gusts', color: 'var(--orange)', points: weatherPoints(w.hours, 'gust_ms') },
+  ] : []
+  const hasWeather = !!w && w.hours != null && w.hours.length > 0
+  const windChart = hasWeather && (
+    <div>
+      <TimeChart label="Wind" unit="m/s" start={winStart} end={winEnd} series={wind} />
+      <p className="muted small">{loading}At its site, 10 m above ground: wind from the MET Nordic analysis, the hour's strongest gust from MEPS forecasts. MET Norway (CC BY 4.0)</p>
+    </div>
+  )
   // Latest reading of each quantity: one report may carry only some of them.
   const envLast = {
     at: env.at(-1)?.at ?? '',
@@ -55,19 +76,30 @@ export function TelemetryTab({ d, snapshot, now }: { d: NodeView; snapshot: Snap
         )}
       </dl>
       {telemetryCount === 0 ? (
-        <p className="muted">No telemetry from this node in the selected period.</p>
+        <>
+          <p className="muted">No telemetry from this node in the selected period.</p>
+          {hasWeather && (
+            <div className="tcharts">
+              <TimeChart label="Voltage" unit="V" decimals={2} start={winStart} end={winEnd} band={cloudBand} />
+              <TimeChart label="Temperature" unit="°C" start={winStart} end={winEnd} band={tempBand} />
+              <TimeChart label="Humidity" unit="%" decimals={0} domain={[0, 100]} start={winStart} end={winEnd} band={humidityBand} />
+              {windChart}
+            </div>
+          )}
+        </>
       ) : (
         <div className="tcharts">
           <TimeChart label="Battery" unit="%" decimals={0} domain={[0, 100]} start={winStart} end={winEnd}
             points={dev.map((s) => [Date.parse(s.at), s.battery != null && s.battery <= 100 ? s.battery : null])}
             empty={dev.some((s) => s.battery != null && s.battery > 100) ? 'on external power' : undefined} />
-          <TimeChart label="Voltage" unit="V" decimals={2} start={winStart} end={winEnd} points={dev.map((s) => [Date.parse(s.at), s.voltage ?? null])} />
+          <TimeChart label="Voltage" unit="V" decimals={2} start={winStart} end={winEnd} points={dev.map((s) => [Date.parse(s.at), s.voltage ?? null])} band={cloudBand} />
           <TimeChart label="Channel utilisation" unit="%" start={winStart} end={winEnd} points={dev.map((s) => [Date.parse(s.at), s.ch_util ?? null])} />
           <TimeChart label="Own airtime" unit="%" decimals={2} start={winStart} end={winEnd} points={dev.map((s) => [Date.parse(s.at), s.air_util ?? null])} />
           <TimeChart label="Uptime" unit="days" decimals={1} start={winStart} end={winEnd} points={dev.map((s) => [Date.parse(s.at), s.uptime != null ? s.uptime / 86_400 : null])} />
-          <TimeChart label="Temperature" unit="°C" start={winStart} end={winEnd} points={env.map((s) => [Date.parse(s.at), s.temp ?? null])} />
-          <TimeChart label="Humidity" unit="%" decimals={0} domain={[0, 100]} start={winStart} end={winEnd} points={env.map((s) => [Date.parse(s.at), s.humidity ?? null])} />
+          <TimeChart label="Temperature" unit="°C" start={winStart} end={winEnd} points={env.map((s) => [Date.parse(s.at), s.temp ?? null])} band={tempBand} />
+          <TimeChart label="Humidity" unit="%" decimals={0} domain={[0, 100]} start={winStart} end={winEnd} points={env.map((s) => [Date.parse(s.at), s.humidity ?? null])} band={humidityBand} />
           <TimeChart label="Pressure" unit="hPa" decimals={0} start={winStart} end={winEnd} points={env.map((s) => [Date.parse(s.at), s.pressure ?? null])} />
+          {windChart}
         </div>
       )}
       {d.truncated && <p className="muted small">Long series show only their latest 500 reports.</p>}

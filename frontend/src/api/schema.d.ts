@@ -109,6 +109,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/weather": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Hourly weather at a point from MET Norway's analysis (temperature, precipitation) */
+        get: operations["weather"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -149,6 +166,8 @@ export interface components {
         CapabilitiesBodyFeaturesStruct: {
             geolocation: boolean;
             live: boolean;
+            /** @description GET /api/v1/weather is served (D-133) */
+            weather: boolean;
         };
         CapabilitiesBodyMapStruct: {
             /** Format: double */
@@ -245,6 +264,43 @@ export interface components {
             /** Format: date-time */
             now: string;
             window: components["schemas"]["WindowEcho"];
+        };
+        Hour: {
+            /**
+             * Format: double
+             * @description Cloud cover, %
+             */
+            cloud_pct?: number;
+            /**
+             * Format: double
+             * @description Strongest gust 10 m above ground, m/s, from the first hours of a MEPS forecast run (the analysis has none)
+             */
+            gust_ms?: number;
+            /**
+             * Format: double
+             * @description Relative humidity 2 m above ground, %
+             */
+            humidity_pct?: number;
+            /**
+             * Format: double
+             * @description Precipitation in the hour before t, mm
+             */
+            precip_mm?: number;
+            /**
+             * Format: date-time
+             * @description Valid time (UTC, on the hour)
+             */
+            t: string;
+            /**
+             * Format: double
+             * @description Air temperature 2 m above ground, °C
+             */
+            temp_c?: number;
+            /**
+             * Format: double
+             * @description Wind speed 10 m above ground, m/s
+             */
+            wind_ms?: number;
         };
         LiveDelta: {
             events: components["schemas"]["LiveEvent"][] | null;
@@ -580,6 +636,19 @@ export interface components {
              */
             since?: string;
             tz: string;
+        };
+        WeatherBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/api/schemas/WeatherBody.json
+             */
+            readonly $schema?: string;
+            attribution: string;
+            /** @description Hourly values in [start, end), oldest first; hours the analysis lacks are left out */
+            hours: components["schemas"]["Hour"][] | null;
+            /** @description Some hours are still being fetched; ask again in a few seconds */
+            incomplete?: boolean;
         };
         WindowEcho: {
             /** Format: date-time */
@@ -920,6 +989,72 @@ export interface operations {
             };
             /** @description Service Unavailable */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    weather: {
+        parameters: {
+            query: {
+                /** @description Latitude of the point */
+                lat: number;
+                /** @description Longitude of the point */
+                lon: number;
+                /** @description Inclusive start, RFC 3339 */
+                start: string;
+                /** @description Exclusive end, RFC 3339; at most the longest window after start */
+                end: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WeatherBody"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
                 headers: {
                     [name: string]: unknown;
                 };
