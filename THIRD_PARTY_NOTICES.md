@@ -24,10 +24,11 @@ Each dependency's license text is in its source distribution (the Go module cach
 | [Natural Earth](https://www.naturalearthdata.com/) | basemap, low zooms | Public domain |
 | [OSMData water polygons](https://osmdata.openstreetmap.de/) | basemap | ODbL 1.0 |
 | [Kartverket](https://www.kartverket.no/) county boundaries (2024), via [robhop/fylker-og-kommuner](https://github.com/robhop/fylker-og-kommuner), dissolved into regions by `scripts/regions.sh` | `frontend/src/assets/regions.geojson` (regions layer) | CC BY 4.0, attribution "© Kartverket" |
+| [MET Nordic analysis](https://github.com/metno/NWPdocs/wiki/MET-Nordic-dataset) from [MET Norway](https://www.met.no/en/free-meteorological-data/Licensing-and-crediting) and the [MEPS](https://github.com/metno/NWPdocs/wiki/MEPS-dataset) forecast model (hourly air temperature, precipitation, humidity, cloud cover, wind and gusts) | fetched at runtime by the backend for weather bands on charts and kept in `weather_hour` for the retention period (D-133) | CC BY 4.0, attribution "MET Norway" |
 | [Planetiler](https://github.com/onthegomap/planetiler) | basemap image base (`ghcr.io/onthegomap/planetiler`) | Apache-2.0 |
 | [Caddy](https://caddyserver.com/) | web image base | Apache-2.0 |
 
-The map shows the OpenStreetMap and OpenMapTiles attributions at all times, and the Kartverket attribution while the regions layer is on, next to a link to this project's source code.
+The map shows the OpenStreetMap and OpenMapTiles attributions at all times, the Kartverket attribution while the regions layer is on, and the MET Norway attribution under every chart with weather, next to a link to this project's source code.
 
 ## Test fixtures
 

@@ -52,8 +52,11 @@ type Env struct {
 	GeolocationExclude   []string `env:"GEOLOCATION_EXCLUDE_NODE_IDS" envSeparator:","`
 	GeolocationMinPrec   uint32   `env:"GEOLOCATION_MIN_PRECISION_BITS" envDefault:"15"`
 	PublicMetricsEnabled bool     `env:"PUBLIC_METRICS_ENABLED" envDefault:"false"`
-	SignaturePolicy      string   `env:"SIGNATURE_POLICY" envDefault:"balanced"`
-	TrustedProxies       []string `env:"TRUSTED_PROXIES" envSeparator:"," envDefault:"10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,127.0.0.0/8,::1/128,fc00::/7"`
+	// Hourly weather for stationary routers from MET Norway (D-133).
+	WeatherEnabled  bool     `env:"WEATHER_ENABLED" envDefault:"true"`
+	WeatherURL      string   `env:"WEATHER_URL" envDefault:"https://thredds.met.no/thredds/dodsC"`
+	SignaturePolicy string   `env:"SIGNATURE_POLICY" envDefault:"balanced"`
+	TrustedProxies  []string `env:"TRUSTED_PROXIES" envSeparator:"," envDefault:"10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,127.0.0.0/8,::1/128,fc00::/7"`
 	// Public API protection, per client (an IPv4 address or an IPv6 /64).
 	APIRatePerSecond    float64       `env:"API_RATE_PER_SECOND" envDefault:"20"`
 	APIRateBurst        int           `env:"API_RATE_BURST" envDefault:"60"`

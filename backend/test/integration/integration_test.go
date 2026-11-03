@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"math/rand/v2"
 	"os"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -52,7 +53,7 @@ func freshDB(t *testing.T) *pgxpool.Pool {
 		t.Fatal(err)
 	}
 	t.Cleanup(pool.Close)
-	if _, err := pool.Exec(ctx, `DROP TABLE IF EXISTS packet_log`); err != nil {
+	if _, err := pool.Exec(ctx, `DROP TABLE IF EXISTS packet_log, weather_hour`); err != nil {
 		t.Fatal(err)
 	}
 	if err := storage.InitSchema(ctx, pool); err != nil {
@@ -294,7 +295,7 @@ func TestDedupeWithoutRedis(t *testing.T) {
 }
 
 // design §10.2 test 33: retention deletes only expired rows, is repeatable, never
-// runs concurrently, and leaves packet_log as the only table.
+// runs concurrently, and leaves packet_log the only table of mesh data.
 func TestRetention(t *testing.T) {
 	pool := freshDB(t)
 	rc := redisClient(t)
@@ -322,6 +323,11 @@ func TestRetention(t *testing.T) {
 		if _, err := pool.Exec(ctx, insert, at, 0, 0); err != nil {
 			t.Fatal(err)
 		}
+	}
+	// Weather goes with the mesh data it sits beside (D-133).
+	if _, err := pool.Exec(ctx, `INSERT INTO weather_hour (cell_x, cell_y, valid_at, fetched_at) VALUES (1, 1, $1, $2), (1, 1, $3, $2)`,
+		cutoff.Add(-time.Hour), now, cutoff); err != nil {
+		t.Fatal(err)
 	}
 	ins(cutoff)                       // exactly on the boundary: kept (delete is observed_at < cutoff)
 	ins(cutoff.Add(time.Millisecond)) // kept
@@ -357,8 +363,11 @@ func TestRetention(t *testing.T) {
 	if got, _ := maintenance.LastStatus(ctx, rc); got == nil || got.DeletedRows != 0 {
 		t.Fatal("status not shared via Redis")
 	}
+	if n := count(t, pool, `SELECT count(*) FROM weather_hour`); n != 1 {
+		t.Fatalf("%d weather hours left, want the one on the cutoff", n)
+	}
 	tables, _ := storage.ApplicationTables(ctx, pool)
-	if len(tables) != 1 || tables[0] != "packet_log" {
+	if !slices.Equal(tables, storage.Tables) {
 		t.Fatalf("application tables: %v", tables)
 	}
 }

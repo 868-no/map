@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"hash/crc32"
 	"log/slog"
+	"slices"
 	"strings"
 	"time"
 
@@ -25,7 +26,11 @@ import (
 var schemaSQL string
 
 // SchemaVersion is the value stored in the packet_log table comment.
-const SchemaVersion = "meshmap-schema:2"
+const SchemaVersion = "meshmap-schema:3"
+
+// Tables are the application tables, sorted: packet_log for mesh data and
+// weather_hour for weather (design §1.2, invariant 2; D-133).
+var Tables = []string{"packet_log", "weather_hour"}
 
 // Open creates a connection pool of at most maxConns connections. role names
 // it in pg_stat_activity (application_name meshmap-{role}).
@@ -72,8 +77,9 @@ func InitSchema(ctx context.Context, pool *pgxpool.Pool) error {
 	return EnsurePartitions(ctx, conn, now.AddDate(0, -1, 0), now.AddDate(0, 2, 0))
 }
 
-// CheckSchema verifies the schema version and that packet_log is the only
-// application table (design §1.2, invariant 2).
+// CheckSchema verifies the schema version and that the application tables
+// are exactly Tables: packet_log the only one of mesh data (design §1.2,
+// invariant 2).
 func CheckSchema(ctx context.Context, pool *pgxpool.Pool) error {
 	var comment *string
 	if err := pool.QueryRow(ctx, `SELECT obj_description(to_regclass('public.packet_log'), 'pg_class')`).Scan(&comment); err != nil {
@@ -86,7 +92,7 @@ func CheckSchema(ctx context.Context, pool *pgxpool.Pool) error {
 	if err != nil {
 		return err
 	}
-	if len(tables) != 1 || tables[0] != "packet_log" {
+	if !slices.Equal(tables, Tables) {
 		return fmt.Errorf("unexpected application tables: %s", strings.Join(tables, ", "))
 	}
 	return nil

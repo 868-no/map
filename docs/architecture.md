@@ -24,8 +24,9 @@ This page shows the components and where the code lives. The rules the system fo
 └───────────────┬───────────────────────────────┬──────────────────────────────────┘
                 │                               │
         PostgreSQL 16                     Redis 7 (ephemeral)
-        packet_log (only table,           dedupe keys, live pub/sub,
+        packet_log (mesh data,            dedupe keys, live pub/sub,
         monthly partitions)               maintenance status
+        weather_hour (weather, D-133)
                 ▲
                 │
    maintenance (meshmap maintenance)
@@ -46,7 +47,7 @@ Compose network: only `web` publishes a port. `backend:9100` serves Prometheus m
 
 ## Data model
 
-One application table, `packet_log` (`backend/internal/storage/schema.sql`): one row per accepted gateway reception, range-partitioned by calendar month of `observed_at` (D-056). Partitions are created ahead by `storage.EnsurePartitions` and dropped whole by retention. The row is append-mostly; only `decoded_metadata.also_via` (broker provenance, D-013) and the stored row encoding below are ever updated. Keys:
+One table of mesh data, `packet_log` (`backend/internal/storage/schema.sql`), and one of weather, `weather_hour` (MET Norway's analysis per grid cell and hour, for chart bands; design §3.7, D-133). `packet_log`: one row per accepted gateway reception, range-partitioned by calendar month of `observed_at` (D-056). Partitions are created ahead by `storage.EnsurePartitions` and dropped whole by retention. The row is append-mostly; only `decoded_metadata.also_via` (broker provenance, D-013) and the stored row encoding below are ever updated. Keys:
 
 - `logical_packet_key`: the RF packet (sender, packet id, destination, channel, port, canonical payload — payload excluded for traceroutes, which every hop rewrites).
 - `observation_key`: one gateway's reception (logical key + gateway + receive metadata + payload hash). It is the dedupe key; a unique index on `(observation_key, observed_at)` makes a retried batch store nothing twice (D-056).

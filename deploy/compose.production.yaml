@@ -24,6 +24,8 @@ x-backend-env: &backend-env
   # owners need to know who runs the site and how to reach them.
   OPERATOR_NAME: ${OPERATOR_NAME:-}
   OPERATOR_CONTACT: ${OPERATOR_CONTACT:-}
+  # Weather bands on router and link charts, fetched from MET Norway (D-133).
+  WEATHER_ENABLED: ${WEATHER_ENABLED:-true}
   # Brokers and channel keys: the same YAML as config/examples/*.yaml.
   MQTT_BROKERS: |
     brokers:

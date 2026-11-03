@@ -26,6 +26,7 @@ import (
 	"github.com/868-no/map/internal/observability"
 	"github.com/868-no/map/internal/security"
 	"github.com/868-no/map/internal/storage"
+	"github.com/868-no/map/internal/weather"
 )
 
 func databaseURL(e config.Env) string {
@@ -359,6 +360,15 @@ func serveCmd() *cobra.Command {
 			apiSrv := &api.Server{Pool: pool,
 				Hub: hub, Env: c.Env, ConfigRev: c.Revision(), Metrics: m, Log: log, HeavySlots: c.Env.APIReadSlots,
 				Geo: api.GeoOptions{Enabled: c.Env.GeolocationEnabled, MinPrecisionBits: c.Env.GeolocationMinPrec, Exclude: c.Exclude, Params: c.GeoParams()}}
+			if c.Env.WeatherEnabled {
+				ua := "868-map/" + api.Version + " github.com/868-no/map"
+				if c.Env.OperatorContact != "" {
+					ua += " " + c.Env.OperatorContact
+				}
+				apiSrv.Weather = weather.New(c.Env.WeatherURL, ua)
+				apiSrv.Weather.Store, apiSrv.Weather.Log = &weather.Store{Pool: pool}, log
+				go apiSrv.Weather.Run(ctx)
+			}
 			apiSrv.NewHandler(mux)
 			handler := api.Protect(mux, api.Limits{Trusted: c.Proxies, PerSecond: c.Env.APIRatePerSecond, Burst: c.Env.APIRateBurst,
 				Timeout: c.Env.APIRequestTimeout, MaxStreams: c.Env.APIStreamsPerClient, MaxStreamsTotal: c.Env.APIStreamsTotal,

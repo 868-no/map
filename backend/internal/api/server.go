@@ -18,6 +18,7 @@ import (
 	"github.com/868-no/map/internal/geo"
 	"github.com/868-no/map/internal/observability"
 	"github.com/868-no/map/internal/storage"
+	"github.com/868-no/map/internal/weather"
 	"github.com/868-no/map/internal/window"
 )
 
@@ -46,6 +47,8 @@ type Server struct {
 	// HeavySlots bounds concurrent /observations reads (database
 	// connections held while rows stream); default 8.
 	HeavySlots int
+	// Weather serves /weather (D-133); nil when disabled.
+	Weather *weather.Client
 
 	heavy      chan struct{}
 	closing    chan struct{}
@@ -181,5 +184,7 @@ func (s *Server) register(api huma.API) {
 		Summary: "A node's announced and trusted public keys from the retained log", Tags: []string{"mesh"}, Errors: []int{400, 404}}, s.nodeKey)
 	huma.Register(api, huma.Operation{OperationID: "trends", Method: http.MethodGet, Path: "/api/v1/trends",
 		Summary: "Daily, weekly or monthly summaries over the whole retained log", Tags: []string{"mesh"}, Errors: []int{400, 503}}, s.trends)
+	huma.Register(api, huma.Operation{OperationID: "weather", Method: http.MethodGet, Path: "/api/v1/weather",
+		Summary: "Hourly weather at a point from MET Norway's analysis (temperature, precipitation)", Tags: []string{"meta"}, Errors: []int{400, 404, 422}}, s.weather)
 	s.registerStream(api)
 }

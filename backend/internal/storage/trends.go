@@ -29,7 +29,7 @@ type HourSummary struct {
 
 // TrendHours keeps per-hour summaries of the retained log in memory (D-112),
 // so long-term trends never scan the whole log after the first request:
-// packet_log stays the only table (invariant 2), and a restart costs one
+// no summary table is added (invariant 2), and a restart costs one
 // scan. Daily, weekly and monthly totals in any whole-hour time zone are
 // unions of hours.
 type TrendHours struct {

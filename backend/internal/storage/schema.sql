@@ -1,10 +1,11 @@
--- meshmap schema. The ONLY application table is packet_log (design §3.1),
+-- meshmap schema. The ONLY table of mesh data is packet_log (design §3.1),
 -- range-partitioned by month on observed_at (D-056): retention drops whole
 -- months instead of deleting and vacuuming rows. Partitions are created by
 -- storage.EnsurePartitions, never by hand.
 -- Every statement is idempotent; init-schema runs it under an advisory lock
 -- (after migrating an unpartitioned table from schema 1, see migrate.go).
 -- The schema version lives in the table comment, not in a migrations table.
+-- The one other table, weather_hour, holds weather, not mesh data (D-133).
 
 -- PostgreSQL 16 has no identity columns on partitioned tables: a sequence.
 CREATE SEQUENCE IF NOT EXISTS packet_log_id_seq AS BIGINT;
@@ -71,4 +72,24 @@ CREATE UNIQUE INDEX IF NOT EXISTS packet_log_observation_key ON packet_log (obse
 -- The partial indexes on stale rows carry version numbers in their predicate
 -- and name, so they are created from Go (stale.go, D-116).
 
-COMMENT ON TABLE packet_log IS 'meshmap-schema:2';
+-- Weather at stationary routers (D-133): MET Norway's MET Nordic analysis
+-- with gusts from MEPS, one row per 1 km analysis grid cell and hour, fetched once and kept for the
+-- retention period. Not mesh data: nothing on the map is derived from it, and
+-- it can always be fetched again. missing: the archive had no file for that
+-- hour when fetched_at asked.
+CREATE TABLE IF NOT EXISTS weather_hour (
+    cell_x     SMALLINT NOT NULL,
+    cell_y     SMALLINT NOT NULL,
+    valid_at   TIMESTAMPTZ NOT NULL,
+    temp_c       REAL,
+    precip_mm    REAL,
+    humidity_pct REAL,
+    cloud_pct    REAL,
+    wind_ms      REAL,
+    gust_ms      REAL, -- from MEPS: NULL until its run is archived, hours late
+    missing      BOOLEAN NOT NULL DEFAULT false,
+    fetched_at   TIMESTAMPTZ NOT NULL,
+    CONSTRAINT weather_hour_pkey PRIMARY KEY (cell_x, cell_y, valid_at)
+);
+
+COMMENT ON TABLE packet_log IS 'meshmap-schema:3';

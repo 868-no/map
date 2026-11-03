@@ -124,6 +124,10 @@ func (r *Runner) RunOnce(ctx context.Context) (Status, error) {
 		}
 	}
 	st.DeletedRows += trimmed
+	// Weather is kept as long as the mesh data it sits beside (D-133).
+	if _, err := conn.Exec(ctx, `DELETE FROM weather_hour WHERE valid_at < $1`, cutoff); err != nil {
+		return st, err
+	}
 	if trimmed > 0 {
 		// Only the month the cutoff falls in had rows deleted.
 		if _, err := conn.Exec(ctx, `VACUUM (ANALYZE) `+storage.PartitionName(storage.Month(cutoff))); err != nil {

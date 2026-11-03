@@ -26,14 +26,14 @@ The 868.no Map is a web application for observing Meshtastic mesh networks using
 
 It is built for the Norwegian community broker (`mqtt.868.no`) but hard-codes no region or community beyond its Norwegian defaults (start view, regions layer, basemap area).
 
-The stack is Go (ingest and API), PostgreSQL (one table), Redis (ephemeral), a Rust engine compiled to WebAssembly running in a Web Worker in the browser, and a React + MapLibre GL + deck.gl frontend served by Caddy (D-001).
+The stack is Go (ingest and API), PostgreSQL (one table of mesh data, one of weather), Redis (ephemeral), a Rust engine compiled to WebAssembly running in a Web Worker in the browser, and a React + MapLibre GL + deck.gl frontend served by Caddy (D-001).
 
 ### 1.2 Invariants
 
 These hold everywhere; a feature that would break one is not built.
 
 1. **Only MQTT feeds mesh data.** No device API, serial link, node polling, other mesh feed or third-party topology service is used.
-2. **One application table.** `packet_log` is the only persistent application table (its monthly partitions are not separate tables). No node, link, position, identity, snapshot, settings or migration table exists; Redis holds only ephemeral, rebuildable state.
+2. **One table of mesh data.** `packet_log` is the only table holding mesh data (its monthly partitions are not separate tables). No node, link, position, identity, snapshot, settings or migration table exists. The one other application table, `weather_hour`, holds weather fetched from MET Norway, which nothing on the map is derived from (§6.18, D-133). Redis holds only ephemeral, rebuildable state.
 3. **Strict window isolation.** Every mesh-derived output is scoped to the selected half-open interval `[start, end)`. No name, position, role, link, counter or chart is taken from outside it (§3.5).
 4. **Nothing heard is dropped; what is private or untrustworthy is stripped (D-093).** Every packet with a parseable envelope is stored, but only what we may and can trust: a packet we cannot read (an end-to-end encrypted DM, a channel without our key) or cannot trust (failed decoding or verification) keeps only its cleartext header, never its content. Untrustworthy (`invalid`) rows count for nothing on the map, since their sender may be forged. Only duplicates (broker replays, JSON copies, re-deliveries) and unparseable envelopes are discarded. Plausible AES-CTR plaintext is never called authenticated.
 5. **No imaginary edges or precise guesses.** Links and coordinates carry their provenance, confidence and uncertainty. Ambiguity produces nothing rather than a guess.
@@ -46,7 +46,7 @@ The map shows what this service received over MQTT while it was running. Every t
 
 ### 1.4 Privacy, secrets and access
 
-- **Public, no login.** The map has no accounts, cookies, analytics or third-party requests at runtime. Optional basic auth can be added at the proxy (operations.md).
+- **Public, no login.** The map has no accounts, cookies, analytics or third-party requests at runtime. Weather is fetched by the server, which sends MET Norway only grid cells (§6.18). Optional basic auth can be added at the proxy (operations.md).
 - **No private content is stored.** Packets on channels whose key we lack, and end-to-end encrypted direct messages, keep only their cleartext header (sender, destination, packet id, gateway, channel name, hops, relay, size, signal), as `encrypted` and `direct_message` rows; the stored envelope has the payload zeroed (D-091, D-093). Only channels with a configured key, or the public default key (§2.3), are decoded.
 - **No message bodies in decoded data or the API.** Text messages are recorded by type and size only. The raw envelope (`envelope_bytes`) is kept for re-decoding and audits; for a text message it still contains the message, encrypted with its channel key (readable with that key, e.g. the public default key) or in plain text when a gateway uplinked it decrypted. It is never served. The privacy policy and architecture.md say so; whether to keep envelopes is the operator's choice (D-051).
 - **Uplink opt-out is honoured as far as possible.** A node that did not allow MQTT uplink is never named (§2.5).
@@ -167,6 +167,10 @@ Rejected input (malformed or oversize envelopes, duplicates, broker replays, JSO
 
 Redis runs without persistence (`save ""`, no AOF), with a memory cap and LRU eviction. It holds only dedupe keys, live pub/sub and maintenance status, all rebuildable; wiping it loses nothing. When it is unreachable, readiness reports degraded, dedupe falls back to a database lookup, and `serve` fans live rows out in process. There is no result cache: views are built in the browser (D-041).
 
+### 3.7 The weather_hour table
+
+`weather_hour` (same schema file) holds MET Norway's analysis per grid cell and hour: `cell_x`, `cell_y`, `valid_at` (the primary key), `temp_c`, `precip_mm`, `missing` (the archive had no file for that hour when asked) and `fetched_at`. Rows are upserted as the weather worker fetches hours and deleted by the daily retention run when `valid_at` is before the retention cutoff, like the mesh data they sit beside. It holds no node ids, so it says nothing about the mesh; it is not window-scoped, and `/observations` never reads it (§6.18, D-133). The schema version became `meshmap-schema:3` with it, and `CheckSchema` accepts exactly these two tables.
+
 ## 4 API
 
 ### 4.1 Endpoints
@@ -177,7 +181,8 @@ Redis runs without persistence (`save ""`, no AOF), with a memory cap and LRU ev
 | `GET /api/v1/retention` | Configured cutoff, earliest and latest retained `observed_at` (operational metadata, not mesh state), server time. |
 | `GET /api/v1/observations` | The decoded rows of a window, paged (§4.2). |
 | `GET /api/v1/stream` | SSE for the rolling window only (§4.3). |
-| `GET /api/v1/trends?bucket=day\|week\|month&tz=` | Long-term summaries over the whole retained log, bucketed in the requested IANA time zone: nodes heard, gateways, nodes first heard in the bucket, distinct packets, receptions and packets by type; `invalid` rows never count. Views stop at a week of rows, so this is the one aggregate computed on the server (D-104). It is summed from per-UTC-hour summaries the API process keeps in memory (nodes and gateways as sets, packets, receptions and packets by type), so `packet_log` stays the only table: the first request after a start scans the log once, they are refreshed at most once a minute whatever bucket or zone is asked for, re-reading only the last two hours, hours holding rows not yet decoded by the current decoder, and none older than the retained log; trends never take a read slot from `/observations`. Buckets in any whole-hour time zone are unions of hours (a zone with a half-hour offset gets boundaries up to 30 minutes off; accepted, since the map serves Norway); a packet heard either side of an hour boundary counts in both. Responses are reused for a minute (D-112). |
+| `GET /api/v1/trends?bucket=day\|week\|month&tz=` | Long-term summaries over the whole retained log, bucketed in the requested IANA time zone: nodes heard, gateways, nodes first heard in the bucket, distinct packets, receptions and packets by type; `invalid` rows never count. Views stop at a week of rows, so this is the one aggregate computed on the server (D-104). It is summed from per-UTC-hour summaries the API process keeps in memory (nodes and gateways as sets, packets, receptions and packets by type), so no table of summaries is added: the first request after a start scans the log once, they are refreshed at most once a minute whatever bucket or zone is asked for, re-reading only the last two hours, hours holding rows not yet decoded by the current decoder, and none older than the retained log; trends never take a read slot from `/observations`. Buckets in any whole-hour time zone are unions of hours (a zone with a half-hour offset gets boundaries up to 30 minutes off; accepted, since the map serves Norway); a packet heard either side of an hour boundary counts in both. Responses are reused for a minute (D-112). |
+| `GET /api/v1/weather?lat=&lon=&start=&end=` | Hourly air temperature and precipitation at a point from MET Norway's analysis (§6.18). Not mesh data and not window-scoped; the span is at most the longest window plus two hours, starting no earlier than the retention cutoff. Cached hours are returned at once; the rest are fetched in the background and the answer says `incomplete`, so the browser asks again. 404 when `WEATHER_ENABLED=false`, 422 outside the analysis grid (D-133). |
 | `GET /api/v1/nodes/{id}/public-key` | A node's public key from its newest retained NodeInfo carrying one, with its time and signature status, plus the trusted key (earliest retained verified NodeInfo, §2.4) and since when; 404 when none is retained. It spans the retained log, not a window: a key identifies a node. Fetched by the Details panel (D-089). |
 | `GET /api/openapi.yaml` / `.json` | The OpenAPI 3.1 document, generated from the serving code and committed as `docs/api-openapi.yaml`. |
 | `GET /health/live`, `/health/ready` | Liveness (no backend work); readiness covers database, schema version, Redis, ingest writer and queue, broker states and the last retention run. Probes are outside the API rate limit, so readiness reuses its database and Redis checks for 2 s and concurrent probes share one check; ingest and broker states are always current. |
@@ -401,6 +406,14 @@ Rules over the window's rows and snapshot flag known problems per node (`health`
 
 The **Health panel** lists every issue grouped by kind, most severe first, with node links and the explanation on hover, then airtime by packet type and the ten nodes causing the most. **Details** shows the node's issues under its name and its airtime as a row.
 
+### 6.18 Weather
+
+Weather explains readings that radio evidence cannot: a router's enclosure warming in the sun, a link's SNR dropping in heavy rain or snow (D-133).
+
+- **Source:** MET Norway's MET Nordic analysis, hourly on a 1 km grid over the Nordic countries, archived since 2012 and served over OPeNDAP without a key (CC BY 4.0): air temperature, precipitation, relative humidity, cloud cover and wind speed. It is an analysis of observations, not a forecast, so past windows get the weather that was. It has no gusts; those come from MEPS, MET Norway's 2.5 km forecast model, as the strongest gust in the hour from the newest archived run that covers the hour within its first hours (runs start every 3 h and reach the archive a few hours late, so an hour without a gust is asked again for up to 12 hours). Outside the grids there is none.
+- **Which nodes:** only ROUTER and ROUTER_LATE nodes with a current reported position that have not moved in the window (§6.10, §6.11); the narrowed position is used when there is one. They are few and stay put, so each hour of each site is fetched once.
+- **Fetching:** the browser asks `/api/v1/weather` for a site's hours over the window, rounded out to whole hours. The server turns the point into a grid cell and sends MET Norway only the cell's indices. Hours come from memory (at most 200 000), then from `weather_hour` (§3.7), and only then from MET Norway, so a restart or a second API process fetches nothing twice. The archive answers 429 to parallel requests, so one worker fetches queued hours in turn, newest first, at most four a second, waiting when asked to, and stores each one. Settled hours are kept for good; an hour fetched within three hours of its time is asked for again after 20 minutes, since it may be re-analysed, and one not yet published after 10 minutes. Until every hour is in, the answer says `incomplete` and the browser asks again every 4 s.
+
 ## 7 Map and user interface
 
 ### 7.1 Layout
@@ -596,7 +609,7 @@ UI, performance and operations:
 30. The theme follows the browser unless chosen and never flashes; borders, land cover, roads and city names show by default while local place names, peaks, road names and water names are hidden, and each appears in test areas once enabled; layer choices persist per viewer; every switch has a tooltip.
 31. Selecting a node shows only its links and its accuracy circle; clicking empty map deselects; panels overlay the map without resizing it; API payloads never carry envelopes, ciphertext or message bodies; the app is installable and reopens offline with the last data received, while no tile is stored by the service worker.
 32. With 2 million rows, 2 000 nodes and 20 000 candidate edges, benchmarks, browser memory and frame rate are measured and documented; the browser holds no raw history.
-33. Retention runs daily and is safe to repeat; `packet_log` is the only application table; Redis can be wiped without data loss.
+33. Retention runs daily and is safe to repeat; `packet_log` is the only table of mesh data and `weather_hour` the only other table, and retention trims both; Redis can be wiped without data loss.
 34. The stack comes up from a fresh checkout with example configuration and `docker compose up -d --build`; demo mode generates useful traffic without reaching public brokers.
 35. Integration tests cover TLS broker reconnects, invalid credentials, gateway duplication, database unavailability, health signalling, the bounded queue and recovery after restart.
 

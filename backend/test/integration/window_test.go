@@ -730,7 +730,7 @@ func TestTrendSummaries(t *testing.T) {
 	if _, ok := th.Hour(base.Add(time.Hour)); ok || th.Len() != 1 {
 		t.Fatalf("an hour outlived the data (%d left)", th.Len())
 	}
-	if tables, _ := storage.ApplicationTables(ctx, pool); len(tables) != 1 {
+	if tables, _ := storage.ApplicationTables(ctx, pool); !slices.Equal(tables, storage.Tables) {
 		t.Fatalf("trends must not add tables: %v", tables)
 	}
 }

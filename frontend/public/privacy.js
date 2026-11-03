@@ -49,6 +49,7 @@
         fill('retention-short', period)
       }
       show('geolocation', !!(caps.features && caps.features.geolocation))
+      show('weather', !!(caps.features && caps.features.weather))
       var src = (caps.map && caps.map.tile_source) || ''
       var remote = /^https?:\/\//i.test(src)
       show('tiles-local', !remote)
