@@ -156,10 +156,11 @@ func Process(m RawMessage, o Options) (Observation, error) {
 		return Observation{}, reject("invalid_envelope")
 	}
 	p := env.Packet
-	channelName := env.ChannelID
-	if channelName == "" {
-		channelName = topic.Channel
-	}
+	// The topic names the channel: keys are chosen by it, so the stored name,
+	// the plaintext rule and the logical key use it too. The envelope's
+	// channel_id is ignored; a replay could set it to another channel's name.
+	// Map topics name none.
+	channelName := topic.Channel
 
 	var (
 		data   *pb.Data
@@ -188,7 +189,7 @@ func Process(m RawMessage, o Options) (Observation, error) {
 		if p.GetChannel() > 0xFF {
 			return Observation{}, reject("invalid_envelope")
 		}
-		data, crypto, err = decrypt(m.BrokerID, topic.Channel, p, o)
+		data, crypto, err = decrypt(m.BrokerID, channelName, p, o)
 		if err != nil {
 			// A channel we hold no working key for: who sent what to whom
 			// is in the clear on RF, its content is not (D-093).
