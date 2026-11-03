@@ -9,18 +9,25 @@ type LngLat = [number, number]
 /** Frames a fly-to waits for the panel that a selection opens (about 0.2 s). */
 const PANEL_WAIT_FRAMES = 12
 
-/** Pixels of the map covered by the floating header (top) and the open panel (right edge, or the top on phones). */
+/** Pixels of the map covered by the floating header (top), the open panel
+ * (right edge; on phones the bottom, above the rail) and the rail when it lies
+ * along the bottom edge (phones). */
 function covered(container: HTMLElement | null): { top: number; right: number; bottom: number } {
+  if (!container) return { top: 0, right: 0, bottom: 0 }
+  const a = container.getBoundingClientRect()
   const head = document.getElementById('topbar')
-  const top = head && container ? Math.max(0, head.getBoundingClientRect().bottom - container.getBoundingClientRect().top) : 0
+  const top = head ? Math.max(0, head.getBoundingClientRect().bottom - a.top) : 0
+  // On phones the rail is a bar along the bottom (D-132).
+  const rail = document.querySelector('.rail')?.getBoundingClientRect()
+  const railBottom = rail && rail.width > rail.height ? Math.max(0, a.bottom - rail.top) : 0
   const panel = document.getElementById('dock')
-  if (!panel || panel.hidden || !container) return { top, right: 0, bottom: 0 }
-  const a = container.getBoundingClientRect(), b = panel.getBoundingClientRect()
-  // The side panel is narrow. On phones it spans most of the width from below
-  // the header down: frame content beneath it, unless it leaves too little map.
-  if (b.width < a.width * 0.6) return { top, right: Math.max(0, a.right - b.left), bottom: 0 }
-  const below = Math.max(0, b.bottom - a.top)
-  return { top: a.height - below >= 160 ? Math.max(top, below) : top, right: 0, bottom: 0 }
+  if (!panel || panel.hidden) return { top, right: 0, bottom: railBottom }
+  const b = panel.getBoundingClientRect()
+  // The side panel is narrow. On phones it spans the width, sitting on the
+  // rail and growing upwards: frame content above it, unless it leaves too little map.
+  if (b.width < a.width * 0.6) return { top, right: Math.max(0, a.right - b.left), bottom: railBottom }
+  const below = Math.max(0, a.bottom - b.top)
+  return { top, right: 0, bottom: a.height - below - top >= 160 ? Math.max(railBottom, below) : railBottom }
 }
 
 export function useCamera(

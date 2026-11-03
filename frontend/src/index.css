@@ -365,25 +365,36 @@ table.hear th:not(:first-child), table.hear td:not(:first-child) { white-space: 
 .maplibregl-ctrl-group button .maplibregl-ctrl-icon { filter: var(--ctrl-icon-filter); }
 .maplibregl-ctrl-scale { background: var(--overlay) !important; color: var(--muted) !important; border-color: var(--muted) !important; }
 
-/* Mobile: map fills the screen; the rail starts below the header, and the panel
-   opens beside it as on desktop, spanning the rest of the width. */
+/* Mobile: map fills the screen; the rail lies along the bottom edge, its
+   tools left to right in desktop's top-to-bottom order, scrolling sideways
+   when they don't fit. The panel spans the width and sits on the rail,
+   growing upwards to below the header (D-132). */
 @media (max-width: 820px) {
-  .app { --gap: 8px; }
-  .rail { top: calc(var(--head-h) + 2 * var(--gap)); }
+  .app { --gap: 8px; --rail-h: 56px; }
+  .rail { top: auto; bottom: var(--gap); left: var(--gap); right: var(--gap); width: auto; height: var(--rail-h); flex-direction: row; gap: 2px; padding: 4px;
+    overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+  .rail::-webkit-scrollbar { display: none; }
+  .rail-btn { flex: 0 0 auto; min-width: 58px; justify-content: center; padding: 5px 4px 4px; }
+  .rail-badge { right: 8px; }
   /* Above the map controls it covers. */
-  .dock { top: calc(var(--head-h) + 2 * var(--gap)); left: var(--gap); width: auto; max-height: calc(100% - var(--head-h) - 3 * var(--gap)); z-index: 12; }
+  .dock { top: auto; bottom: calc(var(--rail-h) + 2 * var(--gap)); left: var(--gap); right: var(--gap); width: auto; max-height: calc(100% - var(--head-h) - var(--rail-h) - 4 * var(--gap)); z-index: 12; }
   .dock-resize { display: none; } /* spans the width: nothing to resize */
   /* Nothing beside the header now: it may take the full width. */
   .topbar, .main:not(.panel-closed) .topbar { max-width: calc(100% - 2 * var(--gap)); }
   .topbar-row { white-space: nowrap; }
-  .banners, .main:not(.panel-closed) .banners { right: calc(var(--rail) + 3 * var(--gap)); left: 10px; }
+  .banners, .main:not(.panel-closed) .banners { right: 10px; left: 10px; }
   .counters { display: none; }
+  /* What lies along the bottom edge moves up above the rail. */
+  .maplibregl-ctrl-bottom-left, .maplibregl-ctrl-bottom-right { bottom: calc(var(--rail-h) + var(--gap)); }
+  .attribution { bottom: calc(var(--rail-h) + 2 * var(--gap)); right: var(--gap); border-radius: 4px; }
+  .coords { bottom: calc(var(--rail-h) + 2 * var(--gap) + 22px); }
 }
 /* Phones: a slimmer rail, icons only (labels stay as accessible names and tooltips). */
 @media (max-width: 560px) {
-  .app { --rail: 46px; }
+  .app { --rail-h: 46px; }
   .rail-label { display: none; }
-  .rail-btn { padding: 9px 2px; }
+  .rail-btn { min-width: 44px; padding: 4px; }
+  .rail-badge { top: 1px; right: 3px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .spinner { animation: none; }

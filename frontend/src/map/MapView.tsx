@@ -26,7 +26,7 @@ const NORWAY_BOUNDS: [[number, number], [number, number]] = [[4.5, 57.9], [31.2,
 const NORWAY_FOCUS_LON = 13.5
 /** The start view's centre longitude: the focus, clamped so both ends of the country stay in view. */
 export function startLon(width: number, zoom: number): number {
-  const p = startPadding(width)
+  const p = startPadding()
   const degPerPx = 360 / (512 * 2 ** zoom)
   const [[west], [east]] = NORWAY_BOUNDS
   const lo = east - (width / 2 - p.right) * degPerPx // further west and Finnmark leaves the view
@@ -54,15 +54,15 @@ function saveView(map: maplibregl.Map) {
   }
 }
 
-/** Room around the country; on the right, for the floating tool rail. */
-const startPadding = (width = window.innerWidth) => {
-  const narrow = width <= 560
+/** Room around the country: below the header, and clear of the tool rail
+ * (on the right; along the bottom on phones, D-132). */
+const startPadding = () => {
   // Below the floating header (D-082).
   const head = document.getElementById('topbar')?.offsetHeight ?? 50
-  return { top: head + 24, bottom: 16, left: 16, right: narrow ? 64 : 92 }
+  const rail = document.querySelector('.rail')?.getBoundingClientRect()
+  if (rail && rail.width > rail.height) return { top: head + 24, bottom: 16 + window.innerHeight - rail.top, left: 16, right: 16 }
+  return { top: head + 24, bottom: 16, left: 16, right: rail ? 16 + window.innerWidth - rail.left : 92 }
 }
-
-
 
 interface Props {
   caps: Capabilities

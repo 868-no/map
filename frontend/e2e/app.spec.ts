@@ -192,8 +192,25 @@ test('rejects nothing silently: invalid URL windows fall back, mobile layout wor
   await expect(page.locator('#dock')).toBeHidden()
   // Fit first: an open phone panel covers the map's lower controls.
   await page.getByRole('button', { name: 'Fit to data' }).click()
+  // The rail lies along the bottom, tools left to right in the desktop's
+  // top-to-bottom order, and scrolls sideways when they don't fit (D-132).
+  const rail = page.locator('.rail')
+  const r = (await rail.boundingBox())!
+  expect(r.width).toBeGreaterThan(r.height)
+  expect(844 - (r.y + r.height)).toBeLessThan(20)
+  const xs = await rail.locator('.rail-btn').evaluateAll((bs) => bs.map((b) => b.getBoundingClientRect().left))
+  expect(xs).toEqual([...xs].sort((p, q) => p - q))
+  expect(await rail.locator('.rail-btn').first().getAttribute('aria-label')).toBe('Nodes')
+  expect(await rail.evaluate((e) => e.scrollWidth > e.clientWidth)).toBe(true)
+  await rail.evaluate((e) => e.scrollTo({ left: e.scrollWidth }))
+  await expect(rail.getByRole('button', { name: 'Settings', exact: true })).toBeInViewport()
+  await rail.evaluate((e) => e.scrollTo({ left: 0 }))
   await openPanel(page)
   await expect(page.locator('#dock')).toBeVisible()
+  // The panel sits on the rail, growing upwards.
+  const d = (await page.locator('#dock').boundingBox())!
+  expect(r.y - (d.y + d.height)).toBeGreaterThan(0)
+  expect(r.y - (d.y + d.height)).toBeLessThan(12)
   await expect(page.locator('.live-indicator')).toBeVisible()
   await expect(page.locator('.node-row').first()).toBeVisible()
   await page.waitForTimeout(1500)
