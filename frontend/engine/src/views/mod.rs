@@ -1,5 +1,5 @@
 //! Every mesh view, derived from the decoded observations of one window
-//! (a port of the backend's internal/query via the TypeScript worker).
+//! (once a port of the backend's server views, which it replaced, D-041).
 //! Callers pass only rows with observed_at in [start, end); filters narrow
 //! them further. Output shapes are the API's.
 //!

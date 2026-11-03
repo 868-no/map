@@ -220,7 +220,7 @@ function liveRows(rows: unknown[], ping: number[]) {
 // and filters. A snapshot at reference density is several MB and every live
 // rebuild is a new revision, so entries of older revisions are dropped and
 // the total is capped.
-const MEMO_MAX_CHARS = 24_000_000 // bytes
+const MEMO_MAX_BYTES = 24_000_000
 const memo = new Map<string, Uint8Array>()
 let memoChars = 0
 function remember(key: string, revision: string, make: () => Uint8Array): Uint8Array {
@@ -228,7 +228,7 @@ function remember(key: string, revision: string, make: () => Uint8Array): Uint8A
   if (hit !== undefined) return hit
   const v = make()
   for (const [k, x] of memo) {
-    if (!k.startsWith(revision + '|') || memoChars + v.length > MEMO_MAX_CHARS) {
+    if (!k.startsWith(revision + '|') || memoChars + v.length > MEMO_MAX_BYTES) {
       memo.delete(k)
       memoChars -= x.length
     }

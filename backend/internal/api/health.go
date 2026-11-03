@@ -1,5 +1,5 @@
-// Package api serves the HTTP interface. M1 provides health and metrics;
-// the time-windowed REST API and SSE stream are added in M2.
+// Package api serves the HTTP interface: health and metrics, the windowed
+// observations API and live stream, trends and node public keys.
 package api
 
 import (

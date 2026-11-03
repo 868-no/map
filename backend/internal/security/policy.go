@@ -41,7 +41,8 @@ func ParsePolicy(s string) (Policy, error) {
 	return 0, errors.New("SIGNATURE_POLICY must be balanced or strict")
 }
 
-// Rejection categories (metric label values). Rejected packets are never stored.
+// Rejection categories (metric label values). A packet failing these checks
+// is stored as a header-only invalid row, never its contents (D-093).
 var (
 	ErrSigMalformed        = errors.New("sig_malformed")
 	ErrSigInvalid          = errors.New("sig_invalid")

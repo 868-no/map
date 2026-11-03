@@ -514,7 +514,7 @@ export function NodePanel({ id, snapshot }: { id: string; snapshot: SnapshotView
 }
 
 const TABS: { id: DetailTab; label: string; hint: string }[] = [
-  { id: 'overview', label: 'Overview', hint: 'Identity, position, activity and telemetry' },
+  { id: 'overview', label: 'Overview', hint: 'Identity, position and activity' },
   { id: 'links', label: 'Links', hint: 'Radio links, gateways that heard it, reach and relaying' },
   { id: 'radio', label: 'Radio', hint: 'Region, preset, channels, MQTT topics and brokers' },
   { id: 'telemetry', label: 'Telemetry', hint: 'Battery, power, channel use and sensor readings, charted over the selected period' },

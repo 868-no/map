@@ -144,7 +144,6 @@ pub struct Node {
 }
 
 impl Node {
-    /// Its movement (D-073); call after its position is set.
     /// Its narrowed position (D-077); call after its position is set.
     pub(super) fn set_anchor(&mut self, a: &crate::movement::Anchor) {
         if !a.narrowed {
@@ -331,9 +330,8 @@ pub(super) fn brokers(o: &Origin, i: &Interner) -> Vec<String> {
     b
 }
 
-/// Nodes mentioned by NeighborInfo, valid traceroute hops or traceroute destinations.
-/// Nodes named in others' NeighborInfo or traceroutes, with when they were
-/// last named.
+/// Nodes named in others' NeighborInfo, valid traceroute hops or traceroute
+/// destinations, with when they were last named.
 pub fn referenced(rows: &[&Row]) -> FxMap<u32, i64> {
     let mut out: FxMap<u32, i64> = map();
     for r in rows {

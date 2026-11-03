@@ -198,8 +198,9 @@ impl Engine {
         self.store.export(lo as i64, hi as i64, &self.i)
     }
 
-    /// A view as JSON: kind is snapshot, traffic, node, packetlog, route, reach or health;
-    /// arg is the node id (node, packetlog) or packet key (route). "null"
+    /// A view as JSON: kind is snapshot, traffic, node, packetlog, route, reach,
+    /// health or link; arg is the node id (node, packetlog, reach), packet key
+    /// (route) or "a|b" node ids (link). "null"
     /// means the node is neither observed nor referenced in the window.
     pub fn view(&mut self, kind: &str, start: f64, end: f64, filters: &str, arg: &str) -> Result<String, JsError> {
         let (start, end) = (start as i64, end as i64);
