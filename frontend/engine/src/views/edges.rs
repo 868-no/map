@@ -2,7 +2,7 @@
 
 use super::first_per_reception;
 use crate::graph::{self, reduce, traceroute_samples, Edge, Ev, LatLon, RelayContext, SKey, Sample};
-use crate::row::{ty, Row};
+use crate::row::{ty, HeardFrom, Row};
 use crate::util::{map, FxMap, FxSet};
 
 pub const MAX_EDGES: usize = 20000;
@@ -76,15 +76,14 @@ pub fn build_edges(rows: &[&Row], neighborinfo: &[&Row], hops: &[Sample], known:
         None => (samples, vec![]),
     };
     // C/D. Gateway receptions: zero-hop RF -> source->gateway; relayed with a hint -> resolved after.
-    let mut rx = first_per_reception(rows, |r| r.gw.is_some() && (r.dr || (r.rr == ty::RELAYED && r.relay.is_some())) && (r.snr.is_some() || r.rssi.is_some()));
+    let mut rx = first_per_reception(rows, |r| matches!(r.heard_from(), HeardFrom::Direct | HeardFrom::Relayed(Some(_))) && (r.snr.is_some() || r.rssi.is_some()));
     rx.sort_by_key(|r| r.id);
     let mut pending: Vec<(Sample, u8, u32, u32)> = Vec::new();
     for r in &rx {
         let s = Sample { src: 0, dst: r.gw.unwrap(), ev: Ev::DirectRf, t: r.t, snr: r.snr, rssi: r.rssi.map(|v| v as f64), key: SKey::Ok(r.ok) };
-        if r.dr {
-            samples.push(Sample { src: r.src, ..s });
-        } else {
-            pending.push((s, (r.relay.unwrap_or(0) & 0xff) as u8, r.src, r.gw.unwrap()));
+        match r.heard_from() {
+            HeardFrom::Relayed(Some(b)) => pending.push((s, b, r.src, r.gw.unwrap())),
+            _ => samples.push(Sample { src: r.src, ..s }),
         }
     }
     samples.retain(|s| current(s));

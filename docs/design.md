@@ -262,7 +262,7 @@ RSSI comes only from gateway receptions. A packet uplinked by MQTT without demon
 
 ### 6.3 Relay-byte resolution
 
-`MeshPacket.relay_node` is only the last byte of a node number, so collisions are expected; but only nodes within radio range of the gateway can be the last hop. One resolver (`RelayContext::resolve`, `frontend/engine/src/graph.rs`) serves links, packet logs, routes, reliability and ping attribution alike (D-024, D-039):
+`MeshPacket.relay_node` is only the last byte of a node number, so collisions are expected; but only nodes within radio range of the gateway can be the last hop. One resolver (`RelayContext::resolve`, `frontend/engine/src/graph.rs`) serves links, packet logs, routes, reliability and ping attribution alike (D-024, D-039). So does the gate in front of it: one classifier (`Row::heard_from`) reads the reception reason (hop fields only for rows without one) as direct, relayed (with its byte), downlinked, not radio, or unknown (no hop start), and only relayed or downlinked copies have a byte to resolve:
 
 1. Candidates: window nodes with that last byte, other than the originator and the gateway, and never a node whose role never rebroadcasts (CLIENT_MUTE) (D-040).
 2. **Range:** drop candidates whose reported in-window position is farther from the gateway than the longest confirmed link in the window × 1.25, at least 50 km. Unpositioned candidates stay, because they cannot be ruled out; estimates are never used.

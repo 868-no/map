@@ -223,9 +223,49 @@ pub struct Row {
     pub detail: Option<Box<Detail>>,
 }
 
+/// Whom a gateway's copy of a packet was heard from, the one reading of
+/// the reception reason and hop fields that links, the packet log, packet
+/// copies, routes and pings all share (design §6.3).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum HeardFrom {
+    /// Over the air from the originator (zero hops).
+    Direct,
+    /// A rebroadcast, with the last-hop byte when the copy carries one.
+    Relayed(Option<u8>),
+    /// Transmitted by a downlinker that took it from MQTT, with its
+    /// last-hop byte when known (D-088).
+    Downlinked(Option<u8>),
+    /// Not over the air: no gateway, its own packet, or a non-radio transport.
+    NotRadio,
+    /// Over the air, but neither a hop count nor the reason says from whom
+    /// (no hop start: firmware before 2.3).
+    Unknown,
+}
+
 impl Row {
     pub fn hops(&self) -> Option<i16> {
         Some(self.hs? - self.hl?)
+    }
+    /// Whom its gateway heard it from (HeardFrom). The ingest's reception
+    /// reason decides; rows without one fall back on the hop fields.
+    pub fn heard_from(&self) -> HeardFrom {
+        let byte = self.relay.map(|b| (b & 0xff) as u8);
+        if self.gw.is_none_or(|g| g == self.src) {
+            return HeardFrom::NotRadio;
+        }
+        match self.rr {
+            ty::VIA_MQTT => HeardFrom::Downlinked(byte),
+            ty::NON_RF => HeardFrom::NotRadio,
+            ty::RELAYED => HeardFrom::Relayed(byte),
+            ty::NO_RX_METRICS => HeardFrom::Direct,
+            _ if self.dr => HeardFrom::Direct,
+            0 => match self.hops() {
+                Some(0) => HeardFrom::Direct,
+                Some(h) if h > 0 => HeardFrom::Relayed(byte),
+                _ => HeardFrom::Unknown,
+            },
+            _ => HeardFrom::Unknown,
+        }
     }
     pub fn traceroute(&self) -> Option<&Traceroute> {
         match self.detail.as_deref() {
@@ -625,6 +665,33 @@ pub fn to_json<'a>(r: &Row, i: &'a Interner) -> JRow<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn whom_a_copy_was_heard_from() {
+        let mut i = Interner::default();
+        let row = |extra: &str, i: &mut Interner| {
+            let text = format!(r#"{{"i":1,"t":1,"b":"x","g":7,"s":5,"y":"text","l":"01","o":"01","sg":"unsigned"{extra}}}"#);
+            serde_json::from_str::<JRow>(&text).unwrap().into_row(i)
+        };
+        use HeardFrom::*;
+        for (extra, want) in [
+            (r#","rr":"zero_hop_rf","dr":true,"hs":3,"hl":3"#, Direct),
+            (r#","rr":"no_rx_metrics","hs":3,"hl":3"#, Direct),
+            (r#","rr":"relayed","hs":3,"hl":2,"r":204"#, Relayed(Some(204))),
+            (r#","rr":"relayed","hs":3,"hl":2"#, Relayed(None)),
+            (r#","rr":"via_mqtt","r":204"#, Downlinked(Some(204))),
+            (r#","rr":"non_rf_transport","hs":3,"hl":3"#, NotRadio),
+            // Without a hop start nothing says whether the byte is a relay's.
+            (r#","rr":"no_hop_start","r":204"#, Unknown),
+            // Rows without a reason fall back on the hop fields.
+            (r#","hs":3,"hl":2,"r":204"#, Relayed(Some(204))),
+            (r#","hs":3,"hl":3"#, Direct),
+        ] {
+            assert_eq!(row(extra, &mut i).heard_from(), want, "{extra}");
+        }
+        let own = Row { gw: Some(5), ..row(r#","rr":"own_packet""#, &mut i) };
+        assert_eq!(own.heard_from(), NotRadio);
+    }
 
     #[test]
     fn parses_and_round_trips_an_api_row() {

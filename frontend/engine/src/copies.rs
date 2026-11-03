@@ -6,7 +6,7 @@
 //! (D-084).
 
 use crate::graph::RelayContext;
-use crate::row::{ty, Row};
+use crate::row::{ty, HeardFrom, Row};
 use crate::util::{map, set, FxMap, FxSet};
 
 #[derive(Clone, Copy)]
@@ -66,14 +66,9 @@ impl Copies {
             }
             let r = rows[p as usize];
             let gw = r.gw.unwrap();
-            let sender = match r.hl {
-                Some(_) if gw != r.src => {
-                    if r.dr || r.hs == r.hl {
-                        Some(r.src)
-                    } else {
-                        r.relay.and_then(|b| ctx.resolve((b & 0xff) as u8, r.src, gw)).and_then(Result::ok)
-                    }
-                }
+            let sender = match (r.hl, r.heard_from()) {
+                (Some(_), HeardFrom::Direct) => Some(r.src),
+                (Some(_), HeardFrom::Relayed(Some(b))) => ctx.resolve(b, r.src, gw).and_then(Result::ok),
                 _ => None,
             };
             c.heard.push((p, sender));

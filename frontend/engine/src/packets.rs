@@ -4,7 +4,7 @@
 use serde::Serialize;
 
 use crate::graph::{zero_cost_role, RelayContext};
-use crate::row::{Interner, Row};
+use crate::row::{HeardFrom, Interner, Row};
 use crate::util::{iso, key_hex, map, node_id, set, FxMap, FxSet, BROADCAST};
 use crate::views::dest;
 
@@ -148,8 +148,8 @@ pub fn packet_log(rows: &[&Row], num: u32, ctx: &RelayContext, replies: &ReplyIn
                 e.gateways.insert(g);
             }
         };
-        if let (Some(g), Some(relay)) = (r.gw, r.relay) {
-            if g != num && !r.dr && r.rr == crate::row::ty::RELAYED && (relay & 0xff) as u32 == (num & 0xff) && ctx.resolve((relay & 0xff) as u8, r.src, g) == Some(Ok(num)) {
+        if let (Some(g), HeardFrom::Relayed(Some(b))) = (r.gw, r.heard_from()) {
+            if g != num && b as u32 == (num & 0xff) && ctx.resolve(b, r.src, g) == Some(Ok(num)) {
                 note(false, Some(g));
             }
         }
@@ -411,14 +411,16 @@ pub fn packet_route(rows: &[&Row], ctx: &RelayContext, roles: &FxMap<u32, String
             }
             continue;
         }
-        if !over_radio && !ctx.downlinked(r) {
-            continue; // not heard over radio
-        }
-        if r.dr || r.rr == ty::NO_RX_METRICS {
-            add(origin, gw, false, "direct");
-            continue;
-        }
-        match r.relay.and_then(|b| ctx.resolve((b & 0xff) as u8, origin, gw)) {
+        let byte = match r.heard_from() {
+            HeardFrom::NotRadio => continue, // not heard over radio
+            HeardFrom::Direct => {
+                add(origin, gw, false, "direct");
+                continue;
+            }
+            HeardFrom::Relayed(b) | HeardFrom::Downlinked(b) => b,
+            HeardFrom::Unknown => None,
+        };
+        match byte.and_then(|b| ctx.resolve(b, origin, gw)) {
             Some(Ok(relay)) if ctx.downlinked(r) => {
                 // Taken from MQTT and transmitted with no hops left (D-087).
                 add(relay, gw, false, "relay");
@@ -582,14 +584,14 @@ pub fn transmissions(r: &Row, ctx: &RelayContext, roles: &FxMap<u32, String>) ->
     }
     let first = |rx: Option<u32>, s: Option<f64>| Transmission { key: key(r.src), tx: node_id(r.src), rx: rx.map(node_id), rebroadcast: false, strength: s, delivered: false, packet: r.pid.map(|p| packet_ref(r.src, p)), replay: false };
     let Some(gw) = r.gw else { return vec![first(None, None)] };
-    let downlinked = ctx.downlinked(r);
-    if gw == r.src || r.rr == ty::NON_RF || (downlinked && r.relay.is_none()) {
-        return vec![first(None, None)]; // the gateway did not hear it over the air
-    }
-    if !downlinked && (r.dr || r.hops() == Some(0)) {
-        return vec![first(Some(gw), strength)];
-    }
-    let relay = match r.relay.and_then(|b| ctx.resolve((b & 0xff) as u8, r.src, gw)) {
+    let (byte, downlinked) = match r.heard_from() {
+        HeardFrom::Direct => return vec![first(Some(gw), strength)],
+        HeardFrom::Relayed(b) => (b, false),
+        HeardFrom::Downlinked(Some(b)) => (Some(b), true),
+        // The gateway did not hear it over the air, or not from whom.
+        HeardFrom::NotRadio | HeardFrom::Downlinked(None) | HeardFrom::Unknown => return vec![first(None, None)],
+    };
+    let relay = match byte.and_then(|b| ctx.resolve(b, r.src, gw)) {
         Some(Ok(n)) => n,
         _ => return vec![first(None, None)],
     };
