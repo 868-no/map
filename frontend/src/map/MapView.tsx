@@ -19,6 +19,26 @@ import { installTestHook } from './testHook'
 import { useTheme, type Theme } from '../theme'
 import { PALETTES } from './palette'
 import { useRegions } from './regions'
+import { create } from 'zustand'
+
+/**
+ * The hover tooltip has its own tiny store: it changes at pointer rate, and
+ * held as MapView state it would re-render the whole map component (and its
+ * layer memos) on every move over a marker.
+ */
+type Hover = { x: number; y: number; text: string } | null
+const useHover = create<{ hover: Hover }>(() => ({ hover: null }))
+const setHover = (hover: Hover) => useHover.setState({ hover })
+
+function MapTooltip() {
+  const hover = useHover((s) => s.hover)
+  if (!hover) return null
+  return (
+    <div className="tooltip" style={{ left: hover.x + 12, top: hover.y + 12 }} role="tooltip">
+      {hover.text}
+    </div>
+  )
+}
 
 /** Mainland Norway, Lindesnes to Nordkapp and Utsira to Grense Jakobselv. */
 const NORWAY_BOUNDS: [[number, number], [number, number]] = [[4.5, 57.9], [31.2, 71.25]]
@@ -79,7 +99,6 @@ export default function MapView({ caps, snapshot, onPositions }: Props) {
   const meshLayers = useRef<Layer[] | null>(null) // read by the e2e hook
   const [ready, setReady] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [hover, setHover] = useState<{ x: number; y: number; text: string } | null>(null)
   const coords = useRef<HTMLDivElement>(null) // written directly: a re-render per mousemove is too costly
   const [zoom, setZoom] = useState(caps.map.zoom)
   // Mouse drag never rotates, but a two-finger twist or Shift+arrow keys do.
@@ -169,6 +188,7 @@ export default function MapView({ caps, snapshot, onPositions }: Props) {
       cancelled = true
       mapRef.current?.remove()
       mapRef.current = null
+      setHover(null) // no tooltip left over a rebuilt map
     }
   // The map is rebuilt only when its style or tiles change, not when an equal
   // capabilities object arrives again (a refetch after a reconnect).
@@ -272,8 +292,8 @@ export default function MapView({ caps, snapshot, onPositions }: Props) {
   const nameOf = useRef(new Map<string, string>())
   const shortOf = useRef(new Map<string, string>())
   // Every edge, before the map's filters: a direction a filter hid is not "no evidence".
-  const allEdges = useRef<Edge[]>([])
-  allEdges.current = snapshot?.edges ?? []
+  const allEdges = useRef(new Set<string>())
+  allEdges.current = useMemo(() => new Set((snapshot?.edges ?? []).map((x) => `${x.src}|${x.dst}|${!!x.mqtt}`)), [snapshot])
   ;[nameOf.current, shortOf.current] = useMemo(() => {
     const nodes = snapshot?.nodes ?? []
     return [
@@ -387,7 +407,7 @@ export default function MapView({ caps, snapshot, onPositions }: Props) {
         } else {
           // One line per direction, nodes by short name.
           const sn = (id: string) => shortOf.current.get(id) ?? id
-          const hidden = (from: string, to: string) => allEdges.current.some((x) => x.src === from && x.dst === to && !!x.mqtt === !!o.mqtt)
+          const hidden = (from: string, to: string) => allEdges.current.has(`${from}|${to}|${!!o.mqtt}`)
           const dir = (e: Edge | undefined, from: string, to: string) =>
             `${sn(from)} → ${sn(to)}: ${e ? (e.mqtt ? 'over the internet' : `${e.confidence} confidence, ${e.samples} report${e.samples === 1 ? '' : 's'}${e.zero_cost?.likely ? ', 0-cost' : ''}`) : hidden(from, to) ? 'hidden by the filters' : 'no evidence'}`
           setHover({ x: info.x, y: info.y, text: [o.mqtt ? 'Over the internet (MQTT), not radio' : '', dir(o.ab, o.a, o.b), dir(o.ba, o.b, o.a)].filter(Boolean).join('\n') })
@@ -450,11 +470,7 @@ export default function MapView({ caps, snapshot, onPositions }: Props) {
           </>
         )}
       </div>
-      {hover && (
-        <div className="tooltip" style={{ left: hover.x + 12, top: hover.y + 12 }} role="tooltip">
-          {hover.text}
-        </div>
-      )}
+      <MapTooltip />
     </div>
   )
 }
