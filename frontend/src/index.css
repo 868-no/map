@@ -107,8 +107,10 @@ button[aria-pressed='true'], button[aria-selected='true'] { background: var(--pr
 .main { position: relative; display: grid; grid-template-columns: 1fr; min-height: 0; }
 /* The tool rail (D-066) and its panel float over the map as islands
    (D-071): rounded cards inset from the edges, the map running beneath. */
-.rail { position: absolute; top: var(--gap); right: var(--gap); width: var(--rail); box-sizing: border-box; display: flex; flex-direction: column; gap: 2px; padding: 6px 4px;
+.rail { position: absolute; top: var(--gap); right: var(--gap); width: var(--rail); box-sizing: border-box; padding: 6px 4px;
   border: 1px solid var(--line); border-radius: var(--island-r); background: var(--overlay-strong); backdrop-filter: blur(8px); box-shadow: var(--elev-island); z-index: 9; }
+.rail-tools { display: flex; flex-direction: column; gap: 2px; }
+.rail-more { display: none; }
 .rail-btn { position: relative; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 7px 2px 5px; border: 1px solid transparent; border-radius: 6px; background: none; color: var(--muted); }
 .rail-btn:hover { color: var(--text); background: var(--panel2); }
 .rail-btn[aria-pressed='true'] { color: var(--accent); background: var(--pressed); border-color: var(--line); }
@@ -371,9 +373,16 @@ table.hear th:not(:first-child), table.hear td:not(:first-child) { white-space: 
    growing upwards to below the header (D-132). */
 @media (max-width: 820px) {
   .app { --gap: 8px; --rail-h: 56px; }
-  .rail { top: auto; bottom: var(--gap); left: var(--gap); right: var(--gap); width: auto; height: var(--rail-h); flex-direction: row; gap: 2px; padding: 4px;
-    overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
-  .rail::-webkit-scrollbar { display: none; }
+  .rail { top: auto; bottom: var(--gap); left: var(--gap); right: var(--gap); width: auto; height: var(--rail-h); padding: 4px; overflow: hidden; }
+  .rail-tools { flex-direction: row; height: 100%; overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain; scrollbar-width: none; }
+  .rail-tools::-webkit-scrollbar { display: none; }
+  /* Tools beyond an end fade out under an arrow pointing to them. */
+  .rail[data-more-right] .rail-tools { mask-image: linear-gradient(to right, #000 calc(100% - 64px), transparent calc(100% - 8px)); }
+  .rail[data-more-left] .rail-tools { mask-image: linear-gradient(to left, #000 calc(100% - 64px), transparent calc(100% - 8px)); }
+  .rail[data-more-left][data-more-right] .rail-tools { mask-image: linear-gradient(to right, transparent 8px, #000 64px, #000 calc(100% - 64px), transparent calc(100% - 8px)); }
+  .rail-more { display: grid; place-items: center; position: absolute; top: 0; bottom: 0; width: 28px; padding: 0; border: none; background: none; color: var(--text); }
+  .rail-more-left { left: 2px; }
+  .rail-more-right { right: 2px; }
   .rail-btn { flex: 0 0 auto; min-width: 58px; justify-content: center; padding: 5px 4px 4px; }
   .rail-badge { right: 8px; }
   /* Above the map controls it covers. */

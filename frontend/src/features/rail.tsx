@@ -1,7 +1,7 @@
 // The tool rail on the right edge: every control panel in one place (D-066).
 // One panel at a time opens beside the rail, over the map; pressing the open
 // panel's button again, its close button or Escape closes it.
-import { useCallback, useEffect, useRef, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react'
 
 export type PanelId = 'nodes' | 'details' | 'health' | 'trends' | 'period' | 'filters' | 'layers' | 'legend' | 'settings'
 
@@ -61,9 +61,39 @@ export function Rail({ open, onToggle, badges }: { open: PanelId | null; onToggl
       </button>
     )
   }
+  // On phones the rail is a bar that scrolls sideways (D-132): a fade and an
+  // arrow mark each end with more tools beyond it; the arrow scrolls there.
+  const tools = useRef<HTMLDivElement>(null)
+  const [more, setMore] = useState({ left: false, right: false })
+  useEffect(() => {
+    const el = tools.current
+    if (!el) return
+    const update = () => {
+      const left = el.scrollLeft > 1, right = el.scrollLeft + el.clientWidth < el.scrollWidth - 1
+      setMore((m) => (m.left === left && m.right === right ? m : { left, right }))
+    }
+    update()
+    el.addEventListener('scroll', update, { passive: true })
+    const ro = new ResizeObserver(update)
+    ro.observe(el)
+    return () => {
+      el.removeEventListener('scroll', update)
+      ro.disconnect()
+    }
+  }, [])
+  const page = (dir: 1 | -1) => tools.current?.scrollBy({ left: dir * tools.current.clientWidth * 0.8, behavior: 'smooth' })
+  const arrow = (side: 'left' | 'right') => (
+    <button type="button" className={`rail-more rail-more-${side}`} tabIndex={-1} aria-hidden title="More tools" onClick={() => page(side === 'left' ? -1 : 1)}>
+      <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d={side === 'left' ? 'M12.5 4.5 7 10l5.5 5.5' : 'M7.5 4.5 13 10l-5.5 5.5'} />
+      </svg>
+    </button>
+  )
   return (
-    <nav className="rail" aria-label="Controls">
-      {PANELS.map(button)}
+    <nav className="rail" aria-label="Controls" data-more-left={more.left || undefined} data-more-right={more.right || undefined}>
+      <div className="rail-tools" ref={tools}>{PANELS.map(button)}</div>
+      {more.left && arrow('left')}
+      {more.right && arrow('right')}
     </nav>
   )
 }
