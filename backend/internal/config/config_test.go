@@ -150,3 +150,18 @@ func TestRevisionIsKeyedWithTheDatabaseSecret(t *testing.T) {
 		t.Fatal("revision does not follow KEY_ATTEMPT_BUDGET")
 	}
 }
+
+// Each /observations read holds an API pool connection; reads may not take
+// the connections health checks and light queries need.
+func TestReadSlotsFitTheAPIPool(t *testing.T) {
+	setup(t, goodBrokers, goodChannels)
+	t.Setenv("DB_API_CONNS", "10")
+	t.Setenv("API_READ_SLOTS", "9")
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "API_READ_SLOTS (9) must be at most DB_API_CONNS - 2 (8)") {
+		t.Fatalf("got %v", err)
+	}
+	t.Setenv("API_READ_SLOTS", "8")
+	if _, err := Load(); err != nil {
+		t.Fatal(err)
+	}
+}

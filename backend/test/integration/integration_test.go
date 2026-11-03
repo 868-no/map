@@ -47,7 +47,7 @@ func env(t *testing.T, k string) string {
 func freshDB(t *testing.T) *pgxpool.Pool {
 	t.Helper()
 	ctx := context.Background()
-	pool, err := storage.Open(ctx, env(t, "MESHMAP_IT_DATABASE_URL"))
+	pool, err := storage.Open(ctx, env(t, "MESHMAP_IT_DATABASE_URL"), "test", 16)
 	if err != nil {
 		t.Fatal(err)
 	}

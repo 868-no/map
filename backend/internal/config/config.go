@@ -62,9 +62,13 @@ type Env struct {
 	APIStreamsTotal     int           `env:"API_STREAMS_TOTAL" envDefault:"2000"`
 	APIReadsPerClient   int           `env:"API_READS_PER_CLIENT" envDefault:"4"`
 	APIReadSlots        int           `env:"API_READ_SLOTS" envDefault:"8"`
-	IngestQueueSize     int           `env:"INGEST_QUEUE_SIZE" envDefault:"20000"`
-	WriterBatchSize     int           `env:"WRITER_BATCH_SIZE" envDefault:"500"`
-	KeyAttemptBudget    int           `env:"KEY_ATTEMPT_BUDGET" envDefault:"4"`
+	// Separate database pools, so API reads can never take the connections
+	// the ingest writer needs (D-115).
+	DBIngestConns    int `env:"DB_INGEST_CONNS" envDefault:"6"`
+	DBAPIConns       int `env:"DB_API_CONNS" envDefault:"12"`
+	IngestQueueSize  int `env:"INGEST_QUEUE_SIZE" envDefault:"20000"`
+	WriterBatchSize  int `env:"WRITER_BATCH_SIZE" envDefault:"500"`
+	KeyAttemptBudget int `env:"KEY_ATTEMPT_BUDGET" envDefault:"4"`
 	// Try the public default key (AQ==) for channels not in the channel
 	// keys configuration (D-065).
 	DefaultKeyFallback bool   `env:"DEFAULT_KEY_FALLBACK" envDefault:"true"`
@@ -134,6 +138,10 @@ func (c *Config) GeoParams() geo.Params {
 	p.Calibration = c.Calib
 	return p
 }
+
+// APIReservedConns is how many API pool connections /observations reads
+// leave free for health checks, node keys, trends and capabilities.
+const APIReservedConns = 2
 
 var idRe = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,64}$`)
 
@@ -233,6 +241,12 @@ func (c *Config) validate() error {
 		e.APIStreamsTotal < e.APIStreamsPerClient || e.APIReadsPerClient < 1 || e.APIReadSlots < e.APIReadsPerClient {
 		add("API limits: API_RATE_PER_SECOND > 0, API_RATE_BURST >= 1, API_REQUEST_TIMEOUT >= 1s, API_STREAMS_PER_CLIENT >= 1, " +
 			"API_STREAMS_TOTAL >= API_STREAMS_PER_CLIENT, API_READS_PER_CLIENT >= 1, API_READ_SLOTS >= API_READS_PER_CLIENT")
+	}
+	if e.DBIngestConns < 2 || e.DBAPIConns < 3 {
+		add("DB_INGEST_CONNS >= 2 and DB_API_CONNS >= 3 required")
+	} else if e.APIReadSlots > e.DBAPIConns-APIReservedConns {
+		add("API_READ_SLOTS (%d) must be at most DB_API_CONNS - %d (%d): each /observations read holds an API connection, "+
+			"and health checks and light queries need the rest", e.APIReadSlots, APIReservedConns, e.DBAPIConns-APIReservedConns)
 	}
 	if e.DefaultMapLat < -90 || e.DefaultMapLat > 90 || e.DefaultMapLon < -180 || e.DefaultMapLon > 180 {
 		add("DEFAULT_MAP_LAT/LON out of range")

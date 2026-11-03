@@ -39,9 +39,10 @@ func databaseURL(e config.Env) string {
 	return u.String()
 }
 
-// openDB connects and waits for the database to accept connections.
-func openDB(ctx context.Context, e config.Env, log *slog.Logger) (*pgxpool.Pool, error) {
-	pool, err := storage.Open(ctx, databaseURL(e))
+// openDB connects a pool of at most conns connections and waits for the
+// database to accept connections.
+func openDB(ctx context.Context, e config.Env, log *slog.Logger, role string, conns int) (*pgxpool.Pool, error) {
+	pool, err := storage.Open(ctx, databaseURL(e), role, conns)
 	if err != nil {
 		return nil, err
 	}
@@ -96,7 +97,7 @@ func initSchemaCmd() *cobra.Command {
 				return err
 			}
 			log := observability.NewLogger(e.LogLevel)
-			pool, err := openDB(cmd.Context(), e, log)
+			pool, err := openDB(cmd.Context(), e, log, "schema", 1)
 			if err != nil {
 				return err
 			}
@@ -124,7 +125,7 @@ func maintenanceCmd() *cobra.Command {
 				return err
 			}
 			log := observability.NewLogger(e.LogLevel).With("role", "maintenance")
-			pool, err := openDB(cmd.Context(), e, log)
+			pool, err := openDB(cmd.Context(), e, log, "maintenance", 2)
 			if err != nil {
 				return err
 			}
@@ -221,13 +222,25 @@ func serveCmd() *cobra.Command {
 			}
 			log := observability.NewLogger(c.Env.LogLevel).With("role", "serve")
 			m := observability.NewMetrics()
-			pool, err := openDB(ctx, c.Env, log)
+			// API reads and ingest get separate pools, so slow readers can
+			// never hold the connections the writer needs (D-115).
+			pool, err := openDB(ctx, c.Env, log, "api", c.Env.DBAPIConns)
 			if err != nil {
 				return err
 			}
 			defer pool.Close()
 			if err := storage.InitSchema(ctx, pool); err != nil {
 				return err
+			}
+			// The writer, dedupe lookups, identity reloads and the startup
+			// re-decode and backfill jobs. Opened here so that it closes only
+			// after every deferred stop below has run.
+			var ipool *pgxpool.Pool
+			if !noIngest {
+				if ipool, err = openDB(ctx, c.Env, log, "ingest", c.Env.DBIngestConns); err != nil {
+					return err
+				}
+				defer ipool.Close()
 			}
 			rc := openCache(c.Env, log)
 			if noIngest {
@@ -266,7 +279,7 @@ func serveCmd() *cobra.Command {
 				}
 				kr.DefaultFallback = c.Env.DefaultKeyFallback
 				ids := identity.New(func(ctx context.Context) ([]storage.IdentityRow, error) {
-					return storage.VerifiedIdentities(ctx, pool, nil)
+					return storage.VerifiedIdentities(ctx, ipool, nil)
 				}, log)
 				if err := ids.Reload(ctx); err != nil {
 					return fmt.Errorf("identity rebuild: %w", err)
@@ -277,10 +290,10 @@ func serveCmd() *cobra.Command {
 				// then their client encodings are rebuilt.
 				// One after the other, not side by side: each walks the table.
 				go func(o ingest.Options) {
-					if _, err := storage.Redecode(ctx, pool, o, log); err != nil && ctx.Err() == nil {
+					if _, err := storage.Redecode(ctx, ipool, o, log); err != nil && ctx.Err() == nil {
 						log.Error("decoding old rows again failed", "err", err)
 					}
-					if _, err := storage.BackfillObsRows(ctx, pool, log); err != nil && ctx.Err() == nil {
+					if _, err := storage.BackfillObsRows(ctx, ipool, log); err != nil && ctx.Err() == nil {
 						log.Error("rebuilding stored row encodings failed; rows are built per request", "err", err)
 					}
 				}(ingest.Options{Keyring: kr, Identities: ids, Policy: c.Policy, KeyBudget: c.Env.KeyAttemptBudget, AcceptRetained: func(string) bool { return true }})
@@ -299,7 +312,7 @@ func serveCmd() *cobra.Command {
 					QueueSize: c.Env.IngestQueueSize, BatchSize: c.Env.WriterBatchSize,
 					ProcessOpts: ingest.Options{Keyring: kr, Identities: ids, Policy: c.Policy, KeyBudget: c.Env.KeyAttemptBudget,
 						AcceptRetained: func(b string) bool { return retained[b] }},
-				}, storeSink{pool}, dd, pub, ids, m, log)
+				}, storeSink{ipool}, dd, pub, ids, m, log)
 				sup = &supervisor{pipe: pipe, demo: c.Env.DemoMode}
 				wg.Add(1)
 				go func() { defer wg.Done(); pipe.Run(ingestCtx) }()

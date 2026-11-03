@@ -27,15 +27,16 @@ var schemaSQL string
 // SchemaVersion is the value stored in the packet_log table comment.
 const SchemaVersion = "meshmap-schema:2"
 
-// Open creates a connection pool and verifies connectivity.
-func Open(ctx context.Context, url string) (*pgxpool.Pool, error) {
+// Open creates a connection pool of at most maxConns connections. role names
+// it in pg_stat_activity (application_name meshmap-{role}).
+func Open(ctx context.Context, url, role string, maxConns int) (*pgxpool.Pool, error) {
 	cfg, err := pgxpool.ParseConfig(url)
 	if err != nil {
 		return nil, fmt.Errorf("database url: %w", err)
 	}
-	cfg.MaxConns = 16
+	cfg.MaxConns = int32(max(1, maxConns))
 	cfg.MaxConnIdleTime = 5 * time.Minute
-	cfg.ConnConfig.RuntimeParams["application_name"] = "meshmap"
+	cfg.ConnConfig.RuntimeParams["application_name"] = "meshmap-" + role
 	pool, err := pgxpool.NewWithConfig(ctx, cfg)
 	if err != nil {
 		return nil, err

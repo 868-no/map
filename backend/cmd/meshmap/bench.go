@@ -42,7 +42,7 @@ func seedCmd() *cobra.Command {
 				return err
 			}
 			log := slog.New(slog.NewTextHandler(io.Discard, nil))
-			pool, err := openDB(cmd.Context(), e, log)
+			pool, err := openDB(cmd.Context(), e, log, "seed", 4)
 			if err != nil {
 				return err
 			}
@@ -136,7 +136,7 @@ func benchCmd() *cobra.Command {
 				return err
 			}
 			log := slog.New(slog.NewTextHandler(io.Discard, nil))
-			pool, err := openDB(cmd.Context(), e, log)
+			pool, err := openDB(cmd.Context(), e, log, "api", e.DBAPIConns)
 			if err != nil {
 				return err
 			}
