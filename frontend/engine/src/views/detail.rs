@@ -131,7 +131,12 @@ pub fn build_node_detail(rows: &[&Row], num: u32, b: &Built, i: &Interner) -> Op
     let mut own: Vec<&Row> = Vec::new();
     let mut gw_rx = set::<u64>();
     let mut uplinked: Vec<&Row> = Vec::new(); // what it reported as a gateway
+    // Every row it sent, uplinked or was sent: all its own parts need, in one pass.
+    let mut mine: Vec<&Row> = Vec::new();
     for &r in rows {
+        if r.src == num || r.gw == Some(num) || r.dst == Some(num) {
+            mine.push(r);
+        }
         if r.src == num || r.gw == Some(num) {
             first = first.min(r.t);
             last = last.max(r.t);
@@ -144,11 +149,11 @@ pub fn build_node_detail(rows: &[&Row], num: u32, b: &Built, i: &Interner) -> Op
             uplinked.push(r);
         }
     }
-    if let Some(o) = origins(&own).get(&num) {
+    if let Some(o) = origins(&own, i).get(&num) {
         n.packets = o.packets.len();
         n.receptions = o.receptions.len();
         n.own_uplinks = o.own_uplinks.len();
-        n.signatures = sig_counts(o, i);
+        n.signatures = sig_counts(o);
         n.brokers = Some(brokers(o, i));
         n.mqtt_opt_out = o.opt_out;
     }
@@ -186,10 +191,10 @@ pub fn build_node_detail(rows: &[&Row], num: u32, b: &Built, i: &Interner) -> Op
         n.telemetry = Some(telemetry_of(r));
     }
     let mut radio = crate::radio::radio(&own, i);
-    radio.channels = crate::channels::channel_use(num, rows, i);
+    radio.channels = crate::channels::channel_use(num, &mine, i);
     radio.preset = crate::channels::preset_guess(num, b.presets.get_or_init(|| crate::channels::PresetIndex::new(rows, &b.hops, i)));
     radio.uplink_topics = crate::radio::uplink_topics(&uplinked, i);
-    let mut d = NodeDetail { node: n, positions: vec![], telemetry_series: vec![], environment_series: vec![], node_status: vec![], delivery_by_recipient: vec![], heard_by: vec![], heard: vec![], recent_packets: vec![], truncated: false, radio, delivery: crate::packets::delivery(rows, num, i) };
+    let mut d = NodeDetail { node: n, positions: vec![], telemetry_series: vec![], environment_series: vec![], node_status: vec![], delivery_by_recipient: vec![], heard_by: vec![], heard: vec![], recent_packets: vec![], truncated: false, radio, delivery: crate::packets::delivery(&mine, num, i) };
     if first == i64::MAX {
         let Some(&t) = referenced(rows).get(&num) else { return None };
         d.node.status = "referenced";
@@ -240,14 +245,14 @@ pub fn build_node_detail(rows: &[&Row], num: u32, b: &Built, i: &Interner) -> Op
         })
         .collect();
     d.truncated = truncated;
-    d.delivery_by_recipient = delivery_by_recipient(rows, &own, num, b.replies.get_or_init(|| crate::packets::ReplyIndex::new(rows)), i);
+    d.delivery_by_recipient = delivery_by_recipient(rows, &mine, &own, num, b.replies.get_or_init(|| crate::packets::ReplyIndex::new(rows)), i);
     // Status texts: newest first, each once. Opt-out nodes' texts are never stored (empty).
     let mut texts: Vec<(i64, u32)> = own.iter().filter_map(|r| r.node_status().filter(|&s| !i.s(s).is_empty()).map(|s| (r.t, s))).collect();
     texts.sort_by(|a, b| b.0.cmp(&a.0));
     let mut seen_text = set::<u32>();
     d.node_status = texts.into_iter().filter(|(_, s)| seen_text.insert(*s)).take(5).map(|(t, s)| StatusText { status: i.s(s).to_string(), at: iso(t) }).collect();
-    d.heard_by = hearings(rows, |r| r.src == num && r.gw.is_some_and(|g| g != r.src), |r| r.gw.unwrap());
-    d.heard = hearings(rows, |r| r.gw == Some(num) && r.src != num, |r| r.src);
+    d.heard_by = hearings(&mine, |r| r.src == num && r.gw.is_some_and(|g| g != r.src), |r| r.gw.unwrap());
+    d.heard = hearings(&mine, |r| r.gw == Some(num) && r.src != num, |r| r.src);
 
     // Recent unique packets (no bodies, ever).
     let mut pk: FxMap<u64, Vec<&Row>> = map();
@@ -283,8 +288,9 @@ pub fn build_node_detail(rows: &[&Row], num: u32, b: &Built, i: &Interner) -> Op
 }
 
 /// Its unicast packets that asked for an ACK, by recipient, with the ACKs
-/// and errors answering them (D-109).
-fn delivery_by_recipient(rows: &[&Row], own: &[&Row], num: u32, replies: &crate::packets::ReplyIndex, i: &Interner) -> Vec<PairDelivery> {
+/// and errors answering them (D-109). rows: those `replies` was made from;
+/// mine: the rows it sent, uplinked or was sent.
+fn delivery_by_recipient(rows: &[&Row], mine: &[&Row], own: &[&Row], num: u32, replies: &crate::packets::ReplyIndex, i: &Interner) -> Vec<PairDelivery> {
     let mut first: FxMap<u64, &Row> = map();
     for &r in own {
         if r.wa && r.pid.is_some() && r.dst.is_some_and(|d| d != crate::util::BROADCAST && d != num) {
@@ -292,7 +298,7 @@ fn delivery_by_recipient(rows: &[&Row], own: &[&Row], num: u32, replies: &crate:
         }
     }
     // Replies answering one of its packets: (replier, request id).
-    let answered: FxSet<(u32, u32)> = rows.iter().filter(|r| r.dst == Some(num)).filter_map(|r| r.traceroute().filter(|t| t.is_reply && t.request != 0).map(|t| (r.src, t.request))).collect();
+    let answered: FxSet<(u32, u32)> = mine.iter().filter(|r| r.dst == Some(num)).filter_map(|r| r.traceroute().filter(|t| t.is_reply && t.request != 0).map(|t| (r.src, t.request))).collect();
     let mut per: FxMap<u32, PairDelivery> = map();
     for r in first.values() {
         let to = r.dst.unwrap();

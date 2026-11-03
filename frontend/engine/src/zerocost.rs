@@ -42,25 +42,28 @@ pub const MIN_SHARE: f64 = 0.8;
 /// (`copies::Copies` of `rows`); hears: (tx, rx) pairs where rx heard tx over the
 /// radio; roles: announced roles (unknown roles are allowed).
 pub fn detect(packets: &Copies, rows: &[&Row], hears: &FxSet<(u32, u32)>, roles: &FxMap<u32, String>) -> FxMap<(u32, u32), ZeroCost> {
-    let can = |n: u32| roles.get(&n).is_none_or(|r| r.is_empty() || zero_cost_role(r));
+    // Nodes whose announced role rules the 0-cost rule out.
+    let cannot: FxSet<u32> = roles.iter().filter(|(_, r)| !r.is_empty() && !zero_cost_role(r)).map(|(&n, _)| n).collect();
+    let can = |n: u32| !cannot.contains(&n);
     let mut out: FxMap<(u32, u32), ZeroCost> = map();
+    // Per-packet scratch, reused: a packet has few transmitters, so lists beat maps.
+    let mut copies: Vec<Heard> = Vec::new();
+    let mut sent: Vec<(u32, i16)> = Vec::new();
+    let mut conflict: Vec<u32> = Vec::new();
     for all in packets.packets(rows) {
         // Copies with both hop fields only.
-        let copies: Vec<Heard> = all.iter().filter(|h| h.row.hs.is_some() && h.row.hl.is_some()).collect();
+        copies.clear();
+        copies.extend(all.iter().filter(|h| h.row.hs.is_some() && h.row.hl.is_some()));
         let Some(first) = copies.first() else { continue };
         let origin = first.row.src;
         // The hop limit each transmitter sent; a transmitter seen with two
         // values (two rebroadcasts, or a misresolved byte) is left out.
-        let mut sent: FxMap<u32, i16> = map();
-        let mut conflict: FxSet<u32> = FxSet::default();
-        let mut note = |n: u32, l: i16| match sent.get(&n) {
-            Some(&v) if v != l => {
-                conflict.insert(n);
-            }
+        sent.clear();
+        conflict.clear();
+        let mut note = |n: u32, l: i16| match sent.iter().find(|x| x.0 == n) {
+            Some(&(_, v)) if v != l => conflict.push(n),
             Some(_) => {}
-            None => {
-                sent.insert(n, l);
-            }
+            None => sent.push((n, l)),
         };
         note(origin, first.row.hs.unwrap());
         for h in &copies {
@@ -68,16 +71,14 @@ pub fn detect(packets: &Copies, rows: &[&Row], hears: &FxSet<(u32, u32)>, roles:
                 note(sender, h.row.hl.unwrap());
             }
         }
-        for c in &conflict {
-            sent.remove(c);
-        }
-        for (&relay, &l) in &sent {
+        sent.retain(|x| !conflict.contains(&x.0));
+        for &(relay, l) in &sent {
             if relay == origin || !can(relay) {
                 continue;
             }
             let mut free = None;
             let (mut frees, mut paid, mut payer) = (0, 0, 0u32);
-            for (&u, &lu) in &sent {
+            for &(u, lu) in &sent {
                 if u == relay || !hears.contains(&(u, relay)) {
                     continue;
                 }

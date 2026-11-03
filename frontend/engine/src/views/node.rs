@@ -275,27 +275,29 @@ pub(super) fn position_rows<'a>(rows: &[&'a Row]) -> FxMap<u32, &'a Row> {
 pub(super) struct Origin {
     pub(super) first: i64,
     pub(super) last: i64,
-    pub(super) packets: FxSet<u64>,
+    /// Its packets, each with its best copy's signature status rank.
+    pub(super) packets: FxMap<u64, u8>,
     pub(super) receptions: FxSet<u64>,
     /// Receptions it uplinked itself, as a gateway (map reports among them).
     pub(super) own_uplinks: FxSet<u64>,
-    sig_rows: Vec<(u64, u32)>, // (packet, status) of every copy
     brokers: FxSet<u32>,
     pub(super) opt_out: bool,
 }
 
-pub(super) fn origins(rows: &[&Row]) -> FxMap<u32, Origin> {
+pub(super) fn origins(rows: &[&Row], i: &Interner) -> FxMap<u32, Origin> {
     let mut m: FxMap<u32, Origin> = map();
     for r in rows {
-        let o = m.entry(r.src).or_insert_with(|| Origin { first: r.t, last: r.t, packets: set(), receptions: set(), own_uplinks: set(), sig_rows: vec![], brokers: set(), opt_out: false });
+        let o = m.entry(r.src).or_insert_with(|| Origin { first: r.t, last: r.t, packets: map(), receptions: set(), own_uplinks: set(), brokers: set(), opt_out: false });
         o.first = o.first.min(r.t);
         o.last = o.last.max(r.t);
-        o.packets.insert(r.lp);
+        // Relays can strip a signature, so a packet's status is its best copy's.
+        let rank = i.sig_rank(r.sig);
+        let b = o.packets.entry(r.lp).or_insert(rank);
+        *b = (*b).max(rank);
         o.receptions.insert(r.ok);
         if r.gw == Some(r.src) {
             o.own_uplinks.insert(r.ok);
         }
-        o.sig_rows.push((r.lp, r.sig));
         o.brokers.insert(r.broker);
         o.opt_out |= r.nk;
     }
@@ -304,20 +306,13 @@ pub(super) fn origins(rows: &[&Row]) -> FxMap<u32, Origin> {
 
 /// One status per packet, its best copy's: relays can strip a signature, so
 /// a packet some gateway verified counts as verified, once.
-pub(super) fn sig_counts(o: &Origin, i: &Interner) -> Signatures {
-    let mut best: FxMap<u64, u32> = map();
-    for &(lp, s) in &o.sig_rows {
-        let b = best.entry(lp).or_insert(s);
-        if crate::packets::sig_rank(i.s(s)) > crate::packets::sig_rank(i.s(*b)) {
-            *b = s;
-        }
-    }
+pub(super) fn sig_counts(o: &Origin) -> Signatures {
     let mut out = Signatures::default();
-    for s in best.values() {
-        match i.s(*s) {
-            "verified" => out.verified += 1,
-            "unsigned" => out.unsigned += 1,
-            "unverifiable" => out.unverifiable += 1,
+    for &rank in o.packets.values() {
+        match rank {
+            3 => out.verified += 1,
+            2 => out.unverifiable += 1,
+            1 => out.unsigned += 1,
             _ => out.not_applicable += 1,
         }
     }
@@ -332,7 +327,7 @@ pub(super) fn brokers(o: &Origin, i: &Interner) -> Vec<String> {
 
 /// Nodes named in others' NeighborInfo, valid traceroute hops or traceroute
 /// destinations, with when they were last named.
-pub fn referenced(rows: &[&Row]) -> FxMap<u32, i64> {
+pub fn referenced<'a>(rows: impl IntoIterator<Item = &'a &'a Row>) -> FxMap<u32, i64> {
     let mut out: FxMap<u32, i64> = map();
     for r in rows {
         let mut add = |n: u32| {

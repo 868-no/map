@@ -19,6 +19,7 @@ pub struct EdgeResult {
 /// Adjacent segments of every valid traceroute copy, in row order: link
 /// evidence (deduplicated in reduce) and downlink evidence alike.
 pub fn traceroute_hops(rows: &[&Row]) -> Vec<Sample> {
+    // Only traceroutes count: callers may pass just those (views::ByType).
     let mut out = Vec::new();
     for r in rows {
         if r.ty != ty::TRACEROUTE {
@@ -33,16 +34,18 @@ pub fn traceroute_hops(rows: &[&Row]) -> Vec<Sample> {
 
 /// Evidence-backed links. Relay bytes resolve only against known nodes,
 /// their reported positions, and the roles that can rebroadcast.
+/// `neighborinfo`: the NeighborInfo rows among them, in row order (views::ByType).
 /// `hops`: traceroute_hops of the rows.
 /// `downlinkers`: probable downlinking nodes, whose 0 dB traceroute hops become MQTT links (None: off).
 /// `moved`: when nodes last moved (D-073); radio evidence from before either end's move is dropped.
-pub fn build_edges(rows: &[&Row], hops: &[Sample], known: &[u32], pos: FxMap<u32, LatLon>, silent: FxSet<u32>, downlinkers: Option<&FxSet<u32>>, moved: &FxMap<u32, i64>) -> (EdgeResult, RelayContext) {
+#[allow(clippy::too_many_arguments)]
+pub fn build_edges(rows: &[&Row], neighborinfo: &[&Row], hops: &[Sample], known: &[u32], pos: FxMap<u32, LatLon>, silent: FxSet<u32>, downlinkers: Option<&FxSet<u32>>, moved: &FxMap<u32, i64>) -> (EdgeResult, RelayContext) {
     let current = |s: &Sample| moved.get(&s.src).is_none_or(|&t| s.t >= t) && moved.get(&s.dst).is_none_or(|&t| s.t >= t);
     let mut samples: Vec<Sample> = Vec::new();
     // A. NeighborInfo: neighbour -> reporter, the first copy of each logical packet.
     let mut first_nb: Vec<&Row> = Vec::new();
     let mut nb_idx: FxMap<u64, usize> = map();
-    for &r in rows {
+    for &r in neighborinfo {
         if r.ty != ty::NEIGHBORINFO {
             continue;
         }

@@ -56,21 +56,35 @@ pub fn relaying(packets: &Copies, rows: &[&Row], gateways: &FxSet<u32>, edges: &
             strong.insert((e.src_num, e.dst_num));
         }
     }
+    // The routers each gateway witnesses: a packet can only count for
+    // routers a gateway that uplinked it witnesses.
+    let mut witnessed: FxMap<u32, Vec<u32>> = map();
+    for (&router, ws) in &witnesses {
+        for &w in ws {
+            witnessed.entry(w).or_default().push(router);
+        }
+    }
     let mut acc: FxMap<u32, (usize, usize, usize)> = map(); // expected, seen, as gateway
+    // Per-packet scratch, reused: a packet has few transmitters and gateways.
+    let mut sent: Vec<(u32, i16)> = Vec::new(); // hop limit each transmitter sent (first copy)
+    let mut uplinked: Vec<(u32, i16)> = Vec::new(); // gateway -> hop limit it received
+    let mut traced: Vec<u32> = Vec::new();
+    let mut cands: Vec<u32> = Vec::new();
     for copies in packets.packets(rows) {
         let origin = copies.first().row.src;
         let to = copies.first().row.dst;
-        // Hop limit each transmitter sent, and who uplinked it.
-        let mut sent: FxMap<u32, i16> = map();
-        let mut uplinked: FxMap<u32, i16> = map(); // gateway -> hop limit it received
-        let mut traced: FxSet<u32> = set();
+        sent.clear();
+        uplinked.clear();
+        traced.clear();
         for h in copies.iter() {
             let r = h.row;
             let g = r.gw.unwrap();
             if let Some(hl) = r.hl {
-                uplinked.entry(g).or_insert(hl);
-                if let Some(sender) = h.sender {
-                    sent.entry(sender).or_insert(hl);
+                if !uplinked.iter().any(|x| x.0 == g) {
+                    uplinked.push((g, hl));
+                }
+                if let Some(sender) = h.sender.filter(|&s| !sent.iter().any(|x| x.0 == s)) {
+                    sent.push((sender, hl));
                 }
             }
             if let Some(t) = r.traceroute().filter(|t| t.valid) {
@@ -78,15 +92,20 @@ pub fn relaying(packets: &Copies, rows: &[&Row], gateways: &FxSet<u32>, edges: &
                 traced.extend(hops.iter().filter(|h| !h.unknown && Some(h.id) != r.gw).map(|h| h.id));
             }
         }
-        for (&router, ws) in &witnesses {
+        // Routers with a witness that got the packet (a witness is never the
+        // router itself); without one nothing could be seen.
+        cands.clear();
+        for &(g, _) in &uplinked {
+            cands.extend(witnessed.get(&g).into_iter().flatten());
+        }
+        cands.sort_unstable();
+        cands.dedup();
+        for &router in &cands {
             if router == origin || to == Some(router) {
                 continue; // its own packets, and packets for it, are not relayed
             }
-            if !ws.iter().any(|w| uplinked.contains_key(w) && *w != router) {
-                continue; // no witness got the packet: nothing could be seen
-            }
-            let own = uplinked.get(&router).is_some_and(|&hl| hl > 0);
-            let inferred = !own && sent.iter().any(|(&u, &l)| u != router && l > 0 && strong.contains(&(u, router)));
+            let own = uplinked.iter().any(|&(g, hl)| g == router && hl > 0);
+            let inferred = !own && sent.iter().any(|&(u, l)| u != router && l > 0 && strong.contains(&(u, router)));
             if !own && !inferred {
                 continue;
             }
@@ -95,7 +114,7 @@ pub fn relaying(packets: &Copies, rows: &[&Row], gateways: &FxSet<u32>, edges: &
             if own {
                 e.2 += 1;
             }
-            if sent.contains_key(&router) || traced.contains(&router) {
+            if sent.iter().any(|x| x.0 == router) || traced.contains(&router) {
                 e.1 += 1;
             }
         }

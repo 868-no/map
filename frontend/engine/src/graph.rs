@@ -93,7 +93,6 @@ pub struct Edge {
 }
 
 struct Acc {
-    keys: FxSet<(Ev, SKey)>,
     counts: EvidenceCounts,
     snr: Vec<(i64, f64)>,
     rssi: Vec<(i64, f64)>,
@@ -133,12 +132,14 @@ fn invalid(n: u32) -> bool {
 /// Folds samples into edges; duplicate samples (same key, direction and evidence) count once.
 pub fn reduce(samples: &[Sample]) -> Vec<Edge> {
     let mut m: FxMap<(u32, u32), Acc> = map();
+    // One set for every edge's sample keys, rather than a set per edge.
+    let mut keys: FxSet<(u32, u32, Ev, SKey)> = set();
     for s in samples {
         if s.src == s.dst || invalid(s.src) || invalid(s.dst) {
             continue;
         }
-        let a = m.entry((s.src, s.dst)).or_insert_with(|| Acc { keys: set(), counts: EvidenceCounts::default(), snr: vec![], rssi: vec![], first: s.t, last: s.t });
-        if s.key != SKey::None && !a.keys.insert((s.ev, s.key)) {
+        let a = m.entry((s.src, s.dst)).or_insert_with(|| Acc { counts: EvidenceCounts::default(), snr: vec![], rssi: vec![], first: s.t, last: s.t });
+        if s.key != SKey::None && !keys.insert((s.src, s.dst, s.ev, s.key)) {
             continue;
         }
         match s.ev {
@@ -264,17 +265,14 @@ pub fn traceroute_samples(from: u32, to: u32, is_reply: bool, route: &[Hop], snr
 #[allow(clippy::too_many_arguments)]
 fn segments(origin: u32, dest: u32, route: &[Hop], snr: &[Option<f64>], t: i64, _lp: u64, dir: u8, out: &mut Vec<Sample>) {
     use std::hash::{Hash, Hasher};
-    let mut seq = Vec::with_capacity(route.len() + 2);
-    seq.push(Hop { id: origin, unknown: false });
-    seq.extend_from_slice(route);
-    if snr.len() == route.len() + 1 {
-        seq.push(Hop { id: dest, unknown: false });
-    }
+    // The path: origin, the route, and dest when it received the packet too.
+    let len = route.len() + 1 + usize::from(snr.len() == route.len() + 1);
+    let at = |k: usize| if k == 0 { Hop { id: origin, unknown: false } } else if k <= route.len() { route[k - 1] } else { Hop { id: dest, unknown: false } };
     // The path so far: the traceroute's endpoints, then each hop with its SNR.
     let mut h = crate::util::Fx::default();
     (dir, if dir == 0 { (origin, dest) } else { (dest, origin) }).hash(&mut h);
-    for k in 0..seq.len().saturating_sub(1) {
-        let (a, b) = (seq[k], seq[k + 1]);
+    for k in 0..len - 1 {
+        let (a, b) = (at(k), at(k + 1));
         (b.id, b.unknown, snr.get(k).copied().flatten().map(f64::to_bits)).hash(&mut h);
         if a.unknown || b.unknown {
             continue;
@@ -373,25 +371,26 @@ impl RelayContext {
             return None; // unmatched
         }
         let gp = self.pos.get(&gw);
-        let mut cands: Vec<u32> = Vec::new();
-        for &k in self.by_byte.get(hint as usize).map_or(&[][..], |v| v) {
+        // Called for every relayed copy: candidates are counted, not collected.
+        let cands = self.by_byte.get(hint as usize).map_or(&[][..], |v| v).iter().copied().filter(|&k| {
             if k == origin || k == gw || self.silent.contains(&k) {
-                continue;
+                return false;
             }
-            if let (Some(&p), Some(&g)) = (self.pos.get(&k), gp) {
-                if distance_m(p, g) > self.max_range_m {
-                    continue;
-                }
+            match (self.pos.get(&k), gp) {
+                (Some(&p), Some(&g)) => distance_m(p, g) <= self.max_range_m,
+                _ => true,
             }
-            cands.push(k);
-        }
-        match cands.len() {
-            0 => None,
-            1 => Some(Ok((cands[0], false))),
-            _ => {
-                let linked: Vec<u32> = cands.into_iter().filter(|&k| self.confirmed.contains(&pair(k, gw))).collect();
-                if linked.len() == 1 { Some(Ok((linked[0], true))) } else { Some(Err(())) }
-            }
+        });
+        let one = |it: &mut dyn Iterator<Item = u32>| -> Option<Option<u32>> {
+            let first = it.next()?;
+            Some(if it.next().is_none() { Some(first) } else { None })
+        };
+        match one(&mut cands.clone())? {
+            Some(k) => Some(Ok((k, false))),
+            None => match one(&mut cands.filter(|&k| self.confirmed.contains(&pair(k, gw)))) {
+                Some(Some(k)) => Some(Ok((k, true))),
+                _ => Some(Err(())),
+            },
         }
     }
 }

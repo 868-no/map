@@ -7,10 +7,34 @@ use std::borrow::Cow;
 use crate::util::{key64, key_hex, map, FxMap};
 
 /// Interned strings (brokers, channels, packet types, signature and crypto
-/// states, reception reasons, roles and names).
+/// states, reception reasons, roles and names), with what views ask of a
+/// string worked out once when it is interned, so hot loops never compare
+/// strings.
 pub struct Interner {
     strs: Vec<String>,
     ids: FxMap<String, u32>,
+    facts: Vec<Facts>,
+}
+
+/// What a string means where views look it up (see Interner).
+#[derive(Clone, Copy, Default)]
+struct Facts {
+    /// As a signature status: crate::packets::sig_rank.
+    sig_rank: u8,
+    /// As a crypto status: the payload was decoded (it had a Data wrapper).
+    decoded: bool,
+    /// As a channel name: the preset whose default name it is.
+    preset: Option<&'static str>,
+}
+
+impl Facts {
+    fn of(s: &str) -> Self {
+        Facts {
+            sig_rank: crate::packets::sig_rank(s),
+            decoded: matches!(s, "ctr_unauthenticated" | "ccm_authenticated" | "plaintext_uplink" | "unencrypted_channel"),
+            preset: crate::radio::preset_of(s),
+        }
+    }
 }
 
 /// Well-known packet types, interned first so they have fixed ids.
@@ -31,7 +55,7 @@ pub mod ty {
 
 impl Default for Interner {
     fn default() -> Self {
-        let mut i = Interner { strs: Vec::new(), ids: map() };
+        let mut i = Interner { strs: Vec::new(), ids: map(), facts: Vec::new() };
         for s in ["", "position", "mapreport", "nodeinfo", "telemetry", "neighborinfo", "traceroute", "relayed", "via_mqtt", "non_rf_transport", "no_rx_metrics", "device"] {
             i.id(s);
         }
@@ -47,6 +71,7 @@ impl Interner {
         let i = self.strs.len() as u32;
         self.strs.push(s.to_string());
         self.ids.insert(s.to_string(), i);
+        self.facts.push(Facts::of(s));
         i
     }
     pub fn get(&self, s: &str) -> Option<u32> {
@@ -54,6 +79,18 @@ impl Interner {
     }
     pub fn s(&self, i: u32) -> &str {
         &self.strs[i as usize]
+    }
+    /// A signature status's rank (crate::packets::sig_rank).
+    pub fn sig_rank(&self, i: u32) -> u8 {
+        self.facts[i as usize].sig_rank
+    }
+    /// A crypto status saying the payload was decoded.
+    pub fn decoded(&self, i: u32) -> bool {
+        self.facts[i as usize].decoded
+    }
+    /// The preset a channel name is the default name of (radio::preset_of).
+    pub fn preset(&self, i: u32) -> Option<&'static str> {
+        self.facts[i as usize].preset
     }
 }
 

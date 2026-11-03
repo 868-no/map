@@ -173,7 +173,7 @@ pub fn packet_log(rows: &[&Row], num: u32, ctx: &RelayContext, replies: &ReplyIn
             let others: Vec<&Row> = rs.iter().copied().filter(|r| r.gw.is_some_and(|g| g != num)).collect();
             let radio = |r: &&&Row| r.rr != ty::VIA_MQTT && r.rr != ty::NON_RF;
             let hops = others.iter().filter(radio).filter_map(|r| r.hops()).min();
-            let best = rs.iter().map(|r| i.s(r.sig)).max_by_key(|s| sig_rank(s)).unwrap_or("unsigned");
+            let best = rs.iter().map(|r| r.sig).max_by_key(|&s| i.sig_rank(s)).map_or("unsigned", |s| i.s(s));
             (
                 first.t,
                 OwnPacket {

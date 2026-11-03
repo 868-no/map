@@ -27,7 +27,7 @@ pub use node::*;
 pub use snapshot::*;
 pub use traffic::*;
 
-use crate::row::Row;
+use crate::row::{ty, Row};
 use crate::util::{map, node_id, FxMap, BROADCAST};
 
 pub fn dest(d: Option<u32>) -> Option<String> {
@@ -42,6 +42,39 @@ pub fn dest(d: Option<u32>) -> Option<String> {
 
 fn newer(a: &Row, b: &Row) -> bool {
     b.t > a.t || (b.t == a.t && b.id > a.id)
+}
+
+/// The window's rows of the packet types whose views look at only them, in
+/// row order: one pass sorts them out, so those views skip the rest.
+pub(crate) struct ByType<'a> {
+    pub nodeinfo: Vec<&'a Row>,
+    pub mapreport: Vec<&'a Row>,
+    /// Position packets and map reports (both carry positions).
+    pub positioned: Vec<&'a Row>,
+    pub telemetry: Vec<&'a Row>,
+    pub neighborinfo: Vec<&'a Row>,
+    pub traceroute: Vec<&'a Row>,
+}
+
+impl<'a> ByType<'a> {
+    pub fn new(rows: &[&'a Row]) -> Self {
+        let mut b = ByType { nodeinfo: vec![], mapreport: vec![], positioned: vec![], telemetry: vec![], neighborinfo: vec![], traceroute: vec![] };
+        for &r in rows {
+            match r.ty {
+                ty::NODEINFO => b.nodeinfo.push(r),
+                ty::MAPREPORT => {
+                    b.mapreport.push(r);
+                    b.positioned.push(r);
+                }
+                ty::POSITION => b.positioned.push(r),
+                ty::TELEMETRY => b.telemetry.push(r),
+                ty::NEIGHBORINFO => b.neighborinfo.push(r),
+                ty::TRACEROUTE => b.traceroute.push(r),
+                _ => {}
+            }
+        }
+        b
+    }
 }
 
 /// Latest row per key by (observed_at, id).

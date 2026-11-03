@@ -9,7 +9,7 @@ use serde::Serialize;
 
 use crate::copies::Copies;
 use crate::row::{ty, Interner, Row};
-use crate::util::{map, node_id, set, FxMap, FxSet};
+use crate::util::{map, node_id, FxMap, FxSet};
 use crate::views::Node;
 
 /// Traceroute requests per hour from one node that count as flooding the
@@ -141,8 +141,8 @@ fn pct(x: f64) -> String {
 /// payload, the Data wrapper when we saw it decoded, and a 64-byte XEdDSA
 /// signature plus its tag when it carried one.
 fn wire_bytes(r: &Row, i: &Interner) -> f64 {
-    let decoded = r.crypto != 0 && matches!(i.s(r.crypto), "ctr_unauthenticated" | "ccm_authenticated" | "plaintext_uplink" | "unencrypted_channel");
-    let signed = matches!(i.s(r.sig), "verified" | "unverifiable");
+    let decoded = i.decoded(r.crypto);
+    let signed = i.sig_rank(r.sig) >= 2; // verified or unverifiable
     16.0 + r.bytes.max(0) as f64 + if decoded { 4.0 } else { 0.0 } + if signed { 66.0 } else { 0.0 }
 }
 
@@ -159,25 +159,6 @@ fn cost(r: &Row, i: &Interner) -> f64 {
 /// A lower bound: relays no gateway heard are missed. copies: every
 /// packet's radio copies (`copies::Copies` of `rows`).
 pub fn airtime(copies: &Copies, rows: &[&Row], i: &Interner, hours: f64) -> Airtime {
-    struct Pkt<'a> {
-        row: &'a Row,
-        relays: FxSet<u32>,
-    }
-    let mut pkts: Vec<Pkt> = Vec::new();
-    for group in copies.packets(rows) {
-        let row = group.first().row;
-        pkts.push(Pkt { row, relays: set() });
-        let p = pkts.last_mut().unwrap();
-        for h in group.iter() {
-            if let Some(s) = h.sender.filter(|&s| s != row.src) {
-                p.relays.insert(s);
-            }
-            if let Some(t) = h.row.traceroute().filter(|t| t.valid) {
-                let hops = if t.is_reply { &t.route_back } else { &t.route };
-                p.relays.extend(hops.iter().filter(|x| !x.unknown && x.id != row.src && Some(x.id) != h.row.gw).map(|x| x.id));
-            }
-        }
-    }
     let mut total = 0.0;
     let mut tx_total = 0;
     let mut types: FxMap<u32, f64> = map();
@@ -202,12 +183,28 @@ pub fn airtime(copies: &Copies, rows: &[&Row], i: &Interner, hours: f64) -> Airt
     let mut sf: FxMap<u32, Sf> = map();
     let mut sf_kinds: FxMap<u32, (usize, f64)> = map();
     let (heartbeat, text_direct, text_broadcast) = (i.get("router_heartbeat"), i.get("router_text_direct"), i.get("router_text_broadcast"));
-    for p in &pkts {
-        let c = cost(p.row, i);
-        let n = 1 + p.relays.len();
+    let mut packets = 0;
+    let mut relays: Vec<u32> = Vec::new(); // one packet's distinct relays (scratch)
+    for group in copies.packets(rows) {
+        let row = group.first().row;
+        relays.clear();
+        for h in group.iter() {
+            if let Some(s) = h.sender.filter(|&s| s != row.src) {
+                relays.push(s);
+            }
+            if let Some(t) = h.row.traceroute().filter(|t| t.valid) {
+                let hops = if t.is_reply { &t.route_back } else { &t.route };
+                relays.extend(hops.iter().filter(|x| !x.unknown && x.id != row.src && Some(x.id) != h.row.gw).map(|x| x.id));
+            }
+        }
+        relays.sort_unstable();
+        relays.dedup();
+        packets += 1;
+        let c = cost(row, i);
+        let n = 1 + relays.len();
         let all = c * n as f64;
-        if let Some(f) = p.row.store_forward() {
-            let e = sf.entry(p.row.src).or_default();
+        if let Some(f) = row.store_forward() {
+            let e = sf.entry(row.src).or_default();
             e.packets += 1;
             e.air += all;
             *e.kinds.entry(f.kind).or_default() += 1;
@@ -224,14 +221,14 @@ pub fn airtime(copies: &Copies, rows: &[&Row], i: &Interner, hours: f64) -> Airt
         }
         total += all;
         tx_total += n;
-        *types.entry(p.row.ty).or_default() += all;
-        let a = acc.entry(p.row.src).or_default();
+        *types.entry(row.ty).or_default() += all;
+        let a = acc.entry(row.src).or_default();
         a.caused += all;
         a.transmitted += c;
         a.packets += 1;
         a.transmissions += n;
-        *a.types.entry(p.row.ty).or_default() += all;
-        for &relay in &p.relays {
+        *a.types.entry(row.ty).or_default() += all;
+        for &relay in &relays {
             acc.entry(relay).or_default().transmitted += c;
         }
     }
@@ -261,7 +258,7 @@ pub fn airtime(copies: &Copies, rows: &[&Row], i: &Interner, hours: f64) -> Airt
     let mut by_kind: Vec<(String, usize, f64)> = sf_kinds.into_iter().map(|(k, (c, a))| (i.s(k).to_string(), c, a / total)).collect();
     by_kind.sort_by(|a, b| b.2.total_cmp(&a.2).then(a.0.cmp(&b.0)));
     let store_forward = StoreForwardStats { packets: sf_nodes.iter().map(|x| x.packets).sum(), share: sf_nodes.iter().map(|x| x.share).sum(), by_kind, nodes: sf_nodes };
-    Airtime { packets: pkts.len(), transmissions: tx_total, store_forward, by_type: shares(types, total), nodes }
+    Airtime { packets, transmissions: tx_total, store_forward, by_type: shares(types, total), nodes }
 }
 
 /// The window's known issues and airtime. `hours`: the window's length;
@@ -333,14 +330,14 @@ pub fn health(rows: &[&Row], invalid: &[&Row], nodes: &[Node], copies: &Copies, 
     // Wrong preset: the mesh's preset from its channel names; nodes heard only on another.
     let mut by_preset: FxMap<&'static str, usize> = map();
     for &r in rows {
-        if let Some(p) = (r.channel != 0).then(|| crate::radio::preset_of(i.s(r.channel))).flatten() {
+        if let Some(p) = i.preset(r.channel) {
             *by_preset.entry(p).or_default() += 1;
         }
     }
     let mesh = by_preset.iter().max_by_key(|&(p, c)| (*c, *p)).map(|(&p, _)| p);
     if let Some(mesh) = mesh {
         for (&n, pk) in &own {
-            let presets: FxSet<&'static str> = pk.values().filter(|r| r.channel != 0).filter_map(|r| crate::radio::preset_of(i.s(r.channel))).collect();
+            let presets: FxSet<&'static str> = pk.values().filter_map(|r| i.preset(r.channel)).collect();
             let reported = pk.values().filter_map(|r| r.map_report()).find(|m| m.default_channel).map(|m| i.s(m.preset).to_string());
             let odd = if !presets.is_empty() && !presets.contains(mesh) && pk.len() >= 3 {
                 presets.iter().next().map(|p| p.to_string())
@@ -354,15 +351,10 @@ pub fn health(rows: &[&Row], invalid: &[&Row], nodes: &[Node], copies: &Copies, 
     }
 
     // Heard only by its own gateway.
-    let mut heard_by: FxMap<u32, FxSet<u32>> = map();
-    for &r in rows {
-        if let Some(g) = r.gw.filter(|&g| g != r.src) {
-            heard_by.entry(r.src).or_default().insert(g);
-        }
-    }
+    let heard_by: FxSet<u32> = rows.iter().filter(|r| r.gw.is_some_and(|g| g != r.src)).map(|r| r.src).collect();
     for (&n, pk) in &own {
         let packets = pk.values().filter(|r| r.ty != ty::MAPREPORT).count();
-        if packets >= ISOLATED_MIN_PACKETS && heard_by.get(&n).is_none_or(|s| s.is_empty()) && pk.values().any(|r| r.gw == Some(n)) {
+        if packets >= ISOLATED_MIN_PACKETS && !heard_by.contains(&n) && pk.values().any(|r| r.gw == Some(n)) {
             add(n, "isolated", "notice", "No other gateway reports it".into(), format!("None of its {packets} packets were uplinked by another gateway. It may simply have no other gateway in range (nodes that are not gateways can still hear it), or a poor antenna or location, or different radio settings than its neighbours."));
         }
     }

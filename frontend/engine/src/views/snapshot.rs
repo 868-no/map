@@ -104,15 +104,16 @@ impl Default for Rules {
 }
 
 pub fn build_snapshot(rows: &[&Row], i: &Interner, g: &GeoOptions, rules: Rules) -> Built {
+    let by = super::ByType::new(rows);
     let mut nodes: FxMap<u32, Node> = map();
-    for (n, o) in origins(rows) {
+    for (n, o) in origins(rows, i) {
         let x = nodes.entry(n).or_insert_with(|| Node::new(n));
         x.first = o.first;
         x.last = o.last;
         x.packets = o.packets.len();
         x.receptions = o.receptions.len();
         x.own_uplinks = o.own_uplinks.len();
-        x.signatures = sig_counts(&o, i);
+        x.signatures = sig_counts(&o);
         x.brokers = Some(brokers(&o, i));
         x.mqtt_opt_out = o.opt_out;
     }
@@ -133,7 +134,7 @@ pub fn build_snapshot(rows: &[&Row], i: &Interner, g: &GeoOptions, rules: Rules)
         x.first = x.first.min(first);
         x.last = x.last.max(last);
     }
-    let hops = traceroute_hops(rows);
+    let hops = traceroute_hops(&by.traceroute);
     let downlinks = downlinks(&hops);
     for (&n, d) in &downlinks {
         // A node known only from others' traceroutes is named, not heard.
@@ -146,10 +147,10 @@ pub fn build_snapshot(rows: &[&Row], i: &Interner, g: &GeoOptions, rules: Rules)
             })
             .mqtt_downlink = Some(d.clone());
     }
-    for (n, r) in latest_by(rows, is_identity, |r| r.src) {
+    for (n, r) in latest_by(&by.nodeinfo, is_identity, |r| r.src) {
         nodes.entry(n).or_insert_with(|| Node::new(n)).identity = Some(identity_of(r, i));
     }
-    for (n, r) in latest_by(rows, is_named_report, |r| r.src) {
+    for (n, r) in latest_by(&by.mapreport, is_named_report, |r| r.src) {
         let x = nodes.entry(n).or_insert_with(|| Node::new(n));
         if x.identity.is_none() {
             x.identity = Some(identity_of_report(r, i));
@@ -158,7 +159,7 @@ pub fn build_snapshot(rows: &[&Row], i: &Interner, g: &GeoOptions, rules: Rules)
     // Positions reported more than a day before the window's latest
     // observation are stale: no anchor, and the node is estimated (D-094).
     let now = rows.iter().map(|r| r.t).max().unwrap_or(0);
-    let (fresh, stale) = fresh_position_rows(rows, now);
+    let (fresh, stale) = fresh_position_rows(&by.positioned, now);
     for (n, r) in fresh {
         let x = nodes.entry(n).or_insert_with(|| Node::new(n));
         x.position = Some(position_of(r, i));
@@ -167,10 +168,10 @@ pub fn build_snapshot(rows: &[&Row], i: &Interner, g: &GeoOptions, rules: Rules)
     for (n, r) in stale {
         nodes.entry(n).or_insert_with(|| Node::new(n)).stale_position = Some(position_of(r, i));
     }
-    for (n, r) in latest_by(rows, is_device_telemetry, |r| r.src) {
+    for (n, r) in latest_by(&by.telemetry, is_device_telemetry, |r| r.src) {
         nodes.entry(n).or_insert_with(|| Node::new(n)).telemetry = Some(telemetry_of(r));
     }
-    for (n, t) in referenced(rows) {
+    for (n, t) in referenced(by.neighborinfo.iter().chain(&by.traceroute)) {
         let x = nodes.entry(n).or_insert_with(|| {
             let mut x = Node::new(n);
             x.status = "referenced";
@@ -203,7 +204,7 @@ pub fn build_snapshot(rows: &[&Row], i: &Interner, g: &GeoOptions, rules: Rules)
     // Nodes whose reports jump around one place get a narrowed position, and
     // their jumps are not movement (D-077). Nodes that moved (D-073): their
     // trails, and links only from after the move.
-    let tracks = crate::movement::positions_by_node(rows);
+    let tracks = crate::movement::positions_by_node(&by.positioned);
     let anchored = if rules.moves { crate::movement::anchors_of(&tracks) } else { map() };
     for (n, a) in &anchored {
         if let Some(x) = nodes.get_mut(n) {
@@ -220,7 +221,7 @@ pub fn build_snapshot(rows: &[&Row], i: &Interner, g: &GeoOptions, rules: Rules)
         }
     }
     let moved: FxMap<u32, i64> = if rules.moves { moves.iter().map(|(&n, m)| (n, m.moved_at)).collect() } else { map() };
-    let (mut er, mut ctx) = build_edges(rows, &hops, &known, pos, silent, rules.mqtt_links.then_some(&downlinkers), &moved);
+    let (mut er, mut ctx) = build_edges(rows, &by.neighborinfo, &hops, &known, pos, silent, rules.mqtt_links.then_some(&downlinkers), &moved);
     if rules.mqtt_links {
         ctx.downlinkers = downlinkers.clone();
     }
@@ -283,20 +284,26 @@ pub fn build_snapshot(rows: &[&Row], i: &Interner, g: &GeoOptions, rules: Rules)
 }
 
 fn window_counts(rows: &[&Row], i: &Interner) -> Counts {
-    let (mut packets, mut receptions) = (set::<u64>(), set::<u64>());
-    let mut by_type: FxMap<u32, FxSet<u64>> = map();
+    let mut receptions: FxSet<u64> = FxSet::with_capacity_and_hasher(rows.len(), Default::default());
+    // Distinct (type, packet): packets per type, and packets as the distinct keys among them.
+    let mut typed: FxSet<(u32, u64)> = FxSet::with_capacity_and_hasher(rows.len() / 2, Default::default());
     let (mut first, mut last) = (i64::MAX, i64::MIN);
     for r in rows {
-        packets.insert(r.lp);
         receptions.insert(r.ok);
-        by_type.entry(r.ty).or_insert_with(set).insert(r.lp);
+        typed.insert((r.ty, r.lp));
         first = first.min(r.t);
         last = last.max(r.t);
+    }
+    let mut by_type: FxMap<u32, usize> = map();
+    let mut packets: FxSet<u64> = FxSet::with_capacity_and_hasher(typed.len(), Default::default());
+    for &(t, lp) in &typed {
+        *by_type.entry(t).or_default() += 1;
+        packets.insert(lp);
     }
     Counts {
         packets: packets.len(),
         receptions: receptions.len(),
-        by_type: by_type.into_iter().map(|(k, v)| (i.s(k).to_string(), v.len())).collect(),
+        by_type: by_type.into_iter().map(|(k, v)| (i.s(k).to_string(), v)).collect(),
         first_event: (!rows.is_empty()).then(|| iso(first)),
         last_event: (!rows.is_empty()).then(|| iso(last)),
         ..Default::default()
