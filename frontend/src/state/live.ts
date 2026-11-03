@@ -6,7 +6,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { subscribeLive } from '../api/client'
 import type { ObsRow } from '../api/types'
 import { onTransmissions, sendLiveRows } from '../derive/client'
-import { addTransmission, clearPings, painting, pingWanted } from '../map/pings'
+import { addTransmission, clearPings, painting, PING_MAX_AGE_MS, pingWanted } from '../map/pings'
 import { useLiveEpoch } from './data'
 import { apiParams, defaultFilters, useStore, type Filters } from './store'
 
@@ -38,7 +38,22 @@ export function useLiveStream(positions: RefObject<Map<string, [number, number]>
   })
 
   // The worker attributes live rows to transmissions; the animation places them.
-  useEffect(() => onTransmissions((ts) => ts.forEach((t) => addTransmission(t, positions.current))), [positions])
+  // Animated at once while the page is being painted; otherwise on the next
+  // frame, if that comes while the rows are still recent. A slow frame (a busy
+  // machine) then delays a ping instead of losing it, and a frozen window,
+  // which gets no frame, piles nothing up (D-113).
+  useEffect(
+    () =>
+      onTransmissions((ts) => {
+        const add = () => ts.forEach((t) => addTransmission(t, positions.current))
+        if (painting()) return add()
+        const received = Date.now()
+        requestAnimationFrame(() => {
+          if (Date.now() - received < PING_MAX_AGE_MS) add()
+        })
+      }),
+    [positions],
+  )
 
   // Live updates for the rolling window only. The stream carries every new
   // row (unfiltered: the browser's copy needs them all); filters apply here.
@@ -64,8 +79,9 @@ export function useLiveStream(positions: RefObject<Map<string, [number, number]>
         const now = Date.now() + clockOffset
         // Pings: radio traffic only (not a node's own map report), passing the
         // filters, recent, and only while someone is watching: the tab is
-        // visible and actually being painted (D-034, D-048).
-        const ping = rows.flatMap((r, k) => (r.y !== 'mapreport' && passes(r, f) && pingWanted(r.t, now, document.hidden || !painting()) ? [k] : []))
+        // visible (D-034, D-048); whether it is being painted is decided when
+        // the transmissions come back (D-113).
+        const ping = rows.flatMap((r, k) => (r.y !== 'mapreport' && passes(r, f) && pingWanted(r.t, now, document.hidden) ? [k] : []))
         sendLiveRows(rows, ping)
       },
       onStatus: (ok, reason) => {
