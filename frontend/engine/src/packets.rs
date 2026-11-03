@@ -495,6 +495,11 @@ pub struct Transmission {
     /// already animated (D-106).
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub replay: bool,
+    /// A traceroute reply's transmissions name the request they answer
+    /// ("origin:id"): the reply leaves the target only once the request's
+    /// way there has been drawn reaching it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub after: Option<String>,
 }
 
 fn packet_ref(origin: u32, id: u32) -> String {
@@ -528,6 +533,7 @@ pub fn forward_route(r: &Row, ctx: &RelayContext) -> Vec<Transmission> {
             delivered: false,
             packet: Some(packet.clone()),
             replay: true,
+            after: None,
         });
     }
     out
@@ -539,7 +545,7 @@ pub fn forward_route(r: &Row, ctx: &RelayContext) -> Vec<Transmission> {
 pub fn delivery_ping(r: &Row, ack: Option<u32>) -> Option<Transmission> {
     let rt = r.routing().filter(|rt| Some(rt.kind) == ack && rt.request != 0)?;
     let sender = r.dst.filter(|&d| d != r.src && d != u32::MAX)?;
-    Some(Transmission { key: format!("{:08x}|{}|delivered", rt.request, node_id(sender)), tx: node_id(sender), rx: Some(node_id(r.src)), rebroadcast: false, strength: None, delivered: true, packet: None, replay: false })
+    Some(Transmission { key: format!("{:08x}|{}|delivered", rt.request, node_id(sender)), tx: node_id(sender), rx: Some(node_id(r.src)), rebroadcast: false, strength: None, delivered: true, packet: None, replay: false, after: None })
 }
 
 /// Measured signal to 0..1: SNR -20..+10 dB, else RSSI -130..-70 dBm.
@@ -567,6 +573,8 @@ pub fn transmissions(r: &Row, ctx: &RelayContext, roles: &FxMap<u32, String>) ->
             Some(g) => traceroute_chain(r, t, g, over_radio, ctx),
             None => traceroute_chain(r, t, r.src, false, ctx),
         };
+        // A reply answers its request: drawn after the request reaches the target.
+        let after = t.is_reply.then(|| r.dst.filter(|&d| d != BROADCAST && d != r.src && t.request != 0).map(|d| packet_ref(d, t.request))).flatten();
         let mut out = vec![];
         for k in 0..chain.len() {
             let Some(tx) = chain[k].0 else { continue };
@@ -578,11 +586,11 @@ pub fn transmissions(r: &Row, ctx: &RelayContext, roles: &FxMap<u32, String>) ->
                 continue;
             }
             let rx = chain.get(k + 1).and_then(|c| c.0);
-            out.push(Transmission { key: key(tx), tx: node_id(tx), rx: rx.map(node_id), rebroadcast: k > 0, strength: rx.filter(|&x| Some(x) == r.gw).and(strength), delivered: false, packet: r.pid.map(|p| packet_ref(r.src, p)), replay: false });
+            out.push(Transmission { key: key(tx), tx: node_id(tx), rx: rx.map(node_id), rebroadcast: k > 0, strength: rx.filter(|&x| Some(x) == r.gw).and(strength), delivered: false, packet: r.pid.map(|p| packet_ref(r.src, p)), replay: false, after: after.clone() });
         }
         return out;
     }
-    let first = |rx: Option<u32>, s: Option<f64>| Transmission { key: key(r.src), tx: node_id(r.src), rx: rx.map(node_id), rebroadcast: false, strength: s, delivered: false, packet: r.pid.map(|p| packet_ref(r.src, p)), replay: false };
+    let first = |rx: Option<u32>, s: Option<f64>| Transmission { key: key(r.src), tx: node_id(r.src), rx: rx.map(node_id), rebroadcast: false, strength: s, delivered: false, packet: r.pid.map(|p| packet_ref(r.src, p)), replay: false, after: None };
     let Some(gw) = r.gw else { return vec![first(None, None)] };
     let (byte, downlinked) = match r.heard_from() {
         HeardFrom::Direct => return vec![first(Some(gw), strength)],
@@ -599,7 +607,7 @@ pub fn transmissions(r: &Row, ctx: &RelayContext, roles: &FxMap<u32, String>) ->
     let heard_origin = !downlinked && r.hops() == Some(1) && roles.get(&relay).is_some_and(|ro| !ro.is_empty() && !zero_cost_role(ro));
     vec![
         first(heard_origin.then_some(relay), None),
-        Transmission { key: key(relay), tx: node_id(relay), rx: Some(node_id(gw)), rebroadcast: true, strength, delivered: false, packet: r.pid.map(|p| packet_ref(r.src, p)), replay: false },
+        Transmission { key: key(relay), tx: node_id(relay), rx: Some(node_id(gw)), rebroadcast: true, strength, delivered: false, packet: r.pid.map(|p| packet_ref(r.src, p)), replay: false, after: None },
     ]
 }
 
@@ -807,5 +815,9 @@ mod tests {
         assert!(!live[0].replay);
         // A request (not a reply) replays nothing.
         assert!(forward_route(&request, &ctx(&[A, C, GW], &[])).is_empty());
+        assert!(live.iter().all(|x| x.after.is_none()));
+        // The reply's own way back names the request it answers.
+        let back = transmissions(&reply, &ctx(&[A, C, GW], &[]), &map());
+        assert!(!back.is_empty() && back.iter().all(|x| x.after.as_deref() == Some("000000cc:0000004d") && !x.replay));
     }
 }

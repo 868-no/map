@@ -327,9 +327,11 @@ impl Engine {
                 if Some(r.ty) == invalid {
                     return vec![];
                 }
-                let mut t = packets::transmissions(r, &b.ctx, &b.roles);
+                // A reply's record of its request's way comes first, so the
+                // reply's own pings can wait for it to reach the target.
+                let mut t = packets::forward_route(r, &b.ctx);
+                t.extend(packets::transmissions(r, &b.ctx, &b.roles));
                 t.extend(packets::delivery_ping(r, ack));
-                t.extend(packets::forward_route(r, &b.ctx));
                 t
             })
             .collect();

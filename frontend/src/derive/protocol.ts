@@ -41,6 +41,7 @@ export interface Transmission {
   delivered?: boolean // not radio: an ACK proving rx received tx's packet (D-096)
   packet?: string // "origin:id" of the packet transmitted (D-106)
   replay?: boolean // reconstructed from a traceroute reply: skipped if that packet was already animated (D-106)
+  after?: string // a traceroute reply: the request ("origin:id") whose way to the target is drawn first
 }
 
 export type Response =

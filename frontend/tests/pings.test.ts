@@ -188,6 +188,35 @@ describe('rebroadcast ordering', () => {
     const end = PING_GROW + PING_LINGER + PING_FADE
     expect(ring(end + 10, [10.2, 63])).toBeDefined()
   })
+  it('a traceroute reply leaves the target only after its request\'s way there is drawn, however long', () => {
+    // C asked E seven hops away; the reply replays C -> 1 -> ... -> 6 -> E, then goes back E -> 6.
+    const hops: [string, [number, number]][] = [[C, [10, 63]], ...[1, 2, 3, 4, 5, 6].map((i): [string, [number, number]] => [`!0000000${i}`, [10 + 0.2 * i, 63]]), ['!0000000e', [11.4, 63]]]
+    const where = new Map(hops)
+    const n = hops.length - 1, E = hops[n][0], at = (id: string) => where.get(id)!
+    for (let k = 0; k < n; k++) {
+      addTransmission({ key: `rqcc:4d|${hops[k][0]}`, tx: hops[k][0], rx: hops[k + 1][0], rebroadcast: k > 0, packet: 'cc:4d', replay: true }, where, 0)
+    }
+    addTransmission({ key: `reply|${E}`, tx: E, rx: hops[n - 1][0], rebroadcast: false, packet: '0e:1f4', after: 'cc:4d' }, where, 0)
+    const ringAt = (now: number, id: string) => rawPings(now, Z).rings.find((r) => r.center[0] === at(id)[0])
+    // Each hop waits for the one before: the last forward hop starts well past the collection time.
+    let t = 0
+    while (!ringAt(t, hops[n - 1][0]) && t < 60_000) t += 50
+    expect(t).toBeGreaterThan(PING_COLLECT)
+    expect(ringAt(t, E)).toBeUndefined() // the reply still waits
+    // The reply starts when the request's last ring reaches the target.
+    while (!ringAt(t, E) && t < 60_000) t += 50
+    const last = ringAt(t, hops[n - 1][0])!
+    expect(last.radiusPx * MPP).toBeGreaterThanOrEqual(distanceM(at(hops[n - 1][0]), at(E)) * 0.98)
+    expect(ringAt(t, E)!.radiusPx).toBeLessThan(MIN_RING_PX)
+  })
+  it('a reply whose request was seen live waits for that ring too', () => {
+    addTransmission({ key: `lp|${A}`, tx: A, rx: C, rebroadcast: false, packet: 'aa:4d' }, pos, 0)
+    addTransmission({ key: `reply|${C}`, tx: C, rx: A, rebroadcast: false, packet: 'cc:1f4', after: 'aa:4d' }, pos, 10)
+    expect(ring(100, [10.2, 63])).toBeUndefined()
+    let t = 100
+    while (!ring(t, [10.2, 63]) && t < PING_GROW * 2) t += 20
+    expect(ring(t, [10.0, 63])!.radiusPx * MPP).toBeGreaterThanOrEqual(distanceM([10, 63], [10.2, 63]) * 0.98)
+  })
   it('after a pause without frames, waiting relays do not all start at once', () => {
     addTransmission({ key: `p|${A}`, tx: A, rx: C, rebroadcast: false }, pos, 0)
     addTransmission({ key: `p|${C}`, tx: C, rx: GW, rebroadcast: true }, pos, 0)

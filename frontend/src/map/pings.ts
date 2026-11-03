@@ -28,8 +28,10 @@ interface Ping {
   to: number // metres the current growth ends at (farthest receiver, with margin)
   growStart: number
   settled: number // when the ring last stopped growing or gained a receiver
+  packet?: string // "origin:id", when known
   // A rebroadcast whose upstream transmission is on the map waits, unseen,
-  // until that ring reaches this transmitter.
+  // until that ring reaches this transmitter; so does a traceroute reply
+  // leaving the target until its request's ring gets there.
   waitFor?: { key: string; rx: string; since: number }
 }
 
@@ -195,14 +197,15 @@ export function addTransmission(t: Transmission, pos: Map<string, LngLat>, now =
     const s = seen.get(t.key)
     if (s !== undefined && now - s < SEEN_TTL) return
     if (pings.size >= MAX_PINGS) pings.delete(pings.keys().next().value!) // drop the oldest under heavy traffic
-    p = { tx: t.tx, center, born: now, rebroadcast: t.rebroadcast, heard: false, heardAt: 0, receivers: new Map(), from: 0, to: 0, growStart: now, settled: now + PING_GROW }
+    p = { tx: t.tx, center, born: now, rebroadcast: t.rebroadcast, heard: false, heardAt: 0, receivers: new Map(), from: 0, to: 0, growStart: now, settled: now + PING_GROW, packet: t.packet }
     // Who did this transmitter hear the packet from? If that ping is on the
-    // map, start only when its ring arrives here.
+    // map, start only when its ring arrives here. A traceroute reply starts
+    // only when its request, live or replayed, has reached the target.
     const lp = packetOf(t.key)
     for (const [k, q] of pings) {
-      if (packetOf(k) === lp && q.receivers.has(t.tx)) {
+      if ((packetOf(k) === lp || (t.after && q.packet === t.after)) && q.receivers.has(t.tx)) {
         p.waitFor = { key: k, rx: t.tx, since: now }
-        break
+        if (packetOf(k) === lp) break
       }
     }
     pings.set(t.key, p)
@@ -307,6 +310,12 @@ export function activePings(now: number, zoom: number): { rings: Ring[]; blips: 
   for (const [k, p] of pings) {
     if (p.waitFor) {
       const parent = pings.get(p.waitFor.key)
+      // While that ring itself still waits (a replayed route arrives whole),
+      // the time limit below counts from when it starts.
+      if (parent?.waitFor) {
+        p.waitFor.since = now
+        continue
+      }
       const reached = parent?.receivers.get(p.waitFor.rx)?.reachedAt
       // Start when the upstream ring got here; if it is gone or never gets
       // here within the collection time, start then rather than never. Never
