@@ -5,7 +5,7 @@ use serde::Serialize;
 use super::{brokers, dest, downlinks, first_per_reception, identity_of, identity_of_report, is_device_telemetry, is_identity, is_named_report, is_position, latest_by, origins, position_of, referenced, sig_counts, telemetry_of, traceroute_hops, Node};
 use crate::graph::{self, Stats};
 use crate::row::{Interner, Row};
-use crate::util::{iso, key_hex, map, node_id, set, FxMap, FxSet};
+use crate::util::{iso, map, node_id, set, FxMap, FxSet};
 
 const MAX_SAMPLES: usize = 500;
 const MAX_PACKETS: usize = 100;
@@ -208,7 +208,7 @@ pub fn build_node_detail(rows: &[&Row], num: u32, i: &Interner) -> Option<NodeDe
             m.entry(r.lp).and_modify(|cur| if r.t < cur.t || (r.t == cur.t && r.id < cur.id) { *cur = r }).or_insert(r);
         }
         let mut list: Vec<&Row> = m.into_values().collect();
-        list.sort_by_key(|r| key_hex(r.lp));
+        list.sort_by_key(|r| r.lp); // the same order as the zero-padded hex key
         if list.len() > MAX_SAMPLES {
             list.truncate(MAX_SAMPLES);
             *truncated = true;

@@ -177,12 +177,6 @@ pub fn airtime(rows: &[&Row], ctx: &RelayContext, i: &Interner, hours: f64) -> A
             }
         }
     }
-    // Packets only its own gateway uplinked were still sent over the air.
-    for &r in rows {
-        if r.gw == Some(r.src) && r.ty != ty::MAPREPORT {
-            pkts.entry(r.lp).or_insert_with(|| Pkt { row: r, relays: set() });
-        }
-    }
     let mut total = 0.0;
     let mut tx_total = 0;
     let mut types: FxMap<u32, f64> = map();

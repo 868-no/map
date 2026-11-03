@@ -227,8 +227,7 @@ pub fn build_snapshot(rows: &[&Row], i: &Interner, g: &GeoOptions, rules: Rules)
         }
     }
     if g.enabled {
-        let radio: Vec<Edge> = er.edges.iter().filter(|e| !e.mqtt).cloned().collect();
-        estimate(&mut nodes, &radio, g);
+        estimate(&mut nodes, &er.edges, g); // radio edges only: it skips MQTT ones
     }
     let mut list: Vec<Node> = nodes.into_values().collect();
     for n in &list {

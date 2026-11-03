@@ -49,7 +49,7 @@ pub(super) fn estimate(nodes: &mut FxMap<u32, Node>, edges: &[Edge], g: &GeoOpti
         a.first = a.first.min(e.first);
         a.last = a.last.max(e.last);
     };
-    for e in edges {
+    for e in edges.iter().filter(|e| !e.mqtt) {
         if anchors.contains_key(&e.src_num) {
             add(e.dst_num, e.src_num, e);
         }

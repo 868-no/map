@@ -171,11 +171,6 @@ pub fn movements_except(rows: &[&Row], anchored: &FxMap<u32, Anchor>) -> FxMap<u
     movements_of(&positions_by_node(rows), anchored)
 }
 
-/// Nodes that moved within `rows`, with their tracks.
-pub fn movements(rows: &[&Row]) -> FxMap<u32, Movement> {
-    movements_of(&positions_by_node(rows), &map())
-}
-
 /// Nodes that moved, from grouped position reports (`positions_by_node`),
 /// leaving out anchored nodes (their tracks are not computed at all).
 pub fn movements_of(by_node: &FxMap<u32, Vec<&Row>>, anchored: &FxMap<u32, Anchor>) -> FxMap<u32, Movement> {
