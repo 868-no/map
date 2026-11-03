@@ -2,6 +2,7 @@ package ingest
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"runtime"
 	"slices"
@@ -90,6 +91,7 @@ type Pipeline struct {
 	pendMu   sync.Mutex
 	pending  map[int64][]string
 	closed   atomic.Bool
+	closeMu  sync.RWMutex // Submit sends under the read lock; Run closes queue under the write lock
 	stopAt   atomic.Int64 // UnixNano when shutdown began
 	degraded atomic.Bool  // writer currently failing
 	lastOK   atomic.Int64
@@ -134,6 +136,10 @@ func New(cfg Config, sink Sink, dedupe Dedupe, pub Publisher, promote Promoter, 
 // Submit enqueues a message without blocking the MQTT reader. When the queue
 // is full the message is dropped and counted (QoS 0 sources cannot be slowed).
 func (p *Pipeline) Submit(msg RawMessage) {
+	// Held across the send: Run closes the queue under the write lock, so a
+	// callback still in Submit at shutdown can never send on a closed channel.
+	p.closeMu.RLock()
+	defer p.closeMu.RUnlock()
 	if p.closed.Load() {
 		p.m.Dropped.WithLabelValues("shutting_down").Inc()
 		return
@@ -196,8 +202,10 @@ func (p *Pipeline) Run(ctx context.Context) {
 	}()
 	<-ctx.Done()
 	p.stopAt.Store(time.Now().UnixNano())
+	p.closeMu.Lock()
 	p.closed.Store(true)
 	close(p.queue)
+	p.closeMu.Unlock()
 	wg.Wait()
 	close(p.toWriter)
 	<-writerDone
@@ -375,22 +383,25 @@ func (p *Pipeline) flush(batch []*Observation) {
 	if len(batch) == 0 {
 		return
 	}
-	// In-batch dedupe: two copies in flight before either committed.
-	seen := make(map[[16]byte]bool, len(batch))
-	uniq := batch[:0:0]
-	for _, o := range batch {
-		if seen[o.ObservationKey] {
-			p.m.Rejected.WithLabelValues("duplicate_observation").Inc()
-			continue
-		}
-		seen[o.ObservationKey] = true
-		uniq = append(uniq, o)
-	}
+	// No two copies of one observation reach the writer: claim holds a key
+	// in flight until afterCommit.
+	uniq := batch
 	backoff := 250 * time.Millisecond
 	for {
+		timeout := 30 * time.Second
+		if p.closed.Load() {
+			// Shutting down: no attempt may outlast the drain deadline, and past
+			// it the rows are given up as a gap without trying (D-059).
+			left := time.Until(time.Unix(0, p.stopAt.Load()).Add(p.cfg.DrainTimeout))
+			if left <= 0 {
+				p.giveUp(uniq, errors.New("drain deadline passed"))
+				return
+			}
+			timeout = min(timeout, left)
+		}
 		p.takeAlsoVia(uniq)
 		start := time.Now()
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), timeout)
 		ids, err := p.sink.InsertBatch(ctx, uniq)
 		cancel()
 		if err == nil {
@@ -410,11 +421,7 @@ func (p *Pipeline) flush(batch []*Observation) {
 			// the rows up as a gap rather than hang until killed.
 			left := time.Until(time.Unix(0, p.stopAt.Load()).Add(p.cfg.DrainTimeout))
 			if left <= 0 {
-				p.log.Error("database unavailable at shutdown; rows lost", "rows", len(uniq), "err", err)
-				p.m.Dropped.WithLabelValues("shutdown_db_unavailable").Add(float64(len(uniq)))
-				for _, o := range uniq {
-					p.noteGap(o.ObservedAt, "shutdown_db_unavailable")
-				}
+				p.giveUp(uniq, err)
 				return
 			}
 			wait = min(wait, left)
@@ -422,6 +429,15 @@ func (p *Pipeline) flush(batch []*Observation) {
 		p.log.Warn("batch insert failed; retrying", "rows", len(uniq), "err", err, "backoff", wait)
 		time.Sleep(wait)
 		backoff = min(backoff*2, 30*time.Second)
+	}
+}
+
+// giveUp records rows the shutdown drain could not store as a gap.
+func (p *Pipeline) giveUp(rows []*Observation, err error) {
+	p.log.Error("database unavailable at shutdown; rows lost", "rows", len(rows), "err", err)
+	p.m.Dropped.WithLabelValues("shutdown_db_unavailable").Add(float64(len(rows)))
+	for _, o := range rows {
+		p.noteGap(o.ObservedAt, "shutdown_db_unavailable")
 	}
 }
 

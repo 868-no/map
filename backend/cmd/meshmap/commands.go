@@ -241,6 +241,11 @@ func serveCmd() *cobra.Command {
 			hub := api.NewHub(!noIngest)
 			ingestCtx, stopIngest := context.WithCancel(context.Background())
 			defer stopIngest()
+			// MQTT input has its own context so it stops before the pipeline
+			// (design §2.7): no callback is still submitting when the queue closes.
+			mqttCtx, stopMQTT := context.WithCancel(context.Background())
+			defer stopMQTT()
+			var mqttWG sync.WaitGroup
 			if !noIngest {
 				chs := c.SecurityChannels()
 				brokers := c.Brokers
@@ -314,8 +319,10 @@ func serveCmd() *cobra.Command {
 						return err
 					}
 					sup.clients = append(sup.clients, cl)
+					mqttWG.Add(1)
 					go func() {
-						if err := cl.Run(ingestCtx); err != nil {
+						defer mqttWG.Done()
+						if err := cl.Run(mqttCtx); err != nil {
 							log.Error("broker client stopped", "broker", cl.ID(), "err", err)
 						}
 					}()
@@ -358,6 +365,8 @@ func serveCmd() *cobra.Command {
 			// the writer flushes, bounded by its drain timeout), end live
 			// streams so Shutdown need not wait for them, then let in-flight
 			// requests finish.
+			stopMQTT()
+			waitFor(&mqttWG, 3*time.Second)
 			stopIngest()
 			apiSrv.CloseStreams()
 			sctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -374,6 +383,16 @@ func serveCmd() *cobra.Command {
 	}
 	cmd.Flags().BoolVar(&noIngest, "no-ingest", false, "serve HTTP only (split deployments)")
 	return cmd
+}
+
+// waitFor waits for wg, at most d.
+func waitFor(wg *sync.WaitGroup, d time.Duration) {
+	done := make(chan struct{})
+	go func() { wg.Wait(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(d):
+	}
 }
 
 // multiPublisher fans live events to several sinks (in-process hub, Redis).
