@@ -2,6 +2,7 @@
 # toolchains as local development (scripts/*.sh), so CI and laptops agree.
 # When they all pass, the images workflow builds (and from main and version
 # tags, publishes) the container images: nothing untested reaches ghcr.io.
+# A push to main then redeploys production through a Portainer webhook.
 # End-to-end tests (frontend/e2e) run against the demo stack: the simulated
 # mesh on a local broker, plus two days of seeded history. The basemap is not
 # built here (it takes GBs and an hour), so tests that need real map labels
@@ -130,3 +131,24 @@ jobs:
       packages: write
     uses: ./.github/workflows/images.yml
     secrets: inherit
+
+  # Redeploy production once main's images are published: a Portainer stack
+  # webhook pulls them and recreates the stack. The webhook URL is its only
+  # credential, so it lives in the DEPLOY_WEBHOOK_URL secret, never in the
+  # repository; secrets never reach pull requests from forks.
+  deploy:
+    name: deploy (production)
+    needs: images
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    # One deploy at a time, in push order; a newer push's deploy waits.
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    steps:
+      - name: call the Portainer webhook
+        env:
+          HOOK: ${{ secrets.DEPLOY_WEBHOOK_URL }}
+        run: |
+          if [ -z "$HOOK" ]; then echo "DEPLOY_WEBHOOK_URL is not set: nothing deployed"; exit 1; fi
+          curl -fsS -X POST --retry 3 --retry-all-errors --max-time 30 -o /dev/null -w 'webhook: HTTP %{http_code}\n' "$HOOK"
