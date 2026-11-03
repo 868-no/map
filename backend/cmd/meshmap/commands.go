@@ -230,11 +230,14 @@ func serveCmd() *cobra.Command {
 				return err
 			}
 			rc := openCache(c.Env, log)
-			go func() {
-				if _, err := storage.BackfillObsRows(ctx, pool, log); err != nil && ctx.Err() == nil {
-					log.Error("rebuilding stored row encodings failed; rows are built per request", "err", err)
-				}
-			}()
+			if noIngest {
+				// Ingesting processes rebuild encodings after decoding old rows again (below).
+				go func() {
+					if _, err := storage.BackfillObsRows(ctx, pool, log); err != nil && ctx.Err() == nil {
+						log.Error("rebuilding stored row encodings failed; rows are built per request", "err", err)
+					}
+				}()
+			}
 
 			var sup *supervisor
 			var wg sync.WaitGroup
@@ -272,13 +275,13 @@ func serveCmd() *cobra.Command {
 				log.Info("identity index rebuilt from packet_log", "identities", ids.Len())
 				// Rows decoded by an older decoder get the current one (D-107),
 				// then their client encodings are rebuilt.
+				// One after the other, not side by side: each walks the table.
 				go func(o ingest.Options) {
-					if n, err := storage.Redecode(ctx, pool, o, log); err != nil && ctx.Err() == nil {
+					if _, err := storage.Redecode(ctx, pool, o, log); err != nil && ctx.Err() == nil {
 						log.Error("decoding old rows again failed", "err", err)
-					} else if n > 0 {
-						if _, err := storage.BackfillObsRows(ctx, pool, log); err != nil && ctx.Err() == nil {
-							log.Error("rebuilding stored row encodings failed", "err", err)
-						}
+					}
+					if _, err := storage.BackfillObsRows(ctx, pool, log); err != nil && ctx.Err() == nil {
+						log.Error("rebuilding stored row encodings failed; rows are built per request", "err", err)
 					}
 				}(ingest.Options{Keyring: kr, Identities: ids, Policy: c.Policy, KeyBudget: c.Env.KeyAttemptBudget, AcceptRetained: func(string) bool { return true }})
 				retained := map[string]bool{}

@@ -112,6 +112,7 @@ func backfillBatch(ctx context.Context, pool *pgxpool.Pool, below int64, limit i
 		return 0, 0, err
 	}
 	var ids []int64
+	var ats []time.Time
 	var tails []string
 	for rows.Next() {
 		f, _, meta, err := ScanObs(rows)
@@ -124,7 +125,7 @@ func backfillBatch(ctx context.Context, pool *pgxpool.Pool, below int64, limit i
 			rows.Close()
 			return 0, 0, fmt.Errorf("row %d: %w", f.ID, err)
 		}
-		ids, tails, last = append(ids, f.ID), append(tails, string(tail)), f.ID
+		ids, ats, tails, last = append(ids, f.ID), append(ats, f.At), append(tails, string(tail)), f.ID
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
@@ -133,8 +134,9 @@ func backfillBatch(ctx context.Context, pool *pgxpool.Pool, below int64, limit i
 	if len(ids) == 0 {
 		return 0, 0, nil
 	}
-	if _, err := tx.Exec(ctx, `UPDATE packet_log p SET obs_row = u.tail, obs_row_version = $3
-		FROM unnest($1::bigint[], $2::text[]) AS u(id, tail) WHERE p.id = u.id`, ids, tails, int16(obsrow.Version)); err != nil {
+	// By (id, observed_at), the primary key, so each row is found in its own partition.
+	if _, err := tx.Exec(ctx, `UPDATE packet_log p SET obs_row = u.tail, obs_row_version = $4
+		FROM unnest($1::bigint[], $2::timestamptz[], $3::text[]) AS u(id, at, tail) WHERE p.id = u.id AND p.observed_at = u.at`, ids, ats, tails, int16(obsrow.Version)); err != nil {
 		return 0, 0, err
 	}
 	return len(ids), last, tx.Commit(ctx)

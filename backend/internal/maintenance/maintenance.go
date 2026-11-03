@@ -104,8 +104,10 @@ func (r *Runner) RunOnce(ctx context.Context) (Status, error) {
 	}
 	var trimmed int64
 	for {
-		tag, err := conn.Exec(ctx, `DELETE FROM packet_log WHERE id IN (
-			SELECT id FROM packet_log WHERE observed_at < $1 ORDER BY observed_at, id LIMIT $2)`, cutoff, chunkSize)
+		// By (id, observed_at), the primary key: the delete reaches only the
+		// partition the rows are in, not every partition's index.
+		tag, err := conn.Exec(ctx, `DELETE FROM packet_log WHERE (id, observed_at) IN (
+			SELECT id, observed_at FROM packet_log WHERE observed_at < $1 ORDER BY observed_at, id LIMIT $2)`, cutoff, chunkSize)
 		if err != nil {
 			return st, err
 		}
