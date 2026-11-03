@@ -438,27 +438,31 @@ func openapiCmd() *cobra.Command {
 	}
 }
 
-// retentionTrigger converts retention notifications into identity reloads.
+// retentionTrigger converts retention notifications into identity reloads,
+// until ctx ends. A reconnect also reloads: a notice may have been missed.
 func retentionTrigger(ctx context.Context, rc *cache.Client, log *slog.Logger) <-chan struct{} {
 	ch := make(chan struct{}, 1)
 	if rc == nil {
 		return ch
 	}
-	go func() {
-		for ctx.Err() == nil {
-			sub := rc.R.Subscribe(ctx, maintenance.RetentionChannel)
-			for range sub.Channel() {
-				select {
-				case ch <- struct{}{}:
-				default:
-				}
-			}
-			_ = sub.Close()
-			select {
-			case <-ctx.Done():
-			case <-time.After(5 * time.Second):
-			}
+	poke := func() {
+		select {
+		case ch <- struct{}{}:
+		default:
 		}
-	}()
+	}
+	lost := false
+	go rc.Listen(ctx, []string{maintenance.RetentionChannel}, cache.Listener{
+		Up: func() {
+			if lost {
+				poke()
+			}
+		},
+		Down: func(err error) {
+			lost = true
+			log.Debug("retention notices from Redis lost; reconnecting", "err", err)
+		},
+		Message: func(string, string) { poke() },
+	})
 	return ch
 }

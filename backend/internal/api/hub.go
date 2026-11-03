@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"sync"
 	"sync/atomic"
-	"time"
 
 	"github.com/868-no/map/internal/cache"
 	"github.com/868-no/map/internal/ingest"
@@ -102,47 +101,41 @@ func (h *Hub) subscribe() (chan hubMsg, *subscriber, func()) {
 }
 
 // FeedFromRedis subscribes to live and retention channels (API-only mode,
-// or retention notifications in serve mode when live is in-process).
+// or retention notifications in serve mode when live is in-process) until ctx
+// ends. In API-only mode a lost subscription makes live unavailable and a new
+// one available again: browsers see live go false then true, and sync what
+// they missed meanwhile (§4.3, D-117). Retention notices missed while disconnected
+// only concern rows months older than any window, which the next sync drops.
 func (h *Hub) FeedFromRedis(ctx context.Context, c *cache.Client, live bool, log *slog.Logger) {
 	channels := []string{maintenance.RetentionChannel}
 	if live {
 		channels = append(channels, cache.LiveChannel)
 	}
-	for ctx.Err() == nil {
-		sub := c.R.Subscribe(ctx, channels...)
-		if _, err := sub.Receive(ctx); err != nil {
+	c.Listen(ctx, channels, cache.Listener{
+		Up: func() {
+			if live {
+				h.setAvailable(true)
+			}
+		},
+		Down: func(err error) {
 			if live {
 				h.setAvailable(false)
+				log.Warn("live feed from Redis lost; reconnecting", "err", err)
 			}
-			_ = sub.Close()
-			select {
-			case <-ctx.Done():
-				return
-			case <-time.After(5 * time.Second):
-			}
-			continue
-		}
-		if live {
-			h.setAvailable(true)
-		}
-		for m := range sub.Channel() {
-			switch m.Channel {
+		},
+		Message: func(channel, payload string) {
+			switch channel {
 			case cache.LiveChannel:
 				var evs []ingest.LiveEvent
-				if json.Unmarshal([]byte(m.Payload), &evs) == nil {
+				if json.Unmarshal([]byte(payload), &evs) == nil {
 					h.publishEvents(evs)
 				}
 			case maintenance.RetentionChannel:
 				var st maintenance.Status
-				if json.Unmarshal([]byte(m.Payload), &st) == nil {
+				if json.Unmarshal([]byte(payload), &st) == nil {
 					h.broadcast(hubMsg{retention: &st})
 				}
 			}
-		}
-		_ = sub.Close()
-		if live {
-			h.setAvailable(false)
-			log.Warn("live feed from Redis lost; retrying")
-		}
-	}
+		},
+	})
 }
