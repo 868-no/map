@@ -120,7 +120,7 @@ sqlite3 -readonly -csv meshstellar.db \
   docker exec -i <backend container> meshmap import-envelopes --broker no868 --dry-run
 
 # 2. The import itself: the same without --dry-run. Safe to re-run after an interruption.
-# 3. Restart the backend so the identity index and trends include the imported history.
+# 3. Restart the backend so the identity index includes the imported history (trends pick it up by themselves).
 ```
 
 - **`--broker`** names the configured broker the history came from: its channel keys and plaintext rules decide how envelopes decode, and imported rows carry its id.

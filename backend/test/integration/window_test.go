@@ -730,6 +730,14 @@ func TestTrendSummaries(t *testing.T) {
 	if _, ok := th.Hour(base.Add(time.Hour)); ok || th.Len() != 1 {
 		t.Fatalf("an hour outlived the data (%d left)", th.Len())
 	}
+	// Older history stored later (an import) is summed by the next refresh.
+	f.position(base.Add(-48*time.Hour+10*time.Minute), nodeB, gw1, 63.1)
+	if err := th.Refresh(ctx, pool, now); err != nil {
+		t.Fatal(err)
+	}
+	if h, ok := th.Hour(base.Add(-48 * time.Hour)); !ok || h.Packets != 1 || th.Len() != 2 {
+		t.Fatalf("imported hour: %+v %v (%d hours)", h, ok, th.Len())
+	}
 	if tables, _ := storage.ApplicationTables(ctx, pool); !slices.Equal(tables, storage.Tables) {
 		t.Fatalf("trends must not add tables: %v", tables)
 	}

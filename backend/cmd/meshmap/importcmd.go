@@ -114,7 +114,7 @@ func importEnvelopesCmd() *cobra.Command {
 			err = im.Run(ctx, os.Stdin)
 			im.Report(os.Stdout)
 			if err == nil && !dryRun && !im.First.IsZero() {
-				fmt.Println("Restart the backend so the identity index, trends and caches include the imported history.")
+				fmt.Println("Restart the backend so the identity index and caches include the imported history.")
 			}
 			return err
 		},

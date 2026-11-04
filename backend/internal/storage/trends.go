@@ -54,8 +54,9 @@ var trendRangeSQL = `
 
 // Refresh brings the summaries up to date: hours never summed, the most
 // recent TrendRecent, and hours summed under an older decoder are read from
-// the log again; hours before the oldest retained row are dropped, so the
-// totals never outlive the data.
+// the log again, as are rows older than every summarised hour (an import of
+// history); hours before the oldest retained row are dropped, so the totals
+// never outlive the data.
 func (t *TrendHours) Refresh(ctx context.Context, pool *pgxpool.Pool, now time.Time) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -73,7 +74,7 @@ func (t *TrendHours) Refresh(ctx context.Context, pool *pgxpool.Pool, now time.T
 		return nil
 	}
 	first := oldest.UTC().Truncate(time.Hour)
-	var last, stale time.Time
+	var earliest, last, stale time.Time
 	for h, s := range t.hours {
 		if h.Before(first) {
 			delete(t.hours, h)
@@ -81,6 +82,9 @@ func (t *TrendHours) Refresh(ctx context.Context, pool *pgxpool.Pool, now time.T
 		}
 		if h.After(last) {
 			last = h
+		}
+		if earliest.IsZero() || h.Before(earliest) {
+			earliest = h
 		}
 		if s.DecodeVersion < ingest.DecodeVersion && (stale.IsZero() || h.Before(stale)) {
 			stale = h
@@ -102,12 +106,27 @@ func (t *TrendHours) Refresh(ctx context.Context, pool *pgxpool.Pool, now time.T
 	if from.Before(first) {
 		from = first
 	}
-	for lo := from; lo.Before(end); lo = lo.Add(trendChunk) {
-		hi := lo.Add(trendChunk)
-		if hi.After(end) {
-			hi = end
+	// Rows before the earliest summarised hour arrived after it was summed:
+	// imported history. Read them too, so an import needs no restart.
+	if !earliest.IsZero() && first.Before(earliest) {
+		if from.Before(earliest) {
+			earliest = from // read below anyway
 		}
-		if err := t.readRange(ctx, pool, lo, hi); err != nil {
+		if err := t.readChunks(ctx, pool, first, earliest); err != nil {
+			return err
+		}
+	}
+	return t.readChunks(ctx, pool, from, end)
+}
+
+// readChunks reads [lo, hi) a trendChunk at a time.
+func (t *TrendHours) readChunks(ctx context.Context, pool *pgxpool.Pool, lo, hi time.Time) error {
+	for ; lo.Before(hi); lo = lo.Add(trendChunk) {
+		next := lo.Add(trendChunk)
+		if next.After(hi) {
+			next = hi
+		}
+		if err := t.readRange(ctx, pool, lo, next); err != nil {
 			return err
 		}
 	}
