@@ -91,6 +91,12 @@ interface Props {
   onPositions: (pos: Map<string, [number, number]>) => void
 }
 
+// Links are drawn thin (client links thinnest), so hover and click are given a
+// few pixels of slop around every pickable: the clickable band is far wider
+// than the line. A direct hit on a node still wins, as the centre pixel is
+// tested first (D-146).
+const PICK_RADIUS = 6
+
 export default function MapView({ caps, snapshot, onPositions }: Props) {
   const container = useRef<HTMLDivElement>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
@@ -167,7 +173,7 @@ export default function MapView({ caps, snapshot, onPositions }: Props) {
         map.on('load', view)
         map.on('rotate', () => setBearing(map.getBearing()))
         map.on('error', (e: maplibregl.ErrorEvent) => console.warn('map error', e.error?.message))
-        const overlay = new MapboxOverlay({ interleaved: true, layers: [] })
+        const overlay = new MapboxOverlay({ interleaved: true, pickingRadius: PICK_RADIUS, layers: [] })
         map.addControl(overlay as unknown as maplibregl.IControl)
         // Pings animate in a canvas of their own above the map: redrawing it
         // at 30 fps leaves the basemap and the mesh layers alone (D-083).
@@ -444,7 +450,7 @@ export default function MapView({ caps, snapshot, onPositions }: Props) {
     const map = mapRef.current
     if (!ready || !map) return
     const onClick = (e: maplibregl.MapMouseEvent) => {
-      const info = overlayRef.current?.pickObject({ x: e.point.x, y: e.point.y })
+      const info = overlayRef.current?.pickObject({ x: e.point.x, y: e.point.y, radius: PICK_RADIUS })
       const o = info?.object as PlacedNode | LinkGeom | LabelDatum | RouteGeom | undefined
       if (!o) return select(null) // empty map: clear the selection
       if ('seg' in o) return
