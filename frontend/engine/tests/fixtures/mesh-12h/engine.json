@@ -4030,6 +4030,7 @@
   },
   "nodes": {
     "!011e7098": {
+      "estimate_note": "no confirmed direct links to nodes reporting a position with at least 15-bit precision",
       "gateway_receptions": 0,
       "heard": [],
       "heard_by": [],
@@ -4055,6 +4056,7 @@
       "truncated": false
     },
     "!01474a2f": {
+      "estimate_note": "no confirmed direct links to nodes reporting a position with at least 15-bit precision",
       "gateway_receptions": 0,
       "heard": [],
       "heard_by": [],
@@ -4096,6 +4098,7 @@
       "brokers": [
         "no868"
       ],
+      "estimate_note": "no confirmed direct links to nodes reporting a position with at least 15-bit precision",
       "first_seen": "2026-10-31T03:17:50.159Z",
       "gateway_receptions": 526,
       "heard": [
@@ -7950,6 +7953,7 @@
       "brokers": [
         "no868"
       ],
+      "estimate_note": "only 1 positioned anchors with direct links (need 3)",
       "first_seen": "2026-10-31T03:18:06.865Z",
       "gateway_receptions": 433,
       "heard": [
@@ -11195,6 +11199,12 @@
         }
       ],
       "receptions": 228,
+      "relaying": {
+        "expected": 460,
+        "received_as_gateway": 450,
+        "seen": 46,
+        "witnesses": 3
+      },
       "signatures": {
         "not_applicable": 44,
         "unsigned": 6,
@@ -14294,6 +14304,12 @@
         }
       ],
       "receptions": 89,
+      "relaying": {
+        "expected": 502,
+        "received_as_gateway": 491,
+        "seen": 43,
+        "witnesses": 3
+      },
       "signatures": {
         "not_applicable": 2,
         "unsigned": 2,
