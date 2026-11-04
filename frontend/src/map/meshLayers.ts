@@ -12,6 +12,7 @@ import { ageColor, CONFIDENCE_ALPHA, glyphInk, LINK_WIDTH, MQTT_ARROW, mqttDownl
 import { dashExt, dashOffsetExt, UNDER_LABELS, type RGBA } from './deckShared'
 import { labelData, toPixels, type Cluster } from './labels'
 import { stackLevels } from './stacking'
+import { mercY } from './pings'
 import type { RouteSegment } from '../derive/views'
 import type { MapPalette } from './palette'
 import { regionLayers, type RegionCollection } from './regions'
@@ -81,7 +82,6 @@ function chevronIcon() {
   }
   return { iconAtlas: chevronAtlas as unknown as string, iconMapping: CHEVRON_MAPPING }
 }
-const mercY = (lat: number) => Math.log(Math.tan(Math.PI / 4 + (lat * Math.PI) / 360))
 /** Chevron 65 % of the way from transmitter to the receiver that relays it for free. */
 function chevron(from: [number, number], to: [number, number]): Chevron {
   const f = 0.65

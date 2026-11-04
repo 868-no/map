@@ -213,7 +213,6 @@ export function linkGeometry(edges: Edge[], pos: Map<string, [number, number]>, 
   return out.sort((x, y) => y.samples - x.samples)
 }
 
-/** Link opacity by confidence (low links are also dashed). */
 /** A selected packet's route (D-037). */
 export const ROUTE_COLOR: [number, number, number, number] = [255, 170, 60, 240]
 /** A traceroute's two legs, drawn side by side: the way there and the way back. */
@@ -222,6 +221,7 @@ export const TRACE_COLOR: Record<'forward' | 'back', [number, number, number, nu
 /** Ring around nodes that did not allow MQTT uplink (D-032). */
 export const OPT_OUT_RING: [number, number, number, number] = [255, 77, 77, 255]
 
+/** Link opacity by confidence (low links are also dashed). */
 export const CONFIDENCE_ALPHA: Record<string, number> = { high: 235, medium: 150, low: 120 }
 
 /** Link widths in pixels: one per class, never by sample count. */

@@ -95,7 +95,6 @@ const growth = (p: Ping, now: number) => Math.min(Math.max((now - p.growStart) /
 const radiusAt = (p: Ping, now: number) => p.from + (p.to - p.from) * ease(growth(p, now))
 const endOf = (p: Ping) => (p.heard ? p.settled + PING_LINGER + PING_FADE : p.born + PING_COLLECT)
 
-/** Add a transmission; a ping still on the map takes the new receiver. */
 /**
  * Positions of the nodes currently drawn. Estimates are recomputed on every
  * rebuild and may move or vanish while a ping is on screen, so each frame
@@ -182,6 +181,7 @@ function activeDeliveries(now: number): { lines: DeliveryLine[]; arrivals: Flash
 const animated = new Map<string, { at: number; replay: boolean }>()
 export const REPLAY_DEDUPE_MS = 120_000
 
+/** Add a transmission; a ping still on the map takes the new receiver. */
 export function addTransmission(t: Transmission, pos: Map<string, LngLat>, now = performance.now()): void {
   if (t.delivered) return addDelivery(t, pos, now)
   if (t.packet) {
@@ -272,7 +272,6 @@ export function metresPerPixel(lat: number, zoom: number): number {
   return (40_075_016.686 * Math.cos((lat * Math.PI) / 180)) / (512 * 2 ** zoom)
 }
 
-/** Current rings and blips (pixels at this zoom) and receiver flashes. */
 /**
  * Moves a ping onto the current markers: the transmitter and each receiver
  * where it is drawn now; receivers no longer drawn are dropped, and one that
@@ -297,7 +296,7 @@ function follow(p: Ping, now: number): boolean {
 
 // Web Mercator y for a latitude: the ring is a circle on screen, so a point
 // a given fraction along a link must be interpolated in projected space.
-const mercY = (lat: number) => Math.log(Math.tan(Math.PI / 4 + (lat * Math.PI) / 360))
+export const mercY = (lat: number) => Math.log(Math.tan(Math.PI / 4 + (lat * Math.PI) / 360))
 const latOf = (y: number) => (360 / Math.PI) * Math.atan(Math.exp(y)) - 90
 
 /** The point `f` of the way from a to b on screen (Web Mercator). */
@@ -305,6 +304,7 @@ export function along(a: LngLat, b: LngLat, f: number): LngLat {
   return [a[0] + (b[0] - a[0]) * f, latOf(mercY(a[1]) + (mercY(b[1]) - mercY(a[1])) * f)]
 }
 
+/** Current rings and blips (pixels at this zoom) and receiver flashes. */
 export function activePings(now: number, zoom: number): { rings: Ring[]; blips: Blip[]; flashes: Flash[]; trails: Trail[]; deliveries: DeliveryLine[]; arrivals: Flash[] } {
   const rings: Ring[] = [], blips: Blip[] = [], flashes: Flash[] = [], trails: Trail[] = []
   for (const [k, p] of pings) {
