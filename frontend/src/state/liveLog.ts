@@ -9,7 +9,7 @@ import type { Transmission } from '../derive/protocol'
 
 /** How long live rows and relays are kept: well past the slowest rebuild. */
 export const LIVE_LOG_MS = 120_000
-const MAX_ROWS = 4000
+export const MAX_ROWS = 4000
 
 export interface LiveRow { lp: string; t: number; src: string; dst?: string; type: string }
 export interface LiveRelay { lp: string; tx: string; at: number }

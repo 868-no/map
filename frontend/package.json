@@ -43,6 +43,9 @@
     "vitest": "4.1.12"
   },
   "overrides": {
-    "minimatch": "^11.0.1"
+    "minimatch": "^11.0.1",
+    "@redocly/openapi-core": {
+      "minimatch": "5.1.9"
+    }
   }
 }

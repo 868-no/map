@@ -1,7 +1,7 @@
 // A link's cross section (D-143): the terrain between its ends, raised by the
 // earth's curvature, the straight line between the antennas and the first
 // Fresnel zone around it. Hovering a point marks it on the map's line.
-import { useRef, useState, type PointerEvent } from 'react'
+import { useEffect, useRef, useState, type PointerEvent } from 'react'
 import type { TerrainProfile, TerrainSample } from '../api/types'
 import { useStore } from '../state/store'
 
@@ -32,7 +32,17 @@ function points(p: TerrainProfile): TerrainSample[] {
 export function CrossSection({ profile, nameA, nameB }: { profile: TerrainProfile; nameA: string; nameB: string }) {
   const setProbe = useStore((s) => s.setProbe)
   const box = useRef<HTMLDivElement>(null)
-  const [hover, setHover] = useState<number | null>(null)
+  // The hovered point, for the profile it was hovered on (a new profile has none).
+  const [hovered, setHovered] = useState<{ of: TerrainProfile; k: number } | null>(null)
+  const hover = hovered && hovered.of === profile ? hovered.k : null
+  // The point last marked on the map: the store is written only when it changes.
+  const marked = useRef<number | null>(null)
+  // The map's mark goes when the profile changes (or turns incomplete) and when
+  // the panel goes, also without a pointerleave (Esc closing the details).
+  useEffect(() => () => {
+    marked.current = null
+    if (useStore.getState().probe) setProbe(null)
+  }, [profile, setProbe])
   const pts = points(profile)
   if (pts.length < 3) return null
   const terrain = (q: TerrainSample) => (q.ground == null ? null : q.ground + q.bulge)
@@ -60,11 +70,14 @@ export function CrossSection({ profile, nameA, nameB }: { profile: TerrainProfil
     const d = (Math.min(Math.max(e.clientX - r.left, 0), r.width) / r.width) * L
     let k = 0
     for (let i = 1; i < pts.length; i++) if (Math.abs(pts[i].d - d) < Math.abs(pts[k].d - d)) k = i
-    setHover(k)
+    if (k === marked.current) return
+    marked.current = k
+    setHovered({ of: profile, k })
     setProbe([pts[k].lon, pts[k].lat])
   }
   const onLeave = () => {
-    setHover(null)
+    marked.current = null
+    setHovered(null)
     setProbe(null)
   }
   const h = hover == null ? null : pts[hover]

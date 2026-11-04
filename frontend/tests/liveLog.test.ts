@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import type { ObsRow } from '../src/api/types'
-import { LIVE_LOG_MS, nodeId, useLiveLog } from '../src/state/liveLog'
+import { LIVE_LOG_MS, MAX_ROWS, nodeId, useLiveLog } from '../src/state/liveLog'
 
 const row = (l: string, s: number, t: number, extra: Partial<ObsRow> = {}) => ({ i: 1, t, b: 'x', s, y: 'telemetry', l, o: l, sg: 'unsigned', ...extra }) as unknown as ObsRow
 
@@ -28,5 +28,27 @@ describe('live packet log', () => {
     expect(useLiveLog.getState().relays).toEqual([{ lp: 'aa', tx: '!00000003', at: t }])
     useLiveLog.getState().addTransmissions([{ key: 'cc|!00000006', tx: '!00000006', rebroadcast: true }], t + LIVE_LOG_MS + 1)
     expect(useLiveLog.getState().relays.map((r) => r.lp)).toEqual(['cc'])
+  })
+
+  it(`keeps at most ${MAX_ROWS} rows, dropping the oldest`, () => {
+    const now = Date.now()
+    const many = Array.from({ length: MAX_ROWS + 50 }, (_, k) => row(`p${k}`, 1, now - (MAX_ROWS + 50 - k)))
+    useLiveLog.getState().addRows(many.slice(0, 100))
+    useLiveLog.getState().addRows(many.slice(100))
+    const rows = useLiveLog.getState().rows
+    expect(rows).toHaveLength(MAX_ROWS)
+    expect(rows[0].lp).toBe('p50')
+    expect(rows[rows.length - 1].lp).toBe(`p${MAX_ROWS + 49}`)
+    // A packet already dropped by the cap counts as new again; one still kept does not.
+    useLiveLog.getState().addRows([row(`p${MAX_ROWS + 49}`, 1, now)])
+    expect(useLiveLog.getState().rows).toBe(rows)
+  })
+
+  it('caps the relays the same way', () => {
+    const t = 2_000_000
+    useLiveLog.getState().addTransmissions(Array.from({ length: MAX_ROWS + 1 }, (_, k) => ({ key: `r${k}|!00000003`, tx: '!00000003', rebroadcast: true })), t)
+    const relays = useLiveLog.getState().relays
+    expect(relays).toHaveLength(MAX_ROWS)
+    expect(relays[0].lp).toBe('r1')
   })
 })

@@ -106,7 +106,13 @@ async function networkFirst(req, name, fallbackPath) {
 }
 
 // A proxy's answer while the backend is down or restarting: no answer from it.
+// The backend's own errors are problem+json (huma): its 503 "server busy,
+// retry shortly" means it is up, so the page gets that answer to retry, not
+// the saved copy (D-156; src/derive/httpStatus.ts says the same for the worker).
 const GATEWAY_DOWN = new Set([502, 503, 504])
+function gatewayDown(res) {
+  return GATEWAY_DOWN.has(res.status) && !(res.headers.get('content-type') || '').includes('application/problem+json')
+}
 
 // API: fresh data when online; the last successful response for the same
 // URL when offline or the backend is down, marked so the app can say it is
@@ -117,7 +123,7 @@ async function apiNetworkFirst(req) {
   try {
     res = await fetchWithTimeout(req, API_TIMEOUT_MS)
     if (res.ok) remember(cache, req, res.clone()).catch(() => {}) // in the background: never delay the response
-    if (!GATEWAY_DOWN.has(res.status)) return res
+    if (!gatewayDown(res)) return res
   } catch {
     res = null
   }

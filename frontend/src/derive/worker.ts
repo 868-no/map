@@ -12,6 +12,7 @@ import { debounce, rebuildDelay } from './debounce'
 import { cursorMs, rangeEnd, sliceBounds } from './slices'
 import type { Request, Response, Transmission, ViewRequest } from './protocol'
 import { ViewError, type ViewMeta } from './views'
+import { backendBusy, gatewayDown, retryDelay } from './httpStatus'
 
 const ready = init({ module_or_path: engineUrl })
 let engine: Engine
@@ -50,11 +51,8 @@ class EngineRows implements Backend<number, string> {
 const SLICES = 4
 /** A page not answered in this long fails the range, as if offline. */
 const PAGE_TIMEOUT_MS = 30_000
-/** Retries of a page answered 429, each after its Retry-After (at most 10 s). */
+/** Retries of a page answered 429 or busy, each after its Retry-After (at most 10 s). */
 const RATE_RETRIES = 3
-/** A proxy's answer while the backend is down or restarting: no answer from it. */
-const GATEWAY_DOWN = new Set([502, 503, 504])
-
 /**
  * Fetches every row of a range into one staged batch. The first page tells
  * the window and where the rest begins; the rest is split into time slices
@@ -72,12 +70,13 @@ async function fetchRange(params: URLSearchParams): Promise<Fetched<number>> {
       } catch (e) {
         throw new Error(`observations: ${e instanceof Error ? e.message : e}`, { cause: e })
       }
-      // Rate-limited (several tabs or a shared address): wait as told and try again.
-      if (res.status !== 429 || attempt >= RATE_RETRIES) break
-      const after = Number(res.headers.get('Retry-After'))
-      await new Promise((r) => setTimeout(r, Math.min(Number.isFinite(after) && after > 0 ? after * 1000 : 2000, 10_000)))
+      // Rate-limited (several tabs or a shared address) or busy: wait and try again.
+      if (!backendBusy(res) || attempt >= RATE_RETRIES) break
+      await new Promise((r) => setTimeout(r, retryDelay(res, attempt)))
     }
-    if (GATEWAY_DOWN.has(res.status)) throw new Error(`observations: ${res.status}`)
+    // Still busy after the retries falls through to an 'upstream' error below:
+    // the backend is up, so this is no reason to show the saved copy.
+    if (gatewayDown(res)) throw new Error(`observations: ${res.status}`)
     if (!res.ok) {
       let detail = res.statusText
       try {

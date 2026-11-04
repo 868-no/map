@@ -109,6 +109,29 @@ test('the saved copy serves while the backend is down behind the proxy', async (
   await context.unroute('**/api/v1/**')
 })
 
+// The backend's own 503 (problem+json, "server busy, retry shortly") is an
+// answer: the page retries it, never switching to the saved copy (D-156).
+test('a busy backend is retried, not taken for one that is down', async ({ page, context }) => {
+  await page.goto('/')
+  await expect.poll(() => page.evaluate(async () => !!(await navigator.serviceWorker.getRegistration())?.active), { timeout: 30_000 }).toBe(true)
+  await page.reload() // now controlled by the service worker
+  await expect.poll(() => page.evaluate(() => !!navigator.serviceWorker.controller)).toBe(true)
+  await page.getByRole('button', { name: 'Nodes', exact: true }).click()
+  await expect(page.locator('.node-row').first()).toBeVisible({ timeout: 30_000 })
+  await rowsSaved(page)
+  let busy = 0
+  await context.route('**/api/v1/observations*', (r) => {
+    if (busy++ >= 2) return r.continue()
+    return r.fulfill({ status: 503, contentType: 'application/problem+json', body: JSON.stringify({ title: 'Service Unavailable', status: 503, detail: 'server busy, retry shortly' }) })
+  })
+  await page.reload()
+  await page.getByRole('button', { name: 'Nodes', exact: true }).click()
+  await expect(page.locator('.node-row').first()).toBeVisible({ timeout: 30_000 })
+  expect(busy).toBeGreaterThan(2) // answered busy twice, then fetched
+  await expect(page.getByRole('status').filter({ hasText: 'Offline' })).toHaveCount(0)
+  await context.unroute('**/api/v1/observations*')
+})
+
 // D-102: rows are saved as one engine build re-exports them; another build
 // must not trust that copy (it may lack fields the new engine reads).
 test('a saved row copy from another engine build is discarded and the window fetched afresh', async ({ page }) => {

@@ -208,7 +208,7 @@ function PacketLogs({ id, names, positioned, moved }: { id: string; names: Map<s
             {LOG_COLS.map((c, i) => (
               <th key={c.label} title={c.title} ref={(el) => { heads.current[i] = el }}>
                 {c.label}
-                {i < LOG_COLS.length - 1 && <ColResize label={c.label} width={cols.widths[i]} measure={() => heads.current[i]?.getBoundingClientRect().width ?? 60} onChange={(w) => cols.update(i, w)} />}
+                {i < LOG_COLS.length - 1 && <ColResize label={c.label} width={cols.widths[i]} measure={() => heads.current[i]?.getBoundingClientRect().width ?? 60} onChange={(w, persist) => cols.update(i, w, persist)} />}
               </th>
             ))}
           </tr>

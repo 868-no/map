@@ -5,7 +5,7 @@ import { formatLocal } from '../lib/time'
 import { ChartGroup, TimeChart, type Band } from '../components/TimeChart'
 import { meanPoints, useWeather, weatherPoints, weatherSite } from '../state/weather'
 import { nodeName } from '../map/model'
-import { terrainEnd, useTerrainProfile } from '../state/terrain'
+import { terrainEnd, useTerrainEnabled, useTerrainProfile } from '../state/terrain'
 import { CrossSection, LOS_LABEL, LOS_TITLE } from '../components/CrossSection'
 
 export function EdgePanel({ a, b, mqtt = false, snapshot }: { a: string; b: string; mqtt?: boolean; snapshot: SnapshotView | undefined }) {
@@ -84,15 +84,17 @@ export function EdgePanel({ a, b, mqtt = false, snapshot }: { a: string; b: stri
 function LineOfSight({ a, b, name, snapshot }: { a: string; b: string; name: (id: string) => string; snapshot: SnapshotView }) {
   const node = (id: string) => snapshot.nodes.find((n) => n.id === id)
   const ea = terrainEnd(node(a)), eb = terrainEnd(node(b))
-  const p = useTerrainProfile(ea, eb)
-  if (!ea || !eb) return null
+  const enabled = useTerrainEnabled()
+  const { q: p, gaveUp } = useTerrainProfile(ea, eb)
+  if (!enabled || !ea || !eb) return null
   return (
     <section className="line-of-sight">
       <h3 title="From Kartverket's terrain model, between the positions the two nodes report">
         Line of sight {p.data && !p.data.incomplete && <span className={`conf los-${p.data.class}`} title={LOS_TITLE[p.data.class]}>{LOS_LABEL[p.data.class]}</span>}
       </h3>
       {p.isError && <p className="muted small">Terrain unavailable: {p.error.message}</p>}
-      {(p.isLoading || p.data?.incomplete) && <p className="muted small">Loading terrain heights from Kartverket…</p>}
+      {gaveUp ? <p className="muted small">Terrain heights are still missing from Kartverket; try again later.</p>
+        : (p.isLoading || p.data?.incomplete) && <p className="muted small">Loading terrain heights from Kartverket…</p>}
       {p.data && !p.data.incomplete && <CrossSection profile={p.data} nameA={name(a)} nameB={name(b)} />}
     </section>
   )

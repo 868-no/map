@@ -4,7 +4,7 @@
 // classes are handed to the engine, whose signal-to-distance model uses only
 // clear links.
 import { useEffect, useMemo } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { getJSON, postJSON } from '../api/client'
 import type { TerrainClasses, TerrainProfile } from '../api/types'
 import type { MeshNode, SnapshotView } from '../derive/views'
@@ -26,18 +26,39 @@ export function terrainEnd(n: MeshNode | undefined): TerrainEnd | null {
 /** Points to 5 decimals (about 1 m): the server's grid is coarser. */
 const round = (v: number) => Math.round(v * 1e5) / 1e5
 
-/** While the server is still fetching heights: soon at first, backing off, giving up after about 15 minutes. */
-const again = (q: { state: { data?: { incomplete?: boolean }; dataUpdateCount: number } }) => {
+/** Answers polled while the server is still fetching heights (about 15 minutes in all). */
+export const TERRAIN_POLLS = 25
+
+type TerrainQuery = { state: { data?: { incomplete?: boolean }; dataUpdateCount: number } }
+
+/** Whether polling has given up on an answer still missing heights. */
+export const terrainGaveUp = (q: TerrainQuery) => !!q.state.data?.incomplete && q.state.dataUpdateCount > TERRAIN_POLLS
+
+/** While the server is still fetching heights: soon at first, backing off, giving up after TERRAIN_POLLS answers. */
+export const again = (q: TerrainQuery) => {
   const n = q.state.dataUpdateCount
-  return q.state.data?.incomplete && n <= 25 ? Math.min(4000 * 1.3 ** n, 60_000) : false
+  return q.state.data?.incomplete && !terrainGaveUp(q) ? Math.min(4000 * 1.3 ** n, 60_000) : false
 }
 
-/** The cross section between two ends. */
+/** An answer still missing heights is asked again when its panel opens again (staleTime is Infinity). */
+const stillMissing = (q: TerrainQuery) => (q.state.data?.incomplete ? ('always' as const) : false)
+
+/** Whether the server has a terrain model to draw cross sections from. */
+export function useTerrainEnabled(): boolean {
+  return !!useCapabilities().data?.features.terrain
+}
+
+/**
+ * The cross section between two ends, and whether polling gave up on heights
+ * still missing (no new try under way).
+ */
 export function useTerrainProfile(a: TerrainEnd | null, b: TerrainEnd | null) {
-  const caps = useCapabilities()
-  return useQuery({
-    queryKey: ['terrain-profile', a, b],
-    enabled: !!caps.data?.features.terrain && !!a && !!b,
+  const enabled = useTerrainEnabled()
+  const client = useQueryClient()
+  const queryKey = ['terrain-profile', a, b]
+  const q = useQuery({
+    queryKey,
+    enabled: enabled && !!a && !!b,
     queryFn: ({ signal }) => {
       const q = new URLSearchParams({ lat1: String(a!.lat), lon1: String(a!.lon), lat2: String(b!.lat), lon2: String(b!.lon) })
       if (a!.alt) q.set('alt1', String(a!.alt))
@@ -47,7 +68,12 @@ export function useTerrainProfile(a: TerrainEnd | null, b: TerrainEnd | null) {
     staleTime: Infinity,
     retry: false,
     refetchInterval: again,
+    refetchOnMount: stillMissing,
   })
+  // Each answer re-renders, so the query's update count read here is current.
+  const state = client.getQueryState<TerrainProfile>(queryKey)
+  const gaveUp = !q.isFetching && !!state && terrainGaveUp({ state })
+  return { q, gaveUp }
 }
 
 interface RouterLink { a: string; b: string; ea: TerrainEnd; eb: TerrainEnd }
@@ -91,6 +117,7 @@ export function useTerrainClasses(snap: SnapshotView | undefined) {
     staleTime: Infinity,
     retry: false,
     refetchInterval: again,
+    refetchOnMount: stillMissing,
   })
   const classes = useMemo(() => {
     const got = q.data?.classes

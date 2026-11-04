@@ -352,7 +352,7 @@ export default function MapView({ caps, snapshot, onPositions }: Props) {
   useEffect(() => {
     if (!ready || !overlayRef.current) return
     overlayRef.current.setProps({ layers: probeLayer ? [...baseLayers, probeLayer] : baseLayers })
-    meshLayers.current = baseLayers
+    meshLayers.current = probeLayer ? [...baseLayers, probeLayer] : baseLayers // the e2e hook sees the probe too
   }, [ready, baseLayers, probeLayer])
 
   // Animation loop, in the ping canvas: runs (~30 fps) only while pings are
