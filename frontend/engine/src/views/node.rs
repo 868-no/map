@@ -264,12 +264,13 @@ pub(super) fn fixed_role(role: &str) -> bool {
     matches!(role, "ROUTER" | "ROUTER_LATE" | "CLIENT_BASE")
 }
 
-/// Whether two position reports put a node in the same place: within both
-/// precision circles, or 200 m where a precision is unknown.
-fn agree(a: &Row, b: &Row) -> bool {
+/// Whether two position reports put a node in the same place: closer than a
+/// move (D-073), so GPS noise is no move, and a fixed node's unstable GPS
+/// none either (D-139).
+fn agree(a: &Row, b: &Row, fixed: bool) -> bool {
     let (pa, pb) = (a.pos.unwrap(), b.pos.unwrap());
-    let slack = if pa.known && pb.known { precision_error_m(pa.bits, pa.lat) + precision_error_m(pb.bits, pb.lat) } else { 200.0 };
-    distance_m(LatLon { lat: pa.lat, lon: pa.lon }, LatLon { lat: pb.lat, lon: pb.lon }) <= slack
+    let bits = |p: &RowPos| if p.known { p.bits } else { 32 };
+    distance_m(LatLon { lat: pa.lat, lon: pa.lon }, LatLon { lat: pb.lat, lon: pb.lon }) <= crate::movement::move_threshold(fixed, (pa.lat, bits(&pa)), (pb.lat, bits(&pb)))
 }
 
 /// Each node's position row, unless its newest position report is stale
@@ -285,7 +286,7 @@ pub(super) fn fresh_position_rows<'a>(rows: &[&'a Row], now: i64, role: impl Fn(
     for r in rows.iter().filter(|r| reports(r)) {
         let Some(n) = newest.get(&r.src) else { continue };
         let e = seen.entry(r.src).or_insert((false, r.t, r.t));
-        if agree(r, n) {
+        if agree(r, n, role(r.src)) {
             e.1 = e.1.min(r.t);
             e.2 = e.2.max(r.t);
         } else {

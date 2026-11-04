@@ -17,10 +17,14 @@ use serde::Serialize;
 use crate::geo::precision_error_m;
 use crate::graph::{distance_m, LatLon};
 use crate::row::{ty, Row};
-use crate::util::{iso, map, FxMap};
+use crate::util::{iso, map, FxMap, FxSet};
 
 /// Base distance for a move, before precision slack.
 pub const MOVE_M: f64 = 300.0;
+/// For a node whose role sits in one place (a router, a base station): an
+/// unstable GPS can wander hundreds of metres, and such nodes rarely move,
+/// so only a jump this far is a move (D-139).
+pub const FIXED_MOVE_M: f64 = 2_000.0;
 /// Each position's worst-case error counts this many times.
 const PRECISION_SLACK: f64 = 1.5;
 /// Points kept per track (the newest).
@@ -47,7 +51,12 @@ pub struct Movement {
 
 /// The distance two positions must exceed to count as a move.
 pub fn move_threshold_m(a: (f64, u32), b: (f64, u32)) -> f64 {
-    MOVE_M + PRECISION_SLACK * (precision_error_m(a.1, a.0) + precision_error_m(b.1, b.0))
+    move_threshold(false, a, b)
+}
+
+/// The same, for a node that `fixed` (its role sits in one place) or not.
+pub fn move_threshold(fixed: bool, a: (f64, u32), b: (f64, u32)) -> f64 {
+    (if fixed { FIXED_MOVE_M } else { MOVE_M }) + PRECISION_SLACK * (precision_error_m(a.1, a.0) + precision_error_m(b.1, b.0))
 }
 
 /// A stationary node whose reports jump around one place (D-077): GPS noise
@@ -90,13 +99,13 @@ pub fn positions_by_node<'a>(rows: &[&'a Row]) -> FxMap<u32, Vec<&'a Row>> {
     by_node
 }
 
-/// Anchored nodes in `rows` (see `Anchor`).
-pub fn anchors(rows: &[&Row]) -> FxMap<u32, Anchor> {
-    anchors_of(&positions_by_node(rows))
+/// Anchored nodes in `rows` (see `Anchor`); `fixed`: nodes whose role sits in one place.
+pub fn anchors(rows: &[&Row], fixed: &FxSet<u32>) -> FxMap<u32, Anchor> {
+    anchors_of(&positions_by_node(rows), fixed)
 }
 
 /// Anchored nodes among grouped position reports (`positions_by_node`).
-pub fn anchors_of(by_node: &FxMap<u32, Vec<&Row>>) -> FxMap<u32, Anchor> {
+pub fn anchors_of(by_node: &FxMap<u32, Vec<&Row>>, fixed: &FxSet<u32>) -> FxMap<u32, Anchor> {
     let mut out = map();
     for (&n, all) in by_node {
         // One report per packet, however many gateways heard it.
@@ -112,9 +121,18 @@ pub fn anchors_of(by_node: &FxMap<u32, Vec<&Row>>) -> FxMap<u32, Anchor> {
             let p = pos(r);
             *count.entry((p.lat.to_bits(), p.lon.to_bits(), p.bits)).or_default() += 1;
         }
-        let mode = *count.iter().max_by(|a, b| a.1.cmp(b.1).then(b.0.cmp(a.0))).unwrap().0;
-        let m = rs.iter().map(|r| pos(r)).find(|p| (p.lat.to_bits(), p.lon.to_bits(), p.bits) == mode).unwrap();
-        let near = |p: &crate::row::Position| distance_m(LatLon { lat: m.lat, lon: m.lon }, LatLon { lat: p.lat, lon: p.lon }) <= move_threshold_m((m.lat, m.bits), (p.lat, p.bits));
+        let (mode, repeats) = count.iter().max_by(|a, b| a.1.cmp(b.1).then(b.0.cmp(a.0))).map(|(k, v)| (*k, *v)).unwrap();
+        // Precise GPS readings never repeat exactly. For a fixed node the
+        // report nearest all the others (the medoid) is then the place they
+        // scatter around (D-139); for others it is not used, since a slow,
+        // steady mover's readings cluster around their middle too.
+        let fixed = fixed.contains(&n);
+        let m = if repeats >= 2 || !fixed {
+            rs.iter().map(|r| pos(r)).find(|p| (p.lat.to_bits(), p.lon.to_bits(), p.bits) == mode).unwrap()
+        } else {
+            medoid(&rs)
+        };
+        let near = |p: &crate::row::Position| distance_m(LatLon { lat: m.lat, lon: m.lon }, LatLon { lat: p.lat, lon: p.lon }) <= move_threshold(fixed, (m.lat, m.bits), (p.lat, p.bits));
         let inliers: Vec<crate::row::Position> = rs.iter().map(|r| pos(r)).filter(near).collect();
         // Most reports at that place, and at least two of the latest three: it
         // is home now (a node that has just left is not held back by its past).
@@ -130,6 +148,17 @@ pub fn anchors_of(by_node: &FxMap<u32, Vec<&Row>>) -> FxMap<u32, Anchor> {
         out.insert(n, Anchor { lat, lon, radius_m, reports: rs.len(), agree: inliers.len(), narrowed: radius_m < 0.9 * err_m(&last) || inliers.len() < rs.len() });
     }
     out
+}
+
+/// The report with the least summed distance to the others (the newest 200).
+fn medoid(rs: &[&Row]) -> crate::row::Position {
+    let ps: Vec<crate::row::Position> = rs.iter().rev().take(200).map(|r| r.pos.unwrap()).collect();
+    let ll = |p: &crate::row::Position| LatLon { lat: p.lat, lon: p.lon };
+    *ps.iter().min_by(|a, b| {
+        let sa: f64 = ps.iter().map(|q| distance_m(ll(a), ll(q))).sum();
+        let sb: f64 = ps.iter().map(|q| distance_m(ll(b), ll(q))).sum();
+        sa.total_cmp(&sb)
+    }).unwrap()
 }
 
 /// Where the agreeing reports put the node, and how sure that is.
@@ -167,18 +196,20 @@ fn narrow(inliers: &[crate::row::Position], mode: &crate::row::Position) -> (f64
 /// Nodes that moved within `rows`, with their tracks. Anchored nodes
 /// (`anchors`: home now, with most reports there) are left out: their
 /// readings away from home are noise, not trips.
-pub fn movements_except(rows: &[&Row], anchored: &FxMap<u32, Anchor>) -> FxMap<u32, Movement> {
-    movements_of(&positions_by_node(rows), anchored)
+pub fn movements_except(rows: &[&Row], anchored: &FxMap<u32, Anchor>, fixed: &FxSet<u32>) -> FxMap<u32, Movement> {
+    movements_of(&positions_by_node(rows), anchored, fixed)
 }
 
 /// Nodes that moved, from grouped position reports (`positions_by_node`),
 /// leaving out anchored nodes (their tracks are not computed at all).
-pub fn movements_of(by_node: &FxMap<u32, Vec<&Row>>, anchored: &FxMap<u32, Anchor>) -> FxMap<u32, Movement> {
+/// Nodes in `fixed` (their role sits in one place) need a far bigger jump (D-139).
+pub fn movements_of(by_node: &FxMap<u32, Vec<&Row>>, anchored: &FxMap<u32, Anchor>, fixed: &FxSet<u32>) -> FxMap<u32, Movement> {
     let mut out = map();
     for (&n, rs) in by_node {
         if anchored.contains_key(&n) {
             continue;
         }
+        let fixed = fixed.contains(&n);
         // One point per distinct place, in order (copies from several gateways collapse).
         let mut pts: Vec<&Row> = Vec::new();
         for &r in rs {
@@ -202,7 +233,7 @@ pub fn movements_of(by_node: &FxMap<u32, Vec<&Row>>, anchored: &FxMap<u32, Ancho
         // each other, is a GPS spike: an excursion needs two reports.
         let far = |a: &Row, b: &Row| {
             let (p, q) = (a.pos.unwrap(), b.pos.unwrap());
-            distance_m(LatLon { lat: p.lat, lon: p.lon }, LatLon { lat: q.lat, lon: q.lon }) > move_threshold_m((p.lat, p.bits), (q.lat, q.bits))
+            distance_m(LatLon { lat: p.lat, lon: p.lon }, LatLon { lat: q.lat, lon: q.lon }) > move_threshold(fixed, (p.lat, p.bits), (q.lat, q.bits))
         };
         let judged: Vec<&Row> = (0..judged.len())
             .filter(|&k| k == 0 || k + 1 == judged.len() || !(far(judged[k], judged[k - 1]) && far(judged[k], judged[k + 1]) && !far(judged[k - 1], judged[k + 1])))
@@ -213,7 +244,7 @@ pub fn movements_of(by_node: &FxMap<u32, Vec<&Row>>, anchored: &FxMap<u32, Ancho
         for r in &judged[1..] {
             let b = r.pos.unwrap();
             let d = distance_m(LatLon { lat: reference.lat, lon: reference.lon }, LatLon { lat: b.lat, lon: b.lon });
-            if d > move_threshold_m((reference.lat, reference.bits), (b.lat, b.bits)) {
+            if d > move_threshold(fixed, (reference.lat, reference.bits), (b.lat, b.bits)) {
                 moved_at = Some(r.t);
                 reference = b;
             }

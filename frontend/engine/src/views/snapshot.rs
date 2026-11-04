@@ -208,7 +208,7 @@ pub fn build_snapshot(rows: &[&Row], i: &Interner, g: &GeoOptions, rules: Rules)
     // their jumps are not movement (D-077). Nodes that moved (D-073): their
     // trails, and links only from after the move.
     let tracks = crate::movement::positions_by_node(&by.positioned);
-    let anchored = if rules.moves { crate::movement::anchors_of(&tracks) } else { map() };
+    let anchored = if rules.moves { crate::movement::anchors_of(&tracks, &fixed) } else { map() };
     for (n, a) in &anchored {
         if let Some(x) = nodes.get_mut(n) {
             x.set_anchor(a);
@@ -217,7 +217,7 @@ pub fn build_snapshot(rows: &[&Row], i: &Interner, g: &GeoOptions, rules: Rules)
     // Relay range checks use the narrowed positions (§6.10): a single GPS
     // spike as the latest report must not widen the range for the window.
     let pos: FxMap<u32, LatLon> = nodes.iter().filter_map(|(&n, x)| x.pos.map(|p| (n, LatLon { lat: p.lat, lon: p.lon }))).collect();
-    let moves = crate::movement::movements_of(&tracks, &anchored);
+    let moves = crate::movement::movements_of(&tracks, &anchored, &fixed);
     for (n, m) in &moves {
         if let Some(x) = nodes.get_mut(n) {
             x.set_movement(m);

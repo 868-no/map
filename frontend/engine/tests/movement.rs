@@ -140,3 +140,36 @@ fn noise_beyond_small_jitter_gets_no_false_precision() {
     assert!(n["moved_at"].is_null());
 }
 
+
+fn nodeinfo(i: i64, role: &str) -> Value {
+    json!({"i": i, "t": T0, "b": "it", "s": M, "g": G, "y": "nodeinfo", "l": format!("{i:016x}"), "o": format!("{:016x}", i + 1000),
+        "sg": "unsigned", "sn": 5.0, "hs": 3, "hl": 3, "dr": true, "ni": {"long_name": "R", "role": role}})
+}
+
+// D-139: a router's unstable GPS wanders hundreds of metres, in runs of
+// readings, around one place. Precise readings never repeat, so they are
+// judged around the one nearest all the others. For a router that is noise:
+// no move, no trail, every reception counts. The same wander from a client
+// is movement, as before.
+#[test]
+fn a_routers_unstable_gps_is_not_movement() {
+    // Home at 63.408, readings never the same twice; twice it wanders ~900 m
+    // south for two readings in a row (a single spike would be set aside anyway).
+    let lats = [63.4080, 63.4082, 63.4001, 63.4003, 63.4079, 63.4083, 63.4000, 63.4002, 63.4081, 63.4084];
+    let reports: Vec<Value> = lats.iter().enumerate().map(|(k, &lat)| pos(k as i64 + 1, k as i64 + 1, lat, 32, None)).collect();
+    let mut with_role = reports.clone();
+    with_role.push(nodeinfo(100, "ROUTER"));
+    let s = snapshot(Value::Array(with_role));
+    assert!(node(&s, M)["moved_at"].is_null(), "a router's wandering GPS is no move");
+    assert_eq!(link_samples(&s), Some(lats.len() as u64 + 1), "every reception counts");
+    let mut client = reports;
+    client.push(nodeinfo(100, "CLIENT"));
+    assert!(!node(&snapshot(Value::Array(client)), M)["moved_at"].is_null(), "the same wander from a client is movement");
+}
+
+// A router that really moves, kilometres away, still counts as moving.
+#[test]
+fn a_router_that_moves_far_still_moves() {
+    let rows = json!([nodeinfo(100, "ROUTER"), pos(1, 1, 63.40, 32, None), pos(2, 2, 63.40, 32, None), pos(3, 10, 63.45, 32, None), pos(4, 11, 63.45, 32, None)]);
+    assert!(!node(&snapshot(rows), M)["moved_at"].is_null());
+}
