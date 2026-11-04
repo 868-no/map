@@ -301,3 +301,26 @@ func TestQueueOnce(t *testing.T) {
 		t.Fatalf("after promotion: urgent %d, background %d; want 5, 6", len(c.urgent), len(c.background))
 	}
 }
+
+// A failed gust request keeps the analysis hour, without its gust.
+func TestGustFailureKeepsHour(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/meps25epsarchive/") {
+			http.Error(w, "broken", http.StatusInternalServerError)
+			return
+		}
+		fmt.Fprint(w, sample)
+	}))
+	defer srv.Close()
+	now := time.Date(2026, 11, 3, 15, 30, 0, 0, time.UTC)
+	c := New(srv.URL, "")
+	c.Now, c.Interval = func() time.Time { return now }, time.Millisecond
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go c.Run(ctx)
+	cell := Cell{662, 1159}
+	hs := fill(t, c, cell, now.Add(-8*time.Hour), now.Add(-6*time.Hour))
+	if len(hs) != 2 || hs[0].TempC == nil || hs[0].GustMS != nil {
+		t.Fatalf("hours: %+v", hs)
+	}
+}

@@ -410,7 +410,13 @@ func (c *Client) fetch(ctx context.Context, cell Cell, t time.Time) (h Hour, mis
 	if v, ok := first(vals, "wind_speed_10m"); ok {
 		h.WindMS = round2(math.Max(v, 0))
 	}
+	// A failed gust request keeps the analysis hour without its gust: expiry
+	// asks a gust-less hour again for up to gustsFor. The wait still holds.
 	h.GustMS, wait, err = c.gust(ctx, cell, t)
+	if err != nil && ctx.Err() == nil {
+		c.warn("weather gust failed", err)
+		err = nil
+	}
 	return h, false, wait, err
 }
 
