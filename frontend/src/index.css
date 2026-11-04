@@ -254,6 +254,17 @@ table.pkt-log td { white-space: nowrap; }
 table.pkt-log tbody tr { cursor: pointer; }
 table.pkt-log tbody tr:hover { background: rgba(255, 255, 255, 0.04); }
 table.pkt-log tbody tr.active { background: rgba(255, 170, 60, 0.18); }
+/* A row that arrived while the log is open slides in under a fading highlight;
+   one only just heard (no details yet) stays dimmed until the rebuild fills it in. */
+table.pkt-log tbody tr.row-new { animation: row-in 1.6s ease-out; }
+@keyframes row-in {
+  0% { opacity: 0; transform: translateY(-6px); background: color-mix(in srgb, var(--accent) 35%, transparent); }
+  20% { opacity: 1; transform: none; }
+  100% { background: transparent; }
+}
+table.pkt-log tbody tr[data-pending] td { color: var(--muted); }
+@media (prefers-reduced-motion: reduce) { table.pkt-log tbody tr.row-new { animation: row-in-still 1.6s ease-out; } }
+@keyframes row-in-still { from { background: color-mix(in srgb, var(--accent) 35%, transparent); } to { background: transparent; } }
 .ev-tag.own { background: transparent; border: 1px solid var(--line); }
 .route-note { border-left: 3px solid rgb(255, 170, 60); padding: 4px 8px; margin: 6px 0; font-size: 12px; }
 .route-note .leg-forward { color: rgb(255, 92, 200); font-weight: 600; }

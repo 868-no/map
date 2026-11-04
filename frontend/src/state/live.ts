@@ -12,6 +12,7 @@ import { addTransmission, clearPings, painting, PING_MAX_AGE_MS, pingWanted, typ
 const MAX_DEFERRED = 50
 import { useLiveEpoch } from './data'
 import { apiParams, defaultFilters, useStore, type Filters } from './store'
+import { useLiveLog } from './liveLog'
 
 /**
  * A live row passes the view filters (the stream itself is unfiltered).
@@ -58,6 +59,7 @@ export function useLiveStream(positions: RefObject<Map<string, [number, number]>
       for (const d of deferred.splice(0)) if (now - d.at < PING_MAX_AGE_MS) d.ts.forEach((t) => addTransmission(t, positions.current, perf - (now - d.at)))
     }
     onTransmissions((ts) => {
+      useLiveLog.getState().addTransmissions(ts) // the open packet log, at once
       if (painting()) return ts.forEach((t) => addTransmission(t, positions.current))
       deferred.push({ at: Date.now(), ts })
       if (deferred.length > MAX_DEFERRED) deferred.shift()
@@ -96,6 +98,7 @@ export function useLiveStream(positions: RefObject<Map<string, [number, number]>
         // the transmissions come back (D-113).
         const ping = rows.flatMap((r, k) => (r.y !== 'mapreport' && passes(r, f) && pingWanted(r.t, now, document.hidden) ? [k] : []))
         sendLiveRows(rows, ping)
+        useLiveLog.getState().addRows(rows.filter((r) => passes(r, f)))
       },
       onStatus: (ok, reason) => {
         setLiveOK(ok)
@@ -115,6 +118,7 @@ export function useLiveStream(positions: RefObject<Map<string, [number, number]>
     return () => {
       unsub()
       clearPings()
+      useLiveLog.getState().clear()
     }
   }, [win, limitsReady, bump, qc])
 

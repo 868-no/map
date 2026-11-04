@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { PACKET_LOG_MAX, type Answer, type NodeView, type Reply, type SnapshotView } from '../../derive/views'
 import { usePacketLog, usePacketRoute } from '../../state/data'
 import { useStore } from '../../state/store'
@@ -6,6 +6,7 @@ import { formatLocal, formatLogTime } from '../../lib/time'
 import { NodeAirtimeRow } from '../health'
 import { SIG_LABEL, routingError } from './shared'
 import { ColResize, useColumnWidths, type ColumnDefault } from '../../components/ColumnResize'
+import { useLiveLog } from '../../state/liveLog'
 
 /** Packet log type labels and tooltips for header-only rows (D-091, D-093). */
 const TYPE_SHORT: Record<string, string> = { direct_message: 'DM 🔒', encrypted: 'encrypted 🔒' }
@@ -87,6 +88,9 @@ function AnswerTag({ a }: { a: { kind: string; error?: string } }) {
 }
 
 /** The selected node's packets in the window: its own, others' it relayed, and routing packets and direct messages addressed to it. */
+/** How long a new row's slide-in lasts (index.css .row-new). */
+const NEW_ROW_MS = 1600
+
 /** The packet log's columns: default widths (null shares what is left) and header tooltips. */
 const LOG_COLS: { label: string; width: ColumnDefault; title?: string }[] = [
   { label: 'Time', width: 60 },
@@ -111,33 +115,84 @@ function PacketLogs({ id, names, positioned, moved }: { id: string; names: Map<s
   const heads = useRef<(HTMLTableCellElement | null)[]>([])
   const more = (total: number) =>
     total > shown && <button className="more" onClick={() => setShown((s) => s + 100)}>Show more ({total - shown} hidden)</button>
-  const own = log.data?.own ?? []
   const relayed = log.data?.relayed ?? []
   const nm = (n: string) => names.get(n) ?? n
   const how = {
     relay_byte: ['byte', "A gateway's last-hop byte resolved to this node"],
     traceroute: ['route', "This node is in the traceroute's recorded route"],
   } as const
-  type Entry = { lp: string; at: string; type: string; to?: string; gateways: number } & (
+  // pending: just heard on the live stream, shown before the next rebuild adds its details.
+  type Entry = { lp: string; at: string; type: string; to?: string; gateways: number; pending?: boolean } & (
     | { kind: 'own'; hops?: number; signature: string; by_itself?: boolean; downlinked?: boolean; replies?: Reply[]; answers?: Answer; in_response_to?: string; invalid?: string }
     | { kind: 'relayed'; origin: string; evidence: ('relay_byte' | 'traceroute')[] }
     | { kind: 'inbound'; origin: string; answers?: Answer }
   )
   // Newest first; times parsed once per log, not inside the comparator on every render.
   const data = log.data
+  const live = useStore((s) => s.win.live)
+  const liveRows = useLiveLog((s) => s.rows)
+  const liveRelays = useLiveLog((s) => s.relays)
   const entries = useMemo(() => {
     const all: Entry[] = [
       ...(data?.own ?? []).map((p) => ({ ...p, kind: 'own' as const })),
       ...(withRelayed ? (data?.relayed ?? []).map((p) => ({ ...p, kind: 'relayed' as const, gateways: p.gateways.length })) : []),
       ...(data?.inbound ?? []).map((p) => ({ ...p, kind: 'inbound' as const, to: id, gateways: 0 })),
     ]
+    // Live packets newer than what the log was built from, until the next
+    // rebuild has them: own and addressed to it from the rows, relayed from
+    // the pings' attribution, as the animation shows them.
+    if (live && data) {
+      const until = Date.parse(data.meta.data_until)
+      const have = new Set(all.map((e) => e.kind + e.lp))
+      const row = new Map(liveRows.map((r) => [r.lp, r]))
+      const add = (e: Entry) => !have.has(e.kind + e.lp) && (have.add(e.kind + e.lp), all.push(e))
+      for (const r of liveRows) {
+        if (r.t <= until) continue
+        const at = new Date(r.t).toISOString()
+        if (r.src === id) add({ kind: 'own', lp: r.lp, at, type: r.type, to: r.dst, gateways: 0, signature: '', pending: true })
+        else if (r.dst === id && (r.type === 'routing' || r.type === 'direct_message')) add({ kind: 'inbound', lp: r.lp, at, type: r.type, to: id, origin: r.src, gateways: 0, pending: true })
+      }
+      if (withRelayed) {
+        for (const x of liveRelays) {
+          const r = row.get(x.lp)
+          if (x.tx !== id || !r || r.src === id || r.t <= until) continue
+          add({ kind: 'relayed', lp: r.lp, at: new Date(r.t).toISOString(), type: r.type, to: r.dst, origin: r.src, evidence: [], gateways: 0, pending: true })
+        }
+      }
+    }
     const ms = new Map(all.map((e) => [e, Date.parse(e.at)]))
     return all.sort((a, b) => ms.get(b)! - ms.get(a)!)
-  }, [data, withRelayed, id])
+  }, [data, withRelayed, id, live, liveRows, liveRelays])
+  // Rows that arrive while the log is open slide in; what is there when it
+  // opens, or appears with the relayed toggle, does not. Keyed like the rows,
+  // so a pending row replaced by its full entry is not animated again.
+  const firstSeen = useRef<{ scope: string; at: Map<string, number> }>({ scope: '', at: new Map() })
+  const scope = `${id}|${withRelayed}|${data ? 'ready' : 'loading'}`
+  const now = performance.now()
+  const fresh = new Set<string>()
+  {
+    const fs = firstSeen.current
+    const initial = fs.scope !== scope
+    if (initial) firstSeen.current = { scope, at: new Map() }
+    for (const e of entries) {
+      const k = e.kind + e.lp
+      const t = firstSeen.current.at.get(k)
+      if (t === undefined) firstSeen.current.at.set(k, initial ? -Infinity : now)
+      else if (now - t < NEW_ROW_MS) fresh.add(k)
+      if (t === undefined && !initial) fresh.add(k)
+    }
+  }
+  // Re-render once the slide-in is over, so the class goes.
+  const [, tick] = useState(0)
+  useEffect(() => {
+    if (!fresh.size) return
+    const h = setTimeout(() => tick((n) => n + 1), NEW_ROW_MS)
+    return () => clearTimeout(h)
+  })
   return (
     <>
       <div className="log-head">
-        <h3>Packet log ({own.length + (withRelayed ? relayed.length : 0) + (log.data?.inbound.length ?? 0)}{log.data?.truncated ? '+' : ''})</h3>
+        <h3>Packet log ({entries.length}{log.data?.truncated ? '+' : ''})</h3>
         <label title="Other nodes' packets this node passed on: a gateway's last-hop byte resolved to it, or it is in a traceroute's recorded route">
           <input type="checkbox" checked={withRelayed} onChange={(e) => setWithRelayed(e.target.checked)} /> Include relayed ({relayed.length}{log.data?.truncated && relayed.length >= PACKET_LOG_MAX ? '+' : ''})
         </label>
@@ -160,7 +215,7 @@ function PacketLogs({ id, names, positioned, moved }: { id: string; names: Map<s
         </thead>
         <tbody>
           {entries.slice(0, shown).map((p) => (
-            <tr key={p.kind + p.lp} data-kind={p.kind} className={route === p.lp ? 'active' : undefined} onClick={() => showRoute(route === p.lp ? null : p.lp)} aria-selected={route === p.lp}
+            <tr key={p.kind + p.lp} data-kind={p.kind} data-pending={p.pending || undefined} className={[route === p.lp && 'active', fresh.has(p.kind + p.lp) && 'row-new'].filter(Boolean).join(' ') || undefined} onClick={() => showRoute(route === p.lp ? null : p.lp)} aria-selected={route === p.lp}
               tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); showRoute(route === p.lp ? null : p.lp) } }} title="Select (click, Enter or Space) to draw this packet's route on the map">
               <td title={formatLocal(p.at)}>{formatLogTime(p.at)}</td>
               <td className="wrap" title={p.kind === 'relayed' ? nm(p.origin) : undefined}>
@@ -178,12 +233,12 @@ function PacketLogs({ id, names, positioned, moved }: { id: string; names: Map<s
                   <button className="linkish" onClick={(e) => { e.stopPropagation(); select({ kind: 'node', id: p.origin }) }}>{nm(p.origin)}</button>
                 )}
               </td>
-              <td title={(TYPE_TIP[p.type] ?? p.type) + (p.kind === 'own' && p.invalid ? `: ${INVALID[p.invalid] ?? p.invalid}` : '') + (p.kind === 'own' && p.type !== 'invalid' ? ` · ${SIG_LABEL[p.signature] ?? p.signature}` : '') + (p.kind !== 'relayed' && p.answers ? (p.answers.kind === 'ack' && p.kind === 'own' && p.to ? ` · confirms it received ${nm(p.to)}'s packet ${p.answers.request_id}` : ` · answers packet ${p.answers.request_id}`) : '')}>
+              <td title={(TYPE_TIP[p.type] ?? p.type) + (p.kind === 'own' && p.invalid ? `: ${INVALID[p.invalid] ?? p.invalid}` : '') + (p.kind === 'own' && p.type !== 'invalid' && !p.pending ? ` · ${SIG_LABEL[p.signature] ?? p.signature}` : '') + (p.kind !== 'relayed' && p.answers ? (p.answers.kind === 'ack' && p.kind === 'own' && p.to ? ` · confirms it received ${nm(p.to)}'s packet ${p.answers.request_id}` : ` · answers packet ${p.answers.request_id}`) : '')}>
                 {p.kind !== 'relayed' && p.answers ? <AnswerTag a={p.answers} /> : p.type === 'invalid' ? <span className="reply-err">invalid</span> : TYPE_SHORT[p.type] ?? p.type}
               </td>
               <td className="wrap" title={p.to && p.to !== 'broadcast' ? nm(p.to) : undefined}>{p.to === 'broadcast' ? 'all' : p.to ? nm(p.to) : ''}</td>
               <td>
-                {p.kind === 'own'
+                {p.pending ? <span className="muted" title="Just heard: hops, gateways and evidence follow when the log is next rebuilt, within seconds">…</span> : p.kind === 'own'
                   ? <>
                       {p.hops !== undefined ? `${p.hops}` : p.by_itself ? <span className="muted" title="Only it uplinked this packet itself">self</span> : ''}
                       {p.downlinked && <span className="ev-tag" title="A copy reached a gateway through an MQTT downlink: flagged via MQTT, taken from the broker and transmitted with no hops left, so it carries no hop count"> MQTT</span>}
