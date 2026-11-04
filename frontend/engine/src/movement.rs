@@ -149,12 +149,17 @@ pub fn anchors_of(by_node: &FxMap<u32, Vec<&Row>>, fixed: &FxSet<u32>) -> FxMap<
 /// The report with the least summed distance to the others (the newest 200).
 fn medoid(rs: &[&Row]) -> crate::row::Position {
     let ps: Vec<crate::row::Position> = rs.iter().rev().take(200).map(|r| r.pos.unwrap()).collect();
-    let ll = |p: &crate::row::Position| LatLon { lat: p.lat, lon: p.lon };
+    // A fixed node's reports lie within a few hundred metres: a flat frame
+    // (degrees of latitude, and of longitude shrunk to them at the reports'
+    // mean latitude) ranks the sums as haversine does, without the trig per
+    // pair. Only which sum is least matters, so no metres.
+    let k = (ps.iter().map(|p| p.lat).sum::<f64>() / ps.len() as f64).to_radians().cos();
+    let xy: Vec<(f64, f64)> = ps.iter().map(|p| (p.lon * k, p.lat)).collect();
     // Each pair once: n²/2 distances.
     let mut sums = vec![0.0; ps.len()];
     for i in 0..ps.len() {
         for j in i + 1..ps.len() {
-            let d = distance_m(ll(&ps[i]), ll(&ps[j]));
+            let d = (xy[i].0 - xy[j].0).hypot(xy[i].1 - xy[j].1);
             sums[i] += d;
             sums[j] += d;
         }

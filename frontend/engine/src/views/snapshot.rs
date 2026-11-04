@@ -227,7 +227,10 @@ pub fn build_snapshot(rows: &[&Row], i: &Interner, g: &GeoOptions, rules: Rules)
         }
     }
     let moved: FxMap<u32, i64> = if rules.moves { moves.iter().map(|(&n, m)| (n, m.moved_at)).collect() } else { map() };
-    let (mut er, mut ctx) = build_edges(rows, &by.neighborinfo, &hops, &known, pos, silent, rules.mqtt_links.then_some(&downlinkers), &moved, rules.signal);
+    // Movers' latest positions say nothing of where they relayed or heard
+    // a copy: the signal rule leaves them out (D-153).
+    let mobile: FxSet<u32> = moves.keys().copied().collect();
+    let (mut er, mut ctx) = build_edges(rows, &by.neighborinfo, &hops, &known, pos, silent, rules.mqtt_links.then_some(&downlinkers), &moved, rules.signal, mobile);
     if rules.mqtt_links {
         ctx.downlinkers = downlinkers.clone();
     }

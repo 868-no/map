@@ -38,8 +38,9 @@ pub fn traceroute_hops(rows: &[&Row]) -> Vec<Sample> {
 /// `hops`: traceroute_hops of the rows.
 /// `downlinkers`: probable downlinking nodes, whose 0 dB traceroute hops become MQTT links (None: off).
 /// `moved`: when nodes last moved (D-073); radio evidence from before either end's move is dropped.
+/// `mobile`: nodes that moved in the window, spared the signal rule (D-153).
 #[allow(clippy::too_many_arguments)]
-pub fn build_edges(rows: &[&Row], neighborinfo: &[&Row], hops: &[Sample], known: &[u32], pos: FxMap<u32, LatLon>, silent: FxSet<u32>, downlinkers: Option<&FxSet<u32>>, moved: &FxMap<u32, i64>, signal_rule: bool) -> (EdgeResult, RelayContext) {
+pub fn build_edges(rows: &[&Row], neighborinfo: &[&Row], hops: &[Sample], known: &[u32], pos: FxMap<u32, LatLon>, silent: FxSet<u32>, downlinkers: Option<&FxSet<u32>>, moved: &FxMap<u32, i64>, signal_rule: bool, mobile: FxSet<u32>) -> (EdgeResult, RelayContext) {
     let current = |s: &Sample| moved.get(&s.src).is_none_or(|&t| s.t >= t) && moved.get(&s.dst).is_none_or(|&t| s.t >= t);
     let mut samples: Vec<Sample> = Vec::new();
     // A. NeighborInfo: neighbour -> reporter, the first copy of each logical packet.
@@ -90,6 +91,7 @@ pub fn build_edges(rows: &[&Row], neighborinfo: &[&Row], hops: &[Sample], known:
     let confirmed: Vec<(u32, u32)> = samples.iter().filter(|s| s.ev != Ev::RelayHint).map(|s| (s.src, s.dst)).collect();
     let mut ctx = RelayContext::new(known.iter().copied(), pos, confirmed, silent);
     ctx.signal_rule = signal_rule;
+    ctx.mobile = mobile;
     let (mut ambiguous, mut unmatched) = (0, 0);
     for (s, hint, origin, gw) in pending {
         match ctx.resolve_detail(hint, origin, gw, s.rssi) {

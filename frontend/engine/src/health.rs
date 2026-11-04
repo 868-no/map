@@ -50,6 +50,10 @@ pub const BATTERY_WARN_AT: f64 = 50.0;
 pub const RESTARTS_WARN: usize = 3;
 /// Shared keys: how long two ids announcing one key must both be active (D-142).
 pub const SHARED_KEY_OVERLAP_MS: i64 = 30 * 60_000;
+/// Shared keys: how often the sender must switch between the two ids, in time
+/// order, for them to be active together: an upgrade to 2.8 and a rollback
+/// (or a second upgrade) switch at most three times (D-154).
+pub const SHARED_KEY_MIN_SWITCHES: usize = 4;
 /// Share of the window's estimated airtime one node's packets may cause
 /// before it is flagged.
 pub const AIRTIME_WARN_SHARE: f64 = 0.10;
@@ -476,7 +480,9 @@ pub fn health(rows: &[&Row], invalid: &[&Row], nodes: &[Node], copies: &Copies, 
     }
     // Shared keys (D-142): ids announcing the same public key while both
     // active. A key passed on (an upgrade to 2.8 with the key kept, or a key
-    // restored onto new hardware) leaves the old id silent first: not flagged.
+    // restored onto new hardware) leaves the old id silent first: not flagged;
+    // nor is a rollback to the old id, which spans the new one's time but
+    // takes turns with it rather than interleaving (D-154).
     // Anyone can announce any key unsigned, so a node whose NodeInfo verified
     // (it proved holding the key) is never flagged; the ids claiming its key
     // are. Without such a proof the claims cannot be told from a copied key,
@@ -490,7 +496,14 @@ pub fn health(rows: &[&Row], invalid: &[&Row], nodes: &[Node], copies: &Copies, 
         }
     }
     let span = |n: u32| own.get(&n).map(|m| m.values().fold((i64::MAX, i64::MIN), |(lo, hi), r| (lo.min(r.t), hi.max(r.t))));
-    let overlap = |a: u32, b: u32| matches!((span(a), span(b)), (Some((a0, a1)), Some((b0, b1))) if a1.min(b1) - a0.max(b0) >= SHARED_KEY_OVERLAP_MS);
+    // Both ids' packets in time order (ties by id, so either way round
+    // counts alike), and how often the sender switches between them.
+    let switches = |a: u32, b: u32| {
+        let mut v: Vec<(i64, u32)> = [a, b].iter().flat_map(|&n| own.get(&n).into_iter().flat_map(move |m| m.values().map(move |r| (r.t, n)))).collect();
+        v.sort_unstable();
+        v.windows(2).filter(|w| w[0].1 != w[1].1).count()
+    };
+    let overlap = |a: u32, b: u32| matches!((span(a), span(b)), (Some((a0, a1)), Some((b0, b1))) if a1.min(b1) - a0.max(b0) >= SHARED_KEY_OVERLAP_MS) && switches(a, b) >= SHARED_KEY_MIN_SWITCHES;
     for (k, ids) in by_key.into_iter().filter(|(_, v)| v.len() > 1) {
         let holder = ids.iter().find(|&&(_, proved)| proved).map(|&(n, _)| n);
         for &(n, proved) in &ids {

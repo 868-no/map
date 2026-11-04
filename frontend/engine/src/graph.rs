@@ -341,6 +341,10 @@ pub struct RelayContext {
     /// Rule out relays too far away for the signal the gateway measured
     /// (default on; off only to compare with the old server views) (D-136).
     pub signal_rule: bool,
+    /// Nodes that moved in the window: their latest position says nothing
+    /// about where they were when a copy was heard, so the signal rule
+    /// treats them as unpositioned, as relay or as gateway (D-153).
+    pub mobile: FxSet<u32>,
 }
 
 fn pair(a: u32, b: u32) -> (u32, u32) {
@@ -351,7 +355,7 @@ impl RelayContext {
     /// known: window nodes; pos: reported positions only; confirmed:
     /// non-relay evidence pairs (src, dst); silent: nodes that never rebroadcast.
     pub fn new(known: impl IntoIterator<Item = u32>, pos: FxMap<u32, LatLon>, confirmed: impl IntoIterator<Item = (u32, u32)>, silent: FxSet<u32>) -> Self {
-        let mut c = RelayContext { by_byte: vec![Vec::new(); 256], pos, confirmed: set(), silent, max_range_m: MIN_RELAY_RANGE_M, downlinkers: set(), signal_rule: true };
+        let mut c = RelayContext { by_byte: vec![Vec::new(); 256], pos, confirmed: set(), silent, max_range_m: MIN_RELAY_RANGE_M, downlinkers: set(), signal_rule: true, mobile: set() };
         for k in known {
             c.by_byte[(k & 0xff) as usize].push(k);
         }
@@ -398,14 +402,20 @@ impl RelayContext {
             return None; // unmatched
         }
         let gp = self.pos.get(&gw);
-        let range = rssi.filter(|_| self.signal_rule).map_or(self.max_range_m, |v| self.max_range_m.min(max_distance_m(v)));
+        // The signal bound only holds where both ends were when the copy was
+        // heard: not for a gateway or relay that moved in the window (D-153).
+        let signal = rssi.filter(|_| self.signal_rule && !self.mobile.contains(&gw)).map(max_distance_m);
+        let range = |k: u32| match signal {
+            Some(d) if !self.mobile.contains(&k) => self.max_range_m.min(d),
+            _ => self.max_range_m,
+        };
         // Called for every relayed copy: candidates are counted, not collected.
         let cands = self.by_byte.get(hint as usize).map_or(&[][..], |v| v).iter().copied().filter(|&k| {
             if k == origin || k == gw || self.silent.contains(&k) {
                 return false;
             }
             match (self.pos.get(&k), gp) {
-                (Some(&p), Some(&g)) => distance_m(p, g) <= range,
+                (Some(&p), Some(&g)) => distance_m(p, g) <= range(k),
                 _ => true,
             }
         });
@@ -482,6 +492,28 @@ mod tests {
         pos.insert(0x2222_2242, LatLon { lat: 63.4, lon: 10.4 });
         let c = RelayContext::new([0x0000_aa01u32, 0x1111_1142, 0x2222_2242], pos, [], set());
         assert_eq!(c.resolve(0x42, 5, 0x0000_aa01, None), Some(Ok(0x1111_1142)));
+    }
+
+    #[test]
+    fn the_signal_rule_spares_nodes_that_moved() {
+        // A strong copy at gateway G: mobile M (now 60 km away) relayed it near
+        // G; parked P sharing M's last byte sits 5 km from G. With M's latest
+        // position the signal rule would drop M and pin the copy on P.
+        let (g, m, p) = (0x0000_aa01u32, 0x1111_1142u32, 0x2222_2242u32);
+        let mut pos = map();
+        pos.insert(g, LatLon { lat: 59.9, lon: 10.7 });
+        pos.insert(m, LatLon { lat: 60.44, lon: 10.7 });
+        pos.insert(p, LatLon { lat: 59.945, lon: 10.7 });
+        let mut c = RelayContext::new([g, m, p], pos, [], set());
+        c.max_range_m = 100_000.0;
+        assert_eq!(c.resolve(0x42, 5, g, Some(-50.0)), Some(Ok(p)), "static: M looks too far for the signal");
+        c.mobile.insert(m);
+        assert_eq!(c.resolve(0x42, 5, g, Some(-50.0)), Some(Err(())), "M moved: stays a candidate");
+        c.mobile.clear();
+        c.mobile.insert(g);
+        assert_eq!(c.resolve(0x42, 5, g, Some(-50.0)), Some(Err(())), "the gateway moved");
+        c.max_range_m = 30_000.0;
+        assert_eq!(c.resolve(0x42, 5, g, Some(-50.0)), Some(Ok(p)), "the plain range bound still applies");
     }
 
     #[test]

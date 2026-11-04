@@ -96,6 +96,26 @@ fn a_short_overlap_while_a_key_changes_hands_is_not_flagged() {
 }
 
 #[test]
+fn an_upgrade_and_a_rollback_are_not_flagged() {
+    let mut rows = Vec::new();
+    announcing(&mut rows, 0x0a00_000a, 0x0c0c_0c0c, 0, 10); // 2.7
+    announcing(&mut rows, 0x0c0c_0c0c, 0x0c0c_0c0c, 10, 13); // upgraded to 2.8, key proved
+    announcing(&mut rows, 0x0a00_000a, 0x0c0c_0c0c, 13, 24); // rolled back to 2.7
+    let (_, health) = views(&rows);
+    assert!(shared(&health).is_empty(), "the old id's span covers the new one's, but they took turns: {:?}", shared(&health));
+    // Two devices taking turns back and forth all day are flagged.
+    let mut rows = Vec::new();
+    for h in 0..24 {
+        let n = if h % 2 == 0 { 0x0a00_000a } else { 0x0c0c_0c0c };
+        announcing(&mut rows, n, 0x0c0c_0c0c, h, h + 1);
+    }
+    let (_, health) = views(&rows);
+    let got = shared(&health);
+    assert_eq!(got.len(), 1, "{got:?}");
+    assert_eq!((got[0].0.as_str(), got[0].1.as_str()), ("!0a00000a", "warning"));
+}
+
+#[test]
 fn an_upgraded_node_keeping_its_short_name_is_no_duplicate_name() {
     let mut rows = Vec::new();
     announcing(&mut rows, 0x0a00_000a, 0x0c0c_0c0c, 0, 3);

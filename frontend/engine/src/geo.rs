@@ -130,6 +130,8 @@ pub struct Ranging {
 pub const MIN_RANGING_LINKS: usize = 8;
 /// A centroid with no anchor in a sector wider than this is compensated.
 pub const GAP_DEG: f64 = 135.0;
+/// A ranged move shorter than this is no move: the centroid stands.
+pub const RANGED_MIN_MOVE_M: f64 = 100.0;
 
 impl Ranging {
     /// Least squares over (km, snr); none with too few links, or when signal
@@ -169,22 +171,25 @@ fn widest_gap(x: f64, y: f64, pts: &[Pt]) -> f64 {
 /// Moves a centroid to where the anchors' distances best match the ranges
 /// their SNR gives (least squares in log distance), each range capped at
 /// the anchors' mean distance from the centroid: a weak link may say "not
-/// close", never "very far". A grid search, refined: robust, and cheap for
-/// a handful of anchors.
+/// close", never "very far". A grid search over the whole reach, then
+/// finer grids around the best point: robust, and cheap
+/// for a handful of anchors. None when that best point is within
+/// RANGED_MIN_MOVE_M of the centroid: nothing worth reporting as a move.
 fn ranged(pts: &[Pt], x0: f64, y0: f64, r: &Ranging) -> Option<(f64, f64)> {
     let cap = pts.iter().map(|q| (q.x - x0).hypot(q.y - y0)).sum::<f64>() / pts.len() as f64;
+    // (x, y, 2·ln range, weight): ln d = ½·ln d², so no square root per point.
     let obs: Vec<(f64, f64, f64, f64)> =
-        pts.iter().filter_map(|q| q.m.snr.map(|s| (q.x, q.y, r.range_m(s).min(cap).max(100.0).ln(), (q.m.samples as f64).sqrt()))).collect();
+        pts.iter().filter_map(|q| q.m.snr.map(|s| (q.x, q.y, 2.0 * r.range_m(s).min(cap).max(100.0).ln(), (q.m.samples as f64).sqrt()))).collect();
     if obs.len() < 3 {
         return None;
     }
-    let cost = |x: f64, y: f64| obs.iter().map(|&(ax, ay, lr, w)| w * ((ax - x).hypot(ay - y).max(100.0).ln() - lr).powi(2)).sum::<f64>();
+    // Four times the least squares in ln d: the same minimum.
+    let cost = |x: f64, y: f64| obs.iter().map(|&(ax, ay, lr2, w)| w * (((ax - x).powi(2) + (ay - y).powi(2)).max(1e4).ln() - lr2).powi(2)).sum::<f64>();
     let reach = pts.iter().map(|q| (q.x - x0).hypot(q.y - y0)).fold(0.0, f64::max) + cap;
     let (mut bx, mut by, mut best) = (x0, y0, cost(x0, y0));
-    let (mut cx, mut cy, mut step) = (x0, y0, reach / 20.0);
-    for _ in 0..6 {
-        for i in -20..=20 {
-            for j in -20..=20 {
+    let mut search = |cx: f64, cy: f64, step: f64, n: i32| {
+        for i in -n..=n {
+            for j in -n..=n {
                 let (x, y) = (cx + i as f64 * step, cy + j as f64 * step);
                 let c = cost(x, y);
                 if c < best {
@@ -192,9 +197,21 @@ fn ranged(pts: &[Pt], x0: f64, y0: f64, r: &Ranging) -> Option<(f64, f64)> {
                 }
             }
         }
-        (cx, cy, step) = (bx, by, step / 10.0);
+        (bx, by)
+    };
+    // The whole reach at reach/20, then ±2 of its steps at a tenth of that
+    // (a coarser second level can settle in the wrong one of two shallow
+    // minima), then ±2 steps of the last level at half its step, down to
+    // under a metre: about 4k evaluations instead of 10k.
+    let mut step = reach / 20.0;
+    let (mut cx, mut cy) = search(x0, y0, step, 20);
+    step /= 10.0;
+    (cx, cy) = search(cx, cy, step, 20);
+    while step > 1.0 {
+        step /= 2.0;
+        (cx, cy) = search(cx, cy, step, 4);
     }
-    Some((bx, by))
+    ((cx - x0).hypot(cy - y0) >= RANGED_MIN_MOVE_M).then_some((cx, cy))
 }
 
 /// Estimates one target, or the reason it cannot. With a ranging model, an
@@ -298,9 +315,9 @@ pub fn locate(
         match ranging.filter(|_| gap > GAP_DEG).and_then(|r| ranged(&pts, x, y, r).map(|xy| (r, xy))) {
             Some((r, (rx, ry))) => {
                 reasons.push(format!(
-                    "anchors leave {}° without data: moved {} km by distances from SNR (SNR = {:.1} {} {:.1}·log10 km over {} clear router links)",
+                    "anchors leave {}° without data: moved {:.1} km by distances from SNR (SNR = {:.1} {} {:.1}·log10 km over {} clear router links)",
                     fmt0(gap),
-                    format!("{:.1}", (rx - x).hypot(ry - y) / 1000.0),
+                    (rx - x).hypot(ry - y) / 1000.0,
                     r.a,
                     if r.b < 0.0 { "−" } else { "+" },
                     r.b.abs(),
@@ -457,6 +474,25 @@ mod tests {
     // Anchors north, east and west of a target 30 km south of their middle:
     // the centroid sits among them; weak links say the target is further
     // off, and with nothing to the south, ranging moves it south.
+    // SNRs that already fit the centroid: nothing to move, so no
+    // "ranged_centroid" claiming a 0.0 km move.
+    #[test]
+    fn ranging_that_does_not_move_is_none() {
+        let r = Ranging { a: 10.0, b: -7.0, links: 10 };
+        let pts: Vec<Pt> = [(0.0, 20_000.0), (17_320.5, -10_000.0), (-17_320.5, -10_000.0)]
+            .iter()
+            .enumerate()
+            .map(|(i, &(x, y)): (usize, &(f64, f64))| {
+                let km = x.hypot(y) / 1000.0;
+                let m = Measurement { anchor: i as u32, snr: Some(10.0 - 7.0 * km.log10()), rssi: None, samples: 4, first: 1, last: 2 };
+                Pt { x, y, m, a: Anchor { node: i as u32, lat: 0.0, lon: 0.0, err_m: 0.0 } }
+            })
+            .collect();
+        assert_eq!(ranged(&pts, 0.0, 0.0, &r), None);
+        let (x, y) = ranged(&pts, 6_000.0, 0.0, &r).expect("off-centre: moved back");
+        assert!(x.hypot(y) < 100.0, "{x} {y}");
+    }
+
     #[test]
     fn ranging_moves_a_one_sided_centroid() {
         let mut anchors = map();
@@ -485,3 +521,4 @@ mod tests {
         assert_eq!(locate(&anchors, &ms4, &Params::default(), Some(&r), node_id).unwrap().method, "weighted_centroid");
     }
 }
+
