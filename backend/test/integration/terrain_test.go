@@ -11,8 +11,67 @@ import (
 	"testing"
 	"time"
 
+	"github.com/868-no/map/internal/storage"
 	"github.com/868-no/map/internal/terrain"
 )
+
+// The warmer's nodes (D-144): a node's newest role decides, positions come
+// from Position packets and map reports, the newest wins, a reported
+// altitude of 0 means none, and nothing older than the window counts.
+func TestInfraPositions(t *testing.T) {
+	pool := freshDB(t)
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Second)
+	if err := storage.EnsurePartitions(ctx, pool, now.AddDate(0, 0, -45), now); err != nil {
+		t.Fatal(err)
+	}
+	key := 0
+	row := func(node int, typ string, ago time.Duration, meta string) {
+		t.Helper()
+		key++
+		if _, err := pool.Exec(ctx, `INSERT INTO packet_log (observed_at, broker_id, mqtt_topic, source_node_id, packet_type,
+			logical_packet_key, observation_key, signature_status, decode_version, envelope_bytes, decoded_metadata)
+			VALUES ($1, 'a', 't', $2, $3, $4, $4, 'unsigned', 1, '\x00', $5::jsonb)`,
+			now.Add(-ago), node, typ, []byte{byte(key)}, meta); err != nil {
+			t.Fatal(err)
+		}
+	}
+	router := `{"nodeinfo": {"role": "ROUTER"}}`
+	pos := func(lat, lon float64, alt int) string {
+		b, _ := json.Marshal(map[string]any{"position": map[string]any{"lat": lat, "lon": lon, "alt": alt}})
+		return string(b)
+	}
+	row(1, "nodeinfo", time.Hour, router)
+	row(1, "position", time.Hour, pos(63.26, 10.36, 708))
+	row(2, "nodeinfo", time.Hour, `{"nodeinfo": {"role": "CLIENT"}}`) // not infrastructure
+	row(2, "position", time.Hour, pos(63.3, 10.4, 50))
+	row(3, "mapreport", time.Hour, `{"mapreport": {"role": "ROUTER_LATE"}, "position": {"lat": 63.39, "lon": 10.22, "alt": 0}}`)
+	row(4, "nodeinfo", 3*time.Hour, router) // a router once, a client now
+	row(4, "nodeinfo", time.Hour, `{"nodeinfo": {"role": "CLIENT"}}`)
+	row(4, "position", time.Hour, pos(63.5, 10.5, 10))
+	row(5, "nodeinfo", time.Hour, `{"nodeinfo": {"role": "CLIENT_BASE"}}`)
+	row(5, "position", 3*time.Hour, pos(60.0, 5.0, 10)) // moved since
+	row(5, "position", time.Hour, pos(63.34, 10.69, 20))
+	row(6, "nodeinfo", 20*24*time.Hour, router) // older than the 14-day window
+	row(6, "position", 20*24*time.Hour, pos(63.0, 10.0, 10))
+
+	got, err := storage.InfraPositions(ctx, pool, now.Add(-terrain.WarmWindow))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("got %+v, want nodes 1, 3 and 5", got)
+	}
+	if n := got[0]; n.Node != 1 || n.Lat != 63.26 || n.Alt == nil || *n.Alt != 708 {
+		t.Fatalf("node 1: %+v", n)
+	}
+	if n := got[1]; n.Node != 3 || n.Lat != 63.39 || n.Alt != nil {
+		t.Fatalf("node 3 (map report, no altitude): %+v", n)
+	}
+	if n := got[2]; n.Node != 5 || n.Lat != 63.34 {
+		t.Fatalf("node 5 (newest position): %+v", n)
+	}
+}
 
 // Fetched heights are kept in terrain_height (D-143): a new client, as after
 // a restart, builds the same cross section without asking Kartverket again.

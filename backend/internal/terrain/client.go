@@ -132,6 +132,13 @@ func (c *Client) Heights(ctx context.Context, pts []Point) (func(Point) (float64
 	}, incomplete
 }
 
+// Waiting is how many points are queued for the worker.
+func (c *Client) Waiting() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return len(c.queue)
+}
+
 // put stores a height in memory, starting over when full. Callers hold mu.
 func (c *Client) put(k Key, h Height) {
 	if len(c.cache) >= maxEntries {

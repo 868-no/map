@@ -371,6 +371,22 @@ func serveCmd() *cobra.Command {
 				apiSrv.Terrain = terrain.New(c.Env.TerrainURL, ua)
 				apiSrv.Terrain.Store, apiSrv.Terrain.Log = &terrain.Store{Pool: pool}, log
 				go apiSrv.Terrain.Run(ctx)
+				// Heights between infrastructure nodes, fetched before anyone
+				// asks (D-144). Each replica warms its own queue; the store
+				// keeps any point from being fetched twice once it is in.
+				warm := &terrain.Warmer{Client: apiSrv.Terrain, Interval: terrain.WarmInterval, Log: log,
+					Load: func(ctx context.Context) ([]terrain.End, error) {
+						nodes, err := storage.InfraPositions(ctx, pool, time.Now().Add(-terrain.WarmWindow))
+						if err != nil {
+							return nil, err
+						}
+						ends := make([]terrain.End, len(nodes))
+						for i, n := range nodes {
+							ends[i] = terrain.End{Point: terrain.Point{Lat: n.Lat, Lon: n.Lon}, Alt: n.Alt}
+						}
+						return ends, nil
+					}}
+				go warm.Run(ctx)
 			}
 			if c.Env.WeatherEnabled {
 				apiSrv.Weather = weather.New(c.Env.WeatherURL, ua)
