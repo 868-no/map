@@ -85,7 +85,7 @@ export interface MeshNode {
   status: 'observed' | 'referenced'
   identity?: Identity
   position?: Position
-  stale_position?: Position // newest report more than a day before the window's latest data (D-094)
+  stale_position?: Position // newest report more than a day (a week for fixed nodes) before the window's latest data (D-094, D-138)
   telemetry?: Telemetry
   first_seen?: string
   last_seen?: string
@@ -359,6 +359,9 @@ export interface RelayedPacket {
   evidence: ('relay_byte' | 'traceroute')[]
   gateways: string[] // heard this node's rebroadcast
 }
+
+/** Most entries per list the engine sends in a packet log (engine packets.rs MAX_LOG). */
+export const PACKET_LOG_MAX = 200
 
 export interface PacketLog {
   meta: ViewMeta

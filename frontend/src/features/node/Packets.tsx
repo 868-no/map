@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import type { Answer, NodeView, Reply, SnapshotView } from '../../derive/views'
+import { PACKET_LOG_MAX, type Answer, type NodeView, type Reply, type SnapshotView } from '../../derive/views'
 import { usePacketLog, usePacketRoute } from '../../state/data'
 import { useStore } from '../../state/store'
 import { formatLocal, formatLogTime } from '../../lib/time'
@@ -92,9 +92,10 @@ function PacketLogs({ id, names, positioned, moved }: { id: string; names: Map<s
   const showRoute = useStore((s) => s.showRoute)
   const [withRelayed, setWithRelayed] = useState(false)
   const log = usePacketLog(id)
-  const [shown, setShown] = useState({ own: 50, relayed: 50 })
-  const more = (k: 'own' | 'relayed', total: number) =>
-    total > shown[k] && <button className="more" onClick={() => setShown((s) => ({ ...s, [k]: s[k] + 100 }))}>Show more ({total - shown[k]} hidden)</button>
+  // Rows shown of the merged list; more on request.
+  const [shown, setShown] = useState(50)
+  const more = (total: number) =>
+    total > shown && <button className="more" onClick={() => setShown((s) => s + 100)}>Show more ({total - shown} hidden)</button>
   const own = log.data?.own ?? []
   const relayed = log.data?.relayed ?? []
   const nm = (n: string) => names.get(n) ?? n
@@ -123,7 +124,7 @@ function PacketLogs({ id, names, positioned, moved }: { id: string; names: Map<s
       <div className="log-head">
         <h3>Packet log ({own.length + (withRelayed ? relayed.length : 0) + (log.data?.inbound.length ?? 0)}{log.data?.truncated ? '+' : ''})</h3>
         <label title="Other nodes' packets this node passed on: a gateway's last-hop byte resolved to it, or it is in a traceroute's recorded route">
-          <input type="checkbox" checked={withRelayed} onChange={(e) => setWithRelayed(e.target.checked)} /> Include relayed ({relayed.length}{log.data?.truncated && relayed.length >= 200 ? '+' : ''})
+          <input type="checkbox" checked={withRelayed} onChange={(e) => setWithRelayed(e.target.checked)} /> Include relayed ({relayed.length}{log.data?.truncated && relayed.length >= PACKET_LOG_MAX ? '+' : ''})
         </label>
       </div>
       {log.isLoading && <p className="muted">Loading…</p>}
@@ -133,7 +134,7 @@ function PacketLogs({ id, names, positioned, moved }: { id: string; names: Map<s
         <colgroup><col style={{ width: 60 }} /><col /><col style={{ width: 92 }} /><col /><col style={{ width: 70 }} /><col style={{ width: 30 }} /><col style={{ width: 34 }} /></colgroup>
         <thead><tr><th>Time</th><th>From</th><th>Type</th><th>To</th><th title="Own packets: the fewest hops another gateway's copy shows (hop start minus hop limit; relays over 0-cost links spend none, so it can be fewer than the relays). 'self': only it uplinked it. 'MQTT': a copy came through an MQTT downlink. Relayed: how we know this node passed it on">Hops</th><th title="Other gateways that uplinked it (relayed: that heard this node's rebroadcast)">GWs</th><th title="Delivery reports: ✓ an ACK or ✗ an error answered this packet. Only reports that reached a gateway are known, so a blank never means it was lost. For a routing packet, ↩ selects the packet it answers">Re</th></tr></thead>
         <tbody>
-          {entries.slice(0, shown.own).map((p) => (
+          {entries.slice(0, shown).map((p) => (
             <tr key={p.kind + p.lp} data-kind={p.kind} className={route === p.lp ? 'active' : undefined} onClick={() => showRoute(route === p.lp ? null : p.lp)} aria-selected={route === p.lp}
               tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); showRoute(route === p.lp ? null : p.lp) } }} title="Select (click, Enter or Space) to draw this packet's route on the map">
               <td title={formatLocal(p.at)}>{formatLogTime(p.at)}</td>
@@ -168,7 +169,7 @@ function PacketLogs({ id, names, positioned, moved }: { id: string; names: Map<s
           ))}
         </tbody>
       </table>
-      {more('own', entries.length)}
+      {more(entries.length)}
     </>
   )
 }
