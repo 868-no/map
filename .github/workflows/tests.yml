@@ -34,7 +34,8 @@ jobs:
         run: |
           unformatted="$(scripts/go.sh gofmt -l ./cmd ./internal ./test)"
           if [ -n "$unformatted" ]; then echo "gofmt needed:"; echo "$unformatted"; exit 1; fi
-      - run: scripts/go.sh go test ./...
+      # The race detector needs cgo, which the golang bookworm image has on.
+      - run: scripts/go.sh go test -race ./...
 
   integration:
     name: backend integration (Postgres, Redis, Mosquitto)
