@@ -370,3 +370,44 @@ func TestGustFailureKeepsHour(t *testing.T) {
 		t.Fatalf("hours: %+v", hs)
 	}
 }
+
+// A failed gust request is not "no run has it": even an hour long past the
+// MEPS delay is asked again soon, and gets its gust once the archive answers.
+func TestGustFailureOnOldHourIsRetried(t *testing.T) {
+	defer gustRuns.Store(gustRuns.Load())
+	var failing atomic.Bool
+	failing.Store(true)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/meps25epsarchive/") {
+			if failing.Load() {
+				http.Error(w, "busy", http.StatusBadGateway)
+				return
+			}
+			gusts(t, w, r)
+			return
+		}
+		fmt.Fprint(w, sample)
+	}))
+	defer srv.Close()
+	var now atomic.Int64
+	now.Store(time.Date(2026, 11, 3, 15, 30, 0, 0, time.UTC).Unix())
+	c := New(srv.URL, "")
+	c.Now, c.Interval = func() time.Time { return time.Unix(now.Load(), 0).UTC() }, time.Millisecond
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go c.Run(ctx)
+	cell := Cell{662, 1159}
+	start := time.Date(2026, 11, 1, 9, 30, 0, 0, time.UTC) // hour 10, two days old
+	end := start.Add(time.Hour)
+	if hs := fill(t, c, cell, start, end); len(hs) != 1 || hs[0].TempC == nil || hs[0].GustMS != nil {
+		t.Fatalf("while gusts fail: %+v", hs)
+	}
+	failing.Store(false)
+	now.Add(int64((missingTTL + time.Minute) / time.Second))
+	if _, inc := c.Series(context.Background(), cell, start, end); !inc {
+		t.Fatal("an old hour whose gust request failed was kept as settled")
+	}
+	if hs := fill(t, c, cell, start, end); len(hs) != 1 || hs[0].GustMS == nil || *hs[0].GustMS != 5 {
+		t.Fatalf("after the archive recovered: %+v", hs)
+	}
+}

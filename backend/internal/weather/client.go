@@ -356,15 +356,22 @@ func (c *Client) Run(ctx context.Context) {
 				return
 			}
 		}
-		h, missing, wait, err := c.fetch(ctx, k.c, k.t())
+		h, missing, gustFailed, wait, err := c.fetch(ctx, k.c, k.t())
 		now := c.now()
 		c.mu.Lock()
 		delete(c.queued, k)
 		if err == nil {
-			c.put(k, entry{h, missing, expiry(h, now, missing)})
+			exp := expiry(h, now, missing)
+			if gustFailed {
+				// Not "no run has it": ask again soon, whatever the hour's age.
+				exp = now.Add(missingTTL)
+			}
+			c.put(k, entry{h, missing, exp})
 		}
 		c.mu.Unlock()
-		if err == nil && c.Store != nil {
+		// An hour whose gust request failed is not stored: an old hour
+		// stored without a gust counts as settled and would never get it.
+		if err == nil && !gustFailed && c.Store != nil {
 			if err := c.Store.save(ctx, k.c, stored{h: h, missing: missing, fetched: now}); err != nil {
 				c.warn("weather store write failed", err)
 			}
@@ -440,8 +447,9 @@ func round2(v float64) *float64 {
 }
 
 // fetch reads one hour at one analysis cell, and its gust from MEPS; missing
-// is true when the analysis has no file for that hour.
-func (c *Client) fetch(ctx context.Context, cell Cell, t time.Time) (h Hour, missing bool, wait time.Duration, err error) {
+// is true when the analysis has no file for that hour, gustFailed when the
+// gust request failed (rather than no run having the hour).
+func (c *Client) fetch(ctx context.Context, cell Cell, t time.Time) (h Hour, missing, gustFailed bool, wait time.Duration, err error) {
 	at := index(0, cell.Y, cell.X)
 	vars := []string{"air_temperature_2m", "precipitation_amount", "relative_humidity_2m", "cloud_area_fraction", "wind_speed_10m",
 		"integral_of_surface_downwelling_shortwave_flux_in_air_wrt_time"}
@@ -452,7 +460,7 @@ func (c *Client) fetch(ctx context.Context, cell Cell, t time.Time) (h Hour, mis
 	vals, missing, wait, err := c.get(ctx, fmt.Sprintf("%s/metpparchive/%s/met_analysis_1_0km_nordic_%s.nc.ascii?%s",
 		c.BaseURL, t.Format("2006/01/02"), t.Format("20060102T15Z"), strings.Join(q, ",")))
 	if err != nil || missing {
-		return Hour{T: t}, missing, wait, err
+		return Hour{T: t}, missing, false, wait, err
 	}
 	h = Hour{T: t}
 	if v, ok := first(vals, "air_temperature_2m"); ok {
@@ -473,14 +481,15 @@ func (c *Client) fetch(ctx context.Context, cell Cell, t time.Time) (h Hour, mis
 	if v, ok := first(vals, "wind_speed_10m"); ok {
 		h.WindMS = round2(math.Max(v, 0))
 	}
-	// A failed gust request keeps the analysis hour without its gust: expiry
-	// asks a gust-less hour again for up to gustsFor. The wait still holds.
+	// A failed gust request keeps the analysis hour without its gust, marked
+	// so that the hour is asked again soon and not stored as settled
+	// (whatever its age). The wait still holds.
 	h.GustMS, wait, err = c.gust(ctx, cell, t)
 	if err != nil && ctx.Err() == nil {
 		c.warn("weather gust failed", err)
-		err = nil
+		return h, false, true, wait, nil
 	}
-	return h, false, wait, err
+	return h, false, false, wait, err
 }
 
 // gust is the strongest gust in the hour before t at a cell, from the latest
