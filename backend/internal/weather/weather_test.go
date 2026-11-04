@@ -278,3 +278,26 @@ func TestKeepYieldsToVisitors(t *testing.T) {
 		t.Fatalf("kept cell: %d hours", len(hs))
 	}
 }
+
+// A browser re-polling an incomplete chart does not queue its hours again,
+// but a visitor's hour waiting in the background queue moves up front.
+func TestQueueOnce(t *testing.T) {
+	now := time.Date(2026, 11, 3, 15, 30, 0, 0, time.UTC)
+	c := New("http://127.0.0.1:0", "")
+	c.Now = func() time.Time { return now }
+	ctx := context.Background()
+	kept, visitor := Cell{100, 100}, Cell{200, 200}
+	c.series(ctx, kept, now.Add(-6*time.Hour), now, false)
+	c.series(ctx, kept, now.Add(-6*time.Hour), now, false)
+	for range 5 {
+		c.Series(ctx, visitor, now.Add(-3*time.Hour), now)
+	}
+	if len(c.urgent) != 3 || len(c.background) != 6 {
+		t.Fatalf("urgent %d, background %d; want 3, 6", len(c.urgent), len(c.background))
+	}
+	c.Series(ctx, kept, now.Add(-2*time.Hour), now)
+	c.Series(ctx, kept, now.Add(-2*time.Hour), now)
+	if len(c.urgent) != 5 || len(c.background) != 6 {
+		t.Fatalf("after promotion: urgent %d, background %d; want 5, 6", len(c.urgent), len(c.background))
+	}
+}

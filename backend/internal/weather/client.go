@@ -65,7 +65,7 @@ type Client struct {
 	order []key // insertion order, for eviction
 	// Hours to fetch: what visitors asked for first, then what Keep queued.
 	urgent, background []key
-	queued             map[key]bool
+	queued             map[key]uint8 // the furthest-forward queue holding the hour
 	runs               map[runKey]runEntry
 	wake               chan struct{}
 }
@@ -82,6 +82,12 @@ type runEntry struct {
 	gusts   []float64
 	expires time.Time // zero: never
 }
+
+// Which queue holds an hour (queued); absent: neither.
+const (
+	inBackground uint8 = iota + 1
+	inUrgent
+)
 
 type key struct {
 	c Cell
@@ -121,7 +127,7 @@ func New(baseURL, userAgent string) *Client {
 		baseURL = DefaultBaseURL
 	}
 	return &Client{HTTP: &http.Client{Timeout: 15 * time.Second}, BaseURL: strings.TrimRight(baseURL, "/"), UserAgent: userAgent,
-		Interval: defaultInterval, cache: map[key]entry{}, queued: map[key]bool{}, runs: map[runKey]runEntry{}, wake: make(chan struct{}, 1)}
+		Interval: defaultInterval, cache: map[key]entry{}, queued: map[key]uint8{}, runs: map[runKey]runEntry{}, wake: make(chan struct{}, 1)}
 }
 
 func (c *Client) now() time.Time {
@@ -209,15 +215,17 @@ func (c *Client) series(ctx context.Context, cell Cell, start, end time.Time, ur
 			hours = append(hours, e.h)
 		}
 	}
-	q := &c.background
+	q, in := &c.background, inBackground
 	if urgent {
-		q = &c.urgent
+		q, in = &c.urgent, inUrgent
 	}
 	for i := len(want) - 1; i >= 0; i-- {
 		// A visitor's hour already waiting in the background queue is queued
-		// again in front; the worker skips whichever copy comes second.
-		if k := want[i]; (urgent || !c.queued[k]) && len(*q) < maxQueue {
-			c.queued[k] = true
+		// again in front; the worker skips whichever copy comes second. An
+		// hour already in the queue asked for is not added again: browsers
+		// re-poll every few seconds while incomplete.
+		if k := want[i]; c.queued[k] < in && len(*q) < maxQueue {
+			c.queued[k] = in
 			*q = append(*q, k)
 		}
 	}
@@ -274,7 +282,7 @@ func (c *Client) Run(ctx context.Context) {
 				delete(c.queued, k)
 				continue
 			}
-			ok = c.queued[k]
+			ok = c.queued[k] != 0
 		}
 		c.mu.Unlock()
 		if !ok {
