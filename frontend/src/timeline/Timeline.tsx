@@ -25,7 +25,10 @@ function useWindowModel(caps: Capabilities, retention: Retention | undefined, sn
   const win = useStore((s) => s.win)
   const setLive = useStore((s) => s.setLive)
   const setFixed = useStore((s) => s.setFixed)
-  const now = retention ? Date.parse(retention.now) : Date.now()
+  // The browser's clock, so the slider's end is now rather than when retention
+  // was last fetched (every 5 minutes), but never past the server's now plus
+  // that interval: a clock that runs ahead must not offer the future.
+  const now = retention ? Math.min(Date.now(), Date.parse(retention.now) + 6 * 60_000) : Date.now()
   // The slider starts where data does (the oldest kept observation), not at
   // the retention limit, which can lie months before anything was recorded.
   const cutoffMs = retention ? Date.parse(retention.configured_cutoff) : now - 180 * 24 * H
