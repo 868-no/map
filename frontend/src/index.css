@@ -267,6 +267,9 @@ table.hear th:not(:first-child), table.hear td:not(:first-child) { white-space: 
 .tchart-plot svg { display: block; width: 100%; height: 100%; }
 .tchart-y { position: absolute; left: 4px; font-size: 10px; color: var(--muted); pointer-events: none; font-variant-numeric: tabular-nums; }
 .tchart-y.top { top: 2px; } .tchart-y.bottom { bottom: 2px; }
+/* Above the plot, on its own colour, so lines never cover the scale; another band's scale goes right. */
+.tchart-y { z-index: 1; padding: 0 3px; border-radius: 3px; background: color-mix(in srgb, var(--panel2) 85%, transparent); }
+.tchart-y.band { left: auto; right: 4px; }
 .tchart-grid { stroke: var(--line); stroke-width: 1; }
 .tchart-line { fill: none; stroke: var(--accent); stroke-width: 1.8; }
 .tchart-dot { fill: var(--accent); }
