@@ -28,6 +28,9 @@ pub struct Identity {
     /// id it takes on upgrading to 2.8 with its key kept).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub key_id: Option<String>,
+    /// The node id its key derives, its own included (shared-key check).
+    #[serde(skip)]
+    pub key_num: Option<u32>,
     pub signature: String,
     pub observed_at: String,
     /// "mapreport" when the identity comes from the node's own map report
@@ -214,6 +217,7 @@ pub(super) fn identity_of(r: &Row, i: &Interner) -> Identity {
         has_public_key: n.is_some_and(|n| n.has_public_key),
         node_id_from: n.and_then(|n| n.key_id).map(|k| if k == r.src { "key" } else { "hardware" }),
         key_id: n.and_then(|n| n.key_id).filter(|&k| k != r.src).map(node_id),
+        key_num: n.and_then(|n| n.key_id),
         signature: i.s(r.sig).to_string(),
         observed_at: iso(r.t),
         source: "",
@@ -231,6 +235,7 @@ pub(super) fn identity_of_report(r: &Row, i: &Interner) -> Identity {
         has_public_key: false, // map reports do not carry it
         node_id_from: None,
         key_id: None,
+        key_num: None,
         signature: i.s(r.sig).to_string(),
         observed_at: iso(r.t),
         source: "mapreport",

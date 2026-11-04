@@ -48,6 +48,8 @@ pub const BATTERY_FALL_PER_DAY: f64 = 5.0;
 pub const BATTERY_WARN_AT: f64 = 50.0;
 /// Restarts (uptime going backwards between reports) before it is a warning.
 pub const RESTARTS_WARN: usize = 3;
+/// Shared keys: how long two ids announcing one key must both be active (D-142).
+pub const SHARED_KEY_OVERLAP_MS: i64 = 30 * 60_000;
 /// Share of the window's estimated airtime one node's packets may cause
 /// before it is flagged.
 pub const AIRTIME_WARN_SHARE: f64 = 0.10;
@@ -470,6 +472,29 @@ pub fn health(rows: &[&Row], invalid: &[&Row], nodes: &[Node], copies: &Copies, 
             let sev = if restarts.len() >= RESTARTS_WARN { "warning" } else { "notice" };
             let times = if restarts.len() == 1 { "once".to_string() } else { format!("{} times", restarts.len()) };
             add(n, "restarted", sev, format!("Restarted {times}"), format!("Its uptime went back to zero {times} in the window, last around {}. Repeated restarts point at power trouble (a weak battery or supply) or a crashing firmware.", crate::util::iso(last)));
+        }
+    }
+    // Shared keys (D-142): ids announcing the same public key while both
+    // active. A key passed on (an upgrade to 2.8 with the key kept, or a key
+    // restored onto new hardware) leaves the old id silent first: not flagged.
+    let mut by_key: FxMap<u32, Vec<u32>> = map();
+    for x in nodes {
+        if let Some(k) = x.identity.as_ref().and_then(|id| id.key_num) {
+            by_key.entry(k).or_default().push(x.num);
+        }
+    }
+    let span = |n: u32| own.get(&n).map(|m| m.values().fold((i64::MAX, i64::MIN), |(lo, hi), r| (lo.min(r.t), hi.max(r.t))));
+    for (k, ids) in by_key.into_iter().filter(|(_, v)| v.len() > 1) {
+        for &n in &ids {
+            let Some((a0, a1)) = span(n) else { continue };
+            let mut with: Vec<u32> = ids.iter().copied().filter(|&o| o != n && span(o).is_some_and(|(b0, b1)| a1.min(b1) - a0.max(b0) >= SHARED_KEY_OVERLAP_MS)).collect();
+            if with.is_empty() {
+                continue;
+            }
+            with.sort();
+            let others: Vec<String> = with.iter().map(|&o| node_id(o)).collect();
+            let derived = if ids.contains(&k) { format!("{} already uses the id firmware 2.8 derives from it", node_id(k)) } else { format!("on firmware 2.8 they would all take the id {}", node_id(k)) };
+            add(n, "shared_key", "warning", format!("Shares its public key with {}", others.join(", ")), format!("Both announce the same public key and were active at the same time: devices set up from one backup, or a key copied between them. Either can read direct messages meant for the other, signatures cannot tell them apart, and {derived}. Generate a new key on all but one."));
         }
     }
     for (s, ns) in shorts.into_iter().filter(|(_, v)| v.len() > 1) {
