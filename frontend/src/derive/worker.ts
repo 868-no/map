@@ -75,22 +75,38 @@ async function fetchRange(params: URLSearchParams): Promise<Fetched<number>> {
   type Meta = { window: Fetched<number>['window']; generation: string; more: boolean; next_cursor?: string; batch: number }
   const first = JSON.parse(engine.stage(await page({}), 0)) as Meta
   const batch = first.batch
+  // A failed page fails the range: the other slices stop at their next page,
+  // and the batch is discarded, so no staged rows are stranded in the engine.
+  let failed = false
+  const stage = (text: string) => {
+    if (failed) throw new ViewError('upstream', 'observations: range abandoned')
+    return JSON.parse(engine.stage(text, batch)) as Meta
+  }
   const drain = async (meta: Meta, extra: Record<string, string>) => {
-    while (meta.more) meta = JSON.parse(engine.stage(await page({ ...extra, cursor: meta.next_cursor ?? '' }), batch)) as Meta
+    while (meta.more) meta = stage(await page({ ...extra, cursor: meta.next_cursor ?? '' }))
   }
   if (first.more) {
     // The rest starts at the first page's cursor instant.
     const bounds = sliceBounds(cursorMs(first.next_cursor), rangeEnd(first.window.end, params.get('until')), SLICES)
     const iso = (ms: number) => new Date(ms).toISOString()
-    await Promise.all(
+    const results = await Promise.allSettled(
       bounds.slice(0, -1).map(async (b, k) => {
-        const range = { until: iso(bounds[k + 1]) }
-        if (k === 0) return drain(first, range) // continues after the first page
-        if (b >= bounds[k + 1]) return
-        const m = JSON.parse(engine.stage(await page({ since: iso(b), ...range }), batch)) as Meta
-        return drain(m, { since: iso(b), ...range })
+        try {
+          const range = { until: iso(bounds[k + 1]) }
+          if (k === 0) return await drain(first, range) // continues after the first page
+          if (b >= bounds[k + 1]) return
+          return await drain(stage(await page({ since: iso(b), ...range })), { since: iso(b), ...range })
+        } catch (e) {
+          failed = true
+          throw e
+        }
       }),
     )
+    const err = results.find((r): r is PromiseRejectedResult => r.status === 'rejected')
+    if (err) {
+      engine.discard(batch)
+      throw err.reason
+    }
   }
   return { window: first.window, generation: first.generation, batch }
 }
@@ -136,8 +152,8 @@ let quantumMs = 10_000
 // Views wait for the operator's geolocation settings from the page.
 let initDone: () => void
 const inited = new Promise<void>((resolve) => (initDone = resolve))
-let startError: string | null = null
-let lastBuildMs = 0 // the last snapshot build: live rebuilds wait in proportion (rebuildDelay) // the engine could not start: every view fails with it
+let startError: string | null = null // the engine could not start: every view fails with it
+let lastBuildMs = 0 // the last snapshot build: live rebuilds wait in proportion (rebuildDelay)
 
 /**
  * A WebAssembly trap (a Rust panic aborts) leaves the engine unusable: every
