@@ -17,6 +17,6 @@ until docker exec "$net-pg" pg_isready -q -U postgres 2>/dev/null; do sleep 1; d
 sleep 1
 run() { GO_NETWORK="$net" "$repo/scripts/go.sh" env DATABASE_URL="postgres://postgres:bench@$net-pg:5432/meshmap_bench?sslmode=disable" REDIS_URL="redis://$net-redis:6379/0" "$@"; }
 echo "== hardware: $(nproc) host CPUs, $(free -g | awk '/Mem:/{print $2}') GiB host RAM; DB limited to 4 vCPU / 8 GiB"
-run go run ./cmd/meshmap seed --rows "$rows" --nodes "$nodes" --days 30
+run go run ./cmd/meshmap seed --force --rows "$rows" --nodes "$nodes" --days 30
 docker exec "$net-pg" psql -U postgres -d meshmap_bench -Atc "SELECT 'table+indexes: ' || pg_size_pretty(pg_total_relation_size('packet_log'))"
 for h in 72 168 24; do run go run ./cmd/meshmap bench --hours "$h" --n 8; done

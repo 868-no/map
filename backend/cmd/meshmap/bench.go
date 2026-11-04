@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -33,6 +34,7 @@ func seedCmd() *cobra.Command {
 	var nodes, rows int
 	var days float64
 	var seed uint64
+	var force bool
 	cmd := &cobra.Command{
 		Use:   "seed",
 		Short: "Fill the database with a synthetic mesh for benchmarks (never use on production data)",
@@ -40,6 +42,10 @@ func seedCmd() *cobra.Command {
 			e, err := config.LoadEnv()
 			if err != nil {
 				return err
+			}
+			// Synthetic rows are indistinguishable from real ones once stored.
+			if !e.DemoMode && !force {
+				return errors.New("seed writes synthetic rows: refusing without DEMO_MODE=true or --force")
 			}
 			log := slog.New(slog.NewTextHandler(io.Discard, nil))
 			pool, err := openDB(cmd.Context(), e, log, "seed", 4)
@@ -118,6 +124,7 @@ func seedCmd() *cobra.Command {
 	cmd.Flags().IntVar(&rows, "rows", 2_000_000, "rows to insert")
 	cmd.Flags().Float64Var(&days, "days", 30, "spread observations over this many days ending now")
 	cmd.Flags().Uint64Var(&seed, "seed", 42, "deterministic seed")
+	cmd.Flags().BoolVar(&force, "force", false, "seed even when DEMO_MODE is not true (a throwaway database)")
 	return cmd
 }
 
