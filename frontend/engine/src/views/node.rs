@@ -149,6 +149,9 @@ impl Node {
         if !a.narrowed {
             return; // the latest report already says as much; it only stops counting as moving
         }
+        if self.position.is_none() {
+            return; // a stale position is no anchor (D-094): the node is estimated or left off
+        }
         self.refined = Some(a.clone());
         if let Some(p) = self.pos.as_mut() {
             p.lat = a.lat;
