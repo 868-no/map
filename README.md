@@ -76,7 +76,7 @@ Every view is built in the browser, by a WebAssembly engine (`frontend/engine`, 
 
 ## Operations
 
-Health at `/health/ready`, metrics at `backend:9100/metrics`. Retention runs daily (6 calendar months by default). Backups (not automated) use `pg_dump` of `packet_log`; Redis is disposable. See [docs/operations.md](docs/operations.md) for deployment behind HTTPS, access control, data-loss windows, troubleshooting and the production security checklist.
+Health at `/health/ready`, metrics at `backend:9100/metrics`. Retention runs daily (6 calendar months by default). Backups (not automated) use `pg_dump` of `packet_log`; Redis is disposable. See [docs/operations.md](docs/operations.md) for deployment behind HTTPS, access control, data-loss windows, importing history from Meshstellar, troubleshooting and the production security checklist.
 
 ## Documentation
 

@@ -19,7 +19,7 @@ func main() {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
-	root.AddCommand(serveCmd(), checkConfigCmd(), initSchemaCmd(), maintenanceCmd(), demoPublishCmd(), inspectCmd(), healthcheckCmd(), openapiCmd(), seedCmd(), benchCmd())
+	root.AddCommand(serveCmd(), checkConfigCmd(), initSchemaCmd(), maintenanceCmd(), demoPublishCmd(), inspectCmd(), healthcheckCmd(), openapiCmd(), seedCmd(), benchCmd(), importEnvelopesCmd())
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	if err := root.ExecuteContext(ctx); err != nil {

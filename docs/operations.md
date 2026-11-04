@@ -103,6 +103,26 @@ The first start of a version with D-056 converts `packet_log` to a partitioned t
 
 `packet_log` is partitioned by calendar month (D-056). The `maintenance` service removes rows older than `RETENTION_MONTHS` (default 6 calendar months, clamped at month ends) daily at 03:00 UTC, and at startup if a run is overdue. Under a PostgreSQL advisory lock it drops the partitions of months that end before the cutoff, deletes the remaining expired rows of the cutoff's month in 5 000-row transactions, runs `VACUUM (ANALYZE)` on that partition only, creates partitions for the next two months, stores the run's status (shown in `/health/ready`) and notifies open browser sessions. Run it manually with `docker compose run --rm maintenance maintenance --once`.
 
+## Importing history from Meshstellar
+
+`meshmap import-envelopes` loads MQTT history recorded by another collector into `packet_log` through the same ingest code as live traffic: the same decoding, channel keys, signature checks and privacy stripping (D-137). [Meshstellar](https://github.com/jurriaan/meshstellar) keeps every raw MQTT payload it received, with its receive time, in the `service_envelopes` table of its SQLite database, so its history can be replayed:
+
+```sh
+# 1. Dry run: decode everything and print counts; nothing is written.
+sqlite3 -readonly -csv meshstellar.db \
+  "SELECT created_at, hex(payload_data) FROM service_envelopes ORDER BY created_at" |
+  docker exec -i <backend container> meshmap import-envelopes --broker no868 --dry-run
+
+# 2. The import itself: the same without --dry-run. Safe to re-run after an interruption.
+# 3. Restart the backend so the identity index and trends include the imported history.
+```
+
+- **`--broker`** names the configured broker the history came from: its channel keys and plaintext rules decide how envelopes decode, and imported rows carry its id.
+- **What is imported:** envelopes received after the retention cutoff (`RETENTION_MONTHS`; raise it first to keep more) and before the broker's first stored row, since the two collectors received the same uploads at slightly different times and those would otherwise be stored twice. `--after` and `--before` (RFC 3339) narrow or move the span.
+- **Topics:** Meshstellar stores the payload but not the topic, so the topic is rebuilt from the envelope (`<root>/2/e/<channel>/<gateway>`, or `<root>/2/map/` for map reports). The root is each gateway's own, from its live rows where it has any, else the broker's subscription without `/#` (or `--topic-root`).
+- **Duplicates:** the same upload delivered twice within 15 minutes is stored once, as at ingest; JSON and status messages are skipped.
+- **Browsers:** a browser that already holds a copy of a window reaching back before the broker's first row (within its last 8 days) keeps its empty copy of that span until it falls out of the window, or until Settings → Reset.
+
 ## Backup and restore
 
 Not automated: schedule the dump below (e.g. with cron) if the history matters to you. Without backups, losing the database volume loses the history; the map refills from live traffic.
