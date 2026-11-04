@@ -9,8 +9,8 @@ the Go backend's `/snapshot`, `/traffic` and `/nodes/{id}` endpoints just
 before they were retired (D-041): the snapshot (also filtered to position and
 NodeInfo packets), traffic, and ten node panels, plus the geolocation
 settings in effect. `tests/golden.rs` holds the engine to them field by field
-(times to the millisecond, numbers to 1e-4), with the CLIENT_MUTE relay rule
-off since it postdates the server views.
+(times to the millisecond, numbers to 1e-4), with the CLIENT_MUTE, MQTT-link,
+move and signal-strength rules off since they postdate the server views.
 
 `engine.json` holds the engine's own views of that window with default
 options (CLIENT_MUTE rule and MQTT links on), engine-only fields included:

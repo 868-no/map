@@ -149,7 +149,7 @@ pub fn packet_log(rows: &[&Row], num: u32, ctx: &RelayContext, replies: &ReplyIn
             }
         };
         if let (Some(g), HeardFrom::Relayed(Some(b))) = (r.gw, r.heard_from()) {
-            if g != num && b as u32 == (num & 0xff) && ctx.resolve(b, r.src, g) == Some(Ok(num)) {
+            if g != num && b as u32 == (num & 0xff) && ctx.resolve(b, r.src, g, r.rssi.map(f64::from)) == Some(Ok(num)) {
                 note(false, Some(g));
             }
         }
@@ -438,7 +438,7 @@ pub fn packet_route(rows: &[&Row], ctx: &RelayContext, roles: &FxMap<u32, String
             HeardFrom::Relayed(b) | HeardFrom::Downlinked(b) => b,
             HeardFrom::Unknown => None,
         };
-        match byte.and_then(|b| ctx.resolve(b, origin, gw)) {
+        match byte.and_then(|b| ctx.resolve(b, origin, gw, r.rssi.map(f64::from))) {
             Some(Ok(relay)) if ctx.downlinked(r) => {
                 // Taken from MQTT and transmitted with no hops left (D-087).
                 add_seg.push((relay, gw, false, "relay"));
@@ -647,7 +647,7 @@ pub fn transmissions(r: &Row, ctx: &RelayContext, roles: &FxMap<u32, String>) ->
         // The gateway did not hear it over the air, or not from whom.
         HeardFrom::NotRadio | HeardFrom::Downlinked(None) | HeardFrom::Unknown => return vec![first(None, None)],
     };
-    let relay = match byte.and_then(|b| ctx.resolve(b, r.src, gw)) {
+    let relay = match byte.and_then(|b| ctx.resolve(b, r.src, gw, r.rssi.map(f64::from))) {
         Some(Ok(n)) => n,
         _ => return vec![first(None, None)],
     };
@@ -732,10 +732,10 @@ mod tests {
 
     #[test]
     fn ambiguous_bytes_are_never_guessed() {
-        assert_eq!(ctx(&[A, C, C2, GW], &[]).resolve(0xcc, A, GW), Some(Err(())));
-        assert_eq!(ctx(&[A, C, C2, GW], &[(C2, GW)]).resolve(0xcc, A, GW), Some(Ok(C2)));
+        assert_eq!(ctx(&[A, C, C2, GW], &[]).resolve(0xcc, A, GW, None), Some(Err(())));
+        assert_eq!(ctx(&[A, C, C2, GW], &[(C2, GW)]).resolve(0xcc, A, GW, None), Some(Ok(C2)));
         assert_eq!(transmissions(&relayed(row(A, GW), 0xcc, 1), &ctx(&[A, C, C2, GW], &[]), &map()).len(), 1);
-        assert_eq!(ctx(&[A, GW], &[]).resolve(0xaa, A, GW), None, "never the originator");
+        assert_eq!(ctx(&[A, GW], &[]).resolve(0xaa, A, GW, None), None, "never the originator");
     }
 
     #[test]
@@ -764,9 +764,27 @@ mod tests {
             c
         };
         let all = [(GW, at(10.4, 63.43)), (C, at(10.5, 63.5)), (C2, at(10.75, 59.91))]; // C2 in Oslo, ~390 km away
-        assert_eq!(mk(&all, None).resolve(0xcc, A, GW), Some(Ok(C)));
-        assert_eq!(mk(&[all[0], all[2]], None).resolve(0xcc, A, GW), Some(Ok(C)), "C unpositioned stays, C2 out of range");
-        assert_eq!(mk(&all, Some((A, GW))).resolve(0xcc, A, GW), Some(Err(())), "a proven long link widens the bound");
+        assert_eq!(mk(&all, None).resolve(0xcc, A, GW, None), Some(Ok(C)));
+        assert_eq!(mk(&[all[0], all[2]], None).resolve(0xcc, A, GW, None), Some(Ok(C)), "C unpositioned stays, C2 out of range");
+        assert_eq!(mk(&all, Some((A, GW))).resolve(0xcc, A, GW, None), Some(Err(())), "a proven long link widens the bound");
+        // A strong signal at the gateway rules out the relay 390 km away even
+        // then, leaving the near one; a weak one rules out neither (D-136).
+        assert_eq!(mk(&all, Some((A, GW))).resolve(0xcc, A, GW, Some(-55.0)), Some(Ok(C)));
+        assert_eq!(mk(&all, Some((A, GW))).resolve(0xcc, A, GW, Some(-95.0)), Some(Err(())));
+    }
+
+    #[test]
+    fn the_free_space_bound_leaves_every_real_link_and_rules_out_the_impossible() {
+        use crate::graph::max_distance_m;
+        // 70 dB budget at 869.5 MHz: -50 dBm within about 27 km, -80 dBm about 870 km.
+        assert!((max_distance_m(-50.0) / 1000.0 - 27.5).abs() < 0.5);
+        assert!((max_distance_m(-80.0) / 1000.0 - 870.0).abs() < 10.0);
+        // Measured links (D-136): 43 km at -75 dBm into an amplified gateway, 74 km at -103 dBm.
+        assert!(max_distance_m(-75.0) > 43_000.0 && max_distance_m(-103.0) > 74_000.0);
+        // A relay byte read at -58 dBm cannot come from 250 km away.
+        assert!(max_distance_m(-58.0) < 250_000.0);
+        // Very strong readings never rule out a relay within 15 km: shared positions can be that far off.
+        assert_eq!(max_distance_m(-17.0), crate::graph::SIGNAL_FLOOR_M);
     }
 
     #[test]
@@ -783,8 +801,8 @@ mod tests {
     #[test]
     fn a_byte_equal_to_the_gateway_is_the_gateway() {
         let c = ctx(&[0xaaaa_0011, 0xbbbb_0011, 0xcccc_0022], &[]);
-        assert_eq!(c.resolve(0x11, 0xcccc_0022, 0xaaaa_0011), None);
-        assert_eq!(c.resolve(0x11, 0xcccc_0022, 0xdddd_0033), Some(Err(())));
+        assert_eq!(c.resolve(0x11, 0xcccc_0022, 0xaaaa_0011, None), None);
+        assert_eq!(c.resolve(0x11, 0xcccc_0022, 0xdddd_0033, None), Some(Err(())));
     }
 
     #[test]

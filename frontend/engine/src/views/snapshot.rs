@@ -95,11 +95,12 @@ pub struct Rules {
     pub silent: bool,     // roles that never rebroadcast are no relay candidates
     pub mqtt_links: bool, // 0 dB traceroute hops are MQTT links, not radio (D-055)
     pub moves: bool,      // links use only evidence from after either end's latest move (D-073)
+    pub signal: bool,     // a strong reading rules out relays too far away to give it (D-136)
 }
 
 impl Default for Rules {
     fn default() -> Self {
-        Rules { silent: true, mqtt_links: true, moves: true }
+        Rules { silent: true, mqtt_links: true, moves: true, signal: true }
     }
 }
 
@@ -221,7 +222,7 @@ pub fn build_snapshot(rows: &[&Row], i: &Interner, g: &GeoOptions, rules: Rules)
         }
     }
     let moved: FxMap<u32, i64> = if rules.moves { moves.iter().map(|(&n, m)| (n, m.moved_at)).collect() } else { map() };
-    let (mut er, mut ctx) = build_edges(rows, &by.neighborinfo, &hops, &known, pos, silent, rules.mqtt_links.then_some(&downlinkers), &moved);
+    let (mut er, mut ctx) = build_edges(rows, &by.neighborinfo, &hops, &known, pos, silent, rules.mqtt_links.then_some(&downlinkers), &moved, rules.signal);
     if rules.mqtt_links {
         ctx.downlinkers = downlinkers.clone();
     }

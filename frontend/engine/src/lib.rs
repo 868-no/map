@@ -53,6 +53,10 @@ struct Options {
     /// only to compare with the old server views) (D-073).
     #[serde(default = "yes")]
     move_rule: bool,
+    /// Rule out relays too far away for the signal a gateway measured
+    /// (default on; off only to compare with the old server views) (D-136).
+    #[serde(default = "yes")]
+    signal_rule: bool,
 }
 
 fn yes() -> bool {
@@ -161,7 +165,7 @@ impl Engine {
         Engine::default()
     }
 
-    /// {geo: capabilities.geolocation, silent_rule?: bool, mqtt_links?: bool, move_rule?: bool}
+    /// {geo: capabilities.geolocation, silent_rule?: bool, mqtt_links?: bool, move_rule?: bool, signal_rule?: bool}
     pub fn set_options(&mut self, options: &str) -> Result<(), JsError> {
         let o: Options = serde_json::from_str(options).map_err(err)?;
         if let Some(g) = o.geo {
@@ -172,7 +176,7 @@ impl Engine {
                 params: g.params,
             };
         }
-        self.rules = Rules { silent: o.silent_rule, mqtt_links: o.mqtt_links, moves: o.move_rule };
+        self.rules = Rules { silent: o.silent_rule, mqtt_links: o.mqtt_links, moves: o.move_rule, signal: o.signal_rule };
         self.built = None;
         Ok(())
     }

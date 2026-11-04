@@ -68,7 +68,7 @@ impl Copies {
             let gw = r.gw.unwrap();
             let sender = match (r.hl, r.heard_from()) {
                 (Some(_), HeardFrom::Direct) => Some(r.src),
-                (Some(_), HeardFrom::Relayed(Some(b))) => ctx.resolve(b, r.src, gw).and_then(Result::ok),
+                (Some(_), HeardFrom::Relayed(Some(b))) => ctx.resolve(b, r.src, gw, r.rssi.map(f64::from)).and_then(Result::ok),
                 _ => None,
             };
             c.heard.push((p, sender));

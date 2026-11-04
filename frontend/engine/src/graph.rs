@@ -301,6 +301,28 @@ pub fn distance_m(a: LatLon, b: LatLon) -> f64 {
 pub const MIN_RELAY_RANGE_M: f64 = 50_000.0;
 pub const RELAY_RANGE_SLACK: f64 = 1.25;
 
+/// The most a link can gain between transmitter and receiver, in dB: 1 W
+/// transmitted, 10 dBi antennas at both ends and 20 dB for an amplified
+/// receiver (an LNA raises the RSSI a gateway reports). Far above legal and
+/// typical setups, so it never rules out a real link (D-136).
+pub const LINK_BUDGET_DB: f64 = 70.0;
+
+/// The farthest a transmitter can be when a receiver measured `rssi` (dBm):
+/// where free-space path loss at 869.5 MHz uses up the whole link budget.
+/// Free space is the best case; terrain only makes a link weaker (D-136).
+/// Never below SIGNAL_FLOOR_M: shared positions can be kilometres off.
+pub fn max_distance_m(rssi: f64) -> f64 {
+    // FSPL(dB) = 20 log10(d_km) + 20 log10(f_MHz) + 32.44
+    const F_TERM: f64 = 58.785_6 + 32.44; // 20 log10(869.5) + 32.44
+    (1000.0 * 10f64.powf((LINK_BUDGET_DB - rssi - F_TERM) / 20.0)).max(SIGNAL_FLOOR_M)
+}
+
+/// The signal bound never rules out a relay this close: a position shared at
+/// reduced precision (13 bits: a 5.8 km cell) can be that far off at both
+/// ends. Two neighbours read at -17 dBm stood 0.7 km apart by their shared
+/// positions, beyond the 0.6 km free space allows (D-136).
+pub const SIGNAL_FLOOR_M: f64 = 15_000.0;
+
 /// Roles that may relay without spending a hop (Meshtastic's favourite-router "0-cost" rule).
 pub fn zero_cost_role(role: &str) -> bool {
     matches!(role, "ROUTER" | "ROUTER_LATE" | "CLIENT_BASE")
@@ -316,6 +338,9 @@ pub struct RelayContext {
     pub max_range_m: f64,
     /// Probable MQTT downlinkers (D-054); empty when MQTT links are off.
     pub downlinkers: FxSet<u32>,
+    /// Rule out relays too far away for the signal the gateway measured
+    /// (default on; off only to compare with the old server views) (D-136).
+    pub signal_rule: bool,
 }
 
 fn pair(a: u32, b: u32) -> (u32, u32) {
@@ -326,7 +351,7 @@ impl RelayContext {
     /// known: window nodes; pos: reported positions only; confirmed:
     /// non-relay evidence pairs (src, dst); silent: nodes that never rebroadcast.
     pub fn new(known: impl IntoIterator<Item = u32>, pos: FxMap<u32, LatLon>, confirmed: impl IntoIterator<Item = (u32, u32)>, silent: FxSet<u32>) -> Self {
-        let mut c = RelayContext { by_byte: vec![Vec::new(); 256], pos, confirmed: set(), silent, max_range_m: MIN_RELAY_RANGE_M, downlinkers: set() };
+        let mut c = RelayContext { by_byte: vec![Vec::new(); 256], pos, confirmed: set(), silent, max_range_m: MIN_RELAY_RANGE_M, downlinkers: set(), signal_rule: true };
         for k in known {
             c.by_byte[(k & 0xff) as usize].push(k);
         }
@@ -349,8 +374,8 @@ impl RelayContext {
     /// range of the gateway and those whose role never rebroadcasts; if
     /// several remain, the single one with confirmed evidence to the gateway
     /// wins. A byte equal to the gateway's own is the gateway itself.
-    pub fn resolve(&self, hint: u8, origin: u32, gw: u32) -> Option<Result<u32, ()>> {
-        self.resolve_detail(hint, origin, gw).map(|r| r.map(|(n, _)| n))
+    pub fn resolve(&self, hint: u8, origin: u32, gw: u32, rssi: Option<f64>) -> Option<Result<u32, ()>> {
+        self.resolve_detail(hint, origin, gw, rssi).map(|r| r.map(|(n, _)| n))
     }
 
     /// A copy a downlinker transmitted after taking the packet from MQTT:
@@ -366,18 +391,21 @@ impl RelayContext {
     /// broken by confirmed evidence to the gateway: such a resolution leans
     /// on the link it would point at, so it must not count as corroborating
     /// that link (or add to its SNR).
-    pub fn resolve_detail(&self, hint: u8, origin: u32, gw: u32) -> Option<Result<(u32, bool), ()>> {
+    /// `rssi`: the gateway's reading of the copy, which the relay transmitted:
+    /// a strong one rules out relays too far away to give it (D-136).
+    pub fn resolve_detail(&self, hint: u8, origin: u32, gw: u32, rssi: Option<f64>) -> Option<Result<(u32, bool), ()>> {
         if hint == 0 || hint == (gw & 0xff) as u8 {
             return None; // unmatched
         }
         let gp = self.pos.get(&gw);
+        let range = rssi.filter(|_| self.signal_rule).map_or(self.max_range_m, |v| self.max_range_m.min(max_distance_m(v)));
         // Called for every relayed copy: candidates are counted, not collected.
         let cands = self.by_byte.get(hint as usize).map_or(&[][..], |v| v).iter().copied().filter(|&k| {
             if k == origin || k == gw || self.silent.contains(&k) {
                 return false;
             }
             match (self.pos.get(&k), gp) {
-                (Some(&p), Some(&g)) => distance_m(p, g) <= self.max_range_m,
+                (Some(&p), Some(&g)) => distance_m(p, g) <= range,
                 _ => true,
             }
         });
@@ -426,16 +454,16 @@ mod tests {
     #[test]
     fn relay_resolution() {
         let c = ctx(&[0x1111_1142, 0x2222_2242, 0x3333_3333], &[]);
-        assert_eq!(c.resolve(0x42, 0, 0), Some(Err(())), "ambiguous");
-        assert_eq!(c.resolve(0, 0, 0), None);
-        assert_eq!(c.resolve(0x99, 0, 0), None);
-        assert_eq!(c.resolve(0x33, 0, 0), Some(Ok(0x3333_3333)));
-        assert_eq!(c.resolve(0x33, 0x3333_3333, 0), None, "origin excluded");
-        assert_eq!(c.resolve(0x33, 0, 0x3333_3333), None, "gateway excluded");
+        assert_eq!(c.resolve(0x42, 0, 0, None), Some(Err(())), "ambiguous");
+        assert_eq!(c.resolve(0, 0, 0, None), None);
+        assert_eq!(c.resolve(0x99, 0, 0, None), None);
+        assert_eq!(c.resolve(0x33, 0, 0, None), Some(Ok(0x3333_3333)));
+        assert_eq!(c.resolve(0x33, 0x3333_3333, 0, None), None, "origin excluded");
+        assert_eq!(c.resolve(0x33, 0, 0x3333_3333, None), None, "gateway excluded");
         let c = ctx(&[0x1111_1142, 0x2222_2242, 0x0000_aa01], &[(0x2222_2242, 0x0000_aa01)]);
-        assert_eq!(c.resolve(0x42, 5, 0x0000_aa01), Some(Ok(0x2222_2242)), "confirmed link breaks the tie");
+        assert_eq!(c.resolve(0x42, 5, 0x0000_aa01, None), Some(Ok(0x2222_2242)), "confirmed link breaks the tie");
         let c = ctx(&[0x0000_aa42, 0x1111_1142], &[]);
-        assert_eq!(c.resolve(0x42, 1, 0x0000_aa42), None, "gateway byte is the gateway");
+        assert_eq!(c.resolve(0x42, 1, 0x0000_aa42, None), None, "gateway byte is the gateway");
     }
 
     #[test]
@@ -443,7 +471,7 @@ mod tests {
         let mut silent = set();
         silent.insert(0x1111_1142);
         let c = RelayContext::new([0x1111_1142u32, 0x2222_2242], map(), [], silent);
-        assert_eq!(c.resolve(0x42, 1, 2), Some(Ok(0x2222_2242)));
+        assert_eq!(c.resolve(0x42, 1, 2, None), Some(Ok(0x2222_2242)));
     }
 
     #[test]
@@ -453,7 +481,7 @@ mod tests {
         pos.insert(0x1111_1142, LatLon { lat: 59.95, lon: 10.75 });
         pos.insert(0x2222_2242, LatLon { lat: 63.4, lon: 10.4 });
         let c = RelayContext::new([0x0000_aa01u32, 0x1111_1142, 0x2222_2242], pos, [], set());
-        assert_eq!(c.resolve(0x42, 5, 0x0000_aa01), Some(Ok(0x1111_1142)));
+        assert_eq!(c.resolve(0x42, 5, 0x0000_aa01, None), Some(Ok(0x1111_1142)));
     }
 
     #[test]
@@ -502,8 +530,8 @@ mod tests {
     #[test]
     fn a_tie_broken_resolution_says_so() {
         let c = ctx(&[0x1111_1142, 0x2222_2242, 0x0000_aa01], &[(0x2222_2242, 0x0000_aa01)]);
-        assert_eq!(c.resolve_detail(0x42, 5, 0x0000_aa01), Some(Ok((0x2222_2242, true))));
+        assert_eq!(c.resolve_detail(0x42, 5, 0x0000_aa01, None), Some(Ok((0x2222_2242, true))));
         let c = ctx(&[0x2222_2242, 0x0000_aa01], &[]);
-        assert_eq!(c.resolve_detail(0x42, 5, 0x0000_aa01), Some(Ok((0x2222_2242, false))));
+        assert_eq!(c.resolve_detail(0x42, 5, 0x0000_aa01, None), Some(Ok((0x2222_2242, false))));
     }
 }
