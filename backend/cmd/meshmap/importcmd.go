@@ -65,9 +65,11 @@ func importEnvelopesCmd() *cobra.Command {
 				return err
 			}
 			// Only what retention keeps, and by default only what predates
-			// this broker's own rows: the two collectors received the same
-			// uploads at slightly different times, which the unique key
-			// (observation key, observed_at) would not catch.
+			// this broker's first live row: the two collectors received the
+			// same uploads at slightly different times, which the unique key
+			// (observation key, observed_at) would not catch. Rows an import
+			// stored do not count, so a re-run after an interruption resumes
+			// (D-150).
 			after := window.RetentionCutoff(time.Now(), c.Env.RetentionMonths)
 			if afterS != "" {
 				t, err := time.Parse(time.RFC3339, afterS)
@@ -79,13 +81,19 @@ func importEnvelopesCmd() *cobra.Command {
 				}
 			}
 			var before time.Time
+			beforeFrom := "--before"
 			if beforeS != "" {
 				if before, err = time.Parse(time.RFC3339, beforeS); err != nil {
 					return fmt.Errorf("--before: %w", err)
 				}
 			} else if before, err = envimport.FirstRow(ctx, pool, broker); err != nil {
 				return err
+			} else if before.IsZero() {
+				beforeFrom = "no live rows from this broker"
+			} else {
+				beforeFrom = "the broker's first live row"
 			}
+			fmt.Printf("Importing envelopes received before %s (%s).\n", envimport.FormatTime(before), beforeFrom)
 			kr, err := security.NewKeyring(c.SecurityChannels())
 			if err != nil {
 				return err
@@ -121,7 +129,7 @@ func importEnvelopesCmd() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&broker, "broker", "", "configured broker the envelopes came from (required)")
 	cmd.Flags().StringVar(&root, "topic-root", "", "topic root for rebuilt topics (default: the broker's single subscription, without /#)")
-	cmd.Flags().StringVar(&beforeS, "before", "", "import only envelopes received before this RFC 3339 time (default: the broker's first stored row)")
+	cmd.Flags().StringVar(&beforeS, "before", "", "import only envelopes received before this RFC 3339 time (default: the broker's first row collected live, not imported)")
 	cmd.Flags().StringVar(&afterS, "after", "", "import only envelopes received after this RFC 3339 time (never before the retention cutoff)")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "decode and count only; write nothing")
 	cmd.Flags().IntVar(&batchSize, "batch", 1000, "rows per insert")

@@ -56,10 +56,16 @@ func GatewayRoots(ctx context.Context, pool *pgxpool.Pool, broker string) (map[s
 	return out, rows.Err()
 }
 
-// FirstRow is when a broker's earliest stored row was received (zero: none).
+// FirstRow is when a broker's earliest row collected live was received
+// (zero: none): the default --before. Rows an import stored are marked
+// (decoded_metadata.imported) and left out, so after an interrupted import
+// the bound is still the first live row and a re-run resumes where the last
+// one stopped instead of skipping the rest as already collected (D-150).
+// Scans past the broker's imported rows, oldest first: run once per import.
 func FirstRow(ctx context.Context, pool *pgxpool.Pool, broker string) (time.Time, error) {
 	var t *time.Time
-	if err := pool.QueryRow(ctx, `SELECT min(observed_at) FROM packet_log WHERE broker_id = $1`, broker).Scan(&t); err != nil && !errors.Is(err, pgx.ErrNoRows) {
+	if err := pool.QueryRow(ctx, `SELECT min(observed_at) FROM packet_log
+		WHERE broker_id = $1 AND NOT COALESCE((decoded_metadata->>'imported')::boolean, false)`, broker).Scan(&t); err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return time.Time{}, err
 	}
 	if t == nil {
@@ -94,6 +100,7 @@ type Importer struct {
 
 	seen      map[[16]byte]time.Time // observation keys within the dedupe window
 	lastPrune time.Time
+	prev      time.Time // the previous decoded line's receive time
 	pending   []*ingest.Observation
 }
 
@@ -147,6 +154,13 @@ func (im *Importer) Run(ctx context.Context, in io.Reader) error {
 	return im.flush(ctx)
 }
 
+func absDur(d time.Duration) time.Duration {
+	if d < 0 {
+		return -d
+	}
+	return d
+}
+
 func isDigits(s string) bool {
 	_, err := strconv.ParseInt(strings.TrimSpace(s), 10, 64)
 	return err == nil
@@ -182,23 +196,32 @@ func (im *Importer) one(ctx context.Context, rec []string) error {
 		im.Stats["rejected: "+ingest.Category(err)]++
 		return nil
 	}
-	if t, dup := im.seen[obs.ObservationKey]; dup && at.Sub(t) < dedupeWindow {
+	// Input is expected oldest first; a line out of order is still compared
+	// both ways, so it is never taken for a copy of a later reception.
+	if at.Before(im.prev) {
+		im.Stats["out of order (earlier than the line before)"]++
+	}
+	im.prev = at
+	if t, dup := im.seen[obs.ObservationKey]; dup && absDur(at.Sub(t)) < dedupeWindow {
 		im.Stats["duplicate delivery"]++
 		return nil
 	}
 	im.seen[obs.ObservationKey] = at
-	if at.Sub(im.lastPrune) > dedupeWindow {
+	if absDur(at.Sub(im.lastPrune)) > dedupeWindow {
 		for k, t := range im.seen {
-			if at.Sub(t) >= dedupeWindow {
+			if absDur(at.Sub(t)) >= dedupeWindow {
 				delete(im.seen, k)
 			}
 		}
 		im.lastPrune = at
 	}
+	obs.Meta.Imported = true
 	if im.First.IsZero() || at.Before(im.First) {
 		im.First = at
 	}
-	im.Last = at
+	if at.After(im.Last) {
+		im.Last = at
+	}
 	im.Stats[fmt.Sprintf("decoded: %s", obs.PacketType)]++
 	o := obs
 	im.pending = append(im.pending, &o)
@@ -217,8 +240,9 @@ func (im *Importer) flush(ctx context.Context) error {
 	batch := im.pending
 	im.pending = nil
 	if !im.DryRun {
-		// Rows a previous run stored are skipped by the insert itself, so a
-		// re-run after an interruption adds only what is missing.
+		// Rows a previous run stored are skipped by the insert itself; with
+		// the default bound (FirstRow ignores imported rows) a re-run after
+		// an interruption therefore adds only what is missing.
 		if _, err := storage.InsertBatch(ctx, im.Pool, batch); err != nil {
 			return fmt.Errorf("insert: %w", err)
 		}

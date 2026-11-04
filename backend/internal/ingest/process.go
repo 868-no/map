@@ -19,10 +19,11 @@ import (
 )
 
 // DecodeVersion is bumped whenever decoded_metadata semantics change; rows of
-// an older version are decoded again from their envelopes (D-107). 3: node
+// an older version are decoded again from their envelopes (D-107). 4:
+// channel_name and topic_root cleaned of control and format characters. 3: node
 // status, store-and-forward, header-only rows instead of rejections.
 // 2: map reports stored (mapreport), not_ok_to_mqtt marking (D-032).
-const DecodeVersion = 3
+const DecodeVersion = 4
 
 // RawMessage is one MQTT delivery. ObservedAt is captured in the MQTT
 // callback before queuing and is the authoritative event time (design §3.4).
@@ -92,6 +93,10 @@ type Metadata struct {
 	// (bridged brokers, multi-broker gateways) before it was committed.
 	// Debug aid only; never counted as additional receptions.
 	AlsoVia []string `json:"also_via,omitempty"`
+	// Imported: stored by import-envelopes from another collector's
+	// recording (D-137), not received live. The import's default bound is
+	// the broker's first live row, so a re-run resumes where it stopped (D-150).
+	Imported bool `json:"imported,omitempty"`
 }
 
 // Observation is one accepted row for packet_log.
@@ -136,8 +141,8 @@ type Options struct {
 // Longest channel name and topic root stored (runes): Meshtastic channel
 // names are at most 11 bytes; roots are a few segments.
 const (
-	maxShownChannel = 64
-	maxShownRoot    = 160
+	MaxShownChannel = 64
+	MaxShownRoot    = 160
 )
 
 func Process(m RawMessage, o Options) (Observation, error) {
@@ -171,7 +176,7 @@ func Process(m RawMessage, o Options) (Observation, error) {
 	// What is stored and shown is cleaned like node names: no control or
 	// format characters (bidi overrides), bounded length. Decoding and the
 	// packet's keys use the topic as published.
-	shownChannel, shownRoot := ports.CleanString(channelName, maxShownChannel), ports.CleanString(topic.Root, maxShownRoot)
+	shownChannel, shownRoot := ports.CleanString(channelName, MaxShownChannel), ports.CleanString(topic.Root, MaxShownRoot)
 
 	var (
 		data   *pb.Data
@@ -335,14 +340,14 @@ func headerOnly(m RawMessage, topic protocol.Topic, env protocol.Envelope, chann
 		Topic:           m.Topic,
 		Source:          p.GetFrom(),
 		PacketID:        p.GetId(),
-		Channel:         ports.CleanString(channelName, maxShownChannel),
+		Channel:         ports.CleanString(channelName, MaxShownChannel),
 		PacketType:      ty,
 		Transport:       transportName(p.GetTransportMechanism()),
 		SignatureStatus: security.SigNotApplicable,
 		EnvelopeBytes:   zeroPayload(env, size, ty == ports.TypeDirectMessage),
 		Meta: Metadata{
 			Decoded: ports.Decoded{Type: ty}, Crypto: crypto, ViaMQTT: p.GetViaMqtt(), WantAck: p.GetWantAck(),
-			TopicRoot: ports.CleanString(topic.Root, maxShownRoot), NextHop: p.GetNextHop(), Bytes: size, Invalid: invalid,
+			TopicRoot: ports.CleanString(topic.Root, MaxShownRoot), NextHop: p.GetNextHop(), Bytes: size, Invalid: invalid,
 		},
 	}
 	setHeader(&obs, p, env.Gateway)

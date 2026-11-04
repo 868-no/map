@@ -37,6 +37,10 @@ type TrendHours struct {
 	hours  map[time.Time]*HourSummary
 	oldest *time.Time // the oldest retained row at the last refresh
 	last   time.Time  // wall clock of the last refresh
+	// The highest packet_log id at the last refresh and at the one before:
+	// ids come from a sequence, so rows stored since then, in whatever hour
+	// (imported history), have higher ids (D-151).
+	seenID, olderID int64
 }
 
 // Rows that failed verification never count (D-093); rows stored as "other"
@@ -53,10 +57,16 @@ var trendRangeSQL = `
 	SELECT agg.h, agg.nodes, agg.gws, agg.p, agg.rc, COALESCE(types.j, '{}'::jsonb), agg.stale FROM agg LEFT JOIN types USING (h)`
 
 // Refresh brings the summaries up to date: hours never summed, the most
-// recent TrendRecent, and hours summed under an older decoder are read from
-// the log again, as are rows older than every summarised hour (an import of
-// history); hours before the oldest retained row are dropped, so the totals
-// never outlive the data.
+// recent TrendRecent, hours summed under an older decoder, and every hour
+// that has gained rows since the refresh before last (an import of history,
+// anywhere in the range) are read from the log again; hours before the
+// oldest retained row are dropped, so the totals never outlive the data.
+//
+// New rows are found by id, which comes from a sequence: one look per
+// partition at the primary key's tail. Ids are taken at insert but become
+// visible at commit, so the look goes back to the refresh before last: a
+// batch still uncommitted at one refresh is caught by the next one (after
+// the first refresh, which reads everything, only in the recent hours).
 func (t *TrendHours) Refresh(ctx context.Context, pool *pgxpool.Pool, now time.Time) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -64,17 +74,19 @@ func (t *TrendHours) Refresh(ctx context.Context, pool *pgxpool.Pool, now time.T
 		t.hours = map[time.Time]*HourSummary{}
 	}
 	var oldest, newest *time.Time
-	if err := pool.QueryRow(ctx, `SELECT min(observed_at), max(observed_at) FROM packet_log`).Scan(&oldest, &newest); err != nil {
+	var maxID *int64
+	if err := pool.QueryRow(ctx, `SELECT min(observed_at), max(observed_at), max(id) FROM packet_log`).Scan(&oldest, &newest, &maxID); err != nil {
 		return err
 	}
 	t.oldest = oldest
 	t.last = time.Now()
 	if oldest == nil {
 		t.hours = map[time.Time]*HourSummary{}
+		t.seenID, t.olderID = 0, 0
 		return nil
 	}
 	first := oldest.UTC().Truncate(time.Hour)
-	var earliest, last, stale time.Time
+	var last, stale time.Time
 	for h, s := range t.hours {
 		if h.Before(first) {
 			delete(t.hours, h)
@@ -82,9 +94,6 @@ func (t *TrendHours) Refresh(ctx context.Context, pool *pgxpool.Pool, now time.T
 		}
 		if h.After(last) {
 			last = h
-		}
-		if earliest.IsZero() || h.Before(earliest) {
-			earliest = h
 		}
 		if s.DecodeVersion < ingest.DecodeVersion && (stale.IsZero() || h.Before(stale)) {
 			stale = h
@@ -106,17 +115,57 @@ func (t *TrendHours) Refresh(ctx context.Context, pool *pgxpool.Pool, now time.T
 	if from.Before(first) {
 		from = first
 	}
-	// Rows before the earliest summarised hour arrived after it was summed:
-	// imported history. Read them too, so an import needs no restart.
-	if !earliest.IsZero() && first.Before(earliest) {
-		if from.Before(earliest) {
-			earliest = from // read below anyway
-		}
-		if err := t.readChunks(ctx, pool, first, earliest); err != nil {
+	if !last.IsZero() && t.seenID > 0 {
+		// Hours before from that gained rows: read each run of them again.
+		hours, err := t.changedHours(ctx, pool, t.olderID, first, from)
+		if err != nil {
 			return err
 		}
+		for i := 0; i < len(hours); {
+			j := i + 1
+			for j < len(hours) && hours[j].Equal(hours[j-1].Add(time.Hour)) {
+				j++
+			}
+			if err := t.readChunks(ctx, pool, hours[i], hours[j-1].Add(time.Hour)); err != nil {
+				return err
+			}
+			i = j
+		}
 	}
-	return t.readChunks(ctx, pool, from, end)
+	if err := t.readChunks(ctx, pool, from, end); err != nil {
+		return err
+	}
+	m := int64(0)
+	if maxID != nil {
+		m = *maxID
+	}
+	if t.seenID == 0 {
+		t.olderID = m // everything up to here was just read
+	} else {
+		t.olderID = t.seenID
+	}
+	t.seenID = m
+	return nil
+}
+
+// changedHours lists, oldest first, the UTC hours in [lo, hi) holding rows
+// with an id above `above`.
+func (t *TrendHours) changedHours(ctx context.Context, pool *pgxpool.Pool, above int64, lo, hi time.Time) ([]time.Time, error) {
+	rows, err := pool.Query(ctx, `SELECT DISTINCT date_trunc('hour', observed_at) AS h FROM packet_log
+		WHERE id > $1 AND `+window.Predicate(2, 3)+` ORDER BY h`, above, lo, hi)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []time.Time
+	for rows.Next() {
+		var h time.Time
+		if err := rows.Scan(&h); err != nil {
+			return nil, err
+		}
+		out = append(out, h.UTC())
+	}
+	return out, rows.Err()
 }
 
 // readChunks reads [lo, hi) a trendChunk at a time.

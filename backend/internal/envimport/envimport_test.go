@@ -5,13 +5,20 @@ import (
 	"context"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"strings"
 	"testing"
 	"time"
 
+	"google.golang.org/protobuf/proto"
+
+	"github.com/868-no/map/internal/ingest"
 	"github.com/868-no/map/internal/protocol"
+	"github.com/868-no/map/internal/protocol/pb"
+	"github.com/868-no/map/internal/security"
 )
 
 func TestParseStampTellsUnitsApartByMagnitude(t *testing.T) {
@@ -107,3 +114,39 @@ func TestRunStopsOnReadError(t *testing.T) {
 		t.Fatalf("err %v, stats %v", err, im.Stats)
 	}
 }
+
+// A copy of an envelope received well before an earlier line (input not
+// strictly oldest first) is another reception, not a duplicate delivery;
+// one within the window of it, either side, is a duplicate.
+func TestDedupeComparesBothWays(t *testing.T) {
+	kr, err := security.NewKeyring([]security.ChannelConfig{{Name: "LongFast", PSKs: []string{"AQ=="}, AcceptPlaintext: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	env, err := proto.Marshal(&pb.ServiceEnvelope{ChannelId: "LongFast", GatewayId: "!aabbccdd", Packet: &pb.MeshPacket{
+		From: 0x11111111, To: 0xffffffff, Id: 7, HopStart: 3, HopLimit: 3,
+		PayloadVariant: &pb.MeshPacket_Decoded{Decoded: &pb.Data{Portnum: pb.PortNum_TEXT_MESSAGE_APP, Payload: []byte("hi")}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t0 := time.Date(2026, 10, 31, 12, 0, 0, 0, time.UTC)
+	var in strings.Builder
+	for _, at := range []time.Time{t0, t0.Add(-30 * time.Minute), t0.Add(-25 * time.Minute), t0.Add(20 * time.Minute)} {
+		fmt.Fprintf(&in, "%d,%x\n", at.Unix(), env)
+	}
+	im := &Importer{Broker: "b", Root: "msh/EU_868", DryRun: true, Opts: ingest.Options{Keyring: kr, Identities: noIDs{}, KeyBudget: 4}, Log: slog.New(slog.DiscardHandler)}
+	if err := im.Run(context.Background(), strings.NewReader(in.String())); err != nil {
+		t.Fatal(err)
+	}
+	if im.Stats["would be stored (dry run)"] != 3 || im.Stats["duplicate delivery"] != 1 || im.Stats["out of order (earlier than the line before)"] != 1 {
+		t.Fatalf("stats %v", im.Stats)
+	}
+	if !im.First.Equal(t0.Add(-30*time.Minute)) || !im.Last.Equal(t0.Add(20*time.Minute)) {
+		t.Fatalf("span %v to %v", im.First, im.Last)
+	}
+}
+
+type noIDs struct{}
+
+func (noIDs) Lookup(uint32) (security.Identity, bool) { return security.Identity{}, false }
