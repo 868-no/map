@@ -104,7 +104,7 @@ function PacketLogs({ id, names, positioned, moved }: { id: string; names: Map<s
     traceroute: ['route', "This node is in the traceroute's recorded route"],
   } as const
   type Entry = { lp: string; at: string; type: string; to?: string; gateways: number } & (
-    | { kind: 'own'; hops?: number; signature: string; by_itself?: boolean; downlinked?: boolean; replies?: Reply[]; answers?: Answer; invalid?: string }
+    | { kind: 'own'; hops?: number; signature: string; by_itself?: boolean; downlinked?: boolean; replies?: Reply[]; answers?: Answer; in_response_to?: string; invalid?: string }
     | { kind: 'relayed'; origin: string; evidence: ('relay_byte' | 'traceroute')[] }
     | { kind: 'inbound'; origin: string; answers?: Answer }
   )
@@ -139,7 +139,17 @@ function PacketLogs({ id, names, positioned, moved }: { id: string; names: Map<s
               tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); showRoute(route === p.lp ? null : p.lp) } }} title="Select (click, Enter or Space) to draw this packet's route on the map">
               <td title={formatLocal(p.at)}>{formatLogTime(p.at)}</td>
               <td className="wrap" title={p.kind === 'relayed' ? nm(p.origin) : undefined}>
-                {p.kind === 'own' ? <span className="ev-tag own">own</span> : (
+                {p.kind === 'own' ? (
+                  <>
+                    <span className="ev-tag own">own</span>
+                    {p.in_response_to && (
+                      <span title="It sent this in answer to that node's packet, not of its own accord">
+                        , in response to{' '}
+                        <button className="linkish" onClick={(e) => { e.stopPropagation(); select({ kind: 'node', id: p.in_response_to! }) }}>{nm(p.in_response_to)}</button>
+                      </span>
+                    )}
+                  </>
+                ) : (
                   <button className="linkish" onClick={(e) => { e.stopPropagation(); select({ kind: 'node', id: p.origin }) }}>{nm(p.origin)}</button>
                 )}
               </td>

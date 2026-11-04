@@ -41,9 +41,20 @@ pub struct OwnPacket {
     /// For a routing packet: what it says and which packet it answers.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub answers: Option<Answer>,
+    /// The node whose packet this answers (a traceroute reply, an ACK or
+    /// error): the node did not send it of its own accord.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub in_response_to: Option<String>,
     /// Type invalid: why its content was not kept (D-093).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub invalid: Option<String>,
+}
+
+/// Who a packet answers: the requester of a traceroute reply, or the sender
+/// of the packet an ACK or error is about (its destination, either way).
+fn in_response_to(r: &Row) -> Option<u32> {
+    let answers = r.traceroute().is_some_and(|t| t.valid && t.is_reply) || r.routing().is_some_and(|rt| rt.request != 0);
+    r.dst.filter(|&d| answers && d != BROADCAST && d != r.src)
 }
 
 /// Routing packets from one node answering a packet: ACKs or one error.
@@ -190,6 +201,7 @@ pub fn packet_log(rows: &[&Row], num: u32, ctx: &RelayContext, replies: &ReplyIn
                     signature: best.to_string(),
                     replies: first.pid.map_or(vec![], |p| replies.replies(p, num, rows, i)),
                     answers: replies.answer(first, &more, i),
+                    in_response_to: in_response_to(first).map(node_id),
                     invalid: first.invalid().map(|v| i.s(v).to_string()),
                 },
             )
@@ -820,6 +832,23 @@ mod tests {
         // With no last hop, nothing radio is proven.
         let bare = Row { rr: crate::row::ty::VIA_MQTT, ..row(A, GW) };
         assert_eq!(pairs(&transmissions(&bare, &c, &ro)), vec![(id(A), None)]);
+    }
+
+    #[test]
+    fn own_answers_name_who_they_answer() {
+        use crate::row::{Interner, Routing};
+        let mut it = Interner::default();
+        let (routing, ack) = (it.id("routing"), it.id("ack"));
+        // A answers C's traceroute and acknowledges C's message; its own broadcast answers no one.
+        let reply = Row { dst: Some(C), pid: Some(500), lp: 1, detail: Some(Box::new(Detail::Traceroute(Traceroute { valid: true, is_reply: true, route: vec![], snr_towards: vec![], route_back: vec![], snr_back: vec![], request: 77 }))), ..row(A, GW) };
+        let acked = Row { ty: routing, dst: Some(C), pid: Some(501), lp: 2, detail: Some(Box::new(Detail::Routing(Routing { kind: ack, error: 0, request: 78 }))), ..row(A, GW) };
+        let own = Row { pid: Some(502), lp: 3, ..row(A, GW) };
+        let request = Row { dst: Some(C), pid: Some(503), lp: 4, ..traceroute(row(A, GW), &[]) };
+        let rows = [reply, acked, own, request];
+        let refs: Vec<&Row> = rows.iter().collect();
+        let log = packet_log(&refs, A, &ctx(&[A, C, GW], &[]), &ReplyIndex::new(&refs), &it);
+        let by = |lp: u64| log.own.iter().find(|p| p.lp == key_hex(lp)).unwrap().in_response_to.clone();
+        assert_eq!((by(1), by(2), by(3), by(4)), (Some(id(C)), Some(id(C)), None, None));
     }
 
     #[test]

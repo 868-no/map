@@ -318,6 +318,7 @@ export interface OwnPacket {
   signature: string
   replies?: Reply[] // ACKs and errors answering it (D-092)
   answers?: Answer // for a routing packet: what it says
+  in_response_to?: string // the node whose packet it answers (a traceroute reply, an ACK or error)
   invalid?: string // type invalid: why its content was not kept (D-093)
 }
 
