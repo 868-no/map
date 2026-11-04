@@ -105,23 +105,30 @@ async function networkFirst(req, name, fallbackPath) {
   }
 }
 
+// A proxy's answer while the backend is down or restarting: no answer from it.
+const GATEWAY_DOWN = new Set([502, 503, 504])
+
 // API: fresh data when online; the last successful response for the same
-// URL when offline, marked so the app can say it is showing old data.
+// URL when offline or the backend is down, marked so the app can say it is
+// showing old data.
 async function apiNetworkFirst(req) {
   const cache = await caches.open(DATA)
+  let res
   try {
-    const res = await fetchWithTimeout(req, API_TIMEOUT_MS)
+    res = await fetchWithTimeout(req, API_TIMEOUT_MS)
     if (res.ok) remember(cache, req, res.clone()).catch(() => {}) // in the background: never delay the response
-    return res
+    if (!GATEWAY_DOWN.has(res.status)) return res
   } catch {
-    const hit = await cache.match(req)
-    if (!hit) return new Response(JSON.stringify({ title: 'Offline', status: 503, detail: 'offline and no saved copy of this view' }), {
-      status: 503, headers: { 'content-type': 'application/problem+json', 'x-meshmap-offline': '1' },
-    })
-    const headers = new Headers(hit.headers)
-    headers.set('x-meshmap-offline', '1')
-    return new Response(hit.body, { status: hit.status, statusText: hit.statusText, headers })
+    res = null
   }
+  const hit = await cache.match(req)
+  if (!hit && res) return res // the proxy's own error, with its detail
+  if (!hit) return new Response(JSON.stringify({ title: 'Offline', status: 503, detail: 'offline and no saved copy of this view' }), {
+    status: 503, headers: { 'content-type': 'application/problem+json', 'x-meshmap-offline': '1' },
+  })
+  const headers = new Headers(hit.headers)
+  headers.set('x-meshmap-offline', '1')
+  return new Response(hit.body, { status: hit.status, statusText: hit.statusText, headers })
 }
 
 function fetchWithTimeout(req, ms) {

@@ -167,7 +167,7 @@ export default function App() {
         <div className="banners">
           {(!online || servedOffline) && (
             <div className="banner hist" role="status">
-              Offline: showing the data last received{snap.data ? ` (up to ${new Date(snap.data.meta.data_until).toLocaleString()})` : ''}. Live updates resume when the connection returns.
+              {online ? 'Offline: the server is not answering; showing' : 'Offline: showing'} the data last received{snap.data ? ` (up to ${new Date(snap.data.meta.data_until).toLocaleString()})` : ''}. Live updates resume when {online ? 'it answers again' : 'the connection returns'}.
             </div>
           )}
           {snap.error && <div className="banner error">{String((snap.error as Error).message)}</div>}

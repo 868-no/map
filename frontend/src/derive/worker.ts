@@ -48,6 +48,10 @@ class EngineRows implements Backend<number, string> {
 
 /** Parallel requests for the rest of a range after its first page. */
 const SLICES = 4
+/** A page not answered in this long fails the range, as if offline. */
+const PAGE_TIMEOUT_MS = 30_000
+/** A proxy's answer while the backend is down or restarting: no answer from it. */
+const GATEWAY_DOWN = new Set([502, 503, 504])
 
 /**
  * Fetches every row of a range into one staged batch. The first page tells
@@ -59,7 +63,13 @@ async function fetchRange(params: URLSearchParams): Promise<Fetched<number>> {
   const page = async (extra: Record<string, string>) => {
     const p = new URLSearchParams(params)
     for (const [k, v] of Object.entries(extra)) p.set(k, v)
-    const res = await fetch(`/api/v1/observations?${p}`, { headers: { Accept: 'application/json' } })
+    let res: globalThis.Response
+    try {
+      res = await fetch(`/api/v1/observations?${p}`, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(PAGE_TIMEOUT_MS) })
+    } catch (e) {
+      throw new Error(`observations: ${e instanceof Error ? e.message : e}`, { cause: e })
+    }
+    if (GATEWAY_DOWN.has(res.status)) throw new Error(`observations: ${res.status}`)
     if (!res.ok) {
       let detail = res.statusText
       try {
@@ -70,7 +80,11 @@ async function fetchRange(params: URLSearchParams): Promise<Fetched<number>> {
       }
       throw new ViewError('upstream', `observations: ${res.status} ${detail}`)
     }
-    return res.text()
+    try {
+      return await res.text()
+    } catch (e) {
+      throw new Error(`observations: ${e instanceof Error ? e.message : e}`, { cause: e }) // timed out or cut off mid-body
+    }
   }
   type Meta = { window: Fetched<number>['window']; generation: string; more: boolean; next_cursor?: string; batch: number }
   const first = JSON.parse(engine.stage(await page({}), 0)) as Meta
@@ -192,7 +206,7 @@ function synced(win: WindowReq, epoch: string): Promise<{ synced: Synced; offlin
       pendingLive = []
       return { synced: s, offline: false }
     } catch (e) {
-      if (e instanceof ViewError) throw e // the API answered, with an error
+      if (e instanceof ViewError) throw e // the API answered, with an error (a gateway's 502/503/504 is no answer)
       const s = store.offline(win, Date.now(), quantumMs)
       if (!s) throw new ViewError('unavailable', 'offline and no saved data for this window')
       return { synced: s, offline: true }
@@ -200,9 +214,12 @@ function synced(win: WindowReq, epoch: string): Promise<{ synced: Synced; offlin
   })
   chain = result.catch(() => {})
   last = { key, result }
-  result.catch(() => {
-    if (last?.key === key) last = null // retry next time
-  })
+  // Retry next time after an error, and after an answer from the saved copy
+  // (the API may answer again: a backend restart sends no 'online' event).
+  const forget = () => {
+    if (last?.key === key) last = null
+  }
+  result.then((r) => r.offline && forget(), forget)
   return result
 }
 

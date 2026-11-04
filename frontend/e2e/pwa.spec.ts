@@ -1,6 +1,28 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 
 test.use({ serviceWorkers: 'allow' })
+
+/** Waits until the derivation worker has saved its rows (and their coverage) to IndexedDB. */
+async function rowsSaved(page: Page) {
+  await expect.poll(() => page.evaluate(() => new Promise<boolean>((resolve) => {
+    // Never create or hold the database here: that would block the worker's schema upgrade.
+    const req = indexedDB.open('meshmap-derive')
+    req.onupgradeneeded = () => req.transaction?.abort()
+    req.onsuccess = () => {
+      const db = req.result
+      if (!db.objectStoreNames.contains('meta')) {
+        db.close()
+        return resolve(false)
+      }
+      const g = db.transaction('meta').objectStore('meta').get('state')
+      g.onsuccess = () => {
+        db.close()
+        resolve(!!g.result?.cov)
+      }
+    }
+    req.onerror = () => resolve(false)
+  })), { timeout: 15_000 }).toBe(true)
+}
 
 test('installable: manifest with icons, service worker, static caching headers', async ({ page, request }) => {
   await page.goto('/')
@@ -32,24 +54,7 @@ test('works offline with the last data received, and never stores tiles in the w
   await expect(page.locator('.node-row').first()).toBeVisible()
   const names = await page.locator('.node-row .nm').allTextContents()
   // The worker saves its rows to IndexedDB in the background; go offline once saved.
-  await expect.poll(() => page.evaluate(() => new Promise<boolean>((resolve) => {
-    // Never create or hold the database here: that would block the worker's schema upgrade.
-    const req = indexedDB.open('meshmap-derive')
-    req.onupgradeneeded = () => req.transaction?.abort()
-    req.onsuccess = () => {
-      const db = req.result
-      if (!db.objectStoreNames.contains('meta')) {
-        db.close()
-        return resolve(false)
-      }
-      const g = db.transaction('meta').objectStore('meta').get('state')
-      g.onsuccess = () => {
-        db.close()
-        resolve(!!g.result?.cov)
-      }
-    }
-    req.onerror = () => resolve(false)
-  })), { timeout: 15_000 }).toBe(true)
+  await rowsSaved(page)
 
   await context.setOffline(true)
   await page.reload()
@@ -83,6 +88,25 @@ test('works offline with the last data received, and never stores tiles in the w
   }))
   expect(held).toBeGreaterThan(0)
   await context.setOffline(false)
+})
+
+// A proxy's 502/503/504 while the backend restarts is no answer: the service
+// worker serves its saved API responses and the map is built from the saved
+// rows, as offline, rather than failing (D-140).
+test('the saved copy serves while the backend is down behind the proxy', async ({ page, context }) => {
+  await page.goto('/')
+  await expect.poll(() => page.evaluate(async () => !!(await navigator.serviceWorker.getRegistration())?.active), { timeout: 30_000 }).toBe(true)
+  await page.reload() // now controlled by the service worker
+  await expect.poll(() => page.evaluate(() => !!navigator.serviceWorker.controller)).toBe(true)
+  await page.getByRole('button', { name: 'Nodes', exact: true }).click()
+  await expect(page.locator('.node-row').first()).toBeVisible({ timeout: 30_000 })
+  await rowsSaved(page)
+  await context.route('**/api/v1/**', (r) => r.fulfill({ status: 502, contentType: 'text/html', body: '<h1>502 Bad Gateway</h1>' }))
+  await page.reload()
+  await expect(page.getByRole('status').filter({ hasText: 'Offline' })).toBeVisible({ timeout: 30_000 })
+  await page.getByRole('button', { name: 'Nodes', exact: true }).click()
+  await expect(page.locator('.node-row').first()).toBeVisible()
+  await context.unroute('**/api/v1/**')
 })
 
 // D-102: rows are saved as one engine build re-exports them; another build
