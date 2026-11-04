@@ -319,8 +319,9 @@ type IdentityRow struct {
 	RowID     int64
 }
 
-// VerifiedIdentities returns, per node, the earliest retained verified
-// NodeInfo binding (TOFU: the first authoritative key wins). Public keys are
+// VerifiedIdentities returns, per node, the first stored verified NodeInfo
+// binding (TOFU: the first authoritative key wins). Stored, not observed:
+// an import adds older history later, and must not replace a trusted key. Public keys are
 // public data stored in decoded_metadata (plan amendment 3).
 //
 // This is an ingestion-side lookup over the whole retained log, never used to
@@ -364,12 +365,14 @@ type AnnouncedKey struct {
 // LatestAnnouncedKey returns the public key in the node's newest retained
 // NodeInfo that carried one, or ErrNotFound. Like VerifiedIdentities it
 // spans the whole retained log: a key identifies a node, not a window.
+// Newest by observed_at, not id: an import stores older history with
+// higher ids.
 func LatestAnnouncedKey(ctx context.Context, pool *pgxpool.Pool, node uint32) (AnnouncedKey, error) {
 	var k AnnouncedKey
 	err := pool.QueryRow(ctx, `SELECT decoded_metadata->'nodeinfo'->>'public_key', observed_at, signature_status
 	      FROM packet_log
 	      WHERE packet_type = 'nodeinfo' AND source_node_id = $1 AND decoded_metadata->'nodeinfo' ? 'public_key'
-	      ORDER BY id DESC LIMIT 1`, int64(node)).Scan(&k.PublicKey, &k.At, &k.Signature)
+	      ORDER BY observed_at DESC, id DESC LIMIT 1`, int64(node)).Scan(&k.PublicKey, &k.At, &k.Signature)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return k, ErrNotFound
 	}

@@ -354,7 +354,7 @@ components:
           description: Signature status of that NodeInfo
           type: string
         trusted_key:
-          description: "Key of the earliest retained verified NodeInfo (trust on first use): signatures are checked against it"
+          description: "Key of the first stored verified NodeInfo (trust on first use): signatures are checked against it"
           type: string
         trusted_since:
           format: date-time

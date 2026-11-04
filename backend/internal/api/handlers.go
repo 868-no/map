@@ -149,7 +149,7 @@ type NodeKeyBody struct {
 	PublicKey    string     `json:"public_key,omitempty" doc:"Base64 X25519 key from the node's newest retained NodeInfo that carried one"`
 	AnnouncedAt  *time.Time `json:"announced_at,omitempty"`
 	Signature    string     `json:"signature,omitempty" doc:"Signature status of that NodeInfo"`
-	TrustedKey   string     `json:"trusted_key,omitempty" doc:"Key of the earliest retained verified NodeInfo (trust on first use): signatures are checked against it"`
+	TrustedKey   string     `json:"trusted_key,omitempty" doc:"Key of the first stored verified NodeInfo (trust on first use): signatures are checked against it"`
 	TrustedSince *time.Time `json:"trusted_since,omitempty"`
 }
 

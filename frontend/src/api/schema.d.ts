@@ -336,7 +336,7 @@ export interface components {
             public_key?: string;
             /** @description Signature status of that NodeInfo */
             signature?: string;
-            /** @description Key of the earliest retained verified NodeInfo (trust on first use): signatures are checked against it */
+            /** @description Key of the first stored verified NodeInfo (trust on first use): signatures are checked against it */
             trusted_key?: string;
             /** Format: date-time */
             trusted_since?: string;

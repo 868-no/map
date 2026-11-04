@@ -34,9 +34,10 @@ import (
 
 // GatewayRoots is the topic root each gateway last published under, from a
 // broker's stored rows: "!xxxxxxxx" -> root.
+// Last by observed_at: an earlier import stores older rows with higher ids.
 func GatewayRoots(ctx context.Context, pool *pgxpool.Pool, broker string) (map[string]string, error) {
 	rows, err := pool.Query(ctx, `SELECT DISTINCT ON (gateway_node_id) gateway_node_id, mqtt_topic FROM packet_log
-		WHERE broker_id = $1 AND gateway_node_id IS NOT NULL ORDER BY gateway_node_id, id DESC`, broker)
+		WHERE broker_id = $1 AND gateway_node_id IS NOT NULL ORDER BY gateway_node_id, observed_at DESC, id DESC`, broker)
 	if err != nil {
 		return nil, err
 	}
