@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 // The engine's golden output (frontend/engine/tests/golden.rs): real views.
 import golden from '../engine/tests/fixtures/mesh-12h/engine.json'
-import type { NodeView, PacketLog, PacketRoute, SnapshotView, TrafficView } from '../src/derive/views'
+import type { HealthView, NodeView, PacketLog, PacketRoute, SnapshotView, TrafficView } from '../src/derive/views'
 
 // derive/views.ts mirrors the engine's Rust view structs by hand. This file
 // is type-checked (npm run typecheck): every view in the golden fixture must
@@ -27,12 +27,14 @@ const traffic: Body<TrafficView> = golden.traffic
 const nodes: Record<string, Body<NodeView>> = golden.nodes
 const packetlogs: Record<string, Body<PacketLog>> = golden.packetlogs
 const routes: Record<string, Body<PacketRoute>> = golden.routes
+const health: Body<HealthView> = golden.health
 
 describe('engine view types', () => {
   it('the golden fixture covers every checked view', () => {
     expect(snapshot.nodes.length).toBeGreaterThan(0)
     expect(snapshot2.nodes.length).toBeGreaterThan(0)
     expect(traffic.buckets.length).toBeGreaterThan(0)
+    expect(health.issues.length).toBeGreaterThan(0)
     for (const m of [nodes, packetlogs, routes]) expect(Object.keys(m).length).toBeGreaterThan(0)
   })
 })
