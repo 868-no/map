@@ -49,6 +49,10 @@ const (
 	defaultBackoff  = 30 * time.Second
 )
 
+// SettledAfter is how long after an hour the hour may still change: past
+// it, an hour is never asked for again.
+const SettledAfter = gustsFor
+
 // Client fetches hours in the background and serves them from memory.
 // Create it with New and start its worker with Run.
 type Client struct {

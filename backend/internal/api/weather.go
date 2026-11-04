@@ -70,8 +70,8 @@ func (s *Server) weather(ctx context.Context, in *WeatherInput) (*WeatherOutput,
 	cache := "public, max-age=600"
 	if incomplete {
 		cache = "no-store"
-	} else if now.Sub(end) > 3*time.Hour {
-		cache = "public, max-age=86400" // settled hours do not change
+	} else if now.Sub(end) > weather.SettledAfter {
+		cache = "public, max-age=86400" // settled hours do not change; gust-less ones are asked again until then
 	}
 	return &WeatherOutput{CacheControl: cache, Body: WeatherBody{Hours: hours, Incomplete: incomplete, Attribution: weather.Attribution}}, nil
 }
