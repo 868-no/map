@@ -132,7 +132,8 @@ func TestProcessWrongKeyAndMalformed(t *testing.T) {
 	}
 }
 
-// design §10.2 test 3: CCM authenticates; modified ciphertext/tag is discarded.
+// design §10.2 test 3: CCM authenticates; a modified ciphertext/tag is never
+// decoded and is kept header-only as encrypted.
 func TestProcessCCM(t *testing.T) {
 	key := make([]byte, 32)
 	for i := range key {
@@ -413,5 +414,20 @@ func wantHeaderOnly(t *testing.T, what string, m RawMessage, o Options, ty, reas
 	env, _ := protocol.ParseEnvelope(obs.EnvelopeBytes)
 	if e := env.Packet.GetEncrypted(); len(e) == 0 || !bytes.Equal(e, make([]byte, len(e))) || env.Packet.GetDecoded() != nil {
 		t.Fatalf("%s: payload stored", what)
+	}
+}
+
+// Channel names and topic roots come from whoever publishes: what is stored
+// and shown is cleaned like node names (no bidi overrides or other format
+// characters); decoding is unchanged.
+func TestProcessCleansShownTopicParts(t *testing.T) {
+	p := pkt{from: 0x11111111, id: 5, to: 0xffffffff, gw: "!aabbccdd", data: posData(t), hopStart: 3, hopLimit: 3, snr: 7.5, rssi: -90}
+	topic := "msh/EU_868/NO/‮Trøndelag/2/e/Long‮Fast/!aabbccdd"
+	obs, err := Process(msg(topic, envelope(t, p, security.DefaultPSK[:], security.ModeCTR, "LongFast")), opts(t, longFast))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if obs.Meta.TopicRoot != "msh/EU_868/NO/Trøndelag" || obs.Channel != "LongFast" {
+		t.Fatalf("stored root %q, channel %q", obs.Meta.TopicRoot, obs.Channel)
 	}
 }

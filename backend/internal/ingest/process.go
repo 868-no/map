@@ -133,6 +133,13 @@ type Options struct {
 }
 
 // Process validates, decrypts, verifies and normalises one message.
+// Longest channel name and topic root stored (runes): Meshtastic channel
+// names are at most 11 bytes; roots are a few segments.
+const (
+	maxShownChannel = 64
+	maxShownRoot    = 160
+)
+
 func Process(m RawMessage, o Options) (Observation, error) {
 	if m.Retained && (o.AcceptRetained == nil || !o.AcceptRetained(m.BrokerID)) {
 		return Observation{}, reject("retained_ignored")
@@ -161,6 +168,10 @@ func Process(m RawMessage, o Options) (Observation, error) {
 	// channel_id is ignored; a replay could set it to another channel's name.
 	// Map topics name none.
 	channelName := topic.Channel
+	// What is stored and shown is cleaned like node names: no control or
+	// format characters (bidi overrides), bounded length. Decoding and the
+	// packet's keys use the topic as published.
+	shownChannel, shownRoot := ports.CleanString(channelName, maxShownChannel), ports.CleanString(topic.Root, maxShownRoot)
 
 	var (
 		data   *pb.Data
@@ -250,7 +261,7 @@ func Process(m RawMessage, o Options) (Observation, error) {
 		Topic:           m.Topic,
 		Source:          p.GetFrom(),
 		PacketID:        p.GetId(),
-		Channel:         channelName,
+		Channel:         shownChannel,
 		Portnum:         int32(data.GetPortnum()),
 		PacketType:      dec.Type,
 		Transport:       transportName(p.GetTransportMechanism()),
@@ -259,7 +270,7 @@ func Process(m RawMessage, o Options) (Observation, error) {
 		Promote:         verdict.Promote,
 		Meta: Metadata{
 			Decoded: dec, Crypto: crypto, ViaMQTT: p.GetViaMqtt(), WantAck: p.GetWantAck(),
-			TopicRoot: topic.Root, NextHop: p.GetNextHop(), Bytes: len(data.GetPayload()), NotOKToMQTT: notOK,
+			TopicRoot: shownRoot, NextHop: p.GetNextHop(), Bytes: len(data.GetPayload()), NotOKToMQTT: notOK,
 		},
 	}
 	setHeader(&obs, p, env.Gateway)
@@ -324,14 +335,14 @@ func headerOnly(m RawMessage, topic protocol.Topic, env protocol.Envelope, chann
 		Topic:           m.Topic,
 		Source:          p.GetFrom(),
 		PacketID:        p.GetId(),
-		Channel:         channelName,
+		Channel:         ports.CleanString(channelName, maxShownChannel),
 		PacketType:      ty,
 		Transport:       transportName(p.GetTransportMechanism()),
 		SignatureStatus: security.SigNotApplicable,
 		EnvelopeBytes:   zeroPayload(env, size, ty == ports.TypeDirectMessage),
 		Meta: Metadata{
 			Decoded: ports.Decoded{Type: ty}, Crypto: crypto, ViaMQTT: p.GetViaMqtt(), WantAck: p.GetWantAck(),
-			TopicRoot: topic.Root, NextHop: p.GetNextHop(), Bytes: size, Invalid: invalid,
+			TopicRoot: ports.CleanString(topic.Root, maxShownRoot), NextHop: p.GetNextHop(), Bytes: size, Invalid: invalid,
 		},
 	}
 	setHeader(&obs, p, env.Gateway)
