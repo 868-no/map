@@ -188,6 +188,11 @@ export default function MapView({ caps, snapshot, onPositions }: Props) {
       cancelled = true
       mapRef.current?.remove()
       mapRef.current = null
+      overlayRef.current = null
+      pingOverlayRef.current = null
+      // Not ready until the new map loads: the layer and click effects then
+      // run again for it, instead of staying bound to the removed one.
+      setReady(false)
       setHover(null) // no tooltip left over a rebuilt map
     }
   // The map is rebuilt only when its style or tiles change, not when an equal
