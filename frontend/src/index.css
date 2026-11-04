@@ -214,6 +214,8 @@ body.resizing { cursor: ew-resize; user-select: none; }
 .share-bar > span { display: block; height: 100%; background: var(--accent); }
 .share-pct { text-align: right; font-variant-numeric: tabular-nums; }
 .stale-note { color: var(--warn); font-size: 12px; margin-bottom: 2px; }
+.node-filter-alert { color: var(--warn); font-size: 12px; border: 1px solid var(--warn); border-radius: 6px; padding: 4px 8px; margin: 6px 0; }
+.node-filter-alert .linkish { color: inherit; text-decoration: underline; }
 .reply-ok { color: var(--ok, #3fb950); }
 .reply-err { color: var(--err); }
 .topic { font: 12px ui-monospace, monospace; word-break: break-all; }

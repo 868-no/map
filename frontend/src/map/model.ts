@@ -34,6 +34,20 @@ export function isOnline(n: Pick<MeshNode, 'last_seen'>, endMs: number): boolean
 }
 
 /**
+ * The node-level filters (reported position, online, role) as a predicate on
+ * a node, shared by the map and the node list so they agree (D-145). The
+ * packet/channel/broker filters are not here: they change the snapshot
+ * itself, while these only hide nodes from view. A node announcing no role is
+ * hidden while any role is chosen.
+ */
+export function passesNodeFilters(n: MeshNode, f: Pick<Filters, 'positionedOnly' | 'onlineOnly' | 'roles'>, endMs: number): boolean {
+  if (f.positionedOnly && !n.position) return false
+  if (f.onlineOnly && !isOnline(n, endMs)) return false
+  if (f.roles.length > 0 && !f.roles.includes(n.identity?.role ?? '')) return false
+  return true
+}
+
+/**
  * How long before the window end the node was last heard (0 = at the end,
  * 1 = only at its start), on a logarithmic scale over the window, so recent
  * activity is told apart. A node only named by others counts from when it

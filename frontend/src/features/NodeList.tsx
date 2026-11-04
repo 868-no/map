@@ -1,6 +1,6 @@
 import type { MeshNode, SnapshotView } from '../derive/views'
 import { useStore } from '../state/store'
-import { ageColor, lastHeardAge, nodeName } from '../map/model'
+import { ageColor, lastHeardAge, nodeName, passesNodeFilters } from '../map/model'
 import { PALETTES } from '../map/palette'
 import { useTheme } from '../theme'
 
@@ -8,16 +8,21 @@ export function NodeList({ snapshot }: { snapshot: SnapshotView | undefined }) {
   const search = useStore((s) => s.search)
   const setSearch = useStore((s) => s.setSearch)
   const select = useStore((s) => s.select)
+  const filters = useStore((s) => s.filters)
+  const setFilters = useStore((s) => s.setFilters)
   const nodes = snapshot?.nodes ?? []
   const q = search.trim().toLowerCase()
   const match = (n: MeshNode) =>
     !q || n.id.includes(q) || (n.identity?.long_name ?? '').toLowerCase().includes(q) || (n.identity?.short_name ?? '').toLowerCase().includes(q)
   const w = snapshot?.meta.window
   const endMs = w ? Date.parse(w.end) : 0, windowMs = w ? endMs - Date.parse(w.start) : 0
+  // The same node filters as the map (position, online, role), so the list matches it (D-145).
+  const pass = (n: MeshNode) => passesNodeFilters(n, filters, endMs)
+  const hidden = nodes.filter((n) => !pass(n)).length
   // Most recently heard first (the dot's colour), then by name.
   const byRecent = (a: MeshNode, b: MeshNode) => lastHeardAge(a, endMs, windowMs) - lastHeardAge(b, endMs, windowMs) || nodeName(a, a.id).localeCompare(nodeName(b, b.id))
-  const positioned = nodes.filter((n) => (n.position || n.estimate) && match(n)).sort(byRecent)
-  const unpositioned = nodes.filter((n) => !n.position && !n.estimate && match(n)).sort(byRecent)
+  const positioned = nodes.filter((n) => (n.position || n.estimate) && pass(n) && match(n)).sort(byRecent)
+  const unpositioned = nodes.filter((n) => !n.position && !n.estimate && pass(n) && match(n)).sort(byRecent)
   // Same last-heard colour as the map marker.
   const stops = PALETTES[useTheme()].ageStops
   const dotStyle = (n: MeshNode) => {
@@ -40,6 +45,12 @@ export function NodeList({ snapshot }: { snapshot: SnapshotView | undefined }) {
   return (
     <div className="panel">
       <input className="search" type="search" placeholder="Search in-window nodes (id or name)" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search nodes" />
+      {hidden > 0 && (
+        <p className="node-filter-alert" role="status">
+          ⚠ {hidden} node{hidden === 1 ? '' : 's'} hidden by the active node filters.{' '}
+          <button className="linkish" onClick={() => setFilters({ positionedOnly: false, onlineOnly: false, roles: [] })}>Show all</button>
+        </p>
+      )}
       <p className="muted small">Most recently heard first. Numbers: its unique packets / receptions of them by other gateways.</p>
       <h3>On the map ({positioned.length})</h3>
       <ul className="node-list">{positioned.slice(0, 300).map(row)}</ul>

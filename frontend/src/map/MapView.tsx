@@ -8,7 +8,7 @@ import type { Capabilities } from '../api/types'
 import type { Edge, SnapshotView } from '../derive/views'
 import { useStore } from '../state/store'
 import { applyStylePaint, loadStyle, registerPMTiles } from './style'
-import { bridgeRoute, positionAt, filterEdges, isOnline, linkGeometry, placeNodes, visibleLinks, withSelectedLink, type LinkGeom, type PlacedNode } from './model'
+import { bridgeRoute, positionAt, filterEdges, passesNodeFilters, linkGeometry, placeNodes, visibleLinks, withSelectedLink, type LinkGeom, type PlacedNode } from './model'
 import { frameArrived, onPingAdded, pingCount } from './pings'
 import { BASEMAP_GROUPS } from './layers'
 import { meshLayerBuilder, type ReachGeom, type RouteGeom } from './meshLayers'
@@ -224,10 +224,7 @@ export default function MapView({ caps, snapshot, onPositions }: Props) {
   const { placed, pos, links, allPos, roles } = useMemo(() => {
     const nodes = snapshot?.nodes ?? []
     const { placed: all } = placeNodes(nodes, windowEnd, windowMs)
-    const placed = all.filter((p) =>
-      (!filters.positionedOnly || p.kind === 'reported') &&
-      (!filters.onlineOnly || isOnline(p.node, windowEnd)) &&
-      (filters.roles.length === 0 || filters.roles.includes(p.node.identity?.role ?? '')))
+    const placed = all.filter((p) => passesNodeFilters(p.node, filters, windowEnd))
     // Positions of the markers actually drawn: links, pings and the camera use only these.
     const pos = new Map<string, [number, number]>()
     for (const p of placed) pos.set(p.node.id, [p.lon, p.lat])

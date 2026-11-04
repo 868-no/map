@@ -504,6 +504,26 @@ test('the tool rail opens one panel at a time and counts active filters', async 
   await expect(page.locator('#dock')).toBeHidden()
 })
 
+// D-145: the node list obeys the node filters and warns when they hide nodes.
+test('the node list applies node filters and alerts when nodes are hidden', async ({ page }) => {
+  await ready(page)
+  await openPanel(page)
+  const rows = page.locator('.node-row')
+  await expect(rows.first()).toBeVisible({ timeout: 30_000 })
+  const before = await rows.count()
+  await expect(page.locator('.node-filter-alert')).toHaveCount(0)
+  // Hide the client nodes by keeping only routers (a minority).
+  await showPanel(page, 'Filters')
+  await page.getByRole('complementary', { name: 'Filters' }).getByRole('button', { name: 'Router', exact: true }).click()
+  await openPanel(page)
+  const alert = page.locator('.node-filter-alert')
+  await expect(alert).toBeVisible()
+  await expect(alert).toContainText(/hidden by the active node filters/)
+  await expect.poll(() => rows.count()).toBeLessThan(before) // fewer nodes listed
+  await alert.getByRole('button', { name: 'Show all' }).click()
+  await expect(page.locator('.node-filter-alert')).toHaveCount(0)
+})
+
 // D-069: a selected node's reach at each hop limit, drawn instead of its links.
 test('the reach simulator counts nodes per hop limit and draws the reach on the map', async ({ page }) => {
   await withLinks(page)

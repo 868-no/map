@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ageColor, AGE_STOPS, isOnline, ONLINE_MS, bridgeRoute, filterEdges, glyphInk, relativeLuminance, isInfraRole, mqttDownlink, mqttUplink, LOW_ZOOM_LINKS, precisionErrorM, visibleLinks, withSelectedLink, lastHeardAge, ageMs, linkGeometry, placeNodes, roleRadius } from '../src/map/model'
+import { ageColor, AGE_STOPS, isOnline, ONLINE_MS, bridgeRoute, filterEdges, glyphInk, relativeLuminance, isInfraRole, mqttDownlink, mqttUplink, LOW_ZOOM_LINKS, passesNodeFilters, precisionErrorM, visibleLinks, withSelectedLink, lastHeardAge, ageMs, linkGeometry, placeNodes, roleRadius } from '../src/map/model'
 
 // WCAG contrast ratio.
 const contrast = (a: readonly number[], b: readonly number[]) => (Math.max(relativeLuminance(a), relativeLuminance(b)) + 0.05) / (Math.min(relativeLuminance(a), relativeLuminance(b)) + 0.05)
@@ -162,6 +162,22 @@ describe('online', () => {
     expect(isOnline({ last_seen: new Date(end - ONLINE_MS).toISOString() }, end)).toBe(true)
     expect(isOnline({ last_seen: new Date(end - ONLINE_MS - 1000).toISOString() }, end)).toBe(false)
     expect(isOnline({}, end)).toBe(false) // only named by others
+  })
+  it('passesNodeFilters hides by position, online and role (D-145)', () => {
+    const online = new Date(end - 1000).toISOString(), offline = new Date(end - ONLINE_MS - 1000).toISOString()
+    const pos = { lat: 63, lon: 10, precision_bits: 32, precision_known: true, signature: 'unsigned', observed_at: '' }
+    const router = node('!1', { last_seen: online, identity: { role: 'ROUTER' }, position: pos })
+    const clientNoPos = node('!2', { last_seen: online, identity: { role: 'CLIENT' } })
+    const oldRouter = node('!3', { last_seen: offline, identity: { role: 'ROUTER' }, position: pos })
+    const noRole = node('!4', { last_seen: online })
+    const all = [router, clientNoPos, oldRouter, noRole]
+    expect(all.every((n) => passesNodeFilters(n, defaultFilters, end))).toBe(true) // no filters: all pass
+    expect(passesNodeFilters(clientNoPos, { ...defaultFilters, positionedOnly: true }, end)).toBe(false)
+    expect(passesNodeFilters(router, { ...defaultFilters, positionedOnly: true }, end)).toBe(true)
+    expect(passesNodeFilters(oldRouter, { ...defaultFilters, onlineOnly: true }, end)).toBe(false)
+    expect(passesNodeFilters(clientNoPos, { ...defaultFilters, roles: ['ROUTER'] }, end)).toBe(false)
+    expect(passesNodeFilters(router, { ...defaultFilters, roles: ['ROUTER'] }, end)).toBe(true)
+    expect(passesNodeFilters(noRole, { ...defaultFilters, roles: ['ROUTER'] }, end)).toBe(false) // no role hidden when a role is chosen
   })
   it('always draws the link open in Details, on top', () => {
     const pos = new Map<string, [number, number]>([['!a', [10, 63]], ['!b', [10.1, 63.1]], ['!c', [10.2, 63.2]]])
