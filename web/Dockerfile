@@ -30,7 +30,7 @@ ARG SOURCE_REVISION=
 RUN VITE_E2E_HOOKS=$E2E_HOOKS VITE_SOURCE_URL=$SOURCE_URL VITE_SOURCE_REVISION=$SOURCE_REVISION npm run build
 
 # Map glyphs: OpenMapTiles fonts v2.0 (SIL OFL), pinned by checksum.
-FROM --platform=$BUILDPLATFORM alpine:3.20 AS fonts
+FROM --platform=$BUILDPLATFORM alpine:3.24 AS fonts
 ARG FONTS_URL=https://github.com/openmaptiles/fonts/releases/download/v2.0/v2.0.zip
 ARG FONTS_SHA256=3a7a6c2dcd940a840aa6ffac8f39758252a667a0b329945b071fb44bf00e7f47
 RUN apk add --no-cache curl unzip && curl -fsSL -o /fonts.zip "$FONTS_URL" \
