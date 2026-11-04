@@ -43,7 +43,13 @@ export function useWeather(sites: ({ lat: number; lon: number } | null)[], start
           getJSON<Weather>('/api/v1/weather', new URLSearchParams({ lat: String(lat), lon: String(lon), start: s, end: e }), signal),
         staleTime: 10 * 60_000,
         retry: false,
-        refetchInterval: (q: { state: { data?: Weather } }) => (q.state.data?.incomplete ? 4000 : false),
+        // While the server is still fetching hours: soon at first, then
+        // backing off to a minute, and giving up after about 15 minutes, so
+        // an unreachable MET Norway never means polling for ever.
+        refetchInterval: (q: { state: { data?: Weather; dataUpdateCount: number } }) => {
+          const n = q.state.dataUpdateCount
+          return q.state.data?.incomplete && n <= 25 ? Math.min(4000 * 1.3 ** n, 60_000) : false
+        },
       }
     }),
   })
