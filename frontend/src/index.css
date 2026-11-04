@@ -235,6 +235,16 @@ ul.links > li { display: contents; }
 .est-note { color: var(--purple); }
 table.hear { width: 100%; border-collapse: collapse; font-size: 12px; }
 table.pkt-log { table-layout: fixed; width: 100%; }
+/* Column resize handles on the headers' right edges (shown on hover and focus).
+   Widened columns make the table scroll sideways rather than squeeze the others. */
+.pkt-log-wrap { overflow-x: auto; }
+table.pkt-log th { position: relative; }
+.col-resize { position: absolute; top: 0; bottom: 0; right: -4px; width: 8px; cursor: col-resize; z-index: 1; touch-action: none; }
+.col-resize::after { content: ''; position: absolute; left: 3px; top: 15%; bottom: 15%; width: 2px; border-radius: 1px; background: var(--line); opacity: 0; transition: opacity .15s; }
+table.pkt-log thead:hover .col-resize::after { opacity: .7; }
+.col-resize:hover::after, .col-resize:focus-visible::after, body.resizing-col .col-resize::after { opacity: 1; background: var(--accent); }
+.col-resize:focus-visible { outline: none; }
+body.resizing-col { cursor: col-resize; user-select: none; }
 table.pkt-log td { overflow: hidden; text-overflow: ellipsis; }
 table.pkt-log td:first-child { white-space: nowrap; font-variant-numeric: tabular-nums; }
 table.pkt-log td { white-space: nowrap; }

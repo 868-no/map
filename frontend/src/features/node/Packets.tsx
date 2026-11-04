@@ -1,10 +1,11 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { PACKET_LOG_MAX, type Answer, type NodeView, type Reply, type SnapshotView } from '../../derive/views'
 import { usePacketLog, usePacketRoute } from '../../state/data'
 import { useStore } from '../../state/store'
 import { formatLocal, formatLogTime } from '../../lib/time'
 import { NodeAirtimeRow } from '../health'
 import { SIG_LABEL, routingError } from './shared'
+import { ColResize, useColumnWidths, type ColumnDefault } from '../../components/ColumnResize'
 
 /** Packet log type labels and tooltips for header-only rows (D-091, D-093). */
 const TYPE_SHORT: Record<string, string> = { direct_message: 'DM 🔒', encrypted: 'encrypted 🔒' }
@@ -86,6 +87,17 @@ function AnswerTag({ a }: { a: { kind: string; error?: string } }) {
 }
 
 /** The selected node's packets in the window: its own, others' it relayed, and routing packets and direct messages addressed to it. */
+/** The packet log's columns: default widths (null shares what is left) and header tooltips. */
+const LOG_COLS: { label: string; width: ColumnDefault; title?: string }[] = [
+  { label: 'Time', width: 60 },
+  { label: 'From', width: null },
+  { label: 'Type', width: 92 },
+  { label: 'To', width: null },
+  { label: 'Hops', width: 70, title: "Own packets: the fewest hops another gateway's copy shows (hop start minus hop limit; relays over 0-cost links spend none, so it can be fewer than the relays). 'self': only it uplinked it. 'MQTT': a copy came through an MQTT downlink. Relayed: how we know this node passed it on" },
+  { label: 'GWs', width: 30, title: "Other gateways that uplinked it (relayed: that heard this node's rebroadcast)" },
+  { label: 'Re', width: 34, title: 'Delivery reports: ✓ an ACK or ✗ an error answered this packet. Only reports that reached a gateway are known, so a blank never means it was lost. For a routing packet, ↩ selects the packet it answers' },
+]
+
 function PacketLogs({ id, names, positioned, moved }: { id: string; names: Map<string, string>; positioned: Set<string>; moved: Set<string> }) {
   const select = useStore((s) => s.select)
   const route = useStore((s) => s.route)
@@ -94,6 +106,9 @@ function PacketLogs({ id, names, positioned, moved }: { id: string; names: Map<s
   const log = usePacketLog(id)
   // Rows shown of the merged list; more on request.
   const [shown, setShown] = useState(50)
+  // Resizable columns, remembered in the browser.
+  const cols = useColumnWidths('meshmap.packetLogColumns', LOG_COLS.map((c) => c.width))
+  const heads = useRef<(HTMLTableCellElement | null)[]>([])
   const more = (total: number) =>
     total > shown && <button className="more" onClick={() => setShown((s) => s + 100)}>Show more ({total - shown} hidden)</button>
   const own = log.data?.own ?? []
@@ -130,9 +145,19 @@ function PacketLogs({ id, names, positioned, moved }: { id: string; names: Map<s
       {log.isLoading && <p className="muted">Loading…</p>}
       <RouteNote positioned={positioned} moved={moved} name={(n) => names.get(n) ?? n} />
       <p className="muted small">Select a packet to draw its route on the map.</p>
-      <table className="hear pkt-log" aria-label="Packet log">
-        <colgroup><col style={{ width: 60 }} /><col /><col style={{ width: 92 }} /><col /><col style={{ width: 70 }} /><col style={{ width: 30 }} /><col style={{ width: 34 }} /></colgroup>
-        <thead><tr><th>Time</th><th>From</th><th>Type</th><th>To</th><th title="Own packets: the fewest hops another gateway's copy shows (hop start minus hop limit; relays over 0-cost links spend none, so it can be fewer than the relays). 'self': only it uplinked it. 'MQTT': a copy came through an MQTT downlink. Relayed: how we know this node passed it on">Hops</th><th title="Other gateways that uplinked it (relayed: that heard this node's rebroadcast)">GWs</th><th title="Delivery reports: ✓ an ACK or ✗ an error answered this packet. Only reports that reached a gateway are known, so a blank never means it was lost. For a routing packet, ↩ selects the packet it answers">Re</th></tr></thead>
+      <div className="pkt-log-wrap">
+      <table className="hear pkt-log" aria-label="Packet log" style={{ minWidth: cols.minWidth }}>
+        <colgroup>{cols.widths.map((w, i) => <col key={LOG_COLS[i].label} style={w === null ? undefined : { width: w }} />)}</colgroup>
+        <thead>
+          <tr>
+            {LOG_COLS.map((c, i) => (
+              <th key={c.label} title={c.title} ref={(el) => { heads.current[i] = el }}>
+                {c.label}
+                {i < LOG_COLS.length - 1 && <ColResize label={c.label} width={cols.widths[i]} measure={() => heads.current[i]?.getBoundingClientRect().width ?? 60} onChange={(w) => cols.update(i, w)} />}
+              </th>
+            ))}
+          </tr>
+        </thead>
         <tbody>
           {entries.slice(0, shown).map((p) => (
             <tr key={p.kind + p.lp} data-kind={p.kind} className={route === p.lp ? 'active' : undefined} onClick={() => showRoute(route === p.lp ? null : p.lp)} aria-selected={route === p.lp}
@@ -179,6 +204,7 @@ function PacketLogs({ id, names, positioned, moved }: { id: string; names: Map<s
           ))}
         </tbody>
       </table>
+      </div>
       {more(entries.length)}
     </>
   )
