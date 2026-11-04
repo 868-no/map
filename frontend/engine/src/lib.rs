@@ -174,10 +174,35 @@ impl Engine {
                 min_precision_bits: g.min_precision_bits,
                 exclude: g.exclude.unwrap_or_default().iter().filter_map(|s| parse_node(s)).collect(),
                 params: g.params,
+                terrain: std::mem::take(&mut self.geo.terrain),
             };
         }
         self.rules = Rules { silent: o.silent_rule, mqtt_links: o.mqtt_links, moves: o.move_rule, signal: o.signal_rule };
         self.built = None;
+        Ok(())
+    }
+
+    /// Line-of-sight classes of router links from the server's terrain cross
+    /// sections (D-143): [{a: "!id", b: "!id", class}]. Replaces the last set.
+    pub fn set_terrain(&mut self, links: &str) -> Result<(), JsError> {
+        #[derive(serde::Deserialize)]
+        struct L {
+            a: String,
+            b: String,
+            class: String,
+        }
+        let ls: Vec<L> = serde_json::from_str(links).map_err(err)?;
+        let terrain = ls
+            .into_iter()
+            .filter_map(|l| {
+                let (a, b) = (parse_node(&l.a)?, parse_node(&l.b)?);
+                Some(((a.min(b), a.max(b)), l.class))
+            })
+            .collect();
+        if terrain != self.geo.terrain {
+            self.geo.terrain = terrain;
+            self.built = None;
+        }
         Ok(())
     }
 

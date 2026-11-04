@@ -73,7 +73,7 @@ export interface Estimate {
   lat: number
   lon: number
   uncertainty_radius_m: number
-  method: 'weighted_centroid' | 'log_distance_wls'
+  method: 'weighted_centroid' | 'ranged_centroid' | 'log_distance_wls'
   quality: 'very_low' | 'low'
   anchor_count: number
   sample_count: number

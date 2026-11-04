@@ -7,7 +7,7 @@ import { precisionErrorM } from '../../map/model'
 import { useStore } from '../../state/store'
 import { NR, SigBadge, dist } from './shared'
 
-const METHOD: Record<string, string> = { weighted_centroid: 'weighted centre of the nodes that hear it', log_distance_wls: 'distances from signal strength' }
+const METHOD: Record<string, string> = { weighted_centroid: 'weighted centre of the nodes that hear it', ranged_centroid: 'weighted centre of the nodes that hear it, moved by distances from signal strength (they are all to one side)', log_distance_wls: 'distances from signal strength' }
 const QUALITY: Record<string, string> = { very_low: 'very rough', low: 'rough' }
 
 /** The Overview tab: identity, position and activity. */

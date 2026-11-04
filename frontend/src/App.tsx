@@ -12,6 +12,7 @@ import { HealthPanel } from './features/health'
 import { Dock, Rail, type PanelId } from './features/rail'
 import { TrendsPanel } from './features/trends'
 import { useCapabilities, useHealth, useRetention, useSnapshot } from './state/data'
+import { useTerrainClasses } from './state/terrain'
 import type { Counts } from './derive/views'
 import { useLiveStream } from './state/live'
 import { initDerive } from './derive/client'
@@ -37,6 +38,7 @@ export default function App() {
     setPingPositions(pos) // pings follow the markers as estimates move
   }, [])
   const liveOK = useLiveStream(geo, setNotice)
+  useTerrainClasses(snap.data) // line of sight of router links, for the engine's ranging (D-143)
 
   // The derivation worker applies the operator's geolocation settings.
   useEffect(() => {

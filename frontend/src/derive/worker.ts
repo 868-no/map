@@ -357,6 +357,19 @@ self.onmessage = async (e: MessageEvent<Request>) => {
     }
     return
   }
+  if (msg.type === 'terrain') {
+    try {
+      await started
+      await inited
+      engine.set_terrain(JSON.stringify(msg.links))
+      memo.clear()
+      memoChars = 0
+      self.postMessage({ type: 'changed' } satisfies Response)
+    } catch (err) {
+      if (!fatal(err)) console.warn('terrain classes dropped', err)
+    }
+    return
+  }
   if (msg.type === 'init') {
     try {
       await started

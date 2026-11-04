@@ -50,11 +50,14 @@ pub struct GeoOptions {
     pub min_precision_bits: u32,
     pub exclude: FxSet<u32>,
     pub params: geo::Params,
+    /// Line-of-sight classes of router links, by node pair (smaller id
+    /// first), from the server's terrain cross sections (D-143).
+    pub terrain: FxMap<(u32, u32), String>,
 }
 
 impl Default for GeoOptions {
     fn default() -> Self {
-        GeoOptions { enabled: false, min_precision_bits: 15, exclude: set(), params: geo::Params::default() }
+        GeoOptions { enabled: false, min_precision_bits: 15, exclude: set(), params: geo::Params::default(), terrain: map() }
     }
 }
 
@@ -329,7 +332,7 @@ mod tests {
             .collect();
         let rows: Vec<Row> = text.iter().map(|t| serde_json::from_str::<JRow>(t).unwrap().into_row(&mut i)).collect();
         let refs: Vec<&Row> = rows.iter().collect();
-        let g = GeoOptions { enabled: false, min_precision_bits: 15, exclude: set(), params: Default::default() };
+        let g = GeoOptions { enabled: false, min_precision_bits: 15, exclude: set(), params: Default::default(), terrain: map() };
         let b = build_snapshot(&refs, &i, &g, Rules::default());
         let n = b.snapshot.nodes.iter().find(|n| n.num == 9).expect("node 9 is listed");
         assert!(n.mqtt_downlink.is_some(), "it downlinks");

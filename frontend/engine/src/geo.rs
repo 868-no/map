@@ -114,8 +114,99 @@ fn fmt0(v: f64) -> String {
     format!("{:.0}", v.round())
 }
 
-/// Estimates one target, or the reason it cannot.
-pub fn locate(anchors: &crate::util::FxMap<u32, Anchor>, ms: &[Measurement], p: &Params, node_id: impl Fn(u32) -> String) -> Result<Estimate, String> {
+/// Signal against distance, fitted over the window's router-to-router links
+/// with a clear line of sight (D-143): SNR = a + b·log10(km). It cannot say
+/// how far one link reaches, links scatter by about 6 dB, but it can say
+/// roughly how far a link is not, and so push a centroid that has nothing
+/// to pull it one way.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Ranging {
+    pub a: f64,
+    pub b: f64,
+    pub links: usize,
+}
+
+/// Links a ranging fit needs.
+pub const MIN_RANGING_LINKS: usize = 8;
+/// A centroid with no anchor in a sector wider than this is compensated.
+pub const GAP_DEG: f64 = 135.0;
+
+impl Ranging {
+    /// Least squares over (km, snr); none with too few links, or when signal
+    /// does not fall with distance.
+    pub fn fit(links: &[(f64, f64)]) -> Option<Ranging> {
+        let pts: Vec<(f64, f64)> = links.iter().filter(|(km, s)| *km > 0.0 && s.is_finite()).map(|&(km, s)| (km.log10(), s)).collect();
+        if pts.len() < MIN_RANGING_LINKS {
+            return None;
+        }
+        let n = pts.len() as f64;
+        let mx = pts.iter().map(|p| p.0).sum::<f64>() / n;
+        let my = pts.iter().map(|p| p.1).sum::<f64>() / n;
+        let sxx: f64 = pts.iter().map(|p| (p.0 - mx).powi(2)).sum();
+        if sxx <= 0.0 {
+            return None;
+        }
+        let b = pts.iter().map(|p| (p.0 - mx) * (p.1 - my)).sum::<f64>() / sxx;
+        (b < 0.0).then_some(Ranging { a: my - b * mx, b, links: pts.len() })
+    }
+    /// The distance the model gives a link's SNR, m.
+    pub fn range_m(&self, snr: f64) -> f64 {
+        1000.0 * 10f64.powf((snr - self.a) / self.b)
+    }
+}
+
+/// The widest sector, in degrees, seen from (x, y) with no anchor in it.
+fn widest_gap(x: f64, y: f64, pts: &[Pt]) -> f64 {
+    let mut b: Vec<f64> = pts.iter().map(|q| (q.y - y).atan2(q.x - x).to_degrees().rem_euclid(360.0)).collect();
+    if b.len() < 2 {
+        return 360.0;
+    }
+    b.sort_by(|p, q| p.total_cmp(q));
+    let wrap = b[0] + 360.0 - b[b.len() - 1];
+    b.windows(2).map(|w| w[1] - w[0]).fold(wrap, f64::max)
+}
+
+/// Moves a centroid to where the anchors' distances best match the ranges
+/// their SNR gives (least squares in log distance), each range capped at
+/// the anchors' mean distance from the centroid: a weak link may say "not
+/// close", never "very far". A grid search, refined: robust, and cheap for
+/// a handful of anchors.
+fn ranged(pts: &[Pt], x0: f64, y0: f64, r: &Ranging) -> Option<(f64, f64)> {
+    let cap = pts.iter().map(|q| (q.x - x0).hypot(q.y - y0)).sum::<f64>() / pts.len() as f64;
+    let obs: Vec<(f64, f64, f64, f64)> =
+        pts.iter().filter_map(|q| q.m.snr.map(|s| (q.x, q.y, r.range_m(s).min(cap).max(100.0).ln(), (q.m.samples as f64).sqrt()))).collect();
+    if obs.len() < 3 {
+        return None;
+    }
+    let cost = |x: f64, y: f64| obs.iter().map(|&(ax, ay, lr, w)| w * ((ax - x).hypot(ay - y).max(100.0).ln() - lr).powi(2)).sum::<f64>();
+    let reach = pts.iter().map(|q| (q.x - x0).hypot(q.y - y0)).fold(0.0, f64::max) + cap;
+    let (mut bx, mut by, mut best) = (x0, y0, cost(x0, y0));
+    let (mut cx, mut cy, mut step) = (x0, y0, reach / 20.0);
+    for _ in 0..6 {
+        for i in -20..=20 {
+            for j in -20..=20 {
+                let (x, y) = (cx + i as f64 * step, cy + j as f64 * step);
+                let c = cost(x, y);
+                if c < best {
+                    (bx, by, best) = (x, y, c);
+                }
+            }
+        }
+        (cx, cy, step) = (bx, by, step / 10.0);
+    }
+    Some((bx, by))
+}
+
+/// Estimates one target, or the reason it cannot. With a ranging model, an
+/// uncalibrated centroid that leaves more than GAP_DEG without anchors is
+/// moved by it (D-143).
+pub fn locate(
+    anchors: &crate::util::FxMap<u32, Anchor>,
+    ms: &[Measurement],
+    p: &Params,
+    ranging: Option<&Ranging>,
+    node_id: impl Fn(u32) -> String,
+) -> Result<Estimate, String> {
     let mut pts: Vec<Pt> = ms.iter().filter_map(|m| anchors.get(&m.anchor).filter(|_| m.samples > 0).map(|a| Pt { x: 0.0, y: 0.0, m: *m, a: *a })).collect();
     if pts.len() < p.min_anchors {
         return Err(format!("only {} positioned anchor{} with direct links (need {})", pts.len(), if pts.len() == 1 { "" } else { "s" }, p.min_anchors));
@@ -199,11 +290,29 @@ pub fn locate(anchors: &crate::util::FxMap<u32, Anchor>, ms: &[Measurement], p: 
         }
         x /= sw;
         y /= sw;
-        let md: f64 = pts.iter().map(|q| (q.x - x).hypot(q.y - y)).sum();
-        unc = (md / n).max(p.uncalibrated_floor_m);
-        method = "weighted_centroid";
         quality = "very_low";
         reasons.push("uncalibrated: weighted centroid of anchors heard directly; SNR does not measure distance".to_string());
+        // Anchors on one side only: nothing pulls the centroid the other
+        // way, so it sits too close to them (D-143).
+        let gap = widest_gap(x, y, &pts);
+        match ranging.filter(|_| gap > GAP_DEG).and_then(|r| ranged(&pts, x, y, r).map(|xy| (r, xy))) {
+            Some((r, (rx, ry))) => {
+                reasons.push(format!(
+                    "anchors leave {}° without data: moved {} km by distances from SNR (SNR = {:.1} {} {:.1}·log10 km over {} clear router links)",
+                    fmt0(gap),
+                    format!("{:.1}", (rx - x).hypot(ry - y) / 1000.0),
+                    r.a,
+                    if r.b < 0.0 { "−" } else { "+" },
+                    r.b.abs(),
+                    r.links
+                ));
+                (x, y) = (rx, ry);
+                method = "ranged_centroid";
+            }
+            None => method = "weighted_centroid",
+        }
+        let md: f64 = pts.iter().map(|q| (q.x - x).hypot(q.y - y)).sum();
+        unc = (md / n).max(p.uncalibrated_floor_m);
     }
     if dropped > 0 {
         reasons.push(format!("{dropped} distant anchor(s) ignored as inconsistent"));
@@ -328,9 +437,51 @@ mod tests {
             anchors.insert(n, Anchor { node: n, lat, lon, err_m: 0.0 });
         }
         let m = |a| Measurement { anchor: a, snr: Some(5.0), rssi: None, samples: 2, first: 1, last: 2 };
-        let est = locate(&anchors, &[m(1), m(2), m(3)], &Params::default(), node_id).unwrap();
+        let est = locate(&anchors, &[m(1), m(2), m(3)], &Params::default(), None, node_id).unwrap();
         assert_eq!(est.method, "weighted_centroid");
         assert!(est.lat > 59.85 && est.lat < 59.95);
-        assert!(locate(&anchors, &[m(1), m(2)], &Params::default(), node_id).unwrap_err().starts_with("only 2 positioned anchors"));
+        assert!(locate(&anchors, &[m(1), m(2)], &Params::default(), None, node_id).unwrap_err().starts_with("only 2 positioned anchors"));
+    }
+
+    #[test]
+    fn ranging_fit() {
+        let links: Vec<(f64, f64)> = [2.0, 5.0, 10.0, 20.0, 40.0, 80.0, 3.0, 30.0].iter().map(|&km: &f64| (km, 10.0 - 7.0 * km.log10())).collect();
+        let r = Ranging::fit(&links).unwrap();
+        assert!((r.a - 10.0).abs() < 1e-9 && (r.b + 7.0).abs() < 1e-9 && r.links == 8);
+        assert!((r.range_m(3.0) - 10_000.0).abs() < 1.0);
+        assert!(Ranging::fit(&links[..7]).is_none(), "too few links");
+        let rising: Vec<(f64, f64)> = links.iter().map(|&(km, s)| (km, -s)).collect();
+        assert!(Ranging::fit(&rising).is_none(), "signal must fall with distance");
+    }
+
+    // Anchors north, east and west of a target 30 km south of their middle:
+    // the centroid sits among them; weak links say the target is further
+    // off, and with nothing to the south, ranging moves it south.
+    #[test]
+    fn ranging_moves_a_one_sided_centroid() {
+        let mut anchors = map();
+        for (n, lat, lon) in [(1u32, 63.30, 9.5), (2, 63.45, 10.0), (3, 63.30, 10.5)] {
+            anchors.insert(n, Anchor { node: n, lat, lon, err_m: 0.0 });
+        }
+        let r = Ranging { a: 10.0, b: -7.0, links: 10 };
+        let target = (63.05, 10.0);
+        let ms: Vec<Measurement> = [1u32, 2, 3]
+            .iter()
+            .map(|&a| {
+                let x = anchors[&a];
+                let km = crate::graph::distance_m(crate::graph::LatLon { lat: x.lat, lon: x.lon }, crate::graph::LatLon { lat: target.0, lon: target.1 }) / 1000.0;
+                Measurement { anchor: a, snr: Some(10.0 - 7.0 * km.log10()), rssi: None, samples: 10, first: 1, last: 2 }
+            })
+            .collect();
+        let plain = locate(&anchors, &ms, &Params::default(), None, node_id).unwrap();
+        let est = locate(&anchors, &ms, &Params::default(), Some(&r), node_id).unwrap();
+        assert_eq!(plain.method, "weighted_centroid");
+        assert_eq!(est.method, "ranged_centroid", "{:?}", est.reasons);
+        assert!(est.lat < plain.lat - 0.05, "moved south: {} → {}", plain.lat, est.lat);
+        // Surrounded: a centroid with anchors all round is left alone.
+        anchors.insert(4, Anchor { node: 4, lat: 62.9, lon: 10.0, err_m: 0.0 });
+        let mut ms4 = ms.clone();
+        ms4.push(Measurement { anchor: 4, snr: Some(0.0), rssi: None, samples: 10, first: 1, last: 2 });
+        assert_eq!(locate(&anchors, &ms4, &Params::default(), Some(&r), node_id).unwrap().method, "weighted_centroid");
     }
 }

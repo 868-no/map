@@ -29,7 +29,14 @@ export interface RowsRequest {
   ping: number[]
 }
 
-export type Request = ViewRequest | InitRequest | RowsRequest
+/** Line-of-sight classes of router links, for the ranging model (D-143). */
+export interface TerrainLinkClass { a: string; b: string; class: string }
+export interface TerrainRequest {
+  type: 'terrain'
+  links: TerrainLinkClass[]
+}
+
+export type Request = ViewRequest | InitRequest | RowsRequest | TerrainRequest
 
 /** A transmission one live reception proves (from the engine). */
 export interface Transmission {

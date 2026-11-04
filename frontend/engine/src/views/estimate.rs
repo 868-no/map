@@ -1,8 +1,8 @@
 //! Location estimates for unpositioned nodes.
 
 use super::{GeoOptions, Node};
-use crate::geo::{self, precision_error_m, Anchor, Measurement};
-use crate::graph::Edge;
+use crate::geo::{self, precision_error_m, Anchor, Measurement, Ranging};
+use crate::graph::{distance_m, Edge, LatLon};
 use crate::util::{map, node_id, FxMap};
 
 /// Estimates for unpositioned nodes from direct (non-relay) links to precise anchors.
@@ -13,6 +13,7 @@ pub(super) fn estimate(nodes: &mut FxMap<u32, Node>, edges: &[Edge], g: &GeoOpti
             anchors.insert(n, Anchor { node: n, lat: p.lat, lon: p.lon, err_m: precision_error_m(p.bits, p.lat) });
         }
     }
+    let ranging = ranging(nodes, edges, &anchors, g);
     struct Agg {
         snr_sum: f64,
         snr_w: f64,
@@ -81,9 +82,39 @@ pub(super) fn estimate(nodes: &mut FxMap<u32, Node>, edges: &[Edge], g: &GeoOpti
             x.estimate_note = Some(format!("no confirmed direct links to nodes reporting a position with at least {}-bit precision", g.min_precision_bits));
             continue;
         }
-        match geo::locate(&anchors, &ms, &g.params, node_id) {
+        match geo::locate(&anchors, &ms, &g.params, ranging.as_ref(), node_id) {
             Ok(e) => x.estimate = Some(e),
             Err(reason) => x.estimate_note = Some(reason),
         }
     }
+}
+
+/// The signal-to-distance model (D-143), from router-to-router links between
+/// anchors whose terrain cross section is clear: per link, the mean of its
+/// two directions' median SNR over the window. Links heard one way only are
+/// left out.
+fn ranging(nodes: &FxMap<u32, Node>, edges: &[Edge], anchors: &FxMap<u32, Anchor>, g: &GeoOptions) -> Option<Ranging> {
+    let router = |n: u32| nodes.get(&n).and_then(|x| x.identity.as_ref()).is_some_and(|i| i.role == "ROUTER" || i.role == "ROUTER_LATE");
+    let mut dirs: FxMap<(u32, u32), [Option<f64>; 2]> = map();
+    for e in edges.iter().filter(|e| !e.mqtt && e.evidence.direct() + e.evidence.neighbor + e.evidence.traceroute > 0) {
+        let (s, d) = (e.src_num, e.dst_num);
+        let Some(snr) = e.snr.median else { continue };
+        if !anchors.contains_key(&s) || !anchors.contains_key(&d) || !router(s) || !router(d) {
+            continue;
+        }
+        let key = (s.min(d), s.max(d));
+        if g.terrain.get(&key).map(String::as_str) != Some("clear") {
+            continue;
+        }
+        dirs.entry(key).or_default()[usize::from(s > d)] = Some(snr);
+    }
+    let links: Vec<(f64, f64)> = dirs
+        .iter()
+        .filter_map(|(&(a, b), v)| {
+            let (Some(x), Some(y)) = (v[0], v[1]) else { return None };
+            let (p, q) = (anchors[&a], anchors[&b]);
+            Some((distance_m(LatLon { lat: p.lat, lon: p.lon }, LatLon { lat: q.lat, lon: q.lon }) / 1000.0, (x + y) / 2.0))
+        })
+        .collect();
+    Ranging::fit(&links)
 }

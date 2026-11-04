@@ -1,7 +1,7 @@
 // Page side of the derivation worker: every view is built there, in the
 // WebAssembly engine (D-031, D-040).
 import type { Capabilities, ObsRow } from '../api/types'
-import type { Request, Response, Transmission, ViewRequest } from './protocol'
+import type { Request, Response, TerrainLinkClass, Transmission, ViewRequest } from './protocol'
 import { ViewError } from './views'
 
 let worker: Worker | null = null
@@ -12,6 +12,7 @@ let onPings: ((t: Transmission[]) => void) | undefined
 const decoder = new TextDecoder()
 
 let caps: Capabilities | undefined // re-sent to a restarted worker
+let terrain: TerrainLinkClass[] = [] // likewise
 let restarts: number[] = [] // recent restart times
 let broken: string | null = null // gave up restarting: views fail with this
 
@@ -35,6 +36,7 @@ function restart(why: string): void {
     return
   }
   if (caps) initDerive(caps)
+  if (terrain.length) get().postMessage({ type: 'terrain', links: terrain } satisfies Request)
   onChanged?.()
 }
 
@@ -90,6 +92,12 @@ export function initDerive(c: Capabilities): void {
   caps = c
   const msg: Request = { type: 'init', geo: c.geolocation, liveQuantumMs: c.live_quantum_seconds * 1000 }
   get().postMessage(msg)
+}
+
+/** Line-of-sight classes of router links (D-143); views are rebuilt with them. */
+export function sendTerrain(links: TerrainLinkClass[]): void {
+  terrain = links
+  if (!broken) get().postMessage({ type: 'terrain', links } satisfies Request)
 }
 
 /** Ask the worker for a view; resolves with the view body (with meta). Aborts only stop waiting. */
