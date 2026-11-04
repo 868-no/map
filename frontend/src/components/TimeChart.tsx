@@ -2,7 +2,7 @@
 // whole window, so charts of one node line up and gaps show when it was
 // silent. Hovering (or touching) reads off the nearest report; charts in one
 // ChartGroup all read off the same moment.
-import { createContext, useContext, useRef, useState, type PointerEvent, type ReactNode } from 'react'
+import { createContext, useContext, useMemo, useRef, useState, type PointerEvent, type ReactNode } from 'react'
 import { formatLocal } from '../lib/time'
 
 const W = 300, H = 80 // viewBox units; the plot stretches to the panel width
@@ -55,7 +55,8 @@ const Sync = createContext<{ t: number | null; set: (t: number | null) => void }
 /** Charts that inspect one moment together: hovering one shows the same time in all. */
 export function ChartGroup({ children }: { children: ReactNode }) {
   const [t, set] = useState<number | null>(null)
-  return <Sync.Provider value={{ t, set }}><div className="tcharts">{children}</div></Sync.Provider>
+  const value = useMemo(() => ({ t, set }), [t])
+  return <Sync.Provider value={value}><div className="tcharts">{children}</div></Sync.Provider>
 }
 
 const short = new Intl.DateTimeFormat(undefined, { weekday: 'short', hour: '2-digit', minute: '2-digit' })
@@ -80,20 +81,21 @@ const HOUR = 3_600_000
 
 const fmtIn = (v: number, u: string, d: number) => `${v.toFixed(d)}${u === '%' ? ' %' : u ? ` ${u}` : ''}`
 
-export function TimeChart({ label, unit, points, series, start, end, decimals = 1, domain, empty, bands: bands0, nights }: TimeChartProps) {
+type Prepared = NonNullable<ReturnType<typeof prepare>>
+
+/**
+ * Everything about a chart that depends on its data alone, the plot's paths
+ * included: computed once per data change, not on every pointer move (a
+ * group's charts all re-render while one is hovered).
+ */
+function prepare({ label, unit, points, series, start, end, decimals = 1, domain, bands: bands0, nights }: TimeChartProps) {
   const lines0 = (series ?? [{ label: '', color: 'var(--accent)', points: points ?? [] }]).map((l) => ({ ...l, pts: clean(l.points) }))
   const all = lines0.flatMap((l) => l.pts.map((p) => ({ p, l })))
   const pts = all.map((x) => x.p).sort((a, b) => a[0] - b[0])
-  const box = useRef<HTMLDivElement>(null)
-  // The moment inspected: the group's, or this chart's own outside a group.
-  const sync = useContext(Sync)
-  const [ownT, setOwnT] = useState<number | null>(null)
-  const t = sync ? sync.t : ownT
-  const setT = sync ? sync.set : setOwnT
   const bands = (bands0 ?? []).filter((b): b is Band => !!b)
     .map((b) => ({ ...b, pts: clean(b.points).filter((p) => p[0] > start - HOUR && p[0] <= end + HOUR) }))
     .filter((b) => b.pts.length > 0)
-  if (pts.length === 0 && bands.length === 0) return empty ? <p className="muted small">{label}: {empty}</p> : null
+  if (pts.length === 0 && bands.length === 0) return null
   // With no lines, the first band is what the axis and readout show.
   const onlyBand = pts.length === 0
   const main = onlyBand ? bands[0] : undefined
@@ -111,8 +113,8 @@ export function TimeChart({ label, unit, points, series, start, end, decimals = 
   const span = Math.max(end - start, 1)
   const sx = (t: number) => ((t - start) / span) * W
   const sy = (v: number) => H - ((Math.min(Math.max(v, y0), y1) - y0) / Math.max(y1 - y0, 1e-9)) * H
-  const fmt = (v: number) => (main ? fmtB(main, v) : fmtIn(v, unit, decimals))
   const fmtB = (b: Band, v: number) => fmtIn(v, b.unit, b.decimals ?? decimals)
+  const fmt = (v: number) => (main ? fmtB(main, v) : fmtIn(v, unit, decimals))
   // A band off the axis has a scale of its own: its domain, else 0 to its largest value.
   const scale = (b: B): [number, number] => b.domain ?? [0, Math.max(...b.pts.map((p) => p[1]), b.kind === 'amount' ? 1 : 1e-9)]
   const by = (b: B, v: number) => {
@@ -133,6 +135,43 @@ export function TimeChart({ label, unit, points, series, start, end, decimals = 
   const path = (ps: [number, number][]) => segments(ps).map((seg) => seg.map((p, k) => `${k ? 'L' : 'M'}${sx(p[0]).toFixed(1)},${sy(p[1]).toFixed(1)}`).join(' '))
   const read = main ? main.pts.map((p) => ({ p, l: { label: main.label } })) : all
   const last = read.reduce((a, b) => (b.p[0] > a.p[0] ? b : a))
+  const bandPath = (b: B) => {
+    if (b.kind === 'amount') {
+      const w = (HOUR / span) * W
+      return b.pts.filter((p) => p[1] > 0).map((p) => `M${(sx(p[0]) - w).toFixed(1)},${H}V${by(b, p[1]).toFixed(1)}h${w.toFixed(2)}V${H}Z`).join('')
+    }
+    return segments(b.pts).filter((seg) => seg.length > 0).map((seg) =>
+      `M${sx(seg[0][0]).toFixed(1)},${H}` + seg.map((p) => `L${sx(p[0]).toFixed(1)},${by(b, p[1]).toFixed(1)}`).join('') + `L${sx(seg[seg.length - 1][0]).toFixed(1)},${H}Z`).join('')
+  }
+  const offAxis = bands.filter((b) => !onAxis(b))
+  const notes = [...new Set(bands.map((b) => b.note).filter((n): n is string => !!n))]
+  const ariaLabel = main ? `${label}: ${main.label} only, ${main.pts.length} hours, from ${fmt(Math.min(...ys))} to ${fmt(Math.max(...ys))}`
+    : `${label}: ${pts.length} reports, from ${fmt(Math.min(...pts.map((p) => p[1])))} to ${fmt(Math.max(...pts.map((p) => p[1])))}, latest ${fmt(last.p[1])}${bands.length ? `, with ${bands.map((b) => b.label).join(' and ')}` : ''}`
+  const plot = (
+    <>
+      {[0.25, 0.5, 0.75].map((f) => <line key={f} className="tchart-grid" x1={0} x2={W} y1={H * f} y2={H * f} />)}
+      {bands.map((b) => <path key={b.label} d={bandPath(b)} className={`tchart-band ${b.kind}`} style={{ fill: b.color }} />)}
+      {/* Night dims the bands beneath it, not the lines above. */}
+      {(nights ?? []).map(([a, b]) => <rect key={a} className="tchart-night" x={sx(Math.max(a, start))} y={0} width={Math.max(0, sx(Math.min(b, end)) - sx(Math.max(a, start)))} height={H} />)}
+      {lines0.map((l, j) => path(l.pts).map((d, k) => <path key={`${j}-${k}`} d={d} className="tchart-line" style={{ stroke: l.color }} vectorEffect="non-scaling-stroke" />))}
+      {lines0.map((l, j) => l.pts.length <= 40 && l.pts.map((p) => <circle key={`${j}-${p[0]}`} cx={sx(p[0])} cy={sy(p[1])} r={1.6} className="tchart-dot" style={{ fill: l.color }} vectorEffect="non-scaling-stroke" />))}
+    </>
+  )
+  return { lines0, bands, main, y0, y1, span, sx, fmt, fmtB, scale, bandAt, read, last, offAxis, notes, ariaLabel, plot }
+}
+
+export function TimeChart(props: TimeChartProps) {
+  const { label, series, start, end, empty, nights } = props
+  const box = useRef<HTMLDivElement>(null)
+  // The moment inspected: the group's, or this chart's own outside a group.
+  const sync = useContext(Sync)
+  const [ownT, setOwnT] = useState<number | null>(null)
+  const t = sync ? sync.t : ownT
+  const setT = sync ? sync.set : setOwnT
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const g: Prepared | null = useMemo(() => prepare(props), [props.label, props.unit, props.points, props.series, props.start, props.end, props.decimals, props.domain, props.bands, props.nights])
+  if (!g) return empty ? <p className="muted small">{label}: {empty}</p> : null
+  const { lines0, bands, main, y0, y1, span, sx, fmt, fmtB, scale, bandAt, read, last, offAxis, notes } = g
   const onMove = (e: PointerEvent<HTMLDivElement>) => {
     const r = box.current!.getBoundingClientRect()
     setT(start + (Math.min(Math.max(e.clientX - r.left, 0), r.width) / r.width) * span)
@@ -145,16 +184,6 @@ export function TimeChart({ label, unit, points, series, start, end, decimals = 
   const hover = t === null ? null : hit ? { p: hit.p, l: hit.l.label } : { p: [t, NaN] as [number, number], l: '' }
   const shownX = hover ?? { p: last.p, l: last.l.label }
   const shown = shownX.p
-  const bandPath = (b: B) => {
-    if (b.kind === 'amount') {
-      const w = (HOUR / span) * W
-      return b.pts.filter((p) => p[1] > 0).map((p) => `M${(sx(p[0]) - w).toFixed(1)},${H}V${by(b, p[1]).toFixed(1)}h${w.toFixed(2)}V${H}Z`).join('')
-    }
-    return segments(b.pts).filter((seg) => seg.length > 0).map((seg) =>
-      `M${sx(seg[0][0]).toFixed(1)},${H}` + seg.map((p) => `L${sx(p[0]).toFixed(1)},${by(b, p[1]).toFixed(1)}`).join('') + `L${sx(seg[seg.length - 1][0]).toFixed(1)},${H}Z`).join('')
-  }
-  const offAxis = bands.filter((b) => !onAxis(b))
-  const notes = [...new Set(bands.map((b) => b.note).filter((n): n is string => !!n))]
   return (
     <figure className="tchart">
       <figcaption>
@@ -172,15 +201,8 @@ export function TimeChart({ label, unit, points, series, start, end, decimals = 
         <span className="tchart-y top">{fmt(y1)}</span>
         <span className="tchart-y bottom">{fmt(y0)}</span>
         {offAxis.map((b, i) => <span key={b.label} className="tchart-y top band" style={{ color: b.color, top: 2 + 12 * i }}>{fmtB(b, scale(b)[1])}</span>)}
-        <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img"
-          aria-label={main ? `${label}: ${main.label} only, ${main.pts.length} hours, from ${fmt(Math.min(...ys))} to ${fmt(Math.max(...ys))}`
-            : `${label}: ${pts.length} reports, from ${fmt(Math.min(...pts.map((p) => p[1])))} to ${fmt(Math.max(...pts.map((p) => p[1])))}, latest ${fmt(last.p[1])}${bands.length ? `, with ${bands.map((b) => b.label).join(' and ')}` : ''}`}>
-          {[0.25, 0.5, 0.75].map((f) => <line key={f} className="tchart-grid" x1={0} x2={W} y1={H * f} y2={H * f} />)}
-          {bands.map((b) => <path key={b.label} d={bandPath(b)} className={`tchart-band ${b.kind}`} style={{ fill: b.color }} />)}
-          {/* Night dims the bands beneath it, not the lines above. */}
-          {(nights ?? []).map(([a, b]) => <rect key={a} className="tchart-night" x={sx(Math.max(a, start))} y={0} width={Math.max(0, sx(Math.min(b, end)) - sx(Math.max(a, start)))} height={H} />)}
-          {lines0.map((l, j) => path(l.pts).map((d, k) => <path key={`${j}-${k}`} d={d} className="tchart-line" style={{ stroke: l.color }} vectorEffect="non-scaling-stroke" />))}
-          {lines0.map((l, j) => l.pts.length <= 40 && l.pts.map((p) => <circle key={`${j}-${p[0]}`} cx={sx(p[0])} cy={sy(p[1])} r={1.6} className="tchart-dot" style={{ fill: l.color }} vectorEffect="non-scaling-stroke" />))}
+        <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" role="img" aria-label={g.ariaLabel}>
+          {g.plot}
           {hover && <line className="tchart-cursor" x1={sx(hover.p[0])} x2={sx(hover.p[0])} y1={0} y2={H} vectorEffect="non-scaling-stroke" />}
         </svg>
       </div>
