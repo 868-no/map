@@ -2,7 +2,9 @@ package main
 
 import (
 	"fmt"
+	"net"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -28,6 +30,23 @@ func healthcheckCmd() *cobra.Command {
 			return nil
 		},
 	}
-	cmd.Flags().StringVar(&addr, "addr", "127.0.0.1:8000", "backend HTTP address")
+	cmd.Flags().StringVar(&addr, "addr", probeAddr(os.Getenv("HTTP_ADDR")), "backend HTTP address (default from HTTP_ADDR)")
 	return cmd
+}
+
+// probeAddr is where to reach a server listening on listen (HTTP_ADDR,
+// default ":8000"): a wildcard host is probed on loopback. Read directly,
+// not through config.LoadEnv, so a probe never fails on unrelated settings.
+func probeAddr(listen string) string {
+	if listen == "" {
+		listen = ":8000"
+	}
+	host, port, err := net.SplitHostPort(listen)
+	if err != nil {
+		return listen
+	}
+	if ip := net.ParseIP(host); host == "" || ip != nil && ip.IsUnspecified() {
+		host = "127.0.0.1"
+	}
+	return net.JoinHostPort(host, port)
 }
