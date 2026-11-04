@@ -92,7 +92,7 @@ fn engine_matches_the_recorded_server_views() {
 const LOG_NODES: &[&str] = &["!b1610d41", "!9b0f4bd5", "!1224405f", "!011e7098"];
 const ROUTES: &[&str] = &["5b183f9a5eda8a24", "cfad293b363dece8", "6d56465f5dec6de5", "e57c03ceeb34b221"];
 
-/// Every view kind with default options (CLIENT_MUTE rule and MQTT links on),
+/// Every view kind with default options (CLIENT_MUTE, MQTT-link, move and signal rules on),
 /// engine-only fields kept: locks the engine's current behaviour.
 #[test]
 fn engine_matches_its_recorded_views() {
