@@ -27,6 +27,7 @@ import (
 	"github.com/868-no/map/internal/query"
 	"github.com/868-no/map/internal/security"
 	"github.com/868-no/map/internal/storage"
+	"github.com/868-no/map/internal/terrain"
 	"github.com/868-no/map/internal/weather"
 	"github.com/868-no/map/internal/window"
 )
@@ -362,11 +363,16 @@ func serveCmd() *cobra.Command {
 			apiSrv := &api.Server{Pool: pool,
 				Hub: hub, Env: c.Env, ConfigRev: c.Revision(), Metrics: m, Log: log, HeavySlots: c.Env.APIReadSlots,
 				Geo: api.GeoOptions{Enabled: c.Env.GeolocationEnabled, MinPrecisionBits: c.Env.GeolocationMinPrec, Exclude: c.Exclude, Params: c.GeoParams()}}
+			ua := "868-map/" + api.Version + " github.com/868-no/map"
+			if c.Env.OperatorContact != "" {
+				ua += " " + c.Env.OperatorContact
+			}
+			if c.Env.TerrainEnabled {
+				apiSrv.Terrain = terrain.New(c.Env.TerrainURL, ua)
+				apiSrv.Terrain.Store, apiSrv.Terrain.Log = &terrain.Store{Pool: pool}, log
+				go apiSrv.Terrain.Run(ctx)
+			}
 			if c.Env.WeatherEnabled {
-				ua := "868-map/" + api.Version + " github.com/868-no/map"
-				if c.Env.OperatorContact != "" {
-					ua += " " + c.Env.OperatorContact
-				}
 				apiSrv.Weather = weather.New(c.Env.WeatherURL, ua)
 				apiSrv.Weather.Store, apiSrv.Weather.Log = &weather.Store{Pool: pool}, log
 				go apiSrv.Weather.Run(ctx)

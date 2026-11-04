@@ -1,5 +1,26 @@
 components:
   schemas:
+    Antenna:
+      additionalProperties: false
+      properties:
+        ground:
+          description: Terrain height at the end's position
+          format: double
+          type: number
+        height:
+          description: Antenna height above sea level; absent when neither reported nor known from the terrain
+          format: double
+          type: number
+        source:
+          description: "reported: the altitude the node reports; terrain: the terrain plus 2 m"
+          enum:
+            - reported
+            - terrain
+            - none
+          type: string
+      required:
+        - source
+      type: object
     Calibration:
       additionalProperties: false
       properties:
@@ -81,6 +102,9 @@ components:
           type: boolean
         live:
           type: boolean
+        terrain:
+          description: /api/v1/terrain is served (D-143)
+          type: boolean
         weather:
           description: GET /api/v1/weather is served (D-133)
           type: boolean
@@ -88,6 +112,7 @@ components:
         - geolocation
         - live
         - weather
+        - terrain
       type: object
     CapabilitiesBodyMapStruct:
       additionalProperties: false
@@ -803,6 +828,43 @@ components:
         - configured_cutoff
         - retention_months
       type: object
+    Sample:
+      additionalProperties: false
+      properties:
+        bulge:
+          description: How far the earth's curvature raises the ground here relative to the straight line, m
+          format: double
+          type: number
+        d:
+          description: Distance from the first end, m
+          format: double
+          type: number
+        fresnel:
+          description: Radius of the first Fresnel zone, m
+          format: double
+          type: number
+        ground:
+          description: Terrain height; absent where the terrain model has none (abroad)
+          format: double
+          type: number
+        lat:
+          format: double
+          type: number
+        line:
+          description: Height of the straight line between the antennas
+          format: double
+          type: number
+        lon:
+          format: double
+          type: number
+      required:
+        - d
+        - lat
+        - lon
+        - bulge
+        - line
+        - fresnel
+      type: object
     Status:
       additionalProperties: false
       properties:
@@ -827,6 +889,164 @@ components:
         - deleted_rows
         - table_bytes
         - duration_ms
+      type: object
+    TerrainClass:
+      additionalProperties: false
+      properties:
+        class:
+          enum:
+            - clear
+            - grazing
+            - blocked
+            - unknown
+          type: string
+        length_m:
+          format: double
+          type: number
+        worst_clearance:
+          description: Least free part of the first Fresnel zone, in Fresnel radii
+          format: double
+          type: number
+      required:
+        - class
+        - length_m
+        - worst_clearance
+      type: object
+    TerrainClassesInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/api/schemas/TerrainClassesInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        links:
+          description: Links to classify, by the positions of their ends
+          items:
+            $ref: "#/components/schemas/TerrainLink"
+          maxItems: 400
+          type:
+            - array
+            - "null"
+      required:
+        - links
+      type: object
+    TerrainClassesOutputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/api/schemas/TerrainClassesOutputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        attribution:
+          type: string
+        classes:
+          description: One per link, in order
+          items:
+            $ref: "#/components/schemas/TerrainClass"
+          type:
+            - array
+            - "null"
+        incomplete:
+          description: Heights are still being fetched; ask again in a few seconds
+          type: boolean
+      required:
+        - classes
+        - attribution
+      type: object
+    TerrainLink:
+      additionalProperties: false
+      properties:
+        alt1:
+          description: "Altitude the first end reports, m above sea level; 0 or absent: none"
+          format: double
+          type: number
+        alt2:
+          format: double
+          type: number
+        lat1:
+          format: double
+          maximum: 90
+          minimum: -90
+          type: number
+        lat2:
+          format: double
+          maximum: 90
+          minimum: -90
+          type: number
+        lon1:
+          format: double
+          maximum: 180
+          minimum: -180
+          type: number
+        lon2:
+          format: double
+          maximum: 180
+          minimum: -180
+          type: number
+      required:
+        - lat1
+        - lon1
+        - lat2
+        - lon2
+      type: object
+    TerrainProfileBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/api/schemas/TerrainProfileBody.json
+          format: uri
+          readOnly: true
+          type: string
+        a:
+          $ref: "#/components/schemas/Antenna"
+          description: The first end's antenna
+        attribution:
+          type: string
+        b:
+          $ref: "#/components/schemas/Antenna"
+          description: The second end's antenna
+        class:
+          description: "clear: at least 60 % of the first Fresnel zone free; grazing: the line is free, the zone is not; blocked: terrain cuts the line; unknown: the terrain model does not cover enough of it"
+          enum:
+            - clear
+            - grazing
+            - blocked
+            - unknown
+          type: string
+        incomplete:
+          description: Heights are still being fetched; ask again in a few seconds
+          type: boolean
+        length_m:
+          format: double
+          type: number
+        samples:
+          items:
+            $ref: "#/components/schemas/Sample"
+          type:
+            - array
+            - "null"
+        worst_clearance:
+          format: double
+          type: number
+        worst_d:
+          format: double
+          type: number
+      required:
+        - attribution
+        - class
+        - length_m
+        - a
+        - b
+        - worst_d
+        - worst_clearance
       type: object
     TrendBucket:
       additionalProperties: false
@@ -1268,6 +1488,147 @@ paths:
       summary: Live updates for the rolling window (SSE)
       tags:
         - live
+  /api/v1/terrain/classes:
+    post:
+      operationId: terrain-classes
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TerrainClassesInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TerrainClassesOutputBody"
+          description: OK
+        "400":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Bad Request
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Not Found
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+      summary: Line-of-sight classes of links between pairs of points
+      tags:
+        - meta
+  /api/v1/terrain/profile:
+    get:
+      operationId: terrain-profile
+      parameters:
+        - description: Latitude of the first end
+          explode: false
+          in: query
+          name: lat1
+          required: true
+          schema:
+            description: Latitude of the first end
+            format: double
+            maximum: 90
+            minimum: -90
+            type: number
+        - explode: false
+          in: query
+          name: lon1
+          required: true
+          schema:
+            format: double
+            maximum: 180
+            minimum: -180
+            type: number
+        - description: Latitude of the second end
+          explode: false
+          in: query
+          name: lat2
+          required: true
+          schema:
+            description: Latitude of the second end
+            format: double
+            maximum: 90
+            minimum: -90
+            type: number
+        - explode: false
+          in: query
+          name: lon2
+          required: true
+          schema:
+            format: double
+            maximum: 180
+            minimum: -180
+            type: number
+        - description: "Altitude the first end reports, m above sea level; 0 or absent: none, the antenna is put 2 m above the terrain"
+          explode: false
+          in: query
+          name: alt1
+          schema:
+            description: "Altitude the first end reports, m above sea level; 0 or absent: none, the antenna is put 2 m above the terrain"
+            format: double
+            type: number
+        - description: Altitude the second end reports
+          explode: false
+          in: query
+          name: alt2
+          schema:
+            description: Altitude the second end reports
+            format: double
+            type: number
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TerrainProfileBody"
+          description: OK
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+        "400":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Bad Request
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Not Found
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+      summary: Cross section of the terrain between two points and its line-of-sight class (Kartverket)
+      tags:
+        - meta
   /api/v1/trends:
     get:
       operationId: trends

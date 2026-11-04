@@ -58,7 +58,7 @@ Pin a version tag or `sha-…` in production (`compose.production.yaml` takes it
 
 ## Privacy policy
 
-The map links to `/privacy.html` (source: `frontend/public/privacy.html`). It describes what this software collects and fills in, from `/api/v1/capabilities`, the operator (`OPERATOR_NAME`), how to reach them (`OPERATOR_CONTACT`, an e-mail address or URL; with weather on, it is also sent to MET Norway in the backend's User-Agent), the retention period, whether position estimates are on, whether map tiles come from an outside provider and whether the backend fetches weather from MET Norway (`WEATHER_ENABLED`, on by default; it needs outbound HTTPS to `thredds.met.no`, D-133). Set both operator variables in production. If you change what the deployment collects or shares (an outside tile provider, access logs in your reverse proxy), check the page still matches, and edit it if not; it is a draft for the operator to review, not legal advice.
+The map links to `/privacy.html` (source: `frontend/public/privacy.html`). It describes what this software collects and fills in, from `/api/v1/capabilities`, the operator (`OPERATOR_NAME`), how to reach them (`OPERATOR_CONTACT`, an e-mail address or URL; with weather on, it is also sent to MET Norway in the backend's User-Agent), the retention period, whether position estimates are on, whether map tiles come from an outside provider and whether the backend fetches weather from MET Norway (`WEATHER_ENABLED`, on by default; it needs outbound HTTPS to `thredds.met.no`, D-133) and whether it fetches terrain heights from Kartverket (`TERRAIN_ENABLED`, on by default; it needs outbound HTTPS to `ws.geonorge.no`, and sends the operator contact in its User-Agent too, D-143). Set both operator variables in production. If you change what the deployment collects or shares (an outside tile provider, access logs in your reverse proxy), check the page still matches, and edit it if not; it is a draft for the operator to review, not legal advice.
 
 ## HTTPS / reverse proxy
 
@@ -104,6 +104,10 @@ The first start of a version with D-056 converts `packet_log` to a partitioned t
 ## Upgrading to schema 3 (weather)
 
 Schema 3 adds the `weather_hour` table (D-133); `init-schema` creates it at the first start of a version that has it, with nothing to convert. The backend checks the exact schema version and list of tables at startup, so an image older than schema 3 refuses to start against a schema-3 database. To roll back past it, restore a backup taken before the upgrade.
+
+## Upgrading to schema 4 (terrain)
+
+Schema 4 adds the `terrain_height` table (D-143); `init-schema` creates it at the first start of a version that has it, with nothing to convert. As with schema 3, an older image refuses to start against a schema-4 database; to roll back past it, restore a backup taken before the upgrade.
 
 ## Retention
 

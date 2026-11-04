@@ -25,6 +25,7 @@ Each dependency's license text is in its source distribution (the Go module cach
 | [OSMData water polygons](https://osmdata.openstreetmap.de/) | basemap | ODbL 1.0 |
 | [Kartverket](https://www.kartverket.no/) county boundaries (2024), via [robhop/fylker-og-kommuner](https://github.com/robhop/fylker-og-kommuner), dissolved into regions by `scripts/regions.sh` | `frontend/src/assets/regions.geojson` (regions layer) | CC BY 4.0, attribution "© Kartverket" |
 | [MET Nordic analysis](https://github.com/metno/NWPdocs/wiki/MET-Nordic-dataset) from [MET Norway](https://www.met.no/en/free-meteorological-data/Licensing-and-crediting) and the [MEPS](https://github.com/metno/NWPdocs/wiki/MEPS-dataset) forecast model (hourly air temperature, precipitation, humidity, cloud cover, wind and gusts) | fetched at runtime by the backend for weather bands on charts and kept in `weather_hour` for the retention period (D-133) | CC BY 4.0, attribution "MET Norway" |
+| [Kartverket](https://www.kartverket.no/)'s terrain model (DTM), via the [Geonorge height API](https://ws.geonorge.no/hoydedata/v1/) | fetched at runtime by the backend for link cross sections and kept in `terrain_height` (D-143) | CC BY 4.0, attribution "© Kartverket" |
 | [Planetiler](https://github.com/onthegomap/planetiler) | basemap image base (`ghcr.io/onthegomap/planetiler`) | Apache-2.0 |
 | [Caddy](https://caddyserver.com/) | web image base | Apache-2.0 |
 

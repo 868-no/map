@@ -5,7 +5,8 @@
 -- Every statement is idempotent; init-schema runs it under an advisory lock
 -- (after migrating an unpartitioned table from schema 1, see migrate.go).
 -- The schema version lives in the table comment, not in a migrations table.
--- The one other table, weather_hour, holds weather, not mesh data (D-133).
+-- The two other tables hold no mesh data: weather_hour weather (D-133),
+-- terrain_height terrain heights (D-143).
 
 -- PostgreSQL 16 has no identity columns on partitioned tables: a sequence.
 CREATE SEQUENCE IF NOT EXISTS packet_log_id_seq AS BIGINT;
@@ -98,4 +99,16 @@ CREATE TABLE IF NOT EXISTS weather_hour (
 ALTER TABLE weather_hour ADD COLUMN IF NOT EXISTS sun_wm2 REAL;
 ALTER TABLE weather_hour ADD COLUMN IF NOT EXISTS version SMALLINT NOT NULL DEFAULT 1;
 
-COMMENT ON TABLE packet_log IS 'meshmap-schema:3';
+-- Terrain heights (D-143) from Kartverket's terrain model, on a grid of
+-- 0.0005° (lat_k = round(lat / 0.0005)), for line-of-sight cross sections
+-- between routers. Terrain does not change: rows are fetched once and kept,
+-- and retention leaves them. z NULL: the model has no height there (abroad).
+-- No node ids: it says nothing about the mesh.
+CREATE TABLE IF NOT EXISTS terrain_height (
+    lat_k INTEGER NOT NULL,
+    lon_k INTEGER NOT NULL,
+    z     REAL,
+    CONSTRAINT terrain_height_pkey PRIMARY KEY (lat_k, lon_k)
+);
+
+COMMENT ON TABLE packet_log IS 'meshmap-schema:4';

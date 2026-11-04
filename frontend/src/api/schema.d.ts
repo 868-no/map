@@ -92,6 +92,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/terrain/classes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Line-of-sight classes of links between pairs of points */
+        post: operations["terrain-classes"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/terrain/profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Cross section of the terrain between two points and its line-of-sight class (Kartverket) */
+        get: operations["terrain-profile"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/trends": {
         parameters: {
             query?: never;
@@ -130,6 +164,23 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        Antenna: {
+            /**
+             * Format: double
+             * @description Terrain height at the end's position
+             */
+            ground?: number;
+            /**
+             * Format: double
+             * @description Antenna height above sea level; absent when neither reported nor known from the terrain
+             */
+            height?: number;
+            /**
+             * @description reported: the altitude the node reports; terrain: the terrain plus 2 m
+             * @enum {string}
+             */
+            source: "reported" | "terrain" | "none";
+        };
         Calibration: {
             /** Format: double */
             p0_dbm: number;
@@ -166,6 +217,8 @@ export interface components {
         CapabilitiesBodyFeaturesStruct: {
             geolocation: boolean;
             live: boolean;
+            /** @description /api/v1/terrain is served (D-143) */
+            terrain: boolean;
             /** @description GET /api/v1/weather is served (D-133) */
             weather: boolean;
         };
@@ -578,6 +631,37 @@ export interface components {
             /** Format: int64 */
             retention_months: number;
         };
+        Sample: {
+            /**
+             * Format: double
+             * @description How far the earth's curvature raises the ground here relative to the straight line, m
+             */
+            bulge: number;
+            /**
+             * Format: double
+             * @description Distance from the first end, m
+             */
+            d: number;
+            /**
+             * Format: double
+             * @description Radius of the first Fresnel zone, m
+             */
+            fresnel: number;
+            /**
+             * Format: double
+             * @description Terrain height; absent where the terrain model has none (abroad)
+             */
+            ground?: number;
+            /** Format: double */
+            lat: number;
+            /**
+             * Format: double
+             * @description Height of the straight line between the antennas
+             */
+            line: number;
+            /** Format: double */
+            lon: number;
+        };
         Status: {
             /** Format: date-time */
             cutoff: string;
@@ -589,6 +673,84 @@ export interface components {
             last_run: string;
             /** Format: int64 */
             table_bytes: number;
+        };
+        TerrainClass: {
+            /** @enum {string} */
+            class: "clear" | "grazing" | "blocked" | "unknown";
+            /** Format: double */
+            length_m: number;
+            /**
+             * Format: double
+             * @description Least free part of the first Fresnel zone, in Fresnel radii
+             */
+            worst_clearance: number;
+        };
+        TerrainClassesInputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/api/schemas/TerrainClassesInputBody.json
+             */
+            readonly $schema?: string;
+            /** @description Links to classify, by the positions of their ends */
+            links: components["schemas"]["TerrainLink"][] | null;
+        };
+        TerrainClassesOutputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/api/schemas/TerrainClassesOutputBody.json
+             */
+            readonly $schema?: string;
+            attribution: string;
+            /** @description One per link, in order */
+            classes: components["schemas"]["TerrainClass"][] | null;
+            /** @description Heights are still being fetched; ask again in a few seconds */
+            incomplete?: boolean;
+        };
+        TerrainLink: {
+            /**
+             * Format: double
+             * @description Altitude the first end reports, m above sea level; 0 or absent: none
+             */
+            alt1?: number;
+            /** Format: double */
+            alt2?: number;
+            /** Format: double */
+            lat1: number;
+            /** Format: double */
+            lat2: number;
+            /** Format: double */
+            lon1: number;
+            /** Format: double */
+            lon2: number;
+        };
+        TerrainProfileBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/api/schemas/TerrainProfileBody.json
+             */
+            readonly $schema?: string;
+            /** @description The first end's antenna */
+            a: components["schemas"]["Antenna"];
+            attribution: string;
+            /** @description The second end's antenna */
+            b: components["schemas"]["Antenna"];
+            /**
+             * @description clear: at least 60 % of the first Fresnel zone free; grazing: the line is free, the zone is not; blocked: terrain cuts the line; unknown: the terrain model does not cover enough of it
+             * @enum {string}
+             */
+            class: "clear" | "grazing" | "blocked" | "unknown";
+            /** @description Heights are still being fetched; ask again in a few seconds */
+            incomplete?: boolean;
+            /** Format: double */
+            length_m: number;
+            samples?: components["schemas"]["Sample"][] | null;
+            /** Format: double */
+            worst_clearance: number;
+            /** Format: double */
+            worst_d: number;
         };
         TrendBucket: {
             /** @description Distinct packets by type */
@@ -934,6 +1096,134 @@ export interface operations {
             };
             /** @description Error */
             default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "terrain-classes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TerrainClassesInputBody"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TerrainClassesOutputBody"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "terrain-profile": {
+        parameters: {
+            query: {
+                /** @description Latitude of the first end */
+                lat1: number;
+                lon1: number;
+                /** @description Latitude of the second end */
+                lat2: number;
+                lon2: number;
+                /** @description Altitude the first end reports, m above sea level; 0 or absent: none, the antenna is put 2 m above the terrain */
+                alt1?: number;
+                /** @description Altitude the second end reports */
+                alt2?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TerrainProfileBody"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
                 headers: {
                     [name: string]: unknown;
                 };

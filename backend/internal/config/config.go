@@ -53,8 +53,11 @@ type Env struct {
 	GeolocationMinPrec   uint32   `env:"GEOLOCATION_MIN_PRECISION_BITS" envDefault:"15"`
 	PublicMetricsEnabled bool     `env:"PUBLIC_METRICS_ENABLED" envDefault:"false"`
 	// Hourly weather for stationary routers from MET Norway (D-133).
-	WeatherEnabled  bool     `env:"WEATHER_ENABLED" envDefault:"true"`
-	WeatherURL      string   `env:"WEATHER_URL" envDefault:"https://thredds.met.no/thredds/dodsC"`
+	WeatherEnabled bool   `env:"WEATHER_ENABLED" envDefault:"true"`
+	WeatherURL     string `env:"WEATHER_URL" envDefault:"https://thredds.met.no/thredds/dodsC"`
+	// Terrain cross sections of router links from Kartverket (D-143).
+	TerrainEnabled  bool     `env:"TERRAIN_ENABLED" envDefault:"true"`
+	TerrainURL      string   `env:"TERRAIN_URL" envDefault:"https://ws.geonorge.no/hoydedata/v1"`
 	SignaturePolicy string   `env:"SIGNATURE_POLICY" envDefault:"balanced"`
 	TrustedProxies  []string `env:"TRUSTED_PROXIES" envSeparator:"," envDefault:"10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,127.0.0.0/8,::1/128,fc00::/7"`
 	// Public API protection, per client (an IPv4 address or an IPv6 /64).

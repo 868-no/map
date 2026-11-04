@@ -28,6 +28,7 @@ This page shows the components and where the code lives. The rules the system fo
         packet_log (mesh data,            dedupe keys, live pub/sub,
         monthly partitions)               maintenance status
         weather_hour (weather, D-133)
+        terrain_height (terrain, D-143)
                 ▲
                 │
    maintenance (meshmap maintenance)
@@ -93,6 +94,7 @@ backend/
   internal/api            huma handlers, SSE hub, health, per-client limits, client IP
   internal/maintenance    retention runner (drops expired months, trims the boundary month and weather_hour)
   internal/weather        MET Norway client (OPeNDAP, grid cells), weather_hour store, fetch queue
+  internal/terrain        Kartverket height client, terrain_height store, cross sections and line-of-sight classes
   internal/envimport      import-envelopes: replays recorded MQTT history through ingest.Process (D-137)
   internal/observability  logging and Prometheus metrics
   internal/demo           simulator, scenarios, demo publisher

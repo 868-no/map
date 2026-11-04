@@ -53,7 +53,7 @@ func freshDB(t *testing.T) *pgxpool.Pool {
 		t.Fatal(err)
 	}
 	t.Cleanup(pool.Close)
-	if _, err := pool.Exec(ctx, `DROP TABLE IF EXISTS packet_log, weather_hour`); err != nil {
+	if _, err := pool.Exec(ctx, `DROP TABLE IF EXISTS packet_log, weather_hour, terrain_height`); err != nil {
 		t.Fatal(err)
 	}
 	if err := storage.InitSchema(ctx, pool); err != nil {

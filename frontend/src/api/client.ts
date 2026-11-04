@@ -10,7 +10,15 @@ export class ApiError extends Error {
 /** GET a JSON endpoint; aborts propagate so superseded requests are cancelled. */
 export async function getJSON<T>(path: string, params?: URLSearchParams, signal?: AbortSignal): Promise<T> {
   const url = params && [...params.keys()].length ? `${path}?${params}` : path
-  const res = await fetch(url, { signal, headers: { Accept: 'application/json' } })
+  return readJSON<T>(await fetch(url, { signal, headers: { Accept: 'application/json' } }))
+}
+
+/** POST a JSON body to an endpoint that only reads (no state changes). */
+export async function postJSON<T>(path: string, body: unknown, signal?: AbortSignal): Promise<T> {
+  return readJSON<T>(await fetch(path, { method: 'POST', signal, headers: { Accept: 'application/json', 'Content-Type': 'application/json' }, body: JSON.stringify(body) }))
+}
+
+async function readJSON<T>(res: Response): Promise<T> {
   noteResponse(res)
   if (!res.ok) {
     let detail = res.statusText

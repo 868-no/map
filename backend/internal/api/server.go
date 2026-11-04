@@ -18,6 +18,7 @@ import (
 	"github.com/868-no/map/internal/geo"
 	"github.com/868-no/map/internal/observability"
 	"github.com/868-no/map/internal/storage"
+	"github.com/868-no/map/internal/terrain"
 	"github.com/868-no/map/internal/weather"
 	"github.com/868-no/map/internal/window"
 )
@@ -49,6 +50,8 @@ type Server struct {
 	HeavySlots int
 	// Weather serves /weather (D-133); nil when disabled.
 	Weather *weather.Client
+	// Terrain serves /terrain (D-143); nil when disabled.
+	Terrain *terrain.Client
 
 	heavy      chan struct{}
 	closing    chan struct{}
@@ -208,5 +211,9 @@ func (s *Server) register(api huma.API) {
 		Summary: "Daily, weekly or monthly summaries over the whole retained log", Tags: []string{"mesh"}, Errors: []int{400, 503}}, s.trends)
 	huma.Register(api, huma.Operation{OperationID: "weather", Method: http.MethodGet, Path: "/api/v1/weather",
 		Summary: "Hourly weather at a point from MET Norway's analysis (temperature, precipitation)", Tags: []string{"meta"}, Errors: []int{400, 404, 422}}, s.weather)
+	huma.Register(api, huma.Operation{OperationID: "terrain-profile", Method: http.MethodGet, Path: "/api/v1/terrain/profile",
+		Summary: "Cross section of the terrain between two points and its line-of-sight class (Kartverket)", Tags: []string{"meta"}, Errors: []int{400, 404, 422}}, s.terrainProfile)
+	huma.Register(api, huma.Operation{OperationID: "terrain-classes", Method: http.MethodPost, Path: "/api/v1/terrain/classes",
+		Summary: "Line-of-sight classes of links between pairs of points", Tags: []string{"meta"}, Errors: []int{400, 404}}, s.terrainClasses)
 	s.registerStream(api)
 }

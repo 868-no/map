@@ -26,6 +26,8 @@ x-backend-env: &backend-env
   OPERATOR_CONTACT: ${OPERATOR_CONTACT:-}
   # Weather bands on router and link charts, fetched from MET Norway (D-133).
   WEATHER_ENABLED: ${WEATHER_ENABLED:-true}
+  # Link cross sections and line of sight from Kartverket's terrain model (D-143).
+  TERRAIN_ENABLED: ${TERRAIN_ENABLED:-true}
   # Brokers and channel keys: the same YAML as config/examples/*.yaml.
   MQTT_BROKERS: |
     brokers:
