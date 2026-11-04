@@ -25,7 +25,9 @@ Env values are visible to anyone who can run `docker inspect` on the host; use t
 
 ### Continuous integration
 
-`.github/workflows/tests.yml` runs on every pull request and push: Go vet, gofmt and unit tests; the integration tests (throwaway Postgres, Redis and Mosquitto); the engine's Rust tests (including the golden fixture); and the frontend's type check, lint, unit tests and production build. It uses the same Docker-wrapped toolchains as local development (`scripts/*.sh`). End-to-end tests need a running stack with a built basemap and live traffic, so they run against a deployment.
+`.github/workflows/tests.yml` runs on every pull request and push: Go vet, gofmt and unit tests; the integration tests (throwaway Postgres, Redis and Mosquitto); the engine's Rust tests (including the golden fixture); the frontend's type check, lint, unit tests and production build; and the end-to-end tests (Playwright, in four parallel shards, each against its own demo stack: the simulated mesh on a local broker plus two days of seeded history). It uses the same Docker-wrapped toolchains as local development (`scripts/*.sh`). The basemap is not built in CI, so end-to-end tests that need real map labels skip themselves there; run them against a full deployment.
+
+The `deploy` job runs on pushes to `main` only, after the images job has published the images: it calls the production Portainer stack's webhook, which pulls them and recreates the stack, one deploy at a time in push order. The webhook URL is its only credential, kept in the `DEPLOY_WEBHOOK_URL` repository secret; without it the job fails and nothing is deployed.
 
 ### Published images
 
@@ -33,7 +35,7 @@ GitHub Actions (`.github/workflows/images.yml`, called by the tests workflow onc
 
 | Image | Tags |
 |---|---|
-| `ghcr.io/868-no/map-backend` | `latest` and `main` (main branch), `X.Y.Z` and `X.Y` (tag `vX.Y.Z`), `sha-<commit>` |
+| `ghcr.io/868-no/map-backend` | `main` (main branch), `X.Y.Z` and `X.Y` (tag `vX.Y.Z`), `latest` (whichever was published last: `main` or a version tag other than a pre-release), `sha-<commit>` |
 | `ghcr.io/868-no/map-web` | same |
 | `ghcr.io/868-no/map-basemap` | same |
 
