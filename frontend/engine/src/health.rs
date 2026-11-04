@@ -453,7 +453,7 @@ pub fn health(rows: &[&Row], invalid: &[&Row], nodes: &[Node], copies: &Copies, 
             if slope <= -BATTERY_FALL_PER_DAY {
                 let days = now / -slope;
                 let sev = if now <= BATTERY_WARN_AT || days <= 7.0 { "warning" } else { "notice" };
-                add(n, "battery_falling", sev, format!("Battery falling about {:.0} % a day", -slope), format!("Its battery went from about {:.0} % to {now:.0} % over {:.1} days ({} reports): at this rate it is empty in about {:.0} days. A solar node that does not recover overnight, or a failing battery.", batt[0].1, batt[batt.len() - 1].0 - batt[0].0, batt.len(), days.max(0.0)));
+                add(n, "battery_falling", sev, format!("Battery falling about {:.0} % a day", -slope), format!("Its battery went from about {:.0} % to {now:.0} % over {:.1} days ({} reports): at this rate it is empty {}. A solar node that does not recover overnight, or a failing battery.", batt[0].1, batt[batt.len() - 1].0 - batt[0].0, batt.len(), if days < 1.5 { "within a day".to_string() } else { format!("in about {days:.0} days") }));
             }
         }
         let mut restarts: Vec<i64> = Vec::new();
@@ -477,29 +477,48 @@ pub fn health(rows: &[&Row], invalid: &[&Row], nodes: &[Node], copies: &Copies, 
     // Shared keys (D-142): ids announcing the same public key while both
     // active. A key passed on (an upgrade to 2.8 with the key kept, or a key
     // restored onto new hardware) leaves the old id silent first: not flagged.
-    let mut by_key: FxMap<u32, Vec<u32>> = map();
+    // Anyone can announce any key unsigned, so a node whose NodeInfo verified
+    // (it proved holding the key) is never flagged; the ids claiming its key
+    // are. Without such a proof the claims cannot be told from a copied key,
+    // and are a notice.
+    let mut by_key: FxMap<u32, Vec<(u32, bool)>> = map();
     for x in nodes {
-        if let Some(k) = x.identity.as_ref().and_then(|id| id.key_num) {
-            by_key.entry(k).or_default().push(x.num);
+        if let Some(id) = x.identity.as_ref() {
+            if let Some(k) = id.key_num {
+                by_key.entry(k).or_default().push((x.num, id.signature == "verified" && k == x.num));
+            }
         }
     }
     let span = |n: u32| own.get(&n).map(|m| m.values().fold((i64::MAX, i64::MIN), |(lo, hi), r| (lo.min(r.t), hi.max(r.t))));
+    let overlap = |a: u32, b: u32| matches!((span(a), span(b)), (Some((a0, a1)), Some((b0, b1))) if a1.min(b1) - a0.max(b0) >= SHARED_KEY_OVERLAP_MS);
     for (k, ids) in by_key.into_iter().filter(|(_, v)| v.len() > 1) {
-        for &n in &ids {
-            let Some((a0, a1)) = span(n) else { continue };
-            let mut with: Vec<u32> = ids.iter().copied().filter(|&o| o != n && span(o).is_some_and(|(b0, b1)| a1.min(b1) - a0.max(b0) >= SHARED_KEY_OVERLAP_MS)).collect();
+        let holder = ids.iter().find(|&&(_, proved)| proved).map(|&(n, _)| n);
+        for &(n, proved) in &ids {
+            if proved {
+                continue;
+            }
+            let mut with: Vec<u32> = ids.iter().map(|&(o, _)| o).filter(|&o| o != n && overlap(n, o)).collect();
             if with.is_empty() {
                 continue;
             }
             with.sort();
             let others: Vec<String> = with.iter().map(|&o| node_id(o)).collect();
-            let derived = if ids.contains(&k) { format!("{} already uses the id firmware 2.8 derives from it", node_id(k)) } else { format!("on firmware 2.8 they would all take the id {}", node_id(k)) };
-            add(n, "shared_key", "warning", format!("Shares its public key with {}", others.join(", ")), format!("Both announce the same public key and were active at the same time: devices set up from one backup, or a key copied between them. Either can read direct messages meant for the other, signatures cannot tell them apart, and {derived}. Generate a new key on all but one."));
+            match holder.filter(|h| with.contains(h)) {
+                Some(h) => add(n, "shared_key", "warning", format!("Announces the public key of {}", node_id(h)), format!("{} proved holding this key (a verified signature; firmware 2.8 derives its id from it), while this id announced it unsigned at the same time. Either a device set up from {}'s backup or with its key copied, which can then read its direct messages, or someone announcing another node's key; signatures still tell them apart. A copy should get a new key.", node_id(h), node_id(h))),
+                None => add(n, "shared_key", "notice", format!("Announces the same public key as {}", others.join(", ")), format!("Active at the same time with the same key, and none of them proved holding it (no verified signature, as on firmware 2.7 and earlier). Devices set up from one backup or with a copied key can read each other's direct messages, and on firmware 2.8 they would all take the id {}; but an unsigned NodeInfo can also announce another node's key, so check the devices before acting.", node_id(k))),
+            }
         }
     }
+    // Ids announcing one key are one device under two ids (an upgrade to 2.8,
+    // or a copy the shared-key rule reports), not two nodes named alike.
+    let key_of: FxMap<u32, u32> = nodes.iter().filter_map(|x| Some((x.num, x.identity.as_ref()?.key_num?))).collect();
     for (s, ns) in shorts.into_iter().filter(|(_, v)| v.len() > 1) {
         for &n in &ns {
-            let others: Vec<String> = ns.iter().filter(|&&o| o != n).map(|&o| node_id(o)).collect();
+            let k = key_of.get(&n);
+            let others: Vec<String> = ns.iter().filter(|&&o| o != n && (k.is_none() || key_of.get(&o) != k)).map(|&o| node_id(o)).collect();
+            if others.is_empty() {
+                continue;
+            }
             add(n, "duplicate_name", "notice", format!("Short name \"{s}\" is not unique"), format!("Also used by {}: easy to confuse on the map and in apps.", others.join(", ")));
         }
     }
@@ -526,7 +545,10 @@ pub fn health(rows: &[&Row], invalid: &[&Row], nodes: &[Node], copies: &Copies, 
         rs.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
         let list: Vec<String> = rs.iter().map(|(k, c)| format!("{c} × {}", k.replace('_', " "))).collect();
         let key_change = rs.iter().all(|(k, _)| k == "nodeinfo_key_mismatch");
-        let why = if key_change {
+        let first_contact = rs.iter().all(|(k, _)| k == "first_contact_invalid");
+        let why = if first_contact {
+            "No key is trusted for this node yet, and these signed NodeInfo packets did not establish one: the key they announce does not derive its node id, or their signature does not verify against that key. Someone may be announcing a key for its node number, or a gateway altered the packets on the way. They are kept out of the map, so they do not affect its links or counts."
+        } else if key_change {
             "They announce a different public key than the one trusted for this node: most likely it was reset or reflashed and has a new key, which is trusted only once the old key's announcements leave retention. If not, someone is using its node number."
         } else {
             "Their signatures do not verify against the key trusted for this node: someone may be sending packets in its name, or its key changed. They are kept out of the map, so they do not affect its links or counts."

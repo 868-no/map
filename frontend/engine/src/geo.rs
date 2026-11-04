@@ -118,7 +118,7 @@ fn fmt0(v: f64) -> String {
 pub fn locate(anchors: &crate::util::FxMap<u32, Anchor>, ms: &[Measurement], p: &Params, node_id: impl Fn(u32) -> String) -> Result<Estimate, String> {
     let mut pts: Vec<Pt> = ms.iter().filter_map(|m| anchors.get(&m.anchor).filter(|_| m.samples > 0).map(|a| Pt { x: 0.0, y: 0.0, m: *m, a: *a })).collect();
     if pts.len() < p.min_anchors {
-        return Err(format!("only {} positioned anchors with direct links (need {})", pts.len(), p.min_anchors));
+        return Err(format!("only {} positioned anchor{} with direct links (need {})", pts.len(), if pts.len() == 1 { "" } else { "s" }, p.min_anchors));
     }
     let e = Enu::new(median(pts.iter().map(|q| q.a.lat).collect()), median(pts.iter().map(|q| q.a.lon).collect()));
     let mut dropped = 0;
