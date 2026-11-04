@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import * as maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { MapboxOverlay } from '@deck.gl/mapbox'
+import { ScatterplotLayer } from '@deck.gl/layers'
 import type { Layer, PickingInfo } from '@deck.gl/core'
 import type { Capabilities } from '../api/types'
 import type { Edge, SnapshotView } from '../derive/views'
@@ -332,12 +333,21 @@ export default function MapView({ caps, snapshot, onPositions }: Props) {
     [buildMeshLayers, placed, shownLinks, selection, search, toggles, zoom, clusters, exploded, route, routeGhosts, palette, regions, reach],
   )
 
+  // Where the selected link's cross section is hovered (D-143): a marker on the line.
+  const probe = useStore((s) => s.probe)
+  const probeLayer = useMemo(() => probe && new ScatterplotLayer<[number, number]>({
+    id: 'terrain-probe', data: [probe], getPosition: (p) => p, radiusUnits: 'pixels', getRadius: 6,
+    filled: true, getFillColor: palette.selected, stroked: true, lineWidthUnits: 'pixels', getLineWidth: 2.5,
+    // An outline in the opposite tone: the marker sits on the selected link, drawn in the same colour.
+    getLineColor: palette.selected[0] + palette.selected[1] + palette.selected[2] > 384 ? [14, 17, 22, 255] : [255, 255, 255, 255], pickable: false,
+  }), [probe, palette])
+
   // The mesh layers change only with data, filters and selection.
   useEffect(() => {
     if (!ready || !overlayRef.current) return
-    overlayRef.current.setProps({ layers: baseLayers })
+    overlayRef.current.setProps({ layers: probeLayer ? [...baseLayers, probeLayer] : baseLayers })
     meshLayers.current = baseLayers
-  }, [ready, baseLayers])
+  }, [ready, baseLayers, probeLayer])
 
   // Animation loop, in the ping canvas: runs (~30 fps) only while pings are
   // alive and starts when one is added. Idle, it only probes for a frame

@@ -5,6 +5,8 @@ import { formatLocal } from '../lib/time'
 import { ChartGroup, TimeChart, type Band } from '../components/TimeChart'
 import { meanPoints, useWeather, weatherPoints, weatherSite } from '../state/weather'
 import { nodeName } from '../map/model'
+import { terrainEnd, useTerrainProfile } from '../state/terrain'
+import { CrossSection, LOS_LABEL, LOS_TITLE } from '../components/CrossSection'
 
 export function EdgePanel({ a, b, mqtt = false, snapshot }: { a: string; b: string; mqtt?: boolean; snapshot: SnapshotView | undefined }) {
   const select = useStore((s) => s.select)
@@ -70,10 +72,29 @@ export function EdgePanel({ a, b, mqtt = false, snapshot }: { a: string; b: stri
       ) : (
         <p className="muted">One line on the map per pair. Radio links can be asymmetric, so each direction is measured separately below.</p>
       )}
+      {!mqtt && snapshot && <LineOfSight a={a} b={b} name={name} snapshot={snapshot} />}
       {direction(a, b)}
       {direction(b, a)}
       {!mqtt && snapshot && <LinkHistoryCharts a={a} b={b} name={name} snapshot={snapshot} start={Date.parse(snapshot.meta.window.start)} end={Date.parse(snapshot.meta.window.end)} />}
     </div>
+  )
+}
+
+/** The link's terrain cross section, between reported positions (D-143). */
+function LineOfSight({ a, b, name, snapshot }: { a: string; b: string; name: (id: string) => string; snapshot: SnapshotView }) {
+  const node = (id: string) => snapshot.nodes.find((n) => n.id === id)
+  const ea = terrainEnd(node(a)), eb = terrainEnd(node(b))
+  const p = useTerrainProfile(ea, eb)
+  if (!ea || !eb) return null
+  return (
+    <section className="line-of-sight">
+      <h3 title="From Kartverket's terrain model, between the positions the two nodes report">
+        Line of sight {p.data && !p.data.incomplete && <span className={`conf los-${p.data.class}`} title={LOS_TITLE[p.data.class]}>{LOS_LABEL[p.data.class]}</span>}
+      </h3>
+      {p.isError && <p className="muted small">Terrain unavailable: {p.error.message}</p>}
+      {(p.isLoading || p.data?.incomplete) && <p className="muted small">Loading terrain heights from Kartverket…</p>}
+      {p.data && !p.data.incomplete && <CrossSection profile={p.data} nameA={name(a)} nameB={name(b)} />}
+    </section>
   )
 }
 

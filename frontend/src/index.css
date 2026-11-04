@@ -466,3 +466,18 @@ button.danger:hover { background: var(--err); color: var(--bg); }
    its shadow: they float too (D-082). */
 .maplibregl-ctrl-top-left { top: calc(var(--head-h) + var(--gap)); z-index: 11 !important; }
 
+
+/* A link's terrain cross section (D-143). */
+.xsection-plot { height: 140px; }
+.xs-ground { fill: var(--muted); opacity: .45; }
+.xs-zone { fill: var(--accent); opacity: .12; }
+.xs-zone60 { fill: none; stroke: var(--accent); stroke-width: 1; stroke-dasharray: 3 3; opacity: .6; }
+.xs-line { fill: none; stroke: var(--accent); stroke-width: 1.6; }
+.xs-worst { stroke: var(--err); stroke-width: 1; stroke-dasharray: 2 3; opacity: .7; }
+.tchart-legend i.xs-ground-key { background: var(--muted); }
+.tchart-legend i.xs-zone-key { background: var(--accent); opacity: .25; }
+.conf.los-clear { background: var(--bg-ok); color: var(--ok); }
+.conf.los-grazing { background: var(--bg-warn); color: var(--warn); }
+.conf.los-blocked { background: color-mix(in srgb, var(--err) 18%, transparent); color: var(--err); }
+.conf.los-unknown { background: var(--panel2); color: var(--muted); }
+.line-of-sight h3 { display: flex; gap: 8px; align-items: center; }

@@ -63,6 +63,7 @@ interface Store {
   selection: Selection
   route: string | null // logical key of the packet whose route is drawn
   reach: Reach | null // the selected node's simulated reach, drawn on the map (D-069)
+  probe: [number, number] | null // [lon, lat] the link's cross section is hovered at, marked on the map (D-143)
   search: string
   detailTab: DetailTab // the node panel's tab, kept across selections
   setLive: (durationH?: number) => void
@@ -72,6 +73,7 @@ interface Store {
   select: (s: Selection) => void
   showRoute: (lp: string | null) => void
   setReach: (r: Reach | null) => void
+  setProbe: (p: [number, number] | null) => void
   setSearch: (s: string) => void
   setDetailTab: (t: DetailTab) => void
 }
@@ -122,6 +124,7 @@ export const useStore = create<Store>((set) => ({
   selection: null,
   route: null,
   reach: null,
+  probe: null,
   search: '',
   detailTab: 'overview',
   setLive: (durationH) =>
@@ -136,9 +139,10 @@ export const useStore = create<Store>((set) => ({
       return { toggles }
     }),
   // A drawn packet route belongs to the selected node: any new selection clears it.
-  select: (selection) => set({ selection, route: null, reach: null }),
+  select: (selection) => set({ selection, route: null, reach: null, probe: null }),
   showRoute: (route) => set({ route, reach: null }),
   setReach: (reach) => set({ reach, route: null }),
+  setProbe: (probe) => set({ probe }),
   setSearch: (search) => set({ search }),
   setDetailTab: (detailTab) => set({ detailTab }),
 }))
