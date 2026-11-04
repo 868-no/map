@@ -140,8 +140,8 @@ Only `packet_log` matters; Redis is ephemeral and rebuilds itself. After a resto
 | --- | --- |
 | Map is grey/empty | `docker compose logs basemap` (the first build takes a while); `data/basemap/basemap.pmtiles` (or the `basemap` volume with `compose.production.yaml`) exists; `curl -r 0-99 localhost:8080/tiles/basemap.pmtiles` returns 206 |
 | No nodes | `/health/ready` broker states; rejection metrics (`retained_ignored`; `topic_json`) and accepted `encrypted` rows (no listed key and not the default key) |
-| Many `decrypt_failed` | Wrong PSK for that channel name, or a CCM channel configured as `ctr` |
-| `sig_invalid` rejections | Forged or corrupted signed packets; expected to be rare on real traffic |
+| Many `encrypted` rows on a listed channel | `meshmap_ingest_accepted_total{packet_type="encrypted"}`: packets that no key decrypts are kept header-only as `encrypted`. Wrong PSK for that channel name, or a CCM channel configured as `ctr` |
+| Many `invalid` rows | `meshmap_ingest_accepted_total{packet_type="invalid"}`; the row's `iv` field (in the sender's packet log) names the reason. `iv=sig_invalid`: forged or corrupted signed packets, expected to be rare on real traffic |
 | Live badge “paused” | Redis down in API-only mode (`serve --no-ingest`), or SSE blocked by a proxy (disable buffering) |
 | Inspect real traffic | `docker run --rm eclipse-mosquitto:2 mosquitto_sub -h HOST -u U -P P -t 'msh/#' -F '%U\|%r\|%t\|%x' -W 600 > cap.txt` then `scripts/go.sh go run ./cmd/meshmap inspect cap.txt` |
 
@@ -151,6 +151,6 @@ Only `packet_log` matters; Redis is ephemeral and rebuilds itself. After a resto
 - [ ] TLS in front of `web`; HSTS at the TLS proxy.
 - [ ] `PUBLIC_METRICS_ENABLED=false` unless metrics are protected.
 - [ ] Brokers use TLS where available; `accept_retained: false`.
-- [ ] `SIGNATURE_POLICY=strict` if unverifiable signed packets should be dropped.
+- [ ] `SIGNATURE_POLICY=strict` if signed packets from unknown keys should be kept header-only as `invalid` (`iv=strict_unverifiable`) instead of `unverifiable`.
 - [ ] `GEOLOCATION_EXCLUDE_NODE_IDS` lists nodes whose owners opted out of location estimates.
 - [ ] Backups scheduled; restore tested.
