@@ -58,7 +58,7 @@ Pin a version tag or `sha-…` in production (`compose.production.yaml` takes it
 
 ## Privacy policy
 
-The map links to `/privacy.html` (source: `frontend/public/privacy.html`). It describes what this software collects and fills in, from `/api/v1/capabilities`, the operator (`OPERATOR_NAME`), how to reach them (`OPERATOR_CONTACT`, an e-mail address or URL), the retention period, whether position estimates are on, whether map tiles come from an outside provider and whether the backend fetches weather from MET Norway (`WEATHER_ENABLED`, on by default; it needs outbound HTTPS to `thredds.met.no`, D-133). Set both operator variables in production. If you change what the deployment collects or shares (an outside tile provider, access logs in your reverse proxy), check the page still matches, and edit it if not; it is a draft for the operator to review, not legal advice.
+The map links to `/privacy.html` (source: `frontend/public/privacy.html`). It describes what this software collects and fills in, from `/api/v1/capabilities`, the operator (`OPERATOR_NAME`), how to reach them (`OPERATOR_CONTACT`, an e-mail address or URL; with weather on, it is also sent to MET Norway in the backend's User-Agent), the retention period, whether position estimates are on, whether map tiles come from an outside provider and whether the backend fetches weather from MET Norway (`WEATHER_ENABLED`, on by default; it needs outbound HTTPS to `thredds.met.no`, D-133). Set both operator variables in production. If you change what the deployment collects or shares (an outside tile provider, access logs in your reverse proxy), check the page still matches, and edit it if not; it is a draft for the operator to review, not legal advice.
 
 ## HTTPS / reverse proxy
 
@@ -107,7 +107,7 @@ Schema 3 adds the `weather_hour` table (D-133); `init-schema` creates it at the 
 
 ## Retention
 
-`packet_log` is partitioned by calendar month (D-056). The `maintenance` service removes rows older than `RETENTION_MONTHS` (default 6 calendar months, clamped at month ends) daily at 03:00 UTC, and at startup if a run is overdue. Under a PostgreSQL advisory lock it drops the partitions of months that end before the cutoff, deletes the remaining expired rows of the cutoff's month in 5 000-row transactions, runs `VACUUM (ANALYZE)` on that partition only, creates partitions for the next two months, stores the run's status (shown in `/health/ready`) and notifies open browser sessions. Run it manually with `docker compose run --rm maintenance maintenance --once`.
+`packet_log` is partitioned by calendar month (D-056). The `maintenance` service removes rows older than `RETENTION_MONTHS` (default 6 calendar months, clamped at month ends) on the schedule `MAINTENANCE_INTERVAL_HOURS` sets: 24 (the default) means daily at 03:00 UTC, any other value every that many hours. It also runs at startup if a run is overdue, and retries a failed run after 5 minutes. Under a PostgreSQL advisory lock it drops the partitions of months that end before the cutoff, deletes the remaining expired rows of the cutoff's month in 5 000-row transactions, runs `VACUUM (ANALYZE)` on that partition only, deletes `weather_hour` rows from before the cutoff, creates partitions for the next two months, stores the run's status (shown in `/health/ready`) and notifies open browser sessions. Run it manually with `docker compose run --rm maintenance maintenance --once`.
 
 ## Importing history from Meshstellar
 
