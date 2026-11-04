@@ -19,6 +19,15 @@ pub struct Identity {
     #[serde(skip_serializing_if = "String::is_empty")]
     pub role: String,
     pub has_public_key: bool,
+    /// Where its node id comes from (D-142): "key" (firmware 2.8 and later
+    /// derive it from the public key) or "hardware" (2.7 and earlier); absent
+    /// without an announced key.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub node_id_from: Option<&'static str>,
+    /// The node id its key derives, when that is not its own (a 2.7 node: the
+    /// id it takes on upgrading to 2.8 with its key kept).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub key_id: Option<String>,
     pub signature: String,
     pub observed_at: String,
     /// "mapreport" when the identity comes from the node's own map report
@@ -203,6 +212,8 @@ pub(super) fn identity_of(r: &Row, i: &Interner) -> Identity {
         hw_model: s(n.map(|n| n.hw_model)),
         role: s(n.map(|n| n.role)),
         has_public_key: n.is_some_and(|n| n.has_public_key),
+        node_id_from: n.and_then(|n| n.key_id).map(|k| if k == r.src { "key" } else { "hardware" }),
+        key_id: n.and_then(|n| n.key_id).filter(|&k| k != r.src).map(node_id),
         signature: i.s(r.sig).to_string(),
         observed_at: iso(r.t),
         source: "",
@@ -218,6 +229,8 @@ pub(super) fn identity_of_report(r: &Row, i: &Interner) -> Identity {
         hw_model: i.s(m.hw_model).to_string(),
         role: i.s(m.role).to_string(),
         has_public_key: false, // map reports do not carry it
+        node_id_from: None,
+        key_id: None,
         signature: i.s(r.sig).to_string(),
         observed_at: iso(r.t),
         source: "mapreport",

@@ -7,9 +7,11 @@ package obsrow
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"hash/crc32"
 	"log/slog"
 	"math/bits"
 	"strconv"
@@ -102,7 +104,12 @@ type ObsNodeInfo struct {
 	HwModel      string `json:"hw_model,omitempty"`
 	Role         string `json:"role,omitempty"`
 	HasPublicKey bool   `json:"has_public_key,omitempty"`
-	Untrusted    bool   `json:"identity_untrusted,omitempty"`
+	// KeyID is the node id firmware 2.8 and later derive from the announced
+	// key (CRC-32, as security.KeyBindsNode): equal to the sender's id when
+	// the node runs 2.8 or later; on 2.7 and earlier the id comes from the
+	// hardware. Equal values from different senders mean a shared key (D-142).
+	KeyID     *uint32 `json:"key_id,omitempty"`
+	Untrusted bool    `json:"identity_untrusted,omitempty"`
 }
 
 type ObsPosition struct {
@@ -188,8 +195,9 @@ type storedMeta struct {
 // /observations reports, so browsers holding rows in the old format start
 // over, and stored encodings of an older version are rebuilt (D-046)
 // (2: tp, mr; 3: map report identity and has_default_channel; 4: rt; 5: iv;
-// 6: environment telemetry; 7: ns, sf, traceroute request_id; 8: wa).
-const Version = 8
+// 6: environment telemetry; 7: ns, sf, traceroute request_id; 8: wa;
+// 9: ni.key_id).
+const Version = 9
 
 // Fields are the packet_log columns an ObsRow carries.
 type Fields struct {
@@ -224,7 +232,7 @@ func New(f Fields, meta []byte) ObsRow {
 	case "nodeinfo":
 		if n := m.NodeInfo; n != nil {
 			r.NodeInfo = &ObsNodeInfo{LongName: n.LongName, ShortName: n.ShortName, HwModel: n.HwModel, Role: n.Role,
-				HasPublicKey: n.PublicKey != "", Untrusted: n.Untrusted}
+				HasPublicKey: n.PublicKey != "", KeyID: keyID(n.PublicKey), Untrusted: n.Untrusted}
 		}
 	case "position":
 		r.Position = m.Position
@@ -309,4 +317,15 @@ func badMeta(id int64, err error) {
 	if n := badMetas.Add(1); bits.OnesCount64(uint64(n)) == 1 {
 		slog.Default().Warn("stored metadata did not decode; row sent without it", "row", id, "count", n, "err", err)
 	}
+}
+
+// keyID is the node id derived from a base64 X25519 key, or nil without a
+// valid 32-byte key.
+func keyID(b64 string) *uint32 {
+	k, err := base64.StdEncoding.DecodeString(b64)
+	if err != nil || len(k) != 32 {
+		return nil
+	}
+	id := crc32.ChecksumIEEE(k)
+	return &id
 }

@@ -369,6 +369,8 @@ export interface components {
             has_public_key?: boolean;
             hw_model?: string;
             identity_untrusted?: boolean;
+            /** Format: int32 */
+            key_id?: number;
             long_name?: string;
             role?: string;
             short_name?: string;

@@ -135,6 +135,9 @@ pub struct NodeInfo {
     pub hw_model: u32,
     pub role: u32,
     pub has_public_key: bool,
+    /// The node id its key derives (CRC-32 of the key, computed by the
+    /// server): the sender's own id on firmware 2.8 and later (D-142).
+    pub key_id: Option<u32>,
     pub untrusted: bool,
 }
 
@@ -393,6 +396,8 @@ struct JNi<'a> {
     role: Cow<'a, str>,
     #[serde(default, skip_serializing_if = "is_false")]
     has_public_key: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    key_id: Option<u32>,
     #[serde(default, skip_serializing_if = "is_false")]
     identity_untrusted: bool,
 }
@@ -618,6 +623,7 @@ impl JRow<'_> {
                 hw_model: i.id(&n.hw_model),
                 role: i.id(&n.role),
                 has_public_key: n.has_public_key,
+                key_id: n.key_id,
                 untrusted: n.identity_untrusted,
             }))
         } else if let Some(t) = self.te {
@@ -701,7 +707,7 @@ pub fn to_json<'a>(r: &Row, i: &'a Interner) -> JRow<'a> {
             })
         }
         Some(Detail::NodeInfo(n)) => {
-            j.ni = Some(JNi { long_name: s(n.long_name), short_name: s(n.short_name), hw_model: s(n.hw_model), role: s(n.role), has_public_key: n.has_public_key, identity_untrusted: n.untrusted })
+            j.ni = Some(JNi { long_name: s(n.long_name), short_name: s(n.short_name), hw_model: s(n.hw_model), role: s(n.role), has_public_key: n.has_public_key, key_id: n.key_id, identity_untrusted: n.untrusted })
         }
         Some(Detail::Telemetry(t)) => j.te = Some(JTe { kind: s(t.kind), battery: t.battery, voltage: t.voltage, ch_util: t.ch_util, air_util: t.air_util, uptime: t.uptime, temp: t.temp, humidity: t.humidity, pressure: t.pressure }),
         Some(Detail::Invalid(v)) => j.iv = Some(s(*v)),
@@ -750,12 +756,13 @@ mod tests {
 
     #[test]
     fn parses_and_round_trips_an_api_row() {
-        let text = r#"{"i":7,"t":1793414269260,"b":"no868","g":304365663,"s":1275887421,"d":4294967295,"p":369828293,"c":"NarrowFast","y":"nodeinfo","l":"6d09cc29ab957b72","o":"3fc571de3bbcedf8","sn":7,"rs":-106,"hs":7,"hl":0,"r":19,"sg":"unsigned","rr":"relayed","cr":"ctr_unauthenticated","by":84,"ni":{"long_name":"HORTEN","short_name":"NORb","hw_model":"SEEED","role":"CLIENT_BASE","has_public_key":true}}"#;
+        let text = r#"{"i":7,"t":1793414269260,"b":"no868","g":304365663,"s":1275887421,"d":4294967295,"p":369828293,"c":"NarrowFast","y":"nodeinfo","l":"6d09cc29ab957b72","o":"3fc571de3bbcedf8","sn":7,"rs":-106,"hs":7,"hl":0,"r":19,"sg":"unsigned","rr":"relayed","cr":"ctr_unauthenticated","by":84,"ni":{"long_name":"HORTEN","short_name":"NORb","hw_model":"SEEED","role":"CLIENT_BASE","has_public_key":true,"key_id":202116108}}"#;
         let mut i = Interner::default();
         let j: JRow = serde_json::from_str(text).unwrap();
         let r = j.into_row(&mut i);
         assert_eq!((r.id, r.src, r.ty, r.rr, r.hops()), (7, 1275887421, ty::NODEINFO, ty::RELAYED, Some(7)));
         assert_eq!(i.s(r.nodeinfo().unwrap().short_name), "NORb");
+        assert_eq!(r.nodeinfo().unwrap().key_id, Some(0x0c0c_0c0c), "the key's id survives, so a saved copy keeps it");
         let back = serde_json::to_string(&to_json(&r, &i)).unwrap();
         let again: JRow = serde_json::from_str(&back).unwrap();
         assert_eq!(again.into_row(&mut i), r);

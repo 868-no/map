@@ -40,6 +40,10 @@ export interface Identity {
   hw_model?: string
   role?: string
   has_public_key: boolean
+  /** Where its node id comes from (D-142): its key (firmware 2.8+) or its hardware (2.7 and older). */
+  node_id_from?: 'key' | 'hardware'
+  /** On 2.7 and older: the id its key derives, which it takes on 2.8 if the key is kept. */
+  key_id?: string
   signature: SignatureStatus
   observed_at: string
   source?: 'mapreport' // from the node's own map report: no NodeInfo in the window

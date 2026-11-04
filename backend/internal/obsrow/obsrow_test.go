@@ -37,3 +37,24 @@ func TestMapReportRowCarriesIdentity(t *testing.T) {
 		t.Fatalf("row carries fields the browser does not use: %s", b)
 	}
 }
+
+// A NodeInfo row carries the id its key derives (D-142), never the key: on
+// firmware 2.8 it equals the sender (here a made-up key, bytes 1 to 32,
+// whose CRC-32 is 0x87e6ec25); a malformed key gives none.
+func TestNodeInfoRowCarriesKeyID(t *testing.T) {
+	const key = "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA="
+	row := func(key string) ObsRow {
+		return New(Fields{ID: 1, At: time.UnixMilli(1_800_000_000_000), Source: 0x87e6ec25, Type: "nodeinfo", Sig: "verified"},
+			[]byte(`{"nodeinfo":{"long_name":"Test node","short_name":"TEST","public_key":"`+key+`"}}`))
+	}
+	r := row(key)
+	if r.NodeInfo == nil || r.NodeInfo.KeyID == nil || *r.NodeInfo.KeyID != 0x87e6ec25 || !r.NodeInfo.HasPublicKey {
+		t.Fatalf("node info %+v", r.NodeInfo)
+	}
+	if b, _ := json.Marshal(r); bytes.Contains(b, []byte(key[:12])) {
+		t.Fatalf("row carries the key: %s", b)
+	}
+	if r := row("c2hvcnQ="); r.NodeInfo.KeyID != nil {
+		t.Fatalf("a short key gave key id %d", *r.NodeInfo.KeyID)
+	}
+}

@@ -130,6 +130,10 @@ test('default rolling 3-day window, presets and node details', async ({ page }) 
   await expect(page.locator('.node-panel')).toContainText('Seen in window')
   // The public key comes from its own endpoint: a base64 key, or none retained.
   await expect(page.locator('.node-panel dt:text-is("Public key") + dd')).toHaveText(/[A-Za-z0-9+/]{43}=|none retained/)
+  // A node announcing a key says where its id comes from (D-142).
+  if (/announces a public key/.test(await page.locator('.node-panel dt:text-is("Identity") + dd').innerText())) {
+    await expect(page.locator('.node-panel dt:text-is("Node id") + dd')).toHaveText(/derived from its key: firmware 2\.8 or newer|from its hardware: firmware 2\.7 or older/)
+  }
   await page.waitForTimeout(800) // fly-to animation
   await page.waitForFunction(() => {
     const m = (window as unknown as { __meshmap: { map: { loaded: () => boolean; areTilesLoaded: () => boolean } } }).__meshmap.map

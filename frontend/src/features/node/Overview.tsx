@@ -42,6 +42,20 @@ export function OverviewTab({ d, snapNode, now }: { d: NodeView; snapNode: MeshN
             <><SigBadge s={d.identity.signature} /> {d.identity.has_public_key ? 'announces a public key' : 'no public key'} · {formatLocal(d.identity.observed_at)}</>
           )}
         </dd>
+        {d.identity?.node_id_from && (
+          <>
+            <dt>Node id</dt>
+            <dd>
+              {d.identity.node_id_from === 'key' ? (
+                <span title="Firmware 2.8 and later derive the node id from the public key (CRC-32 of the key); this node's id matches its key">derived from its key: firmware 2.8 or newer</span>
+              ) : (
+                <span title="Firmware 2.7 and earlier take the node id from the hardware. Upgrading to 2.8 with the key kept gives the id derived from the key; a reset without restoring the key gives a new key and an unrelated id">
+                  from its hardware: firmware 2.7 or older{d.identity.key_id && <> · becomes {d.identity.key_id} on 2.8 if its key is kept</>}
+                </span>
+              )}
+            </dd>
+          </>
+        )}
         <dt>Public key</dt>
         <dd><PublicKey key={d.id} id={d.id} optOut={d.mqtt_opt_out} /></dd>
         <dt>Position</dt>

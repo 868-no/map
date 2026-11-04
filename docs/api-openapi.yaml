@@ -427,6 +427,10 @@ components:
           type: string
         identity_untrusted:
           type: boolean
+        key_id:
+          format: int32
+          minimum: 0
+          type: integer
         long_name:
           type: string
         role:
