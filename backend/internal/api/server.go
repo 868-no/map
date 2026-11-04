@@ -152,7 +152,29 @@ func (s *Server) acquire(ctx context.Context) (func(), error) {
 
 // NewHandler builds the HTTP handler for /api and returns the huma API (for
 // OpenAPI export).
+// publicErrors makes huma's 5xx responses say only what failed, not why:
+// the underlying errors (database, driver, SQL) are logged instead of sent.
+var publicErrors sync.Once
+
+func hideInternalErrors(log *slog.Logger) {
+	publicErrors.Do(func() {
+		orig := huma.NewError
+		huma.NewError = func(status int, msg string, errs ...error) huma.StatusError {
+			if status >= 500 && len(errs) > 0 {
+				log.Error("api error", "status", status, "msg", msg, "err", errors.Join(errs...))
+				return orig(status, msg)
+			}
+			return orig(status, msg, errs...)
+		}
+	})
+}
+
 func (s *Server) NewHandler(mux *http.ServeMux) huma.API {
+	log := s.Log
+	if log == nil {
+		log = slog.Default()
+	}
+	hideInternalErrors(log)
 	if s.HeavySlots <= 0 {
 		s.HeavySlots = 8
 	}
