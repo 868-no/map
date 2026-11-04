@@ -125,7 +125,7 @@ sqlite3 -readonly -csv meshstellar.db \
 
 - **`--broker`** names the configured broker the history came from: its channel keys and plaintext rules decide how envelopes decode, and imported rows carry its id.
 - **What is imported:** envelopes received after the retention cutoff (`RETENTION_MONTHS`; raise it first to keep more) and before the broker's first stored row, since the two collectors received the same uploads at slightly different times and those would otherwise be stored twice. `--after` and `--before` (RFC 3339) narrow or move the span.
-- **Topics:** Meshstellar stores the payload but not the topic, so the topic is rebuilt from the envelope (`<root>/2/e/<channel>/<gateway>`, or `<root>/2/map/` for map reports). The root is each gateway's own, from its live rows where it has any, else the broker's subscription without `/#` (or `--topic-root`).
+- **Topics:** Meshstellar stores the payload but not the topic, so the topic is rebuilt from the envelope (`<root>/2/e/<channel>/<gateway>`, or `<root>/2/map/` for map reports). The root is each gateway's own, from its live rows where it has any, else the broker's subscription without `/#`, or `--topic-root`. Unless the broker has exactly one subscription of the form `<root>/#` (no other wildcards), `--topic-root` is required, even when every gateway has live rows.
 - **Duplicates:** the same upload delivered twice within 15 minutes is stored once, as at ingest; JSON and status messages are skipped.
 - **Browsers:** a browser that already holds a copy of a window reaching back before the broker's first row (within its last 8 days) keeps its empty copy of that span until it falls out of the window, or until Settings → Reset.
 

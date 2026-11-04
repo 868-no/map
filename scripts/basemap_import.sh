@@ -16,7 +16,7 @@ docker run --rm -u "$(id -u):$(id -g)" \
   --area="$area" --bounds="${BASEMAP_BOUNDS:-world}" --download \
   --download_dir=/data/sources --tmpdir=/data/tmp \
   --output=/data/basemap.building.pmtiles --force \
-  --maxzoom=14 --languages=no,nb,nn,se,en
+  --maxzoom=14 --languages="${BASEMAP_LANGUAGES:-no,nb,nn,se,en}"
 mv -f "$out/basemap.building.pmtiles" "$out/basemap.pmtiles"
 rm -rf "$out/tmp"
 echo "basemap ready: $out/basemap.pmtiles ($(du -h "$out/basemap.pmtiles" | cut -f1))"
