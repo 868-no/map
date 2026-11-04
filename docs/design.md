@@ -407,7 +407,7 @@ Rules over the window's rows and snapshot flag known problems per node (`health`
 
 **Store and forward (D-103)** gets its own breakdown: its share of the airtime, packets and share by message kind (heartbeats, replayed broadcasts and direct messages, history announcements, requests, …), and per router its share, heartbeats per hour and history replays with their text size. A router whose store-and-forward takes 2 % of the airtime or more gets a notice.
 
-The **Health panel** lists every issue grouped by kind, most severe first, with node links and the explanation on hover, then airtime by packet type and the ten nodes causing the most. **Details** shows the node's issues under its name and its airtime as a row.
+The **Health panel** lists every issue grouped by kind, most severe first, with node links, other nodes named in the text, and each issue's explanation opening under it (▾; also on hover), then airtime by packet type and the ten nodes causing the most. **Details** shows the node's issues under its name and its airtime as a row.
 
 ### 6.18 Weather
 

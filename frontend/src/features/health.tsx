@@ -50,15 +50,24 @@ function nameMap(snapshot: SnapshotView | undefined): Map<string, string> {
 
 function IssueLine({ i, name }: { i: Issue; name?: (id: string) => string }) {
   const select = useStore((s) => s.select)
+  const [open, setOpen] = useState(false)
+  // Other nodes in the text by name, as the line's own node is.
+  const named = (t: string) => (name ? t.replace(/![0-9a-f]{8}/g, (id) => (name(id) === id ? id : `${name(id)} (${id})`)) : t)
   return (
-    <li className={`issue issue-${i.severity}`} title={i.detail}>
+    <li className={`issue issue-${i.severity}`} title={named(i.detail)}>
       <span className="issue-icon" aria-label={SEVERITY[i.severity].label}>{SEVERITY[i.severity].icon}</span>
       <span>
         {name && (
           <><button className="linkish" onClick={() => select({ kind: 'node', id: i.node })}>{name(i.node)}</button>: </>
         )}
-        {i.summary}
-        {!name && <><br /><small className="muted">{i.detail}</small></>}
+        {named(i.summary)}
+        {name && (
+          <>
+            {' '}
+            <button className="linkish issue-more" aria-expanded={open} aria-label={open ? 'Hide the explanation' : 'Show the explanation'} onClick={() => setOpen(!open)}>{open ? '▴' : '▾'}</button>
+          </>
+        )}
+        {(!name || open) && <><br /><small className="muted">{named(i.detail)}</small></>}
       </span>
     </li>
   )
@@ -98,7 +107,7 @@ export function HealthPanel({ snapshot }: { snapshot: SnapshotView | undefined }
           ? 'No known issues in the selected period.'
           : counts.map(([s, n]) => `${n} ${n === 1 ? SEVERITY[s].label : SEVERITY[s].plural}`).join(' · ')}
       </p>
-      <p className="muted small">Found by rules over the selected period and filters; hover an issue for the explanation. Only what gateways reported is seen.</p>
+      <p className="muted small">Found by rules over the selected period and filters; open an issue (▾) for the explanation. Only what gateways reported is seen.</p>
       {[...groups].map(([kind, list]) => (
         <section key={kind}>
           <h3>{KIND[kind] ?? kind} ({list.length})</h3>
