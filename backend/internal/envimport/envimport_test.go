@@ -2,7 +2,10 @@ package envimport
 
 import (
 	"bufio"
+	"context"
 	"encoding/hex"
+	"errors"
+	"io"
 	"os"
 	"strings"
 	"testing"
@@ -90,4 +93,17 @@ func TestRebuildTopicUsesTheGatewaysOwnRoot(t *testing.T) {
 		return
 	}
 	t.Skip("no Vestlandet envelope in the capture")
+}
+
+type failingReader struct{}
+
+func (failingReader) Read([]byte) (int, error) { return 0, errors.New("disk on fire") }
+
+// A malformed line is counted and skipped; a read error ends the run.
+func TestRunStopsOnReadError(t *testing.T) {
+	im := &Importer{}
+	err := im.Run(context.Background(), io.MultiReader(strings.NewReader("1,a\"b\n"), failingReader{}))
+	if err == nil || err.Error() != "disk on fire" || im.Stats["line malformed"] != 1 {
+		t.Fatalf("err %v, stats %v", err, im.Stats)
+	}
 }

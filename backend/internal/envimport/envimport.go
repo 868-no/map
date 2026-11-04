@@ -121,9 +121,14 @@ func (im *Importer) Run(ctx context.Context, in io.Reader) error {
 		if err == io.EOF {
 			break
 		}
-		if err != nil {
+		// A bad line is skipped; any other error (I/O) would repeat forever.
+		var pe *csv.ParseError
+		if errors.As(err, &pe) {
 			im.Stats["line malformed"]++
 			continue
+		}
+		if err != nil {
+			return err
 		}
 		if line == 1 && len(rec) > 0 && !isDigits(rec[0]) {
 			continue // a header row
