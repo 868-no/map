@@ -4,13 +4,15 @@ import type { NodeKey } from '../../api/types'
 import type { MeshNode, NodeView } from '../../derive/views'
 import { formatLocal, relativeAge } from '../../lib/time'
 import { precisionErrorM } from '../../map/model'
+import { useStore } from '../../state/store'
 import { NR, SigBadge, dist } from './shared'
 
 const METHOD: Record<string, string> = { weighted_centroid: 'weighted centre of the nodes that hear it', log_distance_wls: 'distances from signal strength' }
 const QUALITY: Record<string, string> = { very_low: 'very rough', low: 'rough' }
 
 /** The Overview tab: identity, position and activity. */
-export function OverviewTab({ d, snapNode, now }: { d: NodeView; snapNode: MeshNode | undefined; now: number }) {
+export function OverviewTab({ d, snapNode, now, names }: { d: NodeView; snapNode: MeshNode | undefined; now: number; names: Map<string, string> }) {
+  const select = useStore((s) => s.select)
   const est = snapNode?.estimate
   const pos = d.position // a stale one is never shown as its position (D-094)
   return (
@@ -50,7 +52,13 @@ export function OverviewTab({ d, snapNode, now }: { d: NodeView; snapNode: MeshN
                 <span title="Firmware 2.8 and later derive the node id from the public key (CRC-32 of the key); this node's id matches its key">derived from its key: firmware 2.8 or newer</span>
               ) : (
                 <span title="Firmware 2.7 and earlier take the node id from the hardware. Upgrading to 2.8 with the key kept gives the id derived from the key; a reset without restoring the key gives a new key and an unrelated id">
-                  from its hardware: firmware 2.7 or older{d.identity.key_id && <> · becomes {d.identity.key_id} on 2.8 if its key is kept</>}
+                  from its hardware: firmware 2.7 or older
+                  {d.identity.key_id && (names.has(d.identity.key_id) ? (
+                    // Its key's id is heard in the window too: upgraded (or a copy, see Health).
+                    <> · now also heard as <button className="linkish" onClick={() => select({ kind: 'node', id: d.identity!.key_id! })}>{names.get(d.identity.key_id)}</button>, the id its key derives</>
+                  ) : (
+                    <> · becomes {d.identity.key_id} on 2.8 if its key is kept</>
+                  ))}
                 </span>
               )}
             </dd>

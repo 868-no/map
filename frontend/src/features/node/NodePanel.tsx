@@ -54,7 +54,7 @@ export function NodePanel({ id, snapshot }: { id: string; snapshot: SnapshotView
       )}
       <NodeHealth id={d.id} />
       <DetailTabs counts={{ links: neighbours.length, packets: d.packets }} />
-      {tab === 'overview' && <OverviewTab d={d} snapNode={snapNode} now={now} />}
+      {tab === 'overview' && <OverviewTab d={d} snapNode={snapNode} now={now} names={names} />}
       {tab === 'telemetry' && <TelemetryTab d={d} snapshot={snapshot} now={now} />}
       {tab === 'links' && <LinksTab d={d} id={id} snapshot={snapshot} snapNode={snapNode} names={names} neighbours={neighbours} />}
       {tab === 'radio' && <RadioTab d={d} names={names} />}
