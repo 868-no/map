@@ -432,8 +432,10 @@ test('the packet log combines own and relayed packets, and draws a packet route 
   await expect(page.locator('.route-note')).toBeVisible()
   await expect.poll(async () => 'route' in (await layers()) && (await links()) === 0).toBe(true)
   await expect(log.locator('tbody tr.active')).toHaveCount(1)
-  // Clicking it again clears the route and brings the links back.
-  await log.locator('tbody tr.active').click()
+  // Selecting it again (here with Enter: live rows keep arriving above it, so
+  // a click can wait in vain for it to hold still) clears the route and
+  // brings the links back.
+  await log.locator('tbody tr.active').press('Enter')
   await expect(page.locator('.route-note')).toBeHidden()
   await expect.poll(links).toBeGreaterThan(0)
   expect('route' in (await layers())).toBe(false)
