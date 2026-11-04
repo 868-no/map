@@ -6,7 +6,7 @@
 import init, { Engine } from '../engine/pkg/engine.js'
 // Content-hashed in builds: names this engine build for the saved row copy (D-102).
 import engineUrl from '../engine/pkg/engine_bg.wasm?url'
-import { openPersistence, type Persistence, type Source } from './persist'
+import { gunzip, openPersistence, type Persistence, type Source } from './persist'
 import { RowStore, type Backend, type Fetched, type Synced, type WindowReq } from './rowStore'
 import { debounce, rebuildDelay } from './debounce'
 import { cursorMs, rangeEnd, sliceBounds } from './slices'
@@ -128,8 +128,17 @@ const started = (async () => {
     persist = null
   }
   if (persist) {
-    for (const chunk of persist.restored.chunks) engine.add_rows(chunk, -Infinity)
-    // The engine holds them now: no copy of the history stays in the worker's heap (§9).
+    // One chunk decompressed at a time, straight into the engine: the history
+    // is never held as text all at once, nor kept in the worker's heap (§9).
+    try {
+      for (const chunk of persist.restored.chunks) engine.add_rows(await gunzip(chunk), -Infinity)
+    } catch {
+      // An unreadable copy is no copy: start afresh.
+      engine.reset()
+      persist.reset()
+      persist.restored.cov = null
+      persist.restored.generation = null
+    }
     persist.restored.chunks = []
     engine.take_dirty() // restored rows are already stored
     persist.attach(source)

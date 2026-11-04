@@ -18,7 +18,7 @@ export const DELTA_OVERLAP_MS = 10 * 60_000
 export const MAX_DELTAS = 60
 
 export interface Persisted {
-  chunks: string[] // JSON arrays of rows (full hours and deltas; duplicates are dropped on load)
+  chunks: Blob[] // gzip'd JSON arrays of rows (full hours and deltas; duplicates are dropped on load), decompressed one at a time by the reader
   cov: Coverage | null
   generation: string | null
 }
@@ -162,13 +162,7 @@ export async function openPersistence(engine: string): Promise<Persistence | nul
       }
       for (const h of chunkKeys.result as number[]) stored.set(h, 0)
       for (const [h, seq] of deltaKeys.result as [number, number][]) stored.set(h, Math.max(stored.get(h) ?? 0, seq))
-      try {
-        const blobs = [...(chunks.result as Blob[]), ...(deltas.result as Blob[])]
-        resolve({ chunks: await Promise.all(blobs.map(gunzip)), cov: m.cov, generation: m.generation })
-      } catch {
-        stored.clear()
-        resolve(empty)
-      }
+      resolve({ chunks: [...(chunks.result as Blob[]), ...(deltas.result as Blob[])], cov: m.cov, generation: m.generation })
     }
     tx.onerror = () => resolve(empty)
   })
