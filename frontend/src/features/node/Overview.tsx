@@ -47,7 +47,7 @@ export function OverviewTab({ d, snapNode, now }: { d: NodeView; snapNode: MeshN
         <dt>Position</dt>
         <dd>
           {d.stale_position && (
-            <div className="stale-note" title="A reported position more than a day older than the newest data in the selected period may no longer be where the node is (D-094)">
+            <div className="stale-note" title="A reported position more than a day older than the newest data in the selected period (a week for routers, base stations and nodes that have stayed in one place) may no longer be where the node is (D-094, D-138)">
               Last reported position is stale: {formatLocal(d.stale_position.observed_at)}.{' '}
               {est ? 'Estimated instead:' : 'No estimate could be made, so it is not on the map.'}
             </div>
@@ -92,7 +92,7 @@ export function OverviewTab({ d, snapNode, now }: { d: NodeView; snapNode: MeshN
         </dd>
         {d.moved_at && (
           <>
-            <dt title="It moved more than a few hundred metres beyond what its position precision explains (D-073)">Moving</dt>
+            <dt title="It moved more than 300 m (2 km for routers and base stations) beyond what its position precision explains (D-073, D-139)">Moving</dt>
             <dd>
               last moved {formatLocal(d.moved_at)} · {d.track?.length ?? 0}{(d.track?.length ?? 0) >= 100 ? '+' : ''} reported places in the window{d.airborne && <> · <span className="tag">✈ airborne</span></>}
               <br /><small className="muted">Its links count only evidence from after that move.</small>

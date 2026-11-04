@@ -37,7 +37,7 @@ const ICONS: Record<PanelId, ReactNode> = {
 
 export const PANELS: { id: PanelId; label: string; hint: string }[] = [
   { id: 'nodes', label: 'Nodes', hint: 'Find a node by name or ID' },
-  { id: 'details', label: 'Details', hint: 'The selected node or link (closing it clears the selection)' },
+  { id: 'details', label: 'Details', hint: 'The selected node or link (closing keeps it selected on the map)' },
   { id: 'health', label: 'Health', hint: 'Known problems in the mesh, and who uses the airtime' },
   { id: 'trends', label: 'Trends', hint: 'Daily, weekly and monthly summaries over everything the server keeps' },
   { id: 'period', label: 'Period', hint: 'The time window: its length, start and end' },
@@ -184,7 +184,7 @@ export function Dock({ open, onClose, children }: { open: PanelId | null; onClos
         onDoubleClick={() => set(null)} onKeyDown={onKeyDown} />
       <header className="dock-head">
         <h2>{open && panelLabel(open)}</h2>
-        <button className="close" onClick={onClose} aria-label={`Close ${open ? panelLabel(open).toLowerCase() : 'panel'}`} title={open === 'details' ? 'Close and clear the selection (Esc)' : 'Close (Esc)'}>×</button>
+        <button className="close" onClick={onClose} aria-label={`Close ${open ? panelLabel(open).toLowerCase() : 'panel'}`} title="Close (Esc)">×</button>
       </header>
       <div className="dock-body">{children}</div>
     </aside>

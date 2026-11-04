@@ -103,7 +103,7 @@ export interface MeshNode {
   estimate?: Estimate // approximate location from in-window links; never a reported position
   estimate_note?: string // why an unpositioned node has no estimate
   mqtt_downlink?: { zero_snr: number; traceroutes: number } // probably transmits packets from MQTT (D-054)
-  moved_at?: string // last moved more than a few hundred metres: links use only later evidence (D-073)
+  moved_at?: string // last moved more than 300 m (2 km for fixed roles): links use only later evidence (D-073, D-139)
   track?: { lat: number; lon: number; alt?: number; at: string }[] // its positions in time order, newest last, when it moved
   airborne?: boolean // moving and reporting more than 750 m above sea level
   refined?: { lat: number; lon: number; radius_m: number; reports: number; agree: number } // narrowed from reports jumping around one place (D-077)
