@@ -93,7 +93,9 @@ func TestImportEnvelopesMatchesLiveIngest(t *testing.T) {
 	}
 
 	run := func(before time.Time) *envimport.Importer {
-		ids := identity.New(func(ctx context.Context) ([]storage.IdentityRow, error) { return storage.VerifiedIdentities(ctx, pool, nil) }, quiet)
+		ids := identity.New(func(ctx context.Context) ([]storage.IdentityRow, error) {
+			return storage.VerifiedIdentities(ctx, pool, nil)
+		}, quiet)
 		if err := ids.Reload(ctx); err != nil {
 			t.Fatal(err)
 		}
