@@ -2,6 +2,9 @@ package api
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"math"
 
 	"github.com/danielgtaylor/huma/v2"
 
@@ -18,8 +21,30 @@ import (
 
 const maxTerrainLinks = 400
 
+// terrainEnds makes a link's ends. bad is why they cannot be looked up:
+// not finite (a NaN passes huma's minimum and maximum, since no comparison
+// holds), outside the area the terrain model covers (terrain.Coverage), or
+// over 300 km apart. Only the first is the request's fault in every use
+// (design §6.19, D-147).
+func terrainEnds(lat1, lon1, alt1, lat2, lon2, alt2 float64) (a, b terrain.End, finite bool, bad string) {
+	for _, v := range []float64{lat1, lon1, alt1, lat2, lon2, alt2} {
+		if math.IsNaN(v) || math.IsInf(v, 0) {
+			return a, b, false, "positions and altitudes must be finite numbers"
+		}
+	}
+	a = terrain.End{Point: terrain.Point{Lat: lat1, Lon: lon1}, Alt: alt(alt1)}
+	b = terrain.End{Point: terrain.Point{Lat: lat2, Lon: lon2}, Alt: alt(alt2)}
+	switch {
+	case !terrain.Covered(a.Point) || !terrain.Covered(b.Point):
+		return a, b, true, "an end is outside the area the terrain model covers (mainland Norway)"
+	case terrain.Distance(a.Point, b.Point) > terrain.MaxLengthM:
+		return a, b, true, "the ends are further apart than 300 km"
+	}
+	return a, b, true, ""
+}
+
 type TerrainProfileInput struct {
-	Lat1 float64 `query:"lat1" required:"true" minimum:"-90" maximum:"90" doc:"Latitude of the first end"`
+	Lat1 float64 `query:"lat1" required:"true" minimum:"-90" maximum:"90" doc:"Latitude of the first end; both ends must lie in mainland Norway or its border strip (57.5–71.5° N, 4–31.5° E), else 422"`
 	Lon1 float64 `query:"lon1" required:"true" minimum:"-180" maximum:"180"`
 	Lat2 float64 `query:"lat2" required:"true" minimum:"-90" maximum:"90" doc:"Latitude of the second end"`
 	Lon2 float64 `query:"lon2" required:"true" minimum:"-180" maximum:"180"`
@@ -50,15 +75,19 @@ func (s *Server) terrainProfile(ctx context.Context, in *TerrainProfileInput) (*
 	if s.Terrain == nil {
 		return nil, huma.Error404NotFound("terrain is not enabled on this server")
 	}
-	a := terrain.End{Point: terrain.Point{Lat: in.Lat1, Lon: in.Lon1}, Alt: alt(in.Alt1)}
-	b := terrain.End{Point: terrain.Point{Lat: in.Lat2, Lon: in.Lon2}, Alt: alt(in.Alt2)}
-	if terrain.Distance(a.Point, b.Point) > terrain.MaxLengthM {
-		return nil, huma.Error422UnprocessableEntity("the ends are further apart than 300 km")
+	a, b, _, bad := terrainEnds(in.Lat1, in.Lon1, in.Alt1, in.Lat2, in.Lon2, in.Alt2)
+	if bad != "" {
+		return nil, huma.Error422UnprocessableEntity(bad)
 	}
-	p, incomplete := s.Terrain.Profile(ctx, a, b)
+	p, incomplete := s.Terrain.ProfileFor(ctx, clientOf(ctx), a, b)
 	cache := "public, max-age=86400" // terrain does not change
-	if incomplete {
+	switch {
+	case incomplete:
 		cache = "no-store"
+	case p.Class == "unknown":
+		// The model lacks heights here (abroad); kept briefly in case that
+		// was a fault rather than the border.
+		cache = "public, max-age=300"
 	}
 	return &TerrainProfileOutput{CacheControl: cache, Body: TerrainProfileBody{Profile: p, Incomplete: incomplete, Attribution: terrain.Attribution}}, nil
 }
@@ -74,7 +103,7 @@ type TerrainLink struct {
 
 type TerrainClassesInput struct {
 	Body struct {
-		Links []TerrainLink `json:"links" maxItems:"400" doc:"Links to classify, by the positions of their ends"`
+		Links []TerrainLink `json:"links" maxItems:"400" doc:"Links to classify, by the positions of their ends. A link with an end outside mainland Norway and its border strip (57.5–71.5° N, 4–31.5° E), or over 300 km long, is unknown; at most 120 000 distinct terrain points in all, else 422"`
 	}
 }
 
@@ -100,32 +129,53 @@ func (s *Server) terrainClasses(ctx context.Context, in *TerrainClassesInput) (*
 		return nil, huma.Error400BadRequest("too many links")
 	}
 	// One lookup for every link's points: nearby links share most of them.
+	// A link abroad or too long is not looked up and stays unknown: the page
+	// sends every router link, wherever its ends are.
 	var pts []terrain.Point
 	ends := make([][2]terrain.End, len(in.Body.Links))
+	ok := make([]bool, len(in.Body.Links))
 	for i, l := range in.Body.Links {
-		a := terrain.End{Point: terrain.Point{Lat: l.Lat1, Lon: l.Lon1}, Alt: alt(l.Alt1)}
-		b := terrain.End{Point: terrain.Point{Lat: l.Lat2, Lon: l.Lon2}, Alt: alt(l.Alt2)}
-		ends[i] = [2]terrain.End{a, b}
-		if terrain.Distance(a.Point, b.Point) <= terrain.MaxLengthM {
+		a, b, finite, bad := terrainEnds(l.Lat1, l.Lon1, l.Alt1, l.Lat2, l.Lon2, l.Alt2)
+		if !finite {
+			return nil, huma.Error422UnprocessableEntity(fmt.Sprintf("link %d: %s", i, bad))
+		}
+		ends[i], ok[i] = [2]terrain.End{a, b}, bad == ""
+		if ok[i] {
 			pts = append(pts, terrain.Points(a.Point, b.Point)...)
 		}
 	}
-	height, incomplete := s.Terrain.Heights(ctx, pts)
+	heights, incomplete, err := s.Terrain.HeightsFor(ctx, clientOf(ctx), pts)
+	if errors.Is(err, terrain.ErrTooManyPoints) {
+		return nil, huma.Error422UnprocessableEntity(fmt.Sprintf("the links need more than %d terrain points; ask for fewer or shorter links", terrain.MaxPoints))
+	} else if err != nil {
+		return nil, err
+	}
 	out := &TerrainClassesOutput{}
 	out.Body.Incomplete, out.Body.Attribution = incomplete, terrain.Attribution
 	out.Body.Classes = make([]TerrainClass, len(ends))
 	for i, e := range ends {
-		c := TerrainClass{Class: "unknown", LengthM: terrain.Distance(e[0].Point, e[1].Point)}
-		if c.LengthM <= terrain.MaxLengthM {
-			p := terrain.Build(e[0], e[1], height)
-			c.LengthM, c.WorstClearance = p.LengthM, p.WorstClearance
-			// Until every height is in, a missing one could be what blocks a link.
-			if !incomplete {
+		c := TerrainClass{Class: "unknown", LengthM: math.Round(terrain.Distance(e[0].Point, e[1].Point))}
+		if ok[i] {
+			p := terrain.Build(e[0], e[1], heights.At)
+			c.WorstClearance = p.WorstClearance
+			// Until every height of this link is in, a missing one could be
+			// what blocks it; other links' missing heights do not matter.
+			if linkKnown(heights, e[0].Point, e[1].Point) {
 				c.Class = p.Class
 			}
 		}
-		c.LengthM = float64(int(c.LengthM + 0.5))
 		out.Body.Classes[i] = c
 	}
 	return out, nil
+}
+
+// linkKnown reports whether every point of the link's cross section has
+// been looked up.
+func linkKnown(h terrain.Lookup, a, b terrain.Point) bool {
+	for _, p := range terrain.Points(a, b) {
+		if !h.Known(p) {
+			return false
+		}
+	}
+	return true
 }

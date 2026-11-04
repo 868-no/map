@@ -1,6 +1,8 @@
 package terrain
 
 import (
+	"context"
+	"errors"
 	"math"
 	"testing"
 )
@@ -69,5 +71,133 @@ func TestKeyRoundTrip(t *testing.T) {
 	k := keyOf(p)
 	if q := k.point(); Distance(p, q) > 30 || keyOf(q) != k {
 		t.Fatalf("%v → %v → %v", p, k, q)
+	}
+}
+
+func TestCovered(t *testing.T) {
+	for _, tc := range []struct {
+		p    Point
+		want bool
+	}{
+		{Point{63.43, 10.39}, true},       // Trondheim
+		{Point{58.0, 7.05}, true},         // Lindesnes
+		{Point{71.17, 25.78}, true},       // Nordkapp
+		{Point{69.73, 30.05}, true},       // Kirkenes
+		{Point{78.22, 15.65}, false},      // Svalbard
+		{Point{48.85, 2.35}, false},       // Paris
+		{Point{math.NaN(), 10}, false},    // not a position
+		{Point{63, math.Inf(1)}, false},   // nor this
+		{Point{-63.43, -10.39}, false},    // the other side of the world
+		{Point{Coverage.MaxLat, 4}, true}, // the edge is in
+		{Point{Coverage.MaxLat + 1e-9, 4}, false},
+	} {
+		if got := Covered(tc.p); got != tc.want {
+			t.Errorf("Covered(%v) = %v, want %v", tc.p, got, tc.want)
+		}
+	}
+}
+
+// grid is n distinct grid points in Trøndelag.
+func grid(n int) []Point {
+	pts := make([]Point, n)
+	for i := range pts {
+		pts[i] = Key{Lat: 126_000 + int32(i/1000), Lon: 20_000 + int32(i%1000)}.point()
+	}
+	return pts
+}
+
+// One visitor asking for much cannot crowd out another: each may have
+// maxPerClient points waiting, and the worker takes one from each in turn
+// (D-147). Duplicates count once, and over MaxPoints is refused.
+func TestHeightsForQueuesPerVisitor(t *testing.T) {
+	c := New("http://unused.invalid", "test")
+	ctx := context.Background()
+	big := grid(maxPerClient + 5_000)
+	if _, inc, err := c.HeightsFor(ctx, "greedy", append(big, big...)); err != nil || !inc {
+		t.Fatalf("greedy: %v %v", inc, err)
+	}
+	if c.Waiting() != maxPerClient {
+		t.Fatalf("greedy has %d waiting, want %d", c.Waiting(), maxPerClient)
+	}
+	small := []Point{{64.0, 11.0}, {64.0, 11.0}, {64.1, 11.0}}
+	l, inc, err := c.HeightsFor(ctx, "other", small)
+	if err != nil || !inc || l.Known(small[0]) {
+		t.Fatalf("other: %v %v", inc, err)
+	}
+	if c.Waiting() != maxPerClient+2 {
+		t.Fatalf("waiting %d, want the other's 2 distinct points too", c.Waiting())
+	}
+	c.mu.Lock()
+	batch, _ := c.next()
+	c.mu.Unlock()
+	if len(batch) != perRequest {
+		t.Fatalf("batch of %d", len(batch))
+	}
+	mine := 0
+	for _, k := range batch {
+		if k == keyOf(small[0]) || k == keyOf(small[2]) {
+			mine++
+		}
+	}
+	if mine != 2 {
+		t.Fatalf("the first batch holds %d of the other visitor's 2 points", mine)
+	}
+	before := c.Waiting()
+	if _, _, err := c.HeightsFor(ctx, "huge", grid(MaxPoints+1)); !errors.Is(err, ErrTooManyPoints) || c.Waiting() != before {
+		t.Fatalf("over MaxPoints: %v, waiting %d", err, c.Waiting())
+	}
+}
+
+// Visitors' points go before the warmer's, and with a store only theirs are
+// kept in memory (D-147).
+func TestVisitorsBeforeWarmer(t *testing.T) {
+	c := New("http://unused.invalid", "test")
+	bg := grid(100)
+	c.queueBackground(dedupe(bg))
+	visitor := []Point{{64.0, 11.0}, {64.1, 11.0}, bg[0]} // bg[0] is promoted
+	if _, _, err := c.HeightsFor(context.Background(), "v", visitor); err != nil {
+		t.Fatal(err)
+	}
+	c.Store = &Store{} // next only asks whether there is one
+	c.mu.Lock()
+	batch, keep := c.next()
+	c.mu.Unlock()
+	if len(batch) != perRequest {
+		t.Fatalf("batch of %d", len(batch))
+	}
+	for i, k := range batch {
+		want := i < 3
+		if keep[k] != want {
+			t.Fatalf("batch[%d] = %v kept %v, want %v (visitors first)", i, k, keep[k], want)
+		}
+	}
+	if keyOf(visitor[2]) != batch[2] {
+		t.Fatalf("promoted point not in front: %v", batch[:3])
+	}
+	for _, k := range batch[3:] {
+		if k == keyOf(bg[0]) {
+			t.Fatal("promoted point fetched twice")
+		}
+	}
+}
+
+// A full cache drops its oldest tenth, not everything.
+func TestPutEvictsOldest(t *testing.T) {
+	c := New("http://unused.invalid", "test")
+	c.order = make([]Key, 0, maxEntries)
+	for i := range maxEntries {
+		k := Key{Lat: int32(i), Lon: 0}
+		c.cache[k] = Height{}
+		c.order = append(c.order, k)
+	}
+	c.put(Key{Lat: -1}, Height{Z: 1, OK: true})
+	if len(c.cache) != maxEntries-maxEntries/10+1 {
+		t.Fatalf("%d cached", len(c.cache))
+	}
+	if _, ok := c.cache[Key{Lat: 0}]; ok {
+		t.Fatal("oldest kept")
+	}
+	if _, ok := c.cache[Key{Lat: maxEntries - 1}]; !ok {
+		t.Fatal("newest dropped")
 	}
 }

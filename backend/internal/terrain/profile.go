@@ -37,6 +37,18 @@ func Distance(a, b Point) float64 {
 	return 2 * earthR * math.Asin(math.Sqrt(h))
 }
 
+// Coverage is the area heights are fetched for: mainland Norway and its
+// coastal waters, which Kartverket's terrain model covers, with the border
+// strips of Sweden, Finland and Russia a link to Norway may cross (heights
+// there are none). Svalbard and Jan Mayen lie outside: the model does not
+// cover them. Lines between two covered points stay inside (D-147).
+var Coverage = struct{ MinLat, MaxLat, MinLon, MaxLon float64 }{57.5, 71.5, 4.0, 31.5}
+
+// Covered reports whether p is a finite position inside Coverage.
+func Covered(p Point) bool {
+	return p.Lat >= Coverage.MinLat && p.Lat <= Coverage.MaxLat && p.Lon >= Coverage.MinLon && p.Lon <= Coverage.MaxLon
+}
+
 func lerp(a, b Point, f float64) Point {
 	return Point{a.Lat + (b.Lat-a.Lat)*f, a.Lon + (b.Lon-a.Lon)*f}
 }

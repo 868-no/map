@@ -150,4 +150,18 @@ func TestTerrainStore(t *testing.T) {
 	if hits.Load() != before {
 		t.Fatalf("asked again: %d requests after the store had them", hits.Load()-before)
 	}
+	// The warmer asks the store which points it lacks (D-147): a pair
+	// already stored queues nothing; a new one queues only the points the
+	// store lacks, the shared end not among them.
+	c3 := terrain.New(up.URL, "test") // not running: its queue only fills
+	c3.Store = &terrain.Store{Pool: pool}
+	pair := []terrain.End{a, b}
+	w := &terrain.Warmer{Client: c3, Load: func(context.Context) ([]terrain.End, error) { return pair, nil }}
+	if pairs, n := w.Once(ctx); pairs != 1 || n != 0 || c3.Waiting() != 0 {
+		t.Fatalf("stored pair: %d pairs, %d queued", pairs, n)
+	}
+	pair = append(pair, terrain.End{Point: terrain.Point{Lat: 63.0, Lon: 10.1}})
+	if pairs, n := w.Once(ctx); pairs != 3 || n == 0 || n >= len(terrain.Points(a.Point, pair[2].Point))+len(terrain.Points(b.Point, pair[2].Point)) {
+		t.Fatalf("new end: %d pairs, %d queued", pairs, n)
+	}
 }

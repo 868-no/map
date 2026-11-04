@@ -692,7 +692,7 @@ export interface components {
              * @example https://example.com/api/schemas/TerrainClassesInputBody.json
              */
             readonly $schema?: string;
-            /** @description Links to classify, by the positions of their ends */
+            /** @description Links to classify, by the positions of their ends. A link with an end outside mainland Norway and its border strip (57.5–71.5° N, 4–31.5° E), or over 300 km long, is unknown; at most 120 000 distinct terrain points in all, else 422 */
             links: components["schemas"]["TerrainLink"][] | null;
         };
         TerrainClassesOutputBody: {
@@ -1168,7 +1168,7 @@ export interface operations {
     "terrain-profile": {
         parameters: {
             query: {
-                /** @description Latitude of the first end */
+                /** @description Latitude of the first end; both ends must lie in mainland Norway or its border strip (57.5–71.5° N, 4–31.5° E), else 422 */
                 lat1: number;
                 lon1: number;
                 /** @description Latitude of the second end */
