@@ -157,10 +157,12 @@ pub fn build_snapshot(rows: &[&Row], i: &Interner, g: &GeoOptions, rules: Rules)
             x.identity = Some(identity_of_report(r, i));
         }
     }
-    // Positions reported more than a day before the window's latest
-    // observation are stale: no anchor, and the node is estimated (D-094).
+    // Positions reported more than a day (a week for fixed nodes) before the
+    // window's latest observation are stale: no anchor, and the node is
+    // estimated (D-094, D-138).
     let now = rows.iter().map(|r| r.t).max().unwrap_or(0);
-    let (fresh, stale) = fresh_position_rows(&by.positioned, now);
+    let fixed: FxSet<u32> = nodes.iter().filter(|(_, x)| x.identity.as_ref().is_some_and(|id| super::node::fixed_role(&id.role))).map(|(&n, _)| n).collect();
+    let (fresh, stale) = fresh_position_rows(&by.positioned, now, |n| fixed.contains(&n));
     for (n, r) in fresh {
         let x = nodes.entry(n).or_insert_with(|| Node::new(n));
         x.position = Some(position_of(r, i));

@@ -174,7 +174,8 @@ pub fn build_node_detail(rows: &[&Row], num: u32, b: &Built, i: &Interner) -> Op
         }
     }
     // Stale relative to the window's latest observation, as in the snapshot (D-094).
-    let (fresh, stale) = super::fresh_position_rows(&own, b.now);
+    let fixed = n.identity.as_ref().is_some_and(|id| super::node::fixed_role(&id.role));
+    let (fresh, stale) = super::fresh_position_rows(&own, b.now, |_| fixed);
     if let Some(r) = fresh.get(&num) {
         n.position = Some(position_of(r, i));
     } else if let Some(r) = stale.get(&num) {

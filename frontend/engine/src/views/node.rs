@@ -252,11 +252,51 @@ pub fn choose_position<'a>(a: &'a Row, b: &'a Row) -> &'a Row {
 /// observation is stale: the node is estimated instead (D-094).
 pub const STALE_POSITION_MS: i64 = 24 * 3600 * 1000;
 
+/// For a fixed node, a week (D-138): routers on mountain tops may report
+/// their position only every day or two, while their links stay current.
+pub const STALE_FIXED_POSITION_MS: i64 = 7 * 24 * 3600 * 1000;
+
+/// Two position reports this far apart that agree make a node fixed, whatever its role.
+const FIXED_SPAN_MS: i64 = 6 * 3600 * 1000;
+
+/// Roles that sit in one place: routers and base stations.
+pub(super) fn fixed_role(role: &str) -> bool {
+    matches!(role, "ROUTER" | "ROUTER_LATE" | "CLIENT_BASE")
+}
+
+/// Whether two position reports put a node in the same place: within both
+/// precision circles, or 200 m where a precision is unknown.
+fn agree(a: &Row, b: &Row) -> bool {
+    let (pa, pb) = (a.pos.unwrap(), b.pos.unwrap());
+    let slack = if pa.known && pb.known { precision_error_m(pa.bits, pa.lat) + precision_error_m(pb.bits, pb.lat) } else { 200.0 };
+    distance_m(LatLon { lat: pa.lat, lon: pa.lon }, LatLon { lat: pb.lat, lon: pb.lon }) <= slack
+}
+
 /// Each node's position row, unless its newest position report is stale
-/// relative to `now`; stale rows are returned separately.
-pub(super) fn fresh_position_rows<'a>(rows: &[&'a Row], now: i64) -> (FxMap<u32, &'a Row>, FxMap<u32, &'a Row>) {
-    let newest = latest_by(rows, |r| (r.ty == ty::POSITION || r.ty == ty::MAPREPORT) && r.pos.is_some(), |r| r.src);
-    position_rows(rows).into_iter().partition(|(n, _)| newest.get(n).is_some_and(|r| now - r.t <= STALE_POSITION_MS))
+/// relative to `now`; stale rows are returned separately. A node's report
+/// goes stale after a day, or a week when the node is fixed (D-138): none of
+/// its reports in the window disagree, and its role sits in one place
+/// (`role`) or reports at least six hours apart agree.
+pub(super) fn fresh_position_rows<'a>(rows: &[&'a Row], now: i64, role: impl Fn(u32) -> bool) -> (FxMap<u32, &'a Row>, FxMap<u32, &'a Row>) {
+    let reports = |r: &Row| (r.ty == ty::POSITION || r.ty == ty::MAPREPORT) && r.pos.is_some();
+    let newest = latest_by(rows, reports, |r| r.src);
+    // Per node: whether any report disagrees with its newest, and the span of those that agree.
+    let mut seen: FxMap<u32, (bool, i64, i64)> = map();
+    for r in rows.iter().filter(|r| reports(r)) {
+        let Some(n) = newest.get(&r.src) else { continue };
+        let e = seen.entry(r.src).or_insert((false, r.t, r.t));
+        if agree(r, n) {
+            e.1 = e.1.min(r.t);
+            e.2 = e.2.max(r.t);
+        } else {
+            e.0 = true;
+        }
+    }
+    let limit = |n: u32| match seen.get(&n) {
+        Some(&(moved, lo, hi)) if !moved && (role(n) || hi - lo >= FIXED_SPAN_MS) => STALE_FIXED_POSITION_MS,
+        _ => STALE_POSITION_MS,
+    };
+    position_rows(rows).into_iter().partition(|(n, _)| newest.get(n).is_some_and(|r| now - r.t <= limit(*n)))
 }
 
 /// Each node's position row: latest of each packet type, then choose_position.
@@ -386,15 +426,41 @@ mod tests {
         let (p, m) = (ty::POSITION, ty::MAPREPORT);
         let old = pos(1, p, 61.2, 32, 0);
         let rows = [&old];
-        let (fresh, stale) = fresh_position_rows(&rows, 24 * H);
+        let mobile = |_: u32| false;
+        let (fresh, stale) = fresh_position_rows(&rows, 24 * H, mobile);
         assert!(fresh.contains_key(&1) && stale.is_empty(), "exactly a day old is still fresh");
-        let (fresh, stale) = fresh_position_rows(&rows, 25 * H);
+        let (fresh, stale) = fresh_position_rows(&rows, 25 * H, mobile);
         assert!(fresh.is_empty() && stale.contains_key(&1));
         // A recent map report that agrees with an older precise position keeps it fresh,
         // even though the precise one is what gets shown.
         let recent = pos(2, m, 61.2001, 14, 24 * H);
         let rows = [&old, &recent];
-        let (fresh, _) = fresh_position_rows(&rows, 25 * H);
+        let (fresh, _) = fresh_position_rows(&rows, 25 * H, mobile);
         assert_eq!(fresh.get(&1).map(|r| r.id), Some(1));
+    }
+
+    #[test]
+    fn fixed_nodes_keep_their_position_for_a_week() {
+        const H: i64 = 3_600_000;
+        let p = ty::POSITION;
+        // A router reporting once, three days ago: fixed by its role.
+        let once = pos(1, p, 61.2, 32, 0);
+        let router = |_: u32| true;
+        let (fresh, _) = fresh_position_rows(&[&once], 72 * H, router);
+        assert!(fresh.contains_key(&1), "a router's position lasts a week");
+        let (fresh, stale) = fresh_position_rows(&[&once], 7 * 24 * H + H, router);
+        assert!(fresh.is_empty() && stale.contains_key(&1), "but not longer");
+        // Any role, two agreeing reports half a day apart: fixed too.
+        let (a, b) = (pos(1, p, 61.2, 32, 0), pos(2, p, 61.2, 32, 12 * H));
+        let (fresh, _) = fresh_position_rows(&[&a, &b], 72 * H, |_| false);
+        assert!(fresh.contains_key(&1));
+        // Two agreeing reports minutes apart prove nothing: a day, as before.
+        let (a2, b2) = (pos(1, p, 61.2, 32, 0), pos(2, p, 61.2, 32, H / 6));
+        let (fresh, _) = fresh_position_rows(&[&a2, &b2], 72 * H, |_| false);
+        assert!(fresh.is_empty());
+        // A router that moved in the window is not fixed: a day.
+        let (c, d) = (pos(1, p, 61.2, 32, 0), pos(2, p, 61.5, 32, 12 * H));
+        let (fresh, _) = fresh_position_rows(&[&c, &d], 72 * H, router);
+        assert!(fresh.is_empty(), "a router seen moving goes stale after a day");
     }
 }

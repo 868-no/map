@@ -408,7 +408,7 @@ pub fn health(rows: &[&Row], invalid: &[&Row], nodes: &[Node], copies: &Copies, 
             add(n, "downlink", "warning", "Probably downlinks from MQTT".into(), format!("{} of {} traceroutes reached it at exactly 0 dB, the reading of a packet taken from the broker. A downlinking node rebroadcasts far-away packets locally, which draws links that do not exist and wastes airtime.", d.zero_snr, d.traceroutes));
         }
         if let Some(p) = &x.stale_position {
-            add(n, "stale_position", "notice", "Position report is stale".into(), format!("Its last position report is from {}, more than a day before the newest data. {}", p.observed_at, if x.estimate.is_some() { "It is estimated instead." } else { "It is left off the map." }));
+            add(n, "stale_position", "notice", "Position report is stale".into(), format!("Its last position report is from {}, more than a day before the newest data (a week for a router, base station or node that has stayed in one place). {}", p.observed_at, if x.estimate.is_some() { "It is estimated instead." } else { "It is left off the map." }));
         }
         if let Some(t) = &x.telemetry {
             if let Some(c) = t.ch_util.filter(|&c| c >= CH_UTIL_WARN) {
