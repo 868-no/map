@@ -224,7 +224,10 @@ export default function MapView({ caps, snapshot, onPositions }: Props) {
   const { placed, pos, links, allPos, roles } = useMemo(() => {
     const nodes = snapshot?.nodes ?? []
     const { placed: all } = placeNodes(nodes, windowEnd, windowMs)
-    const placed = all.filter((p) => (!filters.positionedOnly || p.kind === 'reported') && (!filters.onlineOnly || isOnline(p.node, windowEnd)))
+    const placed = all.filter((p) =>
+      (!filters.positionedOnly || p.kind === 'reported') &&
+      (!filters.onlineOnly || isOnline(p.node, windowEnd)) &&
+      (filters.roles.length === 0 || filters.roles.includes(p.node.identity?.role ?? '')))
     // Positions of the markers actually drawn: links, pings and the camera use only these.
     const pos = new Map<string, [number, number]>()
     for (const p of placed) pos.set(p.node.id, [p.lon, p.lat])

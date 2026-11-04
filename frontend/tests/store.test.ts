@@ -9,6 +9,15 @@ describe('URL and API parameters', () => {
     expect(back.win).toMatchObject({ live: false, start: fixed.win.start, end: fixed.win.end })
     expect(back.filters?.channels).toEqual(['NarrowFast'])
   })
+  it('round-trips the role filter and keeps it out of the API query (D-145)', () => {
+    const withRoles = { ...fixed, filters: { ...defaultFilters, roles: ['ROUTER', 'ROUTER_LATE'] } }
+    const q = toQuery(withRoles)
+    expect(q.get('role')).toBe('ROUTER,ROUTER_LATE')
+    expect(fromQuery(q).filters?.roles).toEqual(['ROUTER', 'ROUTER_LATE'])
+    // Role is a display filter: it must not change which rows are fetched.
+    expect(apiParams(withRoles).get('role')).toBeNull()
+    expect(toQuery({ ...fixed, filters: defaultFilters }).get('role')).toBeNull()
+  })
   it('sends explicit bounds for fixed windows and only a duration for live', () => {
     const p = apiParams(fixed)
     expect(p.get('start')).toBe(fixed.win.start)

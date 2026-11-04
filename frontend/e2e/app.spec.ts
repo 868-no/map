@@ -491,6 +491,10 @@ test('the tool rail opens one panel at a time and counts active filters', async 
   await panel.getByLabel('Only nodes with reported positions').check()
   await expect(filters.locator('.rail-badge')).toHaveText('2')
   await expect(page).toHaveURL(/type=position/)
+  // Role filter (D-145): a chip adds to the badge and the shareable URL.
+  await panel.getByRole('button', { name: 'Router', exact: true }).click()
+  await expect(filters.locator('.rail-badge')).toHaveText('3')
+  await expect(page).toHaveURL(/role=ROUTER/)
   await panel.getByRole('button', { name: 'Reset' }).click()
   await expect(filters.locator('.rail-badge')).toHaveCount(0)
   // Another rail button swaps the panel; pressing the open one closes it.

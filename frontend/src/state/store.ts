@@ -15,6 +15,7 @@ export interface Filters {
   minConfidence: Confidence
   positionedOnly: boolean
   onlineOnly: boolean // only nodes heard within 3 h of the window's end (D-101)
+  roles: string[] // only nodes whose reported role is one of these; empty: every role (D-145)
 }
 
 export interface Toggles {
@@ -78,7 +79,7 @@ interface Store {
   setDetailTab: (t: DetailTab) => void
 }
 
-export const defaultFilters: Filters = { channels: [], brokers: [], types: [], evidence: [], minConfidence: 'low', positionedOnly: false, onlineOnly: false }
+export const defaultFilters: Filters = { channels: [], brokers: [], types: [], evidence: [], minConfidence: 'low', positionedOnly: false, onlineOnly: false, roles: [] }
 const prefersReducedMotion = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
 
 export const defaultToggles: Toggles = { infraLinks: false, otherLinks: false, mqttLinks: false, inferred: true, uncertainty: false, animation: !prefersReducedMotion, labels: true, regions: false, trails: false, theme: 'system', basemap: defaultBasemap }
@@ -169,6 +170,7 @@ export function toQuery(s: Pick<Store, 'win' | 'filters'> & { selection?: Select
   if (s.filters.channels.length) q.set('channel', s.filters.channels.join(','))
   if (s.filters.brokers.length) q.set('broker', s.filters.brokers.join(','))
   if (s.filters.types.length) q.set('type', s.filters.types.join(','))
+  if (s.filters.roles.length) q.set('role', s.filters.roles.join(','))
   return q
 }
 
@@ -184,7 +186,7 @@ export function fromQuery(q: URLSearchParams): Partial<Pick<Store, 'win' | 'filt
     if (h >= 1 && h <= 168) out.win = { live: true, durationH: h, start: null, end: null }
   }
   const list = (k: string) => (q.get(k) ?? '').split(',').map((x) => x.trim()).filter(Boolean)
-  out.filters = { ...defaultFilters, channels: list('channel'), brokers: list('broker'), types: list('type') }
+  out.filters = { ...defaultFilters, channels: list('channel'), brokers: list('broker'), types: list('type'), roles: list('role') }
   return out
 }
 

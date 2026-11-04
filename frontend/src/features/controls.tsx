@@ -17,13 +17,21 @@ const TYPE_TIP: Record<string, string> = {
 }
 const EVIDENCE: [string, string][] = [['neighbor', 'NeighborInfo'], ['traceroute', 'Traceroute'], ['direct_rf', 'Heard directly by a gateway'], ['relay_hint', 'Guessed from relay byte']]
 
+/** Meshtastic device roles in plain words (the raw enum is the fallback). */
+export const ROLE_LABEL: Record<string, string> = {
+  CLIENT: 'Client', CLIENT_MUTE: 'Client (mute)', CLIENT_HIDDEN: 'Client (hidden)', CLIENT_BASE: 'Client base',
+  ROUTER: 'Router', ROUTER_LATE: 'Router (late)', ROUTER_CLIENT: 'Router/client', REPEATER: 'Repeater',
+  TRACKER: 'Tracker', SENSOR: 'Sensor', TAK: 'TAK', TAK_TRACKER: 'TAK tracker', LOST_AND_FOUND: 'Lost and found',
+}
+const roleLabel = (r: string) => ROLE_LABEL[r] ?? r
+
 function toggle(list: string[], v: string): string[] {
   return list.includes(v) ? list.filter((x) => x !== v) : [...list, v]
 }
 
 /** How many filters differ from the defaults (the Filters button's badge). */
 export function activeFilters(f: Filters): number {
-  return [f.positionedOnly, f.onlineOnly, f.evidence.length > 0 && f.evidence.length < EVIDENCE.length, f.minConfidence !== 'low', f.types.length > 0, f.channels.length > 0, f.brokers.length > 0].filter(Boolean).length
+  return [f.positionedOnly, f.onlineOnly, f.roles.length > 0, f.evidence.length > 0 && f.evidence.length < EVIDENCE.length, f.minConfidence !== 'low', f.types.length > 0, f.channels.length > 0, f.brokers.length > 0].filter(Boolean).length
 }
 
 /** Map layer switches: mesh overlays and basemap groups. */
@@ -67,6 +75,8 @@ export function FilterPanel({ snapshot }: { snapshot: SnapshotView | undefined }
   const f = useStore((s) => s.filters)
   const set = useStore((s) => s.setFilters)
   const brokers = [...new Set((snapshot?.nodes ?? []).flatMap((n) => n.brokers ?? []))].sort()
+  // Roles present in the window, plus any selected one that is not (so it can still be toggled off).
+  const roles = [...new Set([...(snapshot?.nodes ?? []).flatMap((x) => (x.identity?.role ? [x.identity.role] : [])), ...f.roles])].sort()
   const n = activeFilters(f)
   return (
     <div className="panel">
@@ -77,6 +87,16 @@ export function FilterPanel({ snapshot }: { snapshot: SnapshotView | undefined }
       <h3>Nodes</h3>
       <label><input type="checkbox" checked={f.positionedOnly} onChange={(e) => set({ positionedOnly: e.target.checked })} /> Only nodes with reported positions</label>
       <label title="Online: heard within the last 3 hours of the selected period (now, when live). Nodes only named by others are offline."><input type="checkbox" checked={f.onlineOnly} onChange={(e) => set({ onlineOnly: e.target.checked })} /> Only online nodes (heard in the last 3 h)</label>
+      {roles.length > 0 && (
+        <>
+          <p className="muted small" title="Show only nodes whose latest reported role in the window is one of those selected. Nodes that announce no role are hidden while any role is chosen. Roles come from NodeInfo or a node's own map report.">Only these roles:</p>
+          <div className="chips">
+            {roles.map((r) => (
+              <button key={r} aria-pressed={f.roles.includes(r)} onClick={() => set({ roles: toggle(f.roles, r) })}>{roleLabel(r)}</button>
+            ))}
+          </div>
+        </>
+      )}
       <p className="muted">These and the link filters below change what the map draws, not the counts in the header or a node's details.</p>
 
       <h3>Link evidence</h3>
