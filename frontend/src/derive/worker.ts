@@ -50,6 +50,8 @@ class EngineRows implements Backend<number, string> {
 const SLICES = 4
 /** A page not answered in this long fails the range, as if offline. */
 const PAGE_TIMEOUT_MS = 30_000
+/** Retries of a page answered 429, each after its Retry-After (at most 10 s). */
+const RATE_RETRIES = 3
 /** A proxy's answer while the backend is down or restarting: no answer from it. */
 const GATEWAY_DOWN = new Set([502, 503, 504])
 
@@ -64,10 +66,16 @@ async function fetchRange(params: URLSearchParams): Promise<Fetched<number>> {
     const p = new URLSearchParams(params)
     for (const [k, v] of Object.entries(extra)) p.set(k, v)
     let res: globalThis.Response
-    try {
-      res = await fetch(`/api/v1/observations?${p}`, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(PAGE_TIMEOUT_MS) })
-    } catch (e) {
-      throw new Error(`observations: ${e instanceof Error ? e.message : e}`, { cause: e })
+    for (let attempt = 0; ; attempt++) {
+      try {
+        res = await fetch(`/api/v1/observations?${p}`, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(PAGE_TIMEOUT_MS) })
+      } catch (e) {
+        throw new Error(`observations: ${e instanceof Error ? e.message : e}`, { cause: e })
+      }
+      // Rate-limited (several tabs or a shared address): wait as told and try again.
+      if (res.status !== 429 || attempt >= RATE_RETRIES) break
+      const after = Number(res.headers.get('Retry-After'))
+      await new Promise((r) => setTimeout(r, Math.min(Number.isFinite(after) && after > 0 ? after * 1000 : 2000, 10_000)))
     }
     if (GATEWAY_DOWN.has(res.status)) throw new Error(`observations: ${res.status}`)
     if (!res.ok) {
