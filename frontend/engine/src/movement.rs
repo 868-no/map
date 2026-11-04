@@ -49,12 +49,8 @@ pub struct Movement {
     pub track: Vec<TrackPoint>,
 }
 
-/// The distance two positions must exceed to count as a move.
-pub fn move_threshold_m(a: (f64, u32), b: (f64, u32)) -> f64 {
-    move_threshold(false, a, b)
-}
-
-/// The same, for a node that `fixed` (its role sits in one place) or not.
+/// The distance two positions must exceed to count as a move, for a node
+/// that is `fixed` (its role sits in one place) or not.
 pub fn move_threshold(fixed: bool, a: (f64, u32), b: (f64, u32)) -> f64 {
     (if fixed { FIXED_MOVE_M } else { MOVE_M }) + PRECISION_SLACK * (precision_error_m(a.1, a.0) + precision_error_m(b.1, b.0))
 }
@@ -154,11 +150,17 @@ pub fn anchors_of(by_node: &FxMap<u32, Vec<&Row>>, fixed: &FxSet<u32>) -> FxMap<
 fn medoid(rs: &[&Row]) -> crate::row::Position {
     let ps: Vec<crate::row::Position> = rs.iter().rev().take(200).map(|r| r.pos.unwrap()).collect();
     let ll = |p: &crate::row::Position| LatLon { lat: p.lat, lon: p.lon };
-    *ps.iter().min_by(|a, b| {
-        let sa: f64 = ps.iter().map(|q| distance_m(ll(a), ll(q))).sum();
-        let sb: f64 = ps.iter().map(|q| distance_m(ll(b), ll(q))).sum();
-        sa.total_cmp(&sb)
-    }).unwrap()
+    // Each pair once: n²/2 distances.
+    let mut sums = vec![0.0; ps.len()];
+    for i in 0..ps.len() {
+        for j in i + 1..ps.len() {
+            let d = distance_m(ll(&ps[i]), ll(&ps[j]));
+            sums[i] += d;
+            sums[j] += d;
+        }
+    }
+    let best = (0..ps.len()).min_by(|&a, &b| sums[a].total_cmp(&sums[b])).unwrap();
+    ps[best]
 }
 
 /// Where the agreeing reports put the node, and how sure that is.
@@ -267,8 +269,9 @@ mod tests {
 
     #[test]
     fn coarse_cells_need_a_bigger_jump() {
-        assert_eq!(move_threshold_m((60.0, 32), (60.0, 32)), MOVE_M);
+        assert_eq!(move_threshold(false, (60.0, 32), (60.0, 32)), MOVE_M);
+        assert_eq!(move_threshold(true, (60.0, 32), (60.0, 32)), FIXED_MOVE_M);
         // 13 bits: cells of several kilometres, so jumping to the next one is not a move.
-        assert!(move_threshold_m((63.0, 13), (63.0, 13)) > 7_000.0);
+        assert!(move_threshold(false, (63.0, 13), (63.0, 13)) > 7_000.0);
     }
 }
