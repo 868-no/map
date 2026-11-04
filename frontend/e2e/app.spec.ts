@@ -487,14 +487,16 @@ test('the tool rail opens one panel at a time and counts active filters', async 
   await expect(filters.locator('.rail-badge')).toHaveCount(0)
   await showPanel(page, 'Filters')
   const panel = page.getByRole('complementary', { name: 'Filters' })
+  // Role filter (D-145): applied while NodeInfo still counts, so roles exist.
+  // (Filtering to position-only below strips identities and their roles.)
+  const router = panel.getByRole('button', { name: 'Router', exact: true })
+  await expect(router).toBeVisible({ timeout: 30_000 })
+  await router.click()
+  await expect(page).toHaveURL(/role=ROUTER/)
   await panel.getByRole('button', { name: 'position' }).click()
   await panel.getByLabel('Only nodes with reported positions').check()
-  await expect(filters.locator('.rail-badge')).toHaveText('2')
-  await expect(page).toHaveURL(/type=position/)
-  // Role filter (D-145): a chip adds to the badge and the shareable URL.
-  await panel.getByRole('button', { name: 'Router', exact: true }).click()
   await expect(filters.locator('.rail-badge')).toHaveText('3')
-  await expect(page).toHaveURL(/role=ROUTER/)
+  await expect(page).toHaveURL(/type=position/)
   await panel.getByRole('button', { name: 'Reset' }).click()
   await expect(filters.locator('.rail-badge')).toHaveCount(0)
   // Another rail button swaps the panel; pressing the open one closes it.
@@ -514,7 +516,9 @@ test('the node list applies node filters and alerts when nodes are hidden', asyn
   await expect(page.locator('.node-filter-alert')).toHaveCount(0)
   // Hide the client nodes by keeping only routers (a minority).
   await showPanel(page, 'Filters')
-  await page.getByRole('complementary', { name: 'Filters' }).getByRole('button', { name: 'Router', exact: true }).click()
+  const routerChip = page.getByRole('complementary', { name: 'Filters' }).getByRole('button', { name: 'Router', exact: true })
+  await expect(routerChip).toBeVisible({ timeout: 30_000 })
+  await routerChip.click()
   await openPanel(page)
   const alert = page.locator('.node-filter-alert')
   await expect(alert).toBeVisible()
