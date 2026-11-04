@@ -18,9 +18,10 @@ This page shows the components and where the code lives. The rules the system fo
 │                                                               · live publish     │
 │  identity index (in memory, rebuilt from packet_log)                             │
 │                                                                                  │
-│  HTTP API (huma, OpenAPI 3.1): capabilities, retention, observations (paged,    │
-│  streamed rows), stream (SSE: every new row) · health · metrics                 │
-│  query layer: every SQL via window.Predicate                                    │
+│  HTTP API (huma, OpenAPI 3.1): capabilities, retention, observations (paged,     │
+│  streamed rows), stream (SSE: every new row), nodes/{id}/public-key, trends,     │
+│  weather · health · metrics                                                      │
+│  query layer: every SQL via window.Predicate                                     │
 └───────────────┬───────────────────────────────┬──────────────────────────────────┘
                 │                               │
         PostgreSQL 16                     Redis 7 (ephemeral)
@@ -30,7 +31,7 @@ This page shows the components and where the code lives. The rules the system fo
                 ▲
                 │
    maintenance (meshmap maintenance)
-   daily retention under advisory lock (drops whole months)
+   daily retention under advisory lock (drops whole months, trims weather_hour)
 
 ┌──────────── web (Caddy) :WEB_PORT ────────────┐
 │  /            React app (MapLibre + deck.gl)  │
@@ -75,7 +76,7 @@ The browser's engine computes node identity, positions, telemetry, links, estima
 ```text
 backend/
   cmd/meshmap/            CLI: serve, maintenance, check-config, init-schema, demo-publish, inspect,
-                          healthcheck, openapi, seed, bench
+                          import-envelopes, healthcheck, openapi, seed, bench
   internal/config         env + YAML, validation, redaction, config revision
   internal/mqtt           read-only broker clients (autopaho v5, paho v3.1.1)
   internal/protocol       topic + envelope parsing; ports/ payload decoders; pb/ generated bindings
@@ -90,7 +91,9 @@ backend/
   internal/geo            location-estimate settings (the estimator runs in the browser)
   internal/cache          Redis wrapper (dedupe, live pub/sub, maintenance status)
   internal/api            huma handlers, SSE hub, health, per-client limits, client IP
-  internal/maintenance    retention runner (drops expired months, trims the boundary month)
+  internal/maintenance    retention runner (drops expired months, trims the boundary month and weather_hour)
+  internal/weather        MET Norway client (OPeNDAP, grid cells), weather_hour store, fetch queue
+  internal/envimport      import-envelopes: replays recorded MQTT history through ingest.Process (D-137)
   internal/observability  logging and Prometheus metrics
   internal/demo           simulator, scenarios, demo publisher
   test/integration        Postgres/Redis/Mosquitto integration tests

@@ -101,6 +101,10 @@ MQTT delivers Meshtastic traffic at QoS 0, so senders cannot be slowed. If Postg
 
 The first start of a version with D-056 converts `packet_log` to a partitioned table, in one transaction under the schema lock: the old table is copied with its ids and dropped, and `/health/ready` reports `meshmap-schema:2` afterwards. It needs free disk space for a second copy of the table while it runs, and takes roughly as long as copying the table (the dev database's 17 000 rows took under a second; plan for minutes per few million rows). Take a backup first (see below). Older binaries cannot start against schema 2; to roll back, restore the backup.
 
+## Upgrading to schema 3 (weather)
+
+Schema 3 adds the `weather_hour` table (D-133); `init-schema` creates it at the first start of a version that has it, with nothing to convert. The backend checks the exact schema version and list of tables at startup, so an image older than schema 3 refuses to start against a schema-3 database. To roll back past it, restore a backup taken before the upgrade.
+
 ## Retention
 
 `packet_log` is partitioned by calendar month (D-056). The `maintenance` service removes rows older than `RETENTION_MONTHS` (default 6 calendar months, clamped at month ends) daily at 03:00 UTC, and at startup if a run is overdue. Under a PostgreSQL advisory lock it drops the partitions of months that end before the cutoff, deletes the remaining expired rows of the cutoff's month in 5 000-row transactions, runs `VACUUM (ANALYZE)` on that partition only, creates partitions for the next two months, stores the run's status (shown in `/health/ready`) and notifies open browser sessions. Run it manually with `docker compose run --rm maintenance maintenance --once`.
