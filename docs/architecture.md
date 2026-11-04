@@ -107,5 +107,5 @@ frontend/                 React + MapLibre GL 5 + deck.gl 9 (Vite); e2e/ Playwri
 web/                      Caddyfile, dark and light OpenMapTiles styles, image build (fonts)
 basemap/                  basemap service image: Planetiler + run.sh (builds and refreshes basemap.pmtiles)
 deploy/                   compose.production.yaml, Mosquitto config for the demo, caddy-auth snippets
-scripts/                  go.sh, node.sh, wasm.sh, integration.sh, bench.sh, basemap_import.sh
+scripts/                  go.sh, node.sh, wasm.sh, integration.sh, bench.sh, basemap_import.sh, regions.sh/regions.js
 ```

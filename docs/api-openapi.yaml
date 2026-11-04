@@ -717,7 +717,7 @@ components:
           readOnly: true
           type: string
         generation:
-          description: Decoder and configuration generation; rows from another generation must be discarded
+          description: Decoder, row-format and configuration generation; rows from another generation must be discarded
           type: string
         more:
           description: More rows remain; request again with cursor = next_cursor

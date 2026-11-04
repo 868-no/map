@@ -520,7 +520,7 @@ export interface components {
              * @example https://example.com/api/schemas/ObservationsBody.json
              */
             readonly $schema?: string;
-            /** @description Decoder and configuration generation; rows from another generation must be discarded */
+            /** @description Decoder, row-format and configuration generation; rows from another generation must be discarded */
             generation: string;
             /** @description More rows remain; request again with cursor = next_cursor */
             more: boolean;

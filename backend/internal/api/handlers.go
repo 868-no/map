@@ -199,7 +199,7 @@ type ObservationsBody struct {
 	Window     WindowEcho `json:"window" doc:"The full window the rows belong to"`
 	Since      time.Time  `json:"since" doc:"Effective lower bound of the rows returned"`
 	Until      time.Time  `json:"until" doc:"Effective upper bound (exclusive)"`
-	Generation string     `json:"generation" doc:"Decoder and configuration generation; rows from another generation must be discarded"`
+	Generation string     `json:"generation" doc:"Decoder, row-format and configuration generation; rows from another generation must be discarded"`
 	Now        time.Time  `json:"now" doc:"Server time when the rows were read; lets clients follow the server clock between fetches"`
 	Rows       RowList    `json:"rows"`
 	More       bool       `json:"more" doc:"More rows remain; request again with cursor = next_cursor"`
