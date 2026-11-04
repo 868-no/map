@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -287,18 +288,63 @@ func TestQueueOnce(t *testing.T) {
 	c.Now = func() time.Time { return now }
 	ctx := context.Background()
 	kept, visitor := Cell{100, 100}, Cell{200, 200}
-	c.series(ctx, kept, now.Add(-6*time.Hour), now, false)
-	c.series(ctx, kept, now.Add(-6*time.Hour), now, false)
+	c.series(ctx, "", kept, now.Add(-6*time.Hour), now, false)
+	c.series(ctx, "", kept, now.Add(-6*time.Hour), now, false)
 	for range 5 {
 		c.Series(ctx, visitor, now.Add(-3*time.Hour), now)
 	}
-	if len(c.urgent) != 3 || len(c.background) != 6 {
-		t.Fatalf("urgent %d, background %d; want 3, 6", len(c.urgent), len(c.background))
+	if c.nUrgent != 3 || len(c.background) != 6 {
+		t.Fatalf("urgent %d, background %d; want 3, 6", c.nUrgent, len(c.background))
 	}
 	c.Series(ctx, kept, now.Add(-2*time.Hour), now)
 	c.Series(ctx, kept, now.Add(-2*time.Hour), now)
-	if len(c.urgent) != 5 || len(c.background) != 6 {
-		t.Fatalf("after promotion: urgent %d, background %d; want 5, 6", len(c.urgent), len(c.background))
+	if c.nUrgent != 5 || len(c.background) != 6 {
+		t.Fatalf("after promotion: urgent %d, background %d; want 5, 6", c.nUrgent, len(c.background))
+	}
+}
+
+// Visitors are served in turn (D-141): one asking for weeks of hours delays
+// another's few by one fetch each, and holds at most maxPerClient. When the
+// queue is full, the visitor holding the most makes room for others.
+func TestVisitorsTakeTurns(t *testing.T) {
+	now := time.Date(2026, 11, 3, 15, 30, 0, 0, time.UTC)
+	c := New("http://127.0.0.1:0", "")
+	c.Now = func() time.Time { return now }
+	ctx := context.Background()
+	for x := range 10 {
+		c.SeriesFor(ctx, "greedy", Cell{x, 0}, now.Add(-30*24*time.Hour), now)
+	}
+	if n := len(c.urgent["greedy"]); n != maxPerClient {
+		t.Fatalf("greedy holds %d hours, want the cap %d", n, maxPerClient)
+	}
+	c.SeriesFor(ctx, "visitor", Cell{0, 1}, now.Add(-3*time.Hour), now)
+	var order []string
+	for range 6 {
+		id := c.turns[0]
+		order = append(order, id)
+		q := c.urgent[id]
+		c.urgent[id], c.nUrgent, c.turns = q[1:], c.nUrgent-1, append(c.turns[1:], id)
+	}
+	if want := []string{"greedy", "visitor", "greedy", "visitor", "greedy", "visitor"}; !slices.Equal(order, want) {
+		t.Errorf("served %v, want %v", order, want)
+	}
+
+	// A full queue: a newcomer takes the greedy visitor's last hours.
+	c = New("http://127.0.0.1:0", "")
+	c.Now = func() time.Time { return now }
+	for i := range maxQueue/maxPerClient + 1 {
+		for x := range 10 {
+			c.SeriesFor(ctx, fmt.Sprint("greedy", i), Cell{x, i}, now.Add(-30*24*time.Hour), now)
+		}
+	}
+	if c.nUrgent != maxQueue {
+		t.Fatalf("%d hours queued, want the cap %d", c.nUrgent, maxQueue)
+	}
+	if _, inc := c.SeriesFor(ctx, "visitor", Cell{0, 999}, now.Add(-3*time.Hour), now); !inc || len(c.urgent["visitor"]) != 3 {
+		t.Errorf("a newcomer to a full queue got %d of its 3 hours queued", len(c.urgent["visitor"]))
+	}
+	if c.nUrgent != maxQueue || len(c.queued) != maxQueue {
+		t.Errorf("queue %d, index %d after making room; want %d", c.nUrgent, len(c.queued), maxQueue)
 	}
 }
 

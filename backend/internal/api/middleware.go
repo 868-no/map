@@ -87,6 +87,17 @@ func ClientKey(a netip.Addr) netip.Prefix {
 	return netip.PrefixFrom(a, a.BitLen())
 }
 
+type clientCtxKey struct{}
+
+// clientOf is the client key Protect found for the request, as text; empty
+// without Protect.
+func clientOf(ctx context.Context) string {
+	if k, ok := ctx.Value(clientCtxKey{}).(netip.Prefix); ok {
+		return k.String()
+	}
+	return ""
+}
+
 // heavyPath is the endpoint whose reads hold a database connection while
 // they stream; each client may run only HeavyPerClient at once, so one
 // client cannot take every slot of Server.acquire.
@@ -149,7 +160,7 @@ func Protect(next http.Handler, l Limits) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		ctx, cancel := context.WithTimeout(r.Context(), l.Timeout)
+		ctx, cancel := context.WithTimeout(context.WithValue(r.Context(), clientCtxKey{}, key), l.Timeout)
 		defer cancel()
 		if r.URL.Path == heavyPath {
 			// Queue behind this client's own reads (the browser runs a few

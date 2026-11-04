@@ -22,6 +22,20 @@ func TestClientKeyGroupsIPv6By64(t *testing.T) {
 	}
 }
 
+// Handlers see the client Protect counted the request against (the weather
+// queue serves clients in turn by it, D-141).
+func TestProtectNamesTheClient(t *testing.T) {
+	var got string
+	h := Protect(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { got = clientOf(r.Context()) }),
+		Limits{PerSecond: 100, Burst: 100, Timeout: time.Minute, MaxStreams: 1, HeavyPerClient: 1})
+	r := httptest.NewRequest(http.MethodGet, "/api/v1/weather", nil)
+	r.RemoteAddr = "[2001:db8:1:2::7]:1234"
+	h.ServeHTTP(httptest.NewRecorder(), r)
+	if got != "2001:db8:1:2::/64" {
+		t.Fatalf("client %q, want 2001:db8:1:2::/64", got)
+	}
+}
+
 // One client cannot hold more than HeavyPerClient reads; its extra reads
 // queue, then give up with 429, while another client is unaffected.
 func TestPerClientReadCap(t *testing.T) {

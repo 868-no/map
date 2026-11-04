@@ -61,9 +61,10 @@ func (s *Server) weather(ctx context.Context, in *WeatherInput) (*WeatherOutput,
 	if !ok {
 		return nil, huma.Error422UnprocessableEntity("outside the area the weather analysis covers")
 	}
-	// Cached hours now; the rest are fetched in the background, and the
-	// browser asks again while the answer is incomplete.
-	hours, incomplete := s.Weather.Series(ctx, cell, start, end)
+	// Cached hours now; the rest are fetched in the background, each
+	// client's in turn (D-141), and the browser asks again while the answer
+	// is incomplete.
+	hours, incomplete := s.Weather.SeriesFor(ctx, clientOf(ctx), cell, start, end)
 	if hours == nil {
 		hours = []weather.Hour{}
 	}
