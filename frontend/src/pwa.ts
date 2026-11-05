@@ -41,8 +41,21 @@ export function setupPwa(): void {
     usePwa.setState({ canInstall: false })
   })
   if ('serviceWorker' in navigator && import.meta.env.PROD) {
-    window.addEventListener('load', () => {
+    // Its install precaches the build, styles and icons: register it once
+    // start-up has settled (load, then SW_DELAY_MS, then an idle moment), so
+    // it never competes with the first visit's data and tiles (D-169).
+    const register = () => {
       navigator.serviceWorker.register('/sw.js').catch((e) => console.warn('service worker registration failed', e))
-    })
+    }
+    const later = () =>
+      setTimeout(() => {
+        if ('requestIdleCallback' in window) window.requestIdleCallback(register, { timeout: SW_IDLE_TIMEOUT_MS })
+        else register()
+      }, SW_DELAY_MS)
+    if (document.readyState === 'complete') later()
+    else window.addEventListener('load', later, { once: true })
   }
 }
+
+const SW_DELAY_MS = 4000
+const SW_IDLE_TIMEOUT_MS = 5000

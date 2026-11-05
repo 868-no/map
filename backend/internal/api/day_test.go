@@ -15,6 +15,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/andybalholm/brotli"
+
 	"github.com/868-no/map/internal/config"
 	"github.com/868-no/map/internal/query"
 	"github.com/868-no/map/internal/storage"
@@ -61,21 +63,30 @@ func TestPlanDay(t *testing.T) {
 	}
 }
 
-func TestAcceptsGzipAndETags(t *testing.T) {
+func TestAcceptsAndETags(t *testing.T) {
 	for h, want := range map[string]bool{
 		"": false, "gzip": true, "br, gzip;q=0.5": true, "gzip;q=0": false, "identity": false, "*": true, "zstd, GZIP": true, "gzip; q=0.000": false,
+		"x-gzip": true,
 		// gzip named with q=0 is refused, whatever "*" allows, in either order.
 		"gzip;q=0, *": false, "*, gzip;q=0": false, "*;q=0": false, "identity, *;q=0.5": true, "*;q=0, gzip": true,
 	} {
-		if acceptsGzip(h) != want {
-			t.Errorf("acceptsGzip(%q) != %v", h, want)
+		if accepts(h, "gzip", "x-gzip") != want {
+			t.Errorf("accepts(%q, gzip) != %v", h, want)
 		}
 	}
-	plain, gz := dayETag("g", "2026-11-03", false), dayETag("g", "2026-11-03", true)
-	if plain == gz {
+	for h, want := range map[string]bool{
+		"": false, "br": true, "gzip, deflate, br, zstd": true, "BR;q=0.1": true, "gzip": false, "br;q=0": false,
+		"br;q=0, *": false, "*": true, "gzip, *;q=0": false, "brotli": false,
+	} {
+		if accepts(h, "br") != want {
+			t.Errorf("accepts(%q, br) != %v", h, want)
+		}
+	}
+	plain, gz, br := dayETag("g", "2026-11-03", ""), dayETag("g", "2026-11-03", "gzip"), dayETag("g", "2026-11-03", "br")
+	if plain == gz || gz == br || plain == br {
 		t.Fatal("encodings must have their own validators")
 	}
-	for h, want := range map[string]bool{plain: true, gz: true, "W/" + gz: true, `"x", ` + plain: true, "*": true, `"g.2026-11-02"`: false, "": false} {
+	for h, want := range map[string]bool{plain: true, gz: true, br: true, "W/" + gz: true, `"x", ` + plain: true, "*": true, `"g.2026-11-02"`: false, "": false} {
 		if etagMatch(h, "g", "2026-11-03") != want {
 			t.Errorf("etagMatch(%q) != %v", h, want)
 		}
@@ -202,17 +213,31 @@ func getDay(h http.Handler, date, gen string, hdr map[string]string) *httptest.R
 	return w
 }
 
-// dayBody decodes a 200 answer, compressed or not.
-func dayBody(t *testing.T, w *httptest.ResponseRecorder) (head ObservationsBody, rows []json.RawMessage) {
+// decoded is a 200 answer's body undone from its Content-Encoding.
+func decoded(t *testing.T, w *httptest.ResponseRecorder) io.Reader {
 	t.Helper()
-	var r io.Reader = w.Body
-	if w.Header().Get("Content-Encoding") == "gzip" {
-		zr, err := gzip.NewReader(w.Body)
+	body := bytes.NewReader(w.Body.Bytes())
+	switch enc := w.Header().Get("Content-Encoding"); enc {
+	case "gzip":
+		zr, err := gzip.NewReader(body)
 		if err != nil {
 			t.Fatal(err)
 		}
-		r = zr
+		return zr
+	case "br":
+		return brotli.NewReader(body)
+	case "":
+		return body
+	default:
+		t.Fatalf("Content-Encoding %q", enc)
+		return nil
 	}
+}
+
+// dayBody decodes a 200 answer, compressed or not.
+func dayBody(t *testing.T, w *httptest.ResponseRecorder) (head ObservationsBody, rows []json.RawMessage) {
+	t.Helper()
+	r := decoded(t, w)
 	var body struct {
 		ObservationsBody
 		Rows []json.RawMessage `json:"rows"`
@@ -245,7 +270,7 @@ func TestDayFinalIsCachedEverywhere(t *testing.T) {
 	gen := s.generation(0)
 	w := getDay(h, testDay, gen, map[string]string{"Accept-Encoding": "gzip"})
 	if w.Code != 200 || w.Header().Get("Cache-Control") != immutableCC || w.Header().Get("Content-Encoding") != "gzip" ||
-		w.Header().Get("ETag") != dayETag(gen, testDay, true) || w.Header().Get("Vary") != "Accept-Encoding" {
+		w.Header().Get("ETag") != dayETag(gen, testDay, "gzip") || w.Header().Get("Vary") != "Accept-Encoding" {
 		t.Fatalf("got %d %v", w.Code, w.Header())
 	}
 	head, rows := dayBody(t, w)
@@ -253,19 +278,19 @@ func TestDayFinalIsCachedEverywhere(t *testing.T) {
 		!head.Until.Equal(head.Window.End) || head.Window.End.Sub(head.Window.Start) != 24*time.Hour {
 		t.Fatalf("head %+v rows %d", head, len(rows))
 	}
-	if blobs.sets != 1 {
+	if blobs.sets != 2 { // the gzip and br copies
 		t.Fatalf("stored %d times", blobs.sets)
 	}
 	// The next visitor, without gzip, is served from Redis, decompressed.
 	w = getDay(h, testDay, gen, nil)
-	if w.Code != 200 || w.Header().Get("Content-Encoding") != "" || w.Header().Get("ETag") != dayETag(gen, testDay, false) {
+	if w.Code != 200 || w.Header().Get("Content-Encoding") != "" || w.Header().Get("ETag") != dayETag(gen, testDay, "") {
 		t.Fatalf("got %d %v", w.Code, w.Header())
 	}
 	if _, rows := dayBody(t, w); len(rows) != 2 || db.reads.Load() != 1 {
 		t.Fatalf("rows %d, database reads %d", len(rows), db.reads.Load())
 	}
 	// A browser revalidating its copy (either encoding's tag).
-	for _, tag := range []string{dayETag(gen, testDay, true), dayETag(gen, testDay, false)} {
+	for _, tag := range []string{dayETag(gen, testDay, "gzip"), dayETag(gen, testDay, "")} {
 		w = getDay(h, testDay, gen, map[string]string{"If-None-Match": tag, "Accept-Encoding": "gzip"})
 		if w.Code != http.StatusNotModified || w.Body.Len() != 0 || w.Header().Get("Cache-Control") != immutableCC {
 			t.Fatalf("revalidation: %d %v", w.Code, w.Header())
@@ -273,6 +298,71 @@ func TestDayFinalIsCachedEverywhere(t *testing.T) {
 	}
 	if db.reads.Load() != 1 {
 		t.Fatalf("database reads %d", db.reads.Load())
+	}
+}
+
+// A final day goes out as br when the client takes it, else gzip, else
+// plain; each with its own tag and the same JSON (D-168).
+func TestDayEncodings(t *testing.T) {
+	db := &fakeRows{settled: true, rows: []string{`{"i":1,"t":1}`, `{"i":2,"t":2}`}}
+	blobs := newBlobs()
+	s, h := dayServer(t, db, blobs)
+	gen := s.generation(0)
+	var want []byte
+	for _, c := range []struct{ accept, enc string }{
+		{"gzip, deflate, br, zstd", "br"},
+		{"br", "br"},
+		{"gzip", "gzip"},
+		{"br;q=0, gzip", "gzip"},
+		{"br, gzip;q=0", "br"},
+		{"br;q=0, gzip;q=0", ""},
+		{"*", "br"},
+		{"identity", ""},
+		{"", ""},
+	} {
+		w := getDay(h, testDay, gen, map[string]string{"Accept-Encoding": c.accept})
+		if w.Code != 200 || w.Header().Get("Content-Encoding") != c.enc || w.Header().Get("ETag") != dayETag(gen, testDay, c.enc) ||
+			w.Header().Get("Vary") != "Accept-Encoding" || w.Header().Get("Cache-Control") != immutableCC {
+			t.Fatalf("%q: got %d %v", c.accept, w.Code, w.Header())
+		}
+		got, err := io.ReadAll(decoded(t, w))
+		if err != nil {
+			t.Fatalf("%q: %v", c.accept, err)
+		}
+		if want == nil {
+			want = got
+		} else if !bytes.Equal(got, want) {
+			t.Fatalf("%q: body %s\nwant %s", c.accept, got, want)
+		}
+		// Revalidating with any encoding's tag: 304 naming this client's.
+		for _, held := range []string{"", "gzip", "br"} {
+			w := getDay(h, testDay, gen, map[string]string{"Accept-Encoding": c.accept, "If-None-Match": dayETag(gen, testDay, held)})
+			if w.Code != http.StatusNotModified || w.Body.Len() != 0 || w.Header().Get("ETag") != dayETag(gen, testDay, c.enc) {
+				t.Fatalf("%q holding %q: got %d %v", c.accept, held, w.Code, w.Header())
+			}
+		}
+	}
+	if db.reads.Load() != 1 || blobs.sets != 2 {
+		t.Fatalf("database reads %d, Redis sets %d", db.reads.Load(), blobs.sets)
+	}
+
+	// A copy stored before D-168 has no br: a br client gets the gzip copy.
+	key := "meshmap:obsday:" + gen + ":" + testDay
+	delete(blobs.vals, key+":br")
+	w := getDay(h, testDay, gen, map[string]string{"Accept-Encoding": "gzip, br"})
+	if w.Code != 200 || w.Header().Get("Content-Encoding") != "gzip" || w.Header().Get("ETag") != dayETag(gen, testDay, "gzip") {
+		t.Fatalf("old copy: got %d %v", w.Code, w.Header())
+	}
+	if got, _ := io.ReadAll(decoded(t, w)); !bytes.Equal(got, want) {
+		t.Fatalf("old copy: body %s", got)
+	}
+	// ... and a client taking only br gets it plain.
+	w = getDay(h, testDay, gen, map[string]string{"Accept-Encoding": "br"})
+	if w.Code != 200 || w.Header().Get("Content-Encoding") != "" || w.Header().Get("ETag") != dayETag(gen, testDay, "") {
+		t.Fatalf("old copy, br only: got %d %v", w.Code, w.Header())
+	}
+	if got, _ := io.ReadAll(decoded(t, w)); !bytes.Equal(got, want) || db.reads.Load() != 1 {
+		t.Fatalf("old copy, br only: body %s, database reads %d", got, db.reads.Load())
 	}
 }
 
@@ -298,7 +388,7 @@ func TestDayNotFinalIsNotCached(t *testing.T) {
 		hdr := map[string]string{"Accept-Encoding": "gzip"}
 		if !c.checked {
 			// Not final by the clock or while importing: a held copy is not confirmed either.
-			hdr["If-None-Match"] = dayETag(s.generation(c.db.state.Rev), c.date, true)
+			hdr["If-None-Match"] = dayETag(s.generation(c.db.state.Rev), c.date, "gzip")
 		}
 		w := getDay(h, c.date, s.generation(c.db.state.Rev), hdr)
 		if w.Code != 200 || w.Header().Get("Cache-Control") != "no-store" || w.Header().Get("ETag") != "" {

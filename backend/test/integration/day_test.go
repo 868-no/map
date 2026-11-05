@@ -106,7 +106,7 @@ func TestDayMatchesObservations(t *testing.T) {
 	if a.cc != "public, max-age=31536000, immutable" || a.etag == "" {
 		t.Fatalf("a final day must be immutable: %q %q", a.cc, a.etag)
 	}
-	if n, err := rc.R.Exists(ctx, "meshmap:obsday:"+gen+":2026-10-30").Result(); err != nil || n != 1 {
+	if n, err := rc.R.Exists(ctx, "meshmap:obsday:"+gen+":2026-10-30", "meshmap:obsday:"+gen+":2026-10-30:br").Result(); err != nil || n != 2 {
 		t.Fatalf("not in Redis: %d %v", n, err)
 	}
 	// Served from Redis: the same rows even though the database changed under it

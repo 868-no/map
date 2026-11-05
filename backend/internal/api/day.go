@@ -9,10 +9,12 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/andybalholm/brotli"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/jackc/pgx/v5/pgxpool"
 
@@ -47,6 +49,10 @@ const (
 	// long outlives every build it guards.
 	dayLockTTL  = dayBuildLimit
 	immutableCC = "public, max-age=31536000, immutable"
+	// brQuality: the brotli level of a cached day's br copy (D-168). On a
+	// real 6.1 MB day level 9 took 0.8 s for 598 KB (gzip: 808 KB); level 10
+	// took 9 s for 502 KB, too long to hold a read slot.
+	brQuality = 9
 )
 
 // How long a replica waits for another's build before building its own, and
@@ -153,10 +159,11 @@ func planDay(date, now, cutoff time.Time) (dayPlan, error) {
 	return p, nil
 }
 
-// dayResult is a built day: its body gzip-compressed, and whether it is the
-// day's final content (cacheable everywhere).
+// dayResult is a built day: its body gzip- and brotli-compressed (br is nil
+// for a copy stored before D-168), and whether it is the day's final content
+// (cacheable everywhere).
 type dayResult struct {
-	gz        []byte
+	gz, br    []byte
 	immutable bool
 	tooLarge  bool // over dayMaxBytes compressed: stream it from the database instead
 }
@@ -199,12 +206,20 @@ func (s *Server) observationsDay(ctx context.Context, in *DayInput) (*DayOutput,
 			http.Header{"Cache-Control": {"no-store"}})
 	}
 	final := p.final && !st.Importing
-	gz := acceptsGzip(in.AcceptEncoding)
-	tag := dayETag(gen, in.Date, gz)
+	gz, br := accepts(in.AcceptEncoding, "gzip", "x-gzip"), accepts(in.AcceptEncoding, "br")
 	if final && etagMatch(in.IfNoneMatch, gen, in.Date) {
 		s.dayCount("not_modified")
+		// Every encoding holds the same rows, so any held tag matches; the
+		// 304 names the representation a 200 would send this client.
+		enc := ""
+		switch {
+		case br:
+			enc = "br"
+		case gz:
+			enc = "gzip"
+		}
 		return &DayOutput{Body: func(hc huma.Context) {
-			dayHeaders(hc, true, tag)
+			dayHeaders(hc, true, dayETag(gen, in.Date, enc))
 			hc.SetStatus(http.StatusNotModified)
 		}}, nil
 	}
@@ -215,7 +230,7 @@ func (s *Server) observationsDay(ctx context.Context, in *DayInput) (*DayOutput,
 		s.dayCount("uncached")
 		return s.streamDay(ctx, db, p, head, gz)
 	}
-	res, err := s.sharedDay(ctx, db, p, head, st, "meshmap:obsday:"+gen+":"+in.Date)
+	res, err := s.sharedDay(ctx, db, p, head, st, "meshmap:obsday:"+gen+":"+in.Date, br)
 	if err != nil {
 		return nil, err
 	}
@@ -223,12 +238,20 @@ func (s *Server) observationsDay(ctx context.Context, in *DayInput) (*DayOutput,
 		// Too large to hold: written from the database like a page.
 		return s.streamDay(ctx, db, p, head, gz)
 	}
+	// br before gzip; a copy stored without br goes out as gzip.
+	enc, body := "", res.gz
+	switch {
+	case br && res.br != nil:
+		enc, body = "br", res.br
+	case gz:
+		enc = "gzip"
+	}
 	return &DayOutput{Body: func(hc huma.Context) {
-		dayHeaders(hc, res.immutable, tag)
-		if gz {
-			hc.SetHeader("Content-Encoding", "gzip")
-			hc.SetHeader("Content-Length", strconv.Itoa(len(res.gz)))
-			_, _ = hc.BodyWriter().Write(res.gz)
+		dayHeaders(hc, res.immutable, dayETag(gen, in.Date, enc))
+		if enc != "" {
+			hc.SetHeader("Content-Encoding", enc)
+			hc.SetHeader("Content-Length", strconv.Itoa(len(body)))
+			_, _ = hc.BodyWriter().Write(body)
 			return
 		}
 		zr, err := gzip.NewReader(bytes.NewReader(res.gz))
@@ -317,14 +340,14 @@ func dayHeaders(hc huma.Context, immutable bool, etag string) {
 // process at a time (singleflight) and, through a short Redis lock, one
 // across replicas, whose others wait for its result a little while before
 // building their own. Without Redis every process builds its own.
-func (s *Server) sharedDay(ctx context.Context, db rowsDB, p dayPlan, head ObservationsBody, st storage.HistoryState, key string) (*dayResult, error) {
+func (s *Server) sharedDay(ctx context.Context, db rowsDB, p dayPlan, head ObservationsBody, st storage.HistoryState, key string, br bool) (*dayResult, error) {
 	if s.DayCache != nil {
-		switch b, err := s.DayCache.GetBlob(ctx, key); {
+		switch res, err := s.storedDay(ctx, key, br); {
 		case err != nil:
 			s.cacheError("day_get", err)
-		case b != nil:
+		case res != nil:
 			s.dayCount("hit")
-			return &dayResult{gz: b, immutable: true}, nil
+			return res, nil
 		}
 	}
 	ch := s.dayFlight.DoChan(key, func() (any, error) {
@@ -359,10 +382,10 @@ func (s *Server) fillDay(ctx context.Context, db rowsDB, p dayPlan, head Observa
 				return nil, ctx.Err()
 			case <-time.After(dayPoll):
 			}
-			var b []byte
-			if b, err = c.GetBlob(ctx, key); err == nil && b != nil {
+			var res *dayResult
+			if res, err = s.storedDay(ctx, key, true); err == nil && res != nil {
 				s.dayCount("waited")
-				return &dayResult{gz: b, immutable: true}, nil
+				return res, nil
 			}
 			if err == nil {
 				held, err = c.Lock(ctx, lock, token, dayLockTTL) // free again: its build was not cacheable, or failed
@@ -375,9 +398,9 @@ func (s *Server) fillDay(ctx context.Context, db rowsDB, p dayPlan, head Observa
 				}
 			}()
 			// Stored between our last look and taking the lock.
-			if b, err := c.GetBlob(ctx, key); err == nil && b != nil {
+			if res, err := s.storedDay(ctx, key, true); err == nil && res != nil {
 				s.dayCount("waited")
-				return &dayResult{gz: b, immutable: true}, nil
+				return res, nil
 			}
 		}
 	}
@@ -386,8 +409,31 @@ func (s *Server) fillDay(ctx context.Context, db rowsDB, p dayPlan, head Observa
 	if err != nil || !res.immutable || res.tooLarge || s.DayCache == nil || len(res.gz) > dayMaxRedis {
 		return res, err
 	}
+	// The br copy first: the gzip copy marks the day as stored.
+	if len(res.br) <= dayMaxRedis {
+		if err := s.DayCache.SetBlob(ctx, key+":br", res.br, dayTTL); err != nil {
+			s.cacheError("day_set", err)
+		}
+	}
 	if err := s.DayCache.SetBlob(ctx, key, res.gz, dayTTL); err != nil {
 		s.cacheError("day_set", err)
+	}
+	return res, nil
+}
+
+// storedDay reads a day from Redis, nil when it is not there. The gzip copy
+// is always read (it marks the day as stored), the br copy (key + ":br") when
+// asked for: a day stored before D-168 has none and goes out as gzip.
+func (s *Server) storedDay(ctx context.Context, key string, br bool) (*dayResult, error) {
+	gz, err := s.DayCache.GetBlob(ctx, key)
+	if err != nil || gz == nil {
+		return nil, err
+	}
+	res := &dayResult{gz: gz, immutable: true}
+	if br {
+		if res.br, err = s.DayCache.GetBlob(ctx, key+":br"); err != nil {
+			s.cacheError("day_get", err)
+		}
 	}
 	return res, nil
 }
@@ -427,18 +473,21 @@ func (s *Server) buildDay(ctx context.Context, db rowsDB, p dayPlan, head Observ
 	}
 	defer src.Close()
 	head.Now = s.now()
-	buf := &cappedBuffer{max: dayMaxBytes}
-	zw := gzip.NewWriter(buf)
-	if err := writeObservations(zw, head, src, nil); err != nil {
-		if errors.Is(err, errTooLarge) {
-			return &dayResult{tooLarge: true}, nil
-		}
-		return nil, err
+	// Both copies are compressed in the one pass over the rows (D-168).
+	gzBuf, brBuf := &cappedBuffer{max: dayMaxBytes}, &cappedBuffer{max: dayMaxBytes}
+	zw := gzip.NewWriter(gzBuf)
+	bw := brotli.NewWriterOptions(brBuf, brotli.WriterOptions{Quality: brQuality, LGWin: 22})
+	err = writeObservations(io.MultiWriter(zw, bw), head, src, nil)
+	if err == nil {
+		err = zw.Close()
 	}
-	if err := zw.Close(); err != nil {
-		if errors.Is(err, errTooLarge) {
-			return &dayResult{tooLarge: true}, nil
-		}
+	if err == nil {
+		err = bw.Close()
+	}
+	if errors.Is(err, errTooLarge) {
+		return &dayResult{tooLarge: true}, nil
+	}
+	if err != nil {
 		return nil, err
 	}
 	if immutable {
@@ -447,39 +496,38 @@ func (s *Server) buildDay(ctx context.Context, db rowsDB, p dayPlan, head Observ
 		now, err := db.History(ctx)
 		immutable = err == nil && now == st
 	}
-	return &dayResult{gz: buf.Bytes(), immutable: immutable}, nil
+	return &dayResult{gz: gzBuf.Bytes(), br: brBuf.Bytes(), immutable: immutable}, nil
 }
 
-// dayETag is the strong validator of a day's final body; the compressed and
-// plain bodies are different representations, so they get different tags.
-func dayETag(gen, date string, gz bool) string {
-	if gz {
-		return `"` + gen + "." + date + `.gz"`
-	}
-	return `"` + gen + "." + date + `"`
+// dayETag is the strong validator of a day's final body; each encoding ("",
+// "gzip" or "br") is its own representation, so it gets its own tag.
+func dayETag(gen, date, enc string) string {
+	suffix := map[string]string{"gzip": ".gz", "br": ".br"}[enc]
+	return `"` + gen + "." + date + suffix + `"`
 }
 
-// etagMatch reports whether If-None-Match names this day's body in either
-// encoding (both hold the same rows) or is "*".
+// etagMatch reports whether If-None-Match names this day's body in any
+// encoding (all hold the same rows) or is "*".
 func etagMatch(header, gen, date string) bool {
 	for t := range strings.SplitSeq(header, ",") {
 		t = strings.TrimPrefix(strings.TrimSpace(t), "W/")
-		if t == "*" || t == dayETag(gen, date, false) || t == dayETag(gen, date, true) {
+		if t == "*" || t == dayETag(gen, date, "") || t == dayETag(gen, date, "gzip") || t == dayETag(gen, date, "br") {
 			return true
 		}
 	}
 	return false
 }
 
-// acceptsGzip reports whether Accept-Encoding allows gzip, without q=0: by
-// naming it, or else by "*" (any coding not named). A gzip named with q=0
-// is refused whatever "*" says (RFC 9110 §12.5.3).
-func acceptsGzip(header string) bool {
+// accepts reports whether Accept-Encoding allows a coding (by any of its
+// names), without q=0: by naming it, or else by "*" (any coding not named).
+// A coding named with q=0 is refused whatever "*" says (RFC 9110 §12.5.3).
+func accepts(header string, names ...string) bool {
 	named, star := false, false
 	for part := range strings.SplitSeq(header, ",") {
 		coding, params, _ := strings.Cut(strings.TrimSpace(part), ";")
 		coding = strings.ToLower(strings.TrimSpace(coding))
-		if coding != "gzip" && coding != "x-gzip" && coding != "*" {
+		isName := slices.Contains(names, coding)
+		if !isName && coding != "*" {
 			continue
 		}
 		q := 1.0
@@ -491,9 +539,9 @@ func acceptsGzip(header string) bool {
 			}
 		}
 		switch {
-		case coding != "*" && q > 0:
+		case isName && q > 0:
 			return true
-		case coding != "*":
+		case isName:
 			named = true
 		default:
 			star = star || q > 0

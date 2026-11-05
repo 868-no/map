@@ -9,6 +9,9 @@
     <style>html{background:#0e1116;color-scheme:dark}html[data-theme='light']{background:#f6f7f9;color-scheme:light}body{margin:0}</style>
     <script src="/theme-boot.js"></script>
     <title>868.no Map</title>
+    <!-- Start-up API calls, fetched while the bundle loads; the app's fetch() (same URL, cors mode, same-origin credentials) reuses them (D-169). -->
+    <link rel="preload" href="/api/v1/capabilities" as="fetch" crossorigin="anonymous" />
+    <link rel="preload" href="/api/v1/retention" as="fetch" crossorigin="anonymous" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
