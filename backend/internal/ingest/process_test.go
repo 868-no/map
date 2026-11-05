@@ -3,6 +3,7 @@ package ingest
 import (
 	"bytes"
 	"crypto/ed25519"
+	"encoding/base64"
 	"testing"
 	"time"
 
@@ -17,6 +18,32 @@ import (
 type noIDs struct{}
 
 func (noIDs) Lookup(uint32) (security.Identity, bool) { return security.Identity{}, false }
+
+// Channel hash 0 means PKI only for unicast: firmware never PKI-encrypts a
+// broadcast, so a broadcast with hash 0 is on a channel whose hash is 0 and
+// is decrypted with its key.
+func TestProcessBroadcastOnChannelHashZero(t *testing.T) {
+	key := make([]byte, 16)
+	for i := range key {
+		key[i] = byte(i + 1)
+	}
+	key[0] ^= security.ChannelHash("Zero", key, security.ModeCTR)
+	if security.ChannelHash("Zero", key, security.ModeCTR) != 0 {
+		t.Fatal("test key does not hash to 0")
+	}
+	zero := security.ChannelConfig{Name: "Zero", Mode: security.ModeCTR, PSKs: []string{base64.StdEncoding.EncodeToString(key)}}
+	const topic = "msh/EU_868/2/e/Zero/!aabbccdd"
+	pk := pkt{from: 0x11111111, id: 3, to: protocol.Broadcast, gw: "!aabbccdd", data: posData(t), hopStart: 3, hopLimit: 3}
+	o, err := Process(msg(topic, envelope(t, pk, key, security.ModeCTR, "Zero")), opts(t, zero))
+	if err != nil || o.PacketType != "position" {
+		t.Fatalf("broadcast on hash-0 channel: %v %+v", err, o)
+	}
+	pk.to = 0x22222222
+	o, err = Process(msg(topic, envelope(t, pk, key, security.ModeCTR, "Zero")), opts(t, zero))
+	if err != nil || o.PacketType != "direct_message" || o.Meta.Crypto != CryptoPKI {
+		t.Fatalf("unicast with hash 0: %v %+v", err, o)
+	}
+}
 
 type mapIDs map[uint32]security.Identity
 

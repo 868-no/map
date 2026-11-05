@@ -326,5 +326,8 @@ func RebuildTopic(root string, roots map[string]string, payload []byte) (string,
 	if env.ChannelID == "" || gw == "" || strings.ContainsAny(env.ChannelID+gw, "/+#") {
 		return "", "no channel or gateway to rebuild a topic from"
 	}
+	if protocol.HasControl(env.ChannelID + gw) {
+		return "", "control character in channel or gateway"
+	}
 	return root + "/2/e/" + env.ChannelID + "/" + gw, ""
 }

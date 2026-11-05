@@ -147,6 +147,24 @@ func TestDedupeComparesBothWays(t *testing.T) {
 	}
 }
 
+// Channel ids with control characters get no topic (gateway ids are already
+// checked as node ids by ParseEnvelope): Postgres
+// text cannot hold NUL, and the import would fail at that line every run.
+func TestRebuildTopicRejectsControlCharacters(t *testing.T) {
+	for _, c := range []struct{ ch, gw string }{{"Long\x00Fast", "!aabbccdd"}, {"Long\nFast", "!aabbccdd"}, {"Long\u0085Fast", "!aabbccdd"}, {"Long\x7fFast", "!aabbccdd"}} {
+		env, err := proto.Marshal(&pb.ServiceEnvelope{ChannelId: c.ch, GatewayId: c.gw, Packet: &pb.MeshPacket{
+			From: 0x11111111, To: 0xffffffff, Id: 7,
+			PayloadVariant: &pb.MeshPacket_Encrypted{Encrypted: []byte{1, 2, 3, 4}},
+		}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, why := RebuildTopic("msh/EU_868", nil, env); got != "" || why != "control character in channel or gateway" {
+			t.Errorf("%q/%q: topic %q (%s)", c.ch, c.gw, got, why)
+		}
+	}
+}
+
 type noIDs struct{}
 
 func (noIDs) Lookup(uint32) (security.Identity, bool) { return security.Identity{}, false }

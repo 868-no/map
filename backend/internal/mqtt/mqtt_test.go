@@ -12,8 +12,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/eclipse/paho.golang/paho"
+
 	"github.com/868-no/map/internal/config"
 	"github.com/868-no/map/internal/observability"
+	"github.com/868-no/map/internal/protocol"
 )
 
 func testBase() *base {
@@ -76,5 +79,22 @@ func TestPackageNeverPublishes(t *testing.T) {
 			}
 			return true
 		})
+	}
+}
+
+// MQTT 5 CONNECT caps the packet size the broker may send, with room for a
+// full-size payload, the longest topic we parse and properties; existing
+// properties (session expiry) are kept.
+func TestConnectLimitsPacketSize(t *testing.T) {
+	exp := uint32(0)
+	cp, err := limitPacketSize(&paho.Connect{Properties: &paho.ConnectProperties{SessionExpiryInterval: &exp}}, nil)
+	if err != nil || cp.Properties.MaximumPacketSize == nil || *cp.Properties.MaximumPacketSize != MaxPacketSize || cp.Properties.SessionExpiryInterval != &exp {
+		t.Fatalf("connect properties %+v, err %v", cp.Properties, err)
+	}
+	if cp, _ := limitPacketSize(&paho.Connect{}, nil); cp.Properties == nil || *cp.Properties.MaximumPacketSize != MaxPacketSize {
+		t.Fatal("no maximum packet size without prior properties")
+	}
+	if MaxPacketSize < MaxPayload+protocol.MaxTopicLen+1024 {
+		t.Fatal("MaxPacketSize leaves too little room above MaxPayload and topic")
 	}
 }

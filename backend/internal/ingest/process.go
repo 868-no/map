@@ -199,7 +199,9 @@ func Process(m RawMessage, o Options) (Observation, error) {
 		data, crypto = p.GetDecoded(), CryptoPlaintext
 	} else {
 		// PKI DMs travel with channel hash 0 and cannot be read with a PSK.
-		if p.GetPkiEncrypted() || p.GetChannel() == 0 {
+		// Firmware uses PKI for unicast only: a broadcast with hash 0 is on a
+		// channel whose hash happens to be 0, so it gets the channel keys.
+		if p.GetPkiEncrypted() || (p.GetChannel() == 0 && p.GetTo() != protocol.Broadcast) {
 			return headerOnly(m, topic, env, channelName, ports.TypeDirectMessage, CryptoPKI, ""), nil
 		}
 		if p.GetChannel() > 0xFF {

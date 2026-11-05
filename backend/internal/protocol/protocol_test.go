@@ -24,6 +24,12 @@ func TestParseTopic(t *testing.T) {
 		{"msh/EU_868/2/e//!aabbccdd", Topic{}},
 		{"garbage", Topic{}},
 		{"", Topic{}},
+		// Control characters (Postgres text cannot hold NUL) are rejected.
+		{"msh/EU_868/2/e/Long\x00Fast/!aabbccdd", Topic{}},
+		{"msh/EU_868/2/e/LongFast/!aabb\nccdd", Topic{}},
+		{"msh/EU\x7f868/2/e/LongFast/!aabbccdd", Topic{}},
+		{"msh/EU_868/2/e/LongFast/!aabb\u0085ccdd", Topic{}},
+		{"msh/EU_868/2/stat/!aabb\tccdd", Topic{}},
 	}
 	for _, c := range cases {
 		if got := ParseTopic(c.in); got != c.want {

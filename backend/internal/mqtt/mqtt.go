@@ -25,6 +25,16 @@ import (
 // and dropped here so oversize garbage never reaches the queue.
 const MaxPayload = 4096
 
+// MaxPacketSize is the MQTT 5 CONNECT Maximum Packet Size: the broker must
+// discard (not send) any larger PUBLISH, so a hostile publisher on a public
+// broker cannot make the client buffer huge packets before MaxPayload is
+// checked. A PUBLISH the pipeline can use needs at most 1 (fixed header) +
+// 4 (remaining length) + 2+512 (topic, protocol.MaxTopicLen) + 2 (packet id)
+// + 4 (property length) + 4096 (MaxPayload) = 4621 bytes plus properties;
+// 8 KiB leaves ~3.5 KiB for properties the broker or publisher attach (user
+// properties, content type). MQTT 3.1.1 has no equivalent (operations.md).
+const MaxPacketSize = 8192
+
 // Handler receives raw messages; it must not block (Pipeline.Submit).
 type Handler func(ingest.RawMessage)
 
@@ -147,7 +157,8 @@ func brokerURL(c config.Broker) *url.URL {
 	return &url.URL{Scheme: scheme, Host: c.Host + ":" + strconv.Itoa(c.Port)}
 }
 
-// Backoff is full-jitter exponential backoff from 1 s to 60 s (design §2.1).
+// Backoff is full-jitter exponential backoff (MQTT 5 only): uniform in
+// [0, cap) plus 0.5 s, the cap doubling from 1 s to 60 s (design §2.1).
 func Backoff(attempt int) time.Duration {
 	d := time.Second << min(attempt, 6)
 	if d > time.Minute {

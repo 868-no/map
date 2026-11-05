@@ -3,6 +3,7 @@ package ingest
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"slices"
@@ -18,14 +19,27 @@ type memSink struct {
 	mu       sync.Mutex
 	rows     []*Observation
 	failNext int
+	refuse   func(*Observation) bool // rows the "database" cannot hold
+	attempts int
 }
+
+type sqlStateErr string
+
+func (e sqlStateErr) Error() string    { return "SQLSTATE " + string(e) }
+func (e sqlStateErr) SQLState() string { return string(e) }
 
 func (s *memSink) InsertBatch(_ context.Context, obs []*Observation) ([]int64, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.attempts++
 	if s.failNext > 0 {
 		s.failNext--
 		return nil, errors.New("db down")
+	}
+	for _, o := range obs {
+		if s.refuse != nil && s.refuse(o) {
+			return nil, fmt.Errorf("copy: %w", sqlStateErr("22021"))
+		}
 	}
 	ids := make([]int64, len(obs))
 	for i, o := range obs {
@@ -264,5 +278,42 @@ func TestConcurrentLateCopiesKeepProvenance(t *testing.T) {
 		if !slices.Equal(got, []string{"b", "c"}) {
 			t.Fatalf("iteration %d: provenance %v, want [b c]", i, got)
 		}
+	}
+}
+
+// A row the database refuses (SQLSTATE class 22/23) is isolated and dropped
+// instead of retrying its batch forever; the rest of the batch is stored.
+func TestFlushDropsRowsTheDatabaseRefuses(t *testing.T) {
+	sink := &memSink{refuse: func(o *Observation) bool { return o.Topic == "bad" }}
+	p, _ := newTestPipeline(t, sink, 10)
+	batch := make([]*Observation, 9)
+	for i := range batch {
+		batch[i] = &Observation{Topic: "ok", BrokerID: "a", ObservedAt: time.Now()}
+		batch[i].ObservationKey[0] = byte(i)
+		p.inflight[batch[i].ObservationKey] = "a"
+	}
+	batch[3].Topic, batch[7].Topic = "bad", "bad"
+	done := make(chan struct{})
+	go func() { p.flush(batch); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("flush kept retrying a batch the database refuses")
+	}
+	if sink.count() != 7 {
+		t.Fatalf("stored %d rows, want 7", sink.count())
+	}
+	if len(p.inflight) != 0 {
+		t.Fatalf("claims left in flight: %d", len(p.inflight))
+	}
+	if sink.attempts > 20 {
+		t.Fatalf("%d insert attempts for 9 rows", sink.attempts)
+	}
+	// Transient and partition errors stay retryable.
+	if permanent(errors.New("db down")) || permanent(sqlStateErr("08006")) || permanent(fmt.Errorf("no partition of relation \"packet_log\" found for row: %w", sqlStateErr("23514"))) {
+		t.Fatal("transient error classed as permanent")
+	}
+	if !permanent(sqlStateErr("23502")) {
+		t.Fatal("integrity error classed as transient")
 	}
 }

@@ -32,6 +32,7 @@ func (c *v5Client) Run(ctx context.Context) error {
 		ReconnectBackoff:              Backoff,
 		ConnectUsername:               c.cfg.Username,
 		ConnectPassword:               []byte(c.cfg.Password),
+		ConnectPacketBuilder:          limitPacketSize,
 		OnConnectionUp: func(cm *autopaho.ConnectionManager, _ *paho.Connack) {
 			c.m.BrokerConnects.WithLabelValues(c.cfg.ID).Inc()
 			c.log.Info("mqtt connected; subscribing")
@@ -72,6 +73,16 @@ func (c *v5Client) Run(ctx context.Context) error {
 	<-cm.Done()
 	c.setState(StateDown)
 	return nil
+}
+
+// limitPacketSize asks the broker not to send packets over MaxPacketSize.
+func limitPacketSize(cp *paho.Connect, _ *url.URL) (*paho.Connect, error) {
+	if cp.Properties == nil {
+		cp.Properties = &paho.ConnectProperties{}
+	}
+	n := uint32(MaxPacketSize)
+	cp.Properties.MaximumPacketSize = &n
+	return cp, nil
 }
 
 // v3Client uses paho.mqtt.golang for brokers that only speak MQTT 3.1.1.

@@ -412,7 +412,13 @@ func (c *Config) Revision() string {
 	key := sha256.Sum256([]byte("meshmap-revision|" + c.Env.DatabaseURL + "|" + c.Env.PGPassword))
 	h := hmac.New(sha256.New, key[:])
 	for _, ch := range c.Channels {
-		fmt.Fprintf(h, "%s|%v|%s|%v|%v\n", ch.Name, ch.BrokerIDs, ch.Mode, ch.PSKs, ch.AcceptPlaintext)
+		// The resolved bool, never the *bool: %v of a pointer prints its
+		// address, which differs per process and would churn the generation.
+		accept := true
+		if ch.AcceptPlaintext != nil {
+			accept = *ch.AcceptPlaintext
+		}
+		fmt.Fprintf(h, "%s|%v|%s|%v|accept_plaintext=%v\n", ch.Name, ch.BrokerIDs, ch.Mode, ch.PSKs, accept)
 	}
 	fmt.Fprintf(h, "fallback=%v|budget=%d|", c.Env.DefaultKeyFallback, c.Env.KeyAttemptBudget)
 	fmt.Fprintf(h, "%s|%d|%d|%v", c.Env.SignaturePolicy, c.Env.RetentionMonths, c.Env.GeolocationMinPrec, c.Env.GeolocationExclude)

@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"runtime"
 	"slices"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -413,8 +414,21 @@ func (p *Pipeline) flush(batch []*Observation) {
 			p.afterCommit(uniq, ids)
 			return
 		}
-		p.degraded.Store(true)
 		p.m.WriterErrors.Inc()
+		if permanent(err) {
+			// The database refuses the rows themselves (hostile input it
+			// cannot hold): retrying cannot help and would stall ingest.
+			// Halve the batch until the bad rows stand alone, then drop them.
+			if len(uniq) == 1 {
+				p.reject(uniq[0], err)
+				return
+			}
+			h := len(uniq) / 2
+			p.flush(uniq[:h])
+			p.flush(uniq[h:])
+			return
+		}
+		p.degraded.Store(true)
 		wait := backoff
 		if p.closed.Load() {
 			// Shutting down: retry only until the drain deadline, then give
@@ -430,6 +444,30 @@ func (p *Pipeline) flush(batch []*Observation) {
 		time.Sleep(wait)
 		backoff = min(backoff*2, 30*time.Second)
 	}
+}
+
+// permanent reports whether a write failed on the data rather than on the
+// database: SQLSTATE class 22 (data exception, e.g. NUL in text) or 23
+// (integrity). "No partition" is also class 23 but is a schema gap that
+// partition upkeep closes, so it stays retryable. The SQLSTATE is read via
+// an interface so this package does not depend on the driver.
+func permanent(err error) bool {
+	var se interface{ SQLState() string }
+	if !errors.As(err, &se) || strings.Contains(err.Error(), "no partition of relation") {
+		return false
+	}
+	c := se.SQLState()
+	return strings.HasPrefix(c, "22") || strings.HasPrefix(c, "23")
+}
+
+// reject drops one row the database refused and releases its claim.
+func (p *Pipeline) reject(o *Observation, err error) {
+	p.log.Warn("database refused a row; dropped", "broker", o.BrokerID, "topic", o.Topic, "err", err)
+	p.m.Rejected.WithLabelValues("db_refused_row").Inc()
+	p.inflightMu.Lock()
+	delete(p.inflight, o.ObservationKey)
+	delete(p.alsoVia, o.ObservationKey)
+	p.inflightMu.Unlock()
 }
 
 // giveUp records rows the shutdown drain could not store as a gap.

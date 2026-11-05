@@ -33,10 +33,23 @@ type Topic struct {
 // Meshtastic topics are short.
 const MaxTopicLen = 512
 
+// HasControl reports whether s contains a control character (C0, DEL or C1).
+// Topics are stored as Postgres text, which cannot hold NUL; none of these
+// belong in a real topic, so they are rejected rather than stored.
+func HasControl(s string) bool {
+	for _, r := range s {
+		if r < 0x20 || (r >= 0x7f && r <= 0x9f) {
+			return true
+		}
+	}
+	return false
+}
+
 // ParseTopic anchors on the last "/2/{kind}/" marker so that roots of any
-// depth work. Malformed topics yield Kind == TopicUnknown.
+// depth work. Malformed topics, including any with control characters, yield
+// Kind == TopicUnknown.
 func ParseTopic(t string) Topic {
-	if len(t) == 0 || len(t) > MaxTopicLen || !utf8.ValidString(t) {
+	if len(t) == 0 || len(t) > MaxTopicLen || !utf8.ValidString(t) || HasControl(t) {
 		return Topic{}
 	}
 	segs := strings.Split(t, "/")

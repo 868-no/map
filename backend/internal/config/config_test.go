@@ -151,6 +151,26 @@ func TestRevisionIsKeyedWithTheDatabaseSecret(t *testing.T) {
 	}
 }
 
+// accept_plaintext is a *bool: the revision must hash its value, not the
+// pointer, or every process (and restart) gets its own data generation.
+func TestRevisionHashesAcceptPlaintextByValue(t *testing.T) {
+	mk := func(v *bool) *Config {
+		c := &Config{Channels: []Channel{{Name: "LongFast", PSKs: []string{"AQ=="}, AcceptPlaintext: v}}}
+		c.Env.PGPassword = "pw"
+		return c
+	}
+	f1, f2, t1 := false, false, true
+	if mk(&f1).Revision() != mk(&f2).Revision() {
+		t.Fatal("equal accept_plaintext values with distinct pointers give different revisions")
+	}
+	if mk(&f1).Revision() == mk(&t1).Revision() {
+		t.Fatal("revision does not follow accept_plaintext")
+	}
+	if mk(nil).Revision() != mk(&t1).Revision() {
+		t.Fatal("unset accept_plaintext must hash as its default (true)")
+	}
+}
+
 // Each /observations read holds an API pool connection; reads may not take
 // the connections health checks and light queries need.
 func TestReadSlotsFitTheAPIPool(t *testing.T) {
