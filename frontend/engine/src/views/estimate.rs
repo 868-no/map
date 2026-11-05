@@ -77,7 +77,7 @@ pub(super) fn estimate(nodes: &mut FxMap<u32, Node>, edges: &[Edge], g: &GeoOpti
                     .collect()
             })
             .unwrap_or_default();
-        ms.sort_by_key(|m| m.anchor);
+        ms.sort_unstable_by_key(|m| m.anchor);
         if ms.is_empty() {
             x.estimate_note = Some(format!("no confirmed direct links to nodes reporting a position with at least {}-bit precision", g.min_precision_bits));
             continue;

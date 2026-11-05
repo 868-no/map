@@ -106,7 +106,7 @@ struct Pt {
 }
 
 fn median(mut v: Vec<f64>) -> f64 {
-    v.sort_by(|a, b| a.total_cmp(b));
+    v.sort_unstable_by(|a, b| a.total_cmp(b));
     v[v.len() / 2]
 }
 
@@ -163,7 +163,7 @@ fn widest_gap(x: f64, y: f64, pts: &[Pt]) -> f64 {
     if b.len() < 2 {
         return 360.0;
     }
-    b.sort_by(|p, q| p.total_cmp(q));
+    b.sort_unstable_by(|p, q| p.total_cmp(q));
     let wrap = b[0] + 360.0 - b[b.len() - 1];
     b.windows(2).map(|w| w[1] - w[0]).fold(wrap, f64::max)
 }
@@ -282,7 +282,7 @@ pub fn locate(
         }
         to = to.max(q.m.last);
     }
-    names.sort();
+    names.sort_unstable();
     let mut reasons = Vec::new();
     let (mut x, mut y, mut unc);
     let (method, quality);

@@ -15,7 +15,9 @@ serde_json = "=1.0.154"
 wasm-bindgen = "=0.2.129"
 
 [profile.release]
-opt-level = 3
+# Size over speed: about 10 % less to download than opt-level 3, for views
+# 10-15 % slower (docs/benchmarks.md).
+opt-level = "s"
 lto = true
 codegen-units = 1
 panic = "abort"

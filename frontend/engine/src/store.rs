@@ -96,7 +96,7 @@ impl Store {
         if fresh.is_empty() {
             return 0;
         }
-        fresh.sort_by(by_time);
+        fresh.sort_unstable_by(by_time);
         for r in &fresh {
             self.dirty.insert(r.t.div_euclid(HOUR_MS) * HOUR_MS);
         }
@@ -106,7 +106,7 @@ impl Store {
         self.rows.extend(fresh);
         if !append {
             // Rare (an older range being filled in): the engine's merge sort handles the two runs.
-            self.rows.sort_by(by_time);
+            self.rows.sort_unstable_by(by_time);
         }
         self.version += 1;
         n
@@ -183,7 +183,7 @@ impl Store {
     /// Hours that gained rows since the last call (persisted as chunks).
     pub fn take_dirty(&mut self) -> Vec<i64> {
         let mut v: Vec<i64> = self.dirty.drain().collect();
-        v.sort();
+        v.sort_unstable();
         v
     }
 

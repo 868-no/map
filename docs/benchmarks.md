@@ -39,6 +39,19 @@ These figures predate stored row encodings (D-046), which roughly halved whole-w
 - All of this runs in the worker. The page's only cost per view is decoding and parsing the transferred JSON (7.5 MiB snapshot: about 26 ms).
 - Live updates rebuild the whole snapshot, debounced by window length: 2 s quiet / 5 s at most up to 6 h, 10 s / 15 s from 24 h (D-058), and never less than 20× / 30× the last snapshot build (D-083). At 0.2–0.4 s off the main thread, incremental aggregation would add a lot of complexity for little benefit at reference density; revisit if meshes grow well beyond it.
 
+## Engine build: size against speed (2026-11-05)
+
+The production log's last 7 days (98 267 rows), Node 22, median of 3 runs. All builds strip the name section (debug names only, 180 KB) and use unstable sorts where ties cannot differ (one sort routine per call site was 276 KB of code); the release profile is now opt-level "s" with `wasm-opt -Os` (`scripts/wasm.sh`).
+
+| Build | Raw | gzip | Load | Snapshot 72 h | Snapshot 168 h | Health 168 h | Live batch + rebuild 168 h |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| opt-level 3, before | 1 175 KB | 342 KB | 832 ms | 125 ms | 297 ms | 63 ms | 302 ms |
+| opt-level 3, `wasm-opt -O3` | 927 KB | 342 KB | 832 ms | 136 ms | 293 ms | 68 ms | 300 ms |
+| **opt-level "s", `wasm-opt -Os`** | **803 KB** | **309 KB** | 968 ms | 147 ms | 333 ms | 89 ms | 336 ms |
+| opt-level "z", `wasm-opt -Oz` | 677 KB | 272 KB | 1 464 ms | 240 ms | 543 ms | 134 ms | 556 ms |
+
+"s" sends about 10 % less for views 10–15 % slower (health 35 %), all in the worker; "z" halves view speed for another 10 %.
+
 ## Browser (Playwright, headless Chromium, software WebGL via SwiftShader, no GPU)
 
 Synthetic observations at reference density (positions, NodeInfo and NeighborInfo for 2 000 nodes, 20 000 links) are served by request interception; the browser derives and renders them.

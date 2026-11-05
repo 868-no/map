@@ -273,7 +273,7 @@ pub fn build_snapshot(rows: &[&Row], i: &Interner, g: &GeoOptions, rules: Rules)
     }
     // Radio links as the map draws them: one per node pair, whichever directions were heard.
     counts.edges = er.edges.iter().filter(|e| !e.mqtt).map(|e| (e.src_num.min(e.dst_num), e.src_num.max(e.dst_num))).collect::<FxSet<_>>().len();
-    list.sort_by(|a, b| (b.packets + b.gateway_receptions).cmp(&(a.packets + a.gateway_receptions)).then(a.num.cmp(&b.num)));
+    list.sort_unstable_by(|a, b| (b.packets + b.gateway_receptions).cmp(&(a.packets + a.gateway_receptions)).then(a.num.cmp(&b.num)));
     if list.len() > MAX_NODES {
         list.truncate(MAX_NODES);
         counts.nodes_truncated = true;

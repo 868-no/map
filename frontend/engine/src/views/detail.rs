@@ -326,7 +326,7 @@ fn delivery_by_recipient(rows: &[&Row], mine: &[&Row], own: &[&Row], num: u32, r
         }
     }
     let mut out: Vec<PairDelivery> = per.into_values().collect();
-    out.sort_by(|a, b| b.asked.cmp(&a.asked).then(a.to.cmp(&b.to)));
+    out.sort_unstable_by(|a, b| b.asked.cmp(&a.asked).then(a.to.cmp(&b.to)));
     out
 }
 
@@ -345,7 +345,7 @@ fn hearings(rows: &[&Row], keep: impl Fn(&Row) -> bool, other: impl Fn(&Row) -> 
             (k, Hearing { node: node_id(k), receptions: rs.len(), direct_rf: direct.len(), snr: graph::stats(&snr, false), rssi: graph::stats(&rssi, false), last_at: iso(rs.iter().map(|r| r.t).max().unwrap()) })
         })
         .collect();
-    out.sort_by(|a, b| b.1.receptions.cmp(&a.1.receptions).then(a.0.cmp(&b.0)));
+    out.sort_unstable_by(|a, b| b.1.receptions.cmp(&a.1.receptions).then(a.0.cmp(&b.0)));
     out.truncate(MAX_GATEWAYED);
     out.into_iter().map(|(_, h)| h).collect()
 }

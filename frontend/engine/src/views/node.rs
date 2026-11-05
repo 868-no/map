@@ -383,7 +383,7 @@ pub(super) fn sig_counts(o: &Origin) -> Signatures {
 
 pub(super) fn brokers(o: &Origin, i: &Interner) -> Vec<String> {
     let mut b: Vec<String> = o.brokers.iter().map(|&x| i.s(x).to_string()).collect();
-    b.sort();
+    b.sort_unstable();
     b
 }
 

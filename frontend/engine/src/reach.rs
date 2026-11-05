@@ -106,6 +106,6 @@ pub fn reach(origin: u32, edges: &[Edge], silent: &FxSet<u32>, internet: bool, o
     }
     let hop_start = hs.into_iter().max_by(|a, b| a.1.cmp(&b.1).then(b.0.cmp(&a.0))).map(|(h, _)| h.clamp(0, MAX_HOPS as i16) as u8);
     let mut nodes: Vec<Reached> = best.into_iter().map(|(n, (need, via, free))| Reached { id: node_id(n), need, via: node_id(via), free }).collect();
-    nodes.sort_by(|a, b| a.need.cmp(&b.need).then(a.id.cmp(&b.id)));
+    nodes.sort_unstable_by(|a, b| a.need.cmp(&b.need).then(a.id.cmp(&b.id)));
     Reach { origin: node_id(origin), hop_start, internet, nodes }
 }

@@ -70,7 +70,7 @@ pub fn channel_use(num: u32, rows: &[&Row], i: &Interner) -> Vec<ChannelUse> {
             primary: primary == Some(c),
         })
         .collect();
-    out.sort_by(|a, b| b.primary.cmp(&a.primary).then((b.sent + b.uplinked).cmp(&(a.sent + a.uplinked))).then(a.name.cmp(&b.name)));
+    out.sort_unstable_by(|a, b| b.primary.cmp(&a.primary).then((b.sent + b.uplinked).cmp(&(a.sent + a.uplinked))).then(a.name.cmp(&b.name)));
     out
 }
 
@@ -252,7 +252,7 @@ pub fn infer(num: u32, ix: &PresetIndex) -> Option<Inferred<'_>> {
             return it(Some(p), "radio_contact", from, vec![]);
         }
         let mut v: Vec<(String, usize)> = c.iter().map(|(p, m)| (p.clone(), m.len())).collect();
-        v.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+        v.sort_unstable_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
         return it(None, "conflict", &[], v);
     }
     // The default name most of the group was heard on (ties: the first by name).
@@ -275,7 +275,7 @@ pub fn preset_guess(num: u32, ix: &PresetIndex) -> Option<PresetGuess> {
     let group = ix.root.get(&num).map_or(0, |r| ix.groups[r].len() - 1);
     // Direct contacts first, then by node number: stable, and the nearest evidence leads.
     let mut from: Vec<u32> = inferred.from.iter().copied().filter(|&n| n != num).collect();
-    from.sort_by_key(|n| (!direct.contains(n), *n));
+    from.sort_unstable_by_key(|n| (!direct.contains(n), *n));
     let via = from.iter().take(5).map(|&n| node_id(n)).collect();
     Some(PresetGuess { preset: inferred.preset.map(str::to_string), basis: inferred.basis, via, group, direct: direct.len(), conflict: inferred.conflict })
 }

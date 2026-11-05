@@ -183,7 +183,7 @@ pub fn reduce(samples: &[Sample]) -> Vec<Edge> {
             }
         })
         .collect();
-    out.sort_by(|x, y| y.samples.cmp(&x.samples).then(x.src_num.cmp(&y.src_num)).then(x.dst_num.cmp(&y.dst_num)));
+    out.sort_unstable_by(|x, y| y.samples.cmp(&x.samples).then(x.src_num.cmp(&y.src_num)).then(x.dst_num.cmp(&y.dst_num)));
     out
 }
 
@@ -235,7 +235,7 @@ pub fn stats(v: &[(i64, f64)], round: bool) -> Stats {
         }
     }
     let mut vals: Vec<f64> = v.iter().map(|x| x.1).collect();
-    vals.sort_by(|a, b| a.total_cmp(b));
+    vals.sort_unstable_by(|a, b| a.total_cmp(b));
     let h = vals.len() / 2;
     let med = if vals.len() % 2 == 0 { (vals[h - 1] + vals[h]) / 2.0 } else { vals[h] };
     let r = |x: f64| if round { round2(x) } else { x };

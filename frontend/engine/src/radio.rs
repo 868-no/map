@@ -125,7 +125,7 @@ pub fn uplink_topics(uplinked: &[&Row], i: &Interner) -> Vec<TopicUse> {
             TopicUse { regions: regions_of(&topic), topic, receptions: rx.len(), last_at: iso(last) }
         })
         .collect();
-    out.sort_by(|a, b| b.receptions.cmp(&a.receptions).then(a.topic.cmp(&b.topic)));
+    out.sort_unstable_by(|a, b| b.receptions.cmp(&a.receptions).then(a.topic.cmp(&b.topic)));
     out
 }
 
@@ -162,7 +162,7 @@ pub fn radio(own: &[&Row], i: &Interner) -> Radio {
             HeardAs { regions: regions_of(&topic), preset: channel.as_deref().and_then(preset_of), topic, channel, receptions: rx.len(), last_at: iso(*last) }
         })
         .collect();
-    heard_as.sort_by(|a, b| b.receptions.cmp(&a.receptions).then(a.topic.cmp(&b.topic)));
+    heard_as.sort_unstable_by(|a, b| b.receptions.cmp(&a.receptions).then(a.topic.cmp(&b.topic)));
     let reported = latest_report.map(|r| {
         let m = r.map_report().unwrap();
         Reported { region: i.s(m.region).to_string(), modem_preset: i.s(m.preset).to_string(), preset_confirmed: m.default_channel, at: iso(r.t) }

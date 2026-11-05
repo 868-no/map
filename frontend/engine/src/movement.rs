@@ -90,7 +90,7 @@ pub fn positions_by_node<'a>(rows: &[&'a Row]) -> FxMap<u32, Vec<&'a Row>> {
         }
     }
     for rs in by_node.values_mut() {
-        rs.sort_by_key(|r| (r.t, r.id));
+        rs.sort_unstable_by_key(|r| (r.t, r.id));
     }
     by_node
 }

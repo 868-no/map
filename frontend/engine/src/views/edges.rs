@@ -78,7 +78,7 @@ pub fn build_edges(rows: &[&Row], neighborinfo: &[&Row], hops: &[Sample], known:
     };
     // C/D. Gateway receptions: zero-hop RF -> source->gateway; relayed with a hint -> resolved after.
     let mut rx = first_per_reception(rows, |r| matches!(r.heard_from(), HeardFrom::Direct | HeardFrom::Relayed(Some(_))) && (r.snr.is_some() || r.rssi.is_some()));
-    rx.sort_by_key(|r| r.id);
+    rx.sort_unstable_by_key(|r| r.id);
     let mut pending: Vec<(Sample, u8, u32, u32)> = Vec::new();
     for r in &rx {
         let s = Sample { src: 0, dst: r.gw.unwrap(), ev: Ev::DirectRf, t: r.t, snr: r.snr, rssi: r.rssi.map(|v| v as f64), key: SKey::Ok(r.ok) };

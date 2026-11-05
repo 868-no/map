@@ -211,7 +211,7 @@ pub fn packet_log(rows: &[&Row], num: u32, ctx: &RelayContext, replies: &ReplyIn
         .into_values()
         .map(|e| {
             let mut gws: Vec<u32> = e.gateways.into_iter().collect();
-            gws.sort();
+            gws.sort_unstable();
             let mut evidence = vec![];
             if e.byte {
                 evidence.push("relay_byte");
@@ -348,7 +348,7 @@ pub fn delivery(rows: &[&Row], num: u32, i: &Interner) -> Option<Delivery> {
             }
         }
         let mut v: Vec<(String, usize)> = errs.into_iter().map(|(e, n)| (i.s(e).to_string(), n)).collect();
-        v.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+        v.sort_unstable_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
         (acks, v)
     };
     let (acks_sent, errors_sent) = tally(&sent);
@@ -912,10 +912,10 @@ mod tests {
         assert_eq!(segs(&[&request], &[&reply]), both);
         // The reply's own route shows both legs as well, the way back first.
         let mut from_reply = segs(&[&reply], &[]);
-        from_reply.sort();
+        from_reply.sort_unstable();
         let mut want = both[1..].to_vec();
         want.push((id(C), id(GW), false, f));
-        want.sort();
+        want.sort_unstable();
         assert_eq!(from_reply, want);
         // A reply to someone else's request with the same id adds nothing.
         let other = Row { dst: Some(GW), ..reply.clone() };

@@ -249,26 +249,26 @@ pub fn airtime(copies: &Copies, rows: &[&Row], i: &Interner, hours: f64) -> Airt
     }
     let shares = |m: FxMap<u32, f64>, of: f64| -> Vec<(String, f64)> {
         let mut v: Vec<(String, f64)> = m.into_iter().map(|(t, x)| (i.s(t).to_string(), x / of)).collect();
-        v.sort_by(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(&b.0)));
+        v.sort_unstable_by(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(&b.0)));
         v
     };
     let mut nodes: Vec<NodeAirtime> = acc
         .into_iter()
         .map(|(n, a)| NodeAirtime { node: node_id(n), num: n, caused: a.caused / total, transmitted: a.transmitted / total, packets: a.packets, transmissions: a.transmissions, by_type: if a.caused > 0.0 { shares(a.types, a.caused) } else { vec![] } })
         .collect();
-    nodes.sort_by(|a, b| b.caused.total_cmp(&a.caused).then(b.transmitted.total_cmp(&a.transmitted)).then(a.node.cmp(&b.node)));
+    nodes.sort_unstable_by(|a, b| b.caused.total_cmp(&a.caused).then(b.transmitted.total_cmp(&a.transmitted)).then(a.node.cmp(&b.node)));
     let hours = hours.max(1.0);
     let mut sf_nodes: Vec<StoreForwardNode> = sf
         .into_iter()
         .map(|(n, e)| {
             let mut by_kind: Vec<(String, usize)> = e.kinds.into_iter().map(|(k, c)| (i.s(k).to_string(), c)).collect();
-            by_kind.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+            by_kind.sort_unstable_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
             StoreForwardNode { node: node_id(n), num: n, packets: e.packets, share: e.air / total, by_kind, heartbeats_per_hour: e.heartbeats as f64 / hours, replays: e.replays, replay_bytes: e.replay_bytes }
         })
         .collect();
-    sf_nodes.sort_by(|a, b| b.share.total_cmp(&a.share).then(a.node.cmp(&b.node)));
+    sf_nodes.sort_unstable_by(|a, b| b.share.total_cmp(&a.share).then(a.node.cmp(&b.node)));
     let mut by_kind: Vec<(String, usize, f64)> = sf_kinds.into_iter().map(|(k, (c, a))| (i.s(k).to_string(), c, a / total)).collect();
-    by_kind.sort_by(|a, b| b.2.total_cmp(&a.2).then(a.0.cmp(&b.0)));
+    by_kind.sort_unstable_by(|a, b| b.2.total_cmp(&a.2).then(a.0.cmp(&b.0)));
     let store_forward = StoreForwardStats { packets: sf_nodes.iter().map(|x| x.packets).sum(), share: sf_nodes.iter().map(|x| x.share).sum(), by_kind, nodes: sf_nodes };
     Airtime { packets, transmissions: tx_total, store_forward, by_type: shares(types, total), nodes }
 }
@@ -296,7 +296,7 @@ pub fn health(rows: &[&Row], invalid: &[&Row], nodes: &[Node], copies: &Copies, 
     // Traceroute flooding.
     let traceroutes: FxMap<u32, usize> = own.keys().map(|&n| (n, count(n, ty::TRACEROUTE, &|r| r.traceroute().is_some_and(|t| !t.is_reply)))).filter(|&(_, c)| c > 0).collect();
     let mut rates: Vec<f64> = traceroutes.values().map(|&c| c as f64 / hours).collect();
-    rates.sort_by(f64::total_cmp);
+    rates.sort_unstable_by(f64::total_cmp);
     let median = rates.get(rates.len() / 2).copied().unwrap_or(0.0);
     for (&n, &c) in &traceroutes {
         let rate = c as f64 / hours;
@@ -331,7 +331,7 @@ pub fn health(rows: &[&Row], invalid: &[&Row], nodes: &[Node], copies: &Copies, 
         if needed.len() < HOP_MIN_PACKETS || hs < HOP_FLAG_FROM {
             continue;
         }
-        needed.sort();
+        needed.sort_unstable();
         let p95 = needed[(needed.len() * 95).div_ceil(100).saturating_sub(1)];
         if hs - p95 >= HOP_SPARE {
             let suggest = (p95 + 1).max(3);
@@ -514,7 +514,7 @@ pub fn health(rows: &[&Row], invalid: &[&Row], nodes: &[Node], copies: &Copies, 
             if with.is_empty() {
                 continue;
             }
-            with.sort();
+            with.sort_unstable();
             let others: Vec<String> = with.iter().map(|&o| node_id(o)).collect();
             match holder.filter(|h| with.contains(h)) {
                 Some(h) => add(n, "shared_key", "warning", format!("Announces the public key of {}", node_id(h)), format!("{} proved holding this key (a verified signature; firmware 2.8 derives its id from it), while this id announced it unsigned at the same time. Either a device set up from {}'s backup or with its key copied, which can then read its direct messages, or someone announcing another node's key; signatures still tell them apart. A copy should get a new key.", node_id(h), node_id(h))),
@@ -555,7 +555,7 @@ pub fn health(rows: &[&Row], invalid: &[&Row], nodes: &[Node], copies: &Copies, 
             continue;
         }
         let mut rs: Vec<(String, usize)> = reasons.into_iter().map(|(k, c)| (i.s(k).to_string(), c)).collect();
-        rs.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
+        rs.sort_unstable_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
         let list: Vec<String> = rs.iter().map(|(k, c)| format!("{c} × {}", k.replace('_', " "))).collect();
         let key_change = rs.iter().all(|(k, _)| k == "nodeinfo_key_mismatch");
         let first_contact = rs.iter().all(|(k, _)| k == "first_contact_invalid");
@@ -580,7 +580,7 @@ pub fn health(rows: &[&Row], invalid: &[&Row], nodes: &[Node], copies: &Copies, 
         let kinds: Vec<String> = f.by_kind.iter().take(3).map(|(k, c)| format!("{c} {}", k.replace('_', " "))).collect();
         add(f.num, "store_forward", "notice", format!("Store-and-forward takes {} of the airtime", pct(f.share)), format!("{} store-and-forward packets ({}), {:.1} heartbeats per hour, {} history replays. Each heartbeat and replay is flooded like any packet; a longer heartbeat interval or a smaller history window would free airtime.", f.packets, kinds.join(", "), f.heartbeats_per_hour, f.replays));
     }
-    out.sort_by(|a, b| rank(a.severity).cmp(&rank(b.severity)).then(a.kind.cmp(b.kind)).then(a.node.cmp(&b.node)));
+    out.sort_unstable_by(|a, b| rank(a.severity).cmp(&rank(b.severity)).then(a.kind.cmp(b.kind)).then(a.node.cmp(&b.node)).then(a.summary.cmp(&b.summary)).then(a.detail.cmp(&b.detail)));
     Health { issues: out, airtime: air }
 }
 
