@@ -13,6 +13,7 @@ const decoder = new TextDecoder()
 
 let caps: Capabilities | undefined // re-sent to a restarted worker
 let terrain: TerrainLinkClass[] = [] // likewise
+let generation: string | null = null // likewise
 let restarts: number[] = [] // recent restart times
 let broken: string | null = null // gave up restarting: views fail with this
 
@@ -37,6 +38,7 @@ function restart(why: string): void {
   }
   if (caps) initDerive(caps)
   if (terrain.length) get().postMessage({ type: 'terrain', links: terrain } satisfies Request)
+  if (generation) get().postMessage({ type: 'generation', generation } satisfies Request)
   onChanged?.()
 }
 
@@ -92,6 +94,12 @@ export function initDerive(c: Capabilities): void {
   caps = c
   const msg: Request = { type: 'init', geo: c.geolocation, liveQuantumMs: c.live_quantum_seconds * 1000 }
   get().postMessage(msg)
+}
+
+/** The server's generation from a live (not offline) /retention answer (D-170). */
+export function hintGeneration(g: string): void {
+  generation = g
+  if (!broken) get().postMessage({ type: 'generation', generation: g } satisfies Request)
 }
 
 /** Line-of-sight classes of router links (D-143); views are rebuilt with them. */

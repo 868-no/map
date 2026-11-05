@@ -9,15 +9,16 @@ import engineUrl from '../engine/pkg/engine_bg.wasm?url'
 // The map's Regions layer outlines (content-hashed), for health's topic-root rule (D-161).
 import regionsUrl from '../assets/regions.geojson?url'
 import { gunzip, openPersistence, type Persistence, type Source } from './persist'
-import { RowStore, type Backend, type Fetched, type Synced, type WindowReq } from './rowStore'
+import { baseParams, RowStore, type Backend, type Synced, type WindowReq } from './rowStore'
 import { debounce, rebuildDelay } from './debounce'
-import { Abandoned, abandonable, cursorMs, DAY_MS, dayName, limiter, planDays, rangeEnd, requestedRange, settleFirst, sliceBounds } from './slices'
+import { RangeFetcher } from './range'
 import type { Request, Response, Transmission, ViewRequest } from './protocol'
 import { ViewError, type ViewMeta } from './views'
 import { ViewMemo } from './memo'
-import { backendBusy, gatewayDown, retryDelay } from './httpStatus'
 
 const ready = init({ module_or_path: engineUrl })
+// The saved copy is opened while the engine instantiates (it needs no engine).
+const opened = openPersistence(engineUrl).catch(() => null)
 let engine: Engine
 let store: RowStore<number, string>
 let persist: Persistence | null = null
@@ -50,134 +51,7 @@ class EngineRows implements Backend<number, string> {
   }
 }
 
-/** Parallel requests for the rest of a range after its first page. */
-const SLICES = 4
-/** Requests in flight at once for one range: the server lets a client run 4 reads (API_READS_PER_CLIENT). */
-const PARALLEL = 4
-/** A page not answered in this long fails the range, as if offline. */
-const PAGE_TIMEOUT_MS = 30_000
-/** Retries of a page answered 429 or busy, each after its Retry-After (at most 10 s). */
-const RATE_RETRIES = 3
-
-/** A whole day was asked for under a generation the server no longer has (409): refetch the range. */
-class GenerationMoved extends Error {}
-
-/** GETs an API URL as text, retrying while the backend is busy; errors are typed as fetchRange's callers expect. */
-async function fetchText(url: string): Promise<string> {
-  let res: globalThis.Response
-  for (let attempt = 0; ; attempt++) {
-    try {
-      res = await fetch(url, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(PAGE_TIMEOUT_MS) })
-    } catch (e) {
-      throw new Error(`observations: ${e instanceof Error ? e.message : e}`, { cause: e })
-    }
-    // Rate-limited (several tabs or a shared address) or busy: wait and try again.
-    if (!backendBusy(res) || attempt >= RATE_RETRIES) break
-    await new Promise((r) => setTimeout(r, retryDelay(res, attempt)))
-  }
-  // Still busy after the retries falls through to an 'upstream' error below:
-  // the backend is up, so this is no reason to show the saved copy.
-  if (gatewayDown(res)) throw new Error(`observations: ${res.status}`)
-  if (res.status === 409) throw new GenerationMoved('observations: the server changed generation')
-  if (!res.ok) {
-    let detail = res.statusText
-    try {
-      const b = await res.json()
-      detail = b.detail ?? b.title ?? detail
-    } catch {
-      /* non-JSON error body */
-    }
-    throw new ViewError('upstream', `observations: ${res.status} ${detail}`)
-  }
-  try {
-    return await res.text()
-  } catch (e) {
-    throw new Error(`observations: ${e instanceof Error ? e.message : e}`, { cause: e }) // timed out or cut off mid-body
-  }
-}
-
-/**
- * Fetches every row of a range into one staged batch. Whole past UTC days
- * come from /observations/day, which every visitor shares (HTTP caches,
- * Cloudflare, the server's Redis; D-158); the rest from /observations. The
- * first request (the part after the last whole day, or the whole range)
- * tells the window, the generation the days are asked under, and where its
- * rest begins; that rest is split into time slices fetched in parallel with
- * the days and the part before them (each paged, all into the same batch;
- * the engine drops duplicates on commit). A whole first day may hold rows
- * from before the window: views are built from the window only.
- */
-async function fetchRange(params: URLSearchParams, retry = true): Promise<Fetched<number>> {
-  // A failed request fails the range: the others stop before their next
-  // request (even one still waiting for a slot) or at their next page, and the
-  // batch is discarded, so no staged rows are stranded in the engine.
-  let failed = false
-  const run = abandonable(limiter(PARALLEL), () => failed)
-  const page = (extra: Record<string, string>) => {
-    const p = new URLSearchParams(params)
-    for (const [k, v] of Object.entries(extra)) p.set(k, v)
-    return run(() => fetchText(`/api/v1/observations?${p}`))
-  }
-  const iso = (ms: number) => new Date(ms).toISOString()
-  const now = Date.now()
-  const { lo, hi } = requestedRange(params, now)
-  const days = planDays(lo, hi, now)
-  type Meta = { window: Fetched<number>['window']; generation: string; more: boolean; next_cursor?: string; batch: number }
-  // With whole days, the first request is the part after them (empty when the range ends there).
-  const tail: Record<string, string> = days.length ? { since: iso(days[days.length - 1] + DAY_MS) } : {}
-  const first = JSON.parse(engine.stage(await page(tail), 0)) as Meta
-  const batch = first.batch
-  const stage = (text: string) => {
-    if (failed) throw new Abandoned('observations: range abandoned')
-    return JSON.parse(engine.stage(text, batch)) as Meta
-  }
-  const drain = async (meta: Meta, extra: Record<string, string>) => {
-    while (meta.more) meta = stage(await page({ ...extra, cursor: meta.next_cursor ?? '' }))
-  }
-  const tasks: (() => Promise<unknown>)[] = []
-  if (first.more) {
-    // The rest starts at the first page's cursor instant.
-    const bounds = sliceBounds(cursorMs(first.next_cursor), rangeEnd(first.window.end, params.get('until')), SLICES)
-    bounds.slice(0, -1).forEach((b, k) =>
-      tasks.push(async () => {
-        const range = { ...tail, until: iso(bounds[k + 1]) }
-        if (k === 0) return drain(first, range) // continues after the first page
-        if (b >= bounds[k + 1]) return
-        return drain(stage(await page({ ...range, since: iso(b) })), { ...range, since: iso(b) })
-      }),
-    )
-  }
-  if (days.length) {
-    // Before the first whole day: from the window's start as the server set it.
-    const start = Math.max(Date.parse(first.window.start), params.has('since') ? Date.parse(params.get('since')!) : -Infinity)
-    if (start < days[0]) {
-      const head = { until: iso(days[0]) }
-      tasks.push(async () => drain(stage(await page(head)), head))
-    }
-    const gen = encodeURIComponent(first.generation)
-    for (const d of days) {
-      tasks.push(async () => {
-        const meta = stage(await run(() => fetchText(`/api/v1/observations/day/${dayName(d)}?generation=${gen}`)))
-        if (meta.generation !== first.generation) throw new GenerationMoved('observations: a day of another generation')
-      })
-    }
-  }
-  // The range fails with the first failure in time (a 409 to retry under the
-  // new generation, a gateway's 502 that sends the page to the saved copy),
-  // never with another task's abandonment.
-  const err = await settleFirst(tasks, () => (failed = true))
-  if (err) {
-    engine.discard(batch)
-    if (err.reason instanceof GenerationMoved) {
-      // Decoder, configuration or history changed between our requests:
-      // start over once, under the new generation (the store then sees it).
-      if (retry) return fetchRange(params, false)
-      throw new ViewError('upstream', err.reason.message)
-    }
-    throw err.reason
-  }
-  return { window: first.window, generation: first.generation, batch }
-}
+const fetcher = new RangeFetcher(() => engine)
 
 const source: Source = {
   takeDirty: () => Array.from(engine.take_dirty()),
@@ -189,12 +63,8 @@ const flushSoon = debounce(() => void persist?.flush(source), 2000, 5000)
 const started = (async () => {
   await ready
   engine = new Engine()
-  store = new RowStore(new EngineRows(), fetchRange)
-  try {
-    persist = await openPersistence(engineUrl)
-  } catch {
-    persist = null
-  }
+  store = new RowStore(new EngineRows(), fetcher.fetchRange)
+  persist = await opened
   if (persist) {
     // One chunk decompressed at a time, straight into the engine: the history
     // is never held as text all at once, nor kept in the worker's heap (§9).
@@ -249,13 +119,29 @@ self.addEventListener('unhandledrejection', (e) => {
 let chain: Promise<unknown> = Promise.resolve()
 let last: { key: string; result: Promise<{ synced: Synced; offline: boolean }> } | null = null
 let pendingLive: string[] = [] // streamed before the first sync established coverage
+
+// Whole days of the first window are fetched as soon as the page has passed
+// the server's generation (from /retention) and asked for a window, while the
+// engine instantiates; the first sync takes them (D-170). Not when the saved
+// copy is of that generation: the store then asks only for what is new.
+let firstWin: WindowReq | null = null
+let prefetched = false
+let syncing = false // the first sync began: the store asks for itself
+async function prefetch() {
+  if (prefetched || syncing || !firstWin || !fetcher.hint) return
+  prefetched = true
+  const held = (await opened)?.restored
+  if (syncing || (held?.cov && held.generation === fetcher.hint)) return
+  fetcher.prefetchDays(baseParams(firstWin))
+}
 function synced(win: WindowReq, epoch: string): Promise<{ synced: Synced; offline: boolean }> {
   const key = JSON.stringify(win) + '|' + epoch
   if (last?.key === key) return last.result
   const result = chain.then(async () => {
     await started
     try {
-      const s = await store.sync(win)
+      syncing = true
+      const s = await store.sync(win).finally(() => fetcher.dropPrefetched())
       for (const rows of pendingLive) store.addLive(rows)
       pendingLive = []
       return { synced: s, offline: false }
@@ -367,6 +253,10 @@ const NULL = [110, 117, 108, 108] // "null"
 const isNull = (b: Uint8Array) => b.length === 4 && NULL.every((c, k) => b[k] === c)
 
 async function view(req: ViewRequest): Promise<{ body: Uint8Array; meta: ViewMeta; offline: boolean }> {
+  if (!firstWin) {
+    firstWin = req.win
+    void prefetch()
+  }
   await inited
   if (startError) throw new ViewError('internal', `the derivation engine failed to start: ${startError}`)
   liveHours = req.win.live ? req.win.durationH : null
@@ -407,6 +297,11 @@ self.onmessage = async (e: MessageEvent<Request>) => {
     } catch (err) {
       if (!fatal(err)) console.warn('live rows dropped', err)
     }
+    return
+  }
+  if (msg.type === 'generation') {
+    fetcher.hint = msg.generation
+    void prefetch()
     return
   }
   if (msg.type === 'terrain') {

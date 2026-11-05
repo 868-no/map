@@ -63,6 +63,11 @@ export interface Synced {
 
 const iso = (ms: number) => new Date(ms).toISOString()
 
+/** A window's /observations parameters before narrowing (since/until). */
+export function baseParams(req: WindowReq): URLSearchParams {
+  return req.live ? new URLSearchParams({ duration: `${req.durationH}h` }) : new URLSearchParams({ start: req.start, end: req.end })
+}
+
 export class RowStore<B, L> {
   cov: Coverage | null = null
   generation: string | null = null
@@ -94,10 +99,6 @@ export class RowStore<B, L> {
     this.sink?.removedBefore(before)
   }
 
-  private base(req: WindowReq): URLSearchParams {
-    return req.live ? new URLSearchParams({ duration: `${req.durationH}h` }) : new URLSearchParams({ start: req.start, end: req.end })
-  }
-
   private get(params: URLSearchParams, extra: Record<string, string> = {}): Promise<Fetched<B>> {
     const p = new URLSearchParams(params)
     for (const [k, v] of Object.entries(extra)) p.set(k, v)
@@ -106,7 +107,7 @@ export class RowStore<B, L> {
 
   /** Bring the store up to date for req; returns the window's bounds. */
   async sync(req: WindowReq): Promise<Synced> {
-    const base = this.base(req)
+    const base = baseParams(req)
     const cov = this.cov
     let S: number, E: number
     const rolling = req.live

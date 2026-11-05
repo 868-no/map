@@ -644,6 +644,8 @@ export interface components {
              * @description Oldest observed_at actually retained (may be later than the cutoff)
              */
             earliest_observation?: string;
+            /** @description The generation /observations reports now; lets a client request whole days without waiting for it (D-170) */
+            generation: string;
             /** Format: date-time */
             latest_observation?: string;
             /** Format: date-time */

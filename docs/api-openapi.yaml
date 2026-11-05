@@ -814,6 +814,9 @@ components:
           description: Oldest observed_at actually retained (may be later than the cutoff)
           format: date-time
           type: string
+        generation:
+          description: The generation /observations reports now; lets a client request whole days without waiting for it (D-170)
+          type: string
         latest_observation:
           format: date-time
           type: string
@@ -827,6 +830,7 @@ components:
         - now
         - configured_cutoff
         - retention_months
+        - generation
       type: object
     Sample:
       additionalProperties: false

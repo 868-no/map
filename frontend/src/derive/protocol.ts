@@ -22,6 +22,12 @@ export interface InitRequest {
   liveQuantumMs: number
 }
 
+/** The generation /retention reported: whole days are asked under it before /observations answers (D-170). */
+export interface GenerationHint {
+  type: 'generation'
+  generation: string
+}
+
 /** Rows from the live stream; ping lists the indexes the page wants animated. */
 export interface RowsRequest {
   type: 'rows'
@@ -36,7 +42,7 @@ export interface TerrainRequest {
   links: TerrainLinkClass[]
 }
 
-export type Request = ViewRequest | InitRequest | RowsRequest | TerrainRequest
+export type Request = ViewRequest | InitRequest | GenerationHint | RowsRequest | TerrainRequest
 
 /** A transmission one live reception proves (from the engine). */
 export interface Transmission {

@@ -5,7 +5,7 @@ import type { Capabilities, Retention } from '../api/types'
 import type { HealthView, LinkHistory, NodeView, PacketLog, PacketRoute, ReachView, SnapshotView, TrafficView, ViewMeta } from '../derive/views'
 import { apiParams, useStore } from './store'
 import { create } from 'zustand'
-import { deriveView, onDerivedChange } from '../derive/client'
+import { deriveView, hintGeneration, onDerivedChange } from '../derive/client'
 import type { ViewKind } from '../derive/protocol'
 import { usePwa } from '../pwa'
 import { noteServerTime } from '../lib/serverClock'
@@ -32,7 +32,11 @@ export function useRetention() {
     queryFn: async ({ signal }) => {
       const { body: r, offline } = await getJSONFresh<Retention>('/api/v1/retention', signal)
       // Window ends follow the server's clock; an offline copy's time is old.
-      if (!offline) noteServerTime(r.now)
+      // Likewise its generation: whole days are asked under it (D-170).
+      if (!offline) {
+        noteServerTime(r.now)
+        hintGeneration(r.generation)
+      }
       return r
     },
     refetchInterval: 300_000,

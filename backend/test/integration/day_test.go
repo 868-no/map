@@ -99,6 +99,13 @@ func TestDayMatchesObservations(t *testing.T) {
 	if len(want) != 3 {
 		t.Fatalf("observations of d1: %d rows", len(want))
 	}
+	// /retention names the same generation, so days can start before /observations (D-170).
+	var ret struct {
+		Generation string `json:"generation"`
+	}
+	if code := c.get("/api/v1/retention", nil, &ret); code != 200 || ret.Generation != gen {
+		t.Fatalf("retention: HTTP %d, generation %q (want %q)", code, ret.Generation, gen)
+	}
 	a := c.day("2026-10-30", gen)
 	if a.code != 200 || !sameRows(a.rows, want) || a.generation != gen {
 		t.Fatalf("day: HTTP %d, %d rows, generation %q (want %q)", a.code, len(a.rows), a.generation, gen)
@@ -153,6 +160,9 @@ func TestDayMatchesObservations(t *testing.T) {
 	_, gen2 := c.rawRows(win(d2, d2.Add(time.Hour)))
 	if gen2 == gen {
 		t.Fatal("the generation did not move")
+	}
+	if code := c.get("/api/v1/retention", nil, &ret); code != 200 || ret.Generation != gen2 {
+		t.Fatalf("retention during an import: HTTP %d, generation %q (want %q)", code, ret.Generation, gen2)
 	}
 	if b := c.day("2026-10-31", gen2); b.code != 200 || b.cc != "no-store" {
 		t.Fatalf("during an import: HTTP %d %q", b.code, b.cc)

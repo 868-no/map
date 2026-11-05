@@ -39,10 +39,38 @@ function serviceWorker(): Plugin {
   }
 }
 
+// Starts the derivation worker's script and the engine's WebAssembly from
+// index.html, so they download beside the main bundles instead of after them;
+// their content-hashed names are known only from inside the bundles (D-171).
+// Measured forms: the worker (a module worker) as modulepreload, whose
+// response the worker's own request takes from the HTTP cache; the engine as
+// prefetch, which the worker's fetch() likewise reuses (also while still in
+// flight) and, unlike a preload the document never uses itself, draws no
+// "preloaded but not used" warning. Chrome has no preload `as` for workers.
+function workerPreloads(): Plugin {
+  return {
+    name: 'meshmap-worker-preloads',
+    apply: 'build',
+    transformIndexHtml: {
+      order: 'post',
+      handler(_html, ctx) {
+        const names = Object.keys(ctx.bundle ?? {})
+        const worker = names.find((n) => /(^|\/)worker-[\w-]+\.js$/.test(n))
+        const wasm = names.find((n) => /(^|\/)engine_bg-[\w-]+\.wasm$/.test(n))
+        if (!worker || !wasm) throw new Error(`worker preloads: worker or engine not emitted (${names.join(', ')})`)
+        return [
+          { tag: 'link', attrs: { rel: 'modulepreload', href: `/${worker}` }, injectTo: 'head' },
+          { tag: 'link', attrs: { rel: 'prefetch', href: `/${wasm}` }, injectTo: 'head' },
+        ]
+      },
+    },
+  }
+}
+
 // Dev server proxies the API and map assets to a running stack
 // (backend on :8000; tiles/fonts/styles from the web service on :8080).
 export default defineConfig({
-  plugins: [react(), serviceWorker()],
+  plugins: [react(), workerPreloads(), serviceWorker()],
   server: {
     proxy: {
       '/api': 'http://host.docker.internal:8000',

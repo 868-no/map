@@ -125,6 +125,7 @@ type RetentionBody struct {
 	EarliestObservation *time.Time `json:"earliest_observation,omitempty" doc:"Oldest observed_at actually retained (may be later than the cutoff)"`
 	LatestObservation   *time.Time `json:"latest_observation,omitempty"`
 	RetentionMonths     int        `json:"retention_months"`
+	Generation          string     `json:"generation" doc:"The generation /observations reports now; lets a client request whole days without waiting for it (D-170)"`
 }
 
 type RetentionOutput struct{ Body RetentionBody }
@@ -136,6 +137,11 @@ func (s *Server) retention(ctx context.Context, _ *struct{}) (*RetentionOutput, 
 	if err := s.Pool.QueryRow(ctx, `SELECT min(observed_at), max(observed_at) FROM packet_log`).Scan(&out.EarliestObservation, &out.LatestObservation); err != nil {
 		return nil, err
 	}
+	hist, err := s.rowsDB().History(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out.Generation = s.generation(hist.Rev)
 	return &RetentionOutput{Body: out}, nil
 }
 
