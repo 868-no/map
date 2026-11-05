@@ -1,5 +1,4 @@
 import type { LiveEvent } from './types'
-import { noteResponse } from '../pwa'
 
 export class ApiError extends Error {
   constructor(public status: number, message: string) {
@@ -19,7 +18,6 @@ export async function postJSON<T>(path: string, body: unknown, signal?: AbortSig
 }
 
 async function readJSON<T>(res: Response): Promise<T> {
-  noteResponse(res)
   if (!res.ok) {
     let detail = res.statusText
     try {

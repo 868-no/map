@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { defaultBasemap, type BasemapGroup } from '../map/layers'
 import type { ThemeChoice } from '../theme'
+import { serverNow } from '../lib/serverClock'
 
 export type Confidence = 'low' | 'medium' | 'high'
 
@@ -116,9 +117,11 @@ export const useStore = create<Store>((set) => ({
       // The default applies once, on the first limits: a later refetch of the
       // capabilities only clamps, never resets a length the viewer chose.
       if (w.live) return { limitsReady: true, win: { ...w, durationH: Math.min(urlDuration || s.limitsReady ? w.durationH : defaultH, maxH) } }
-      // A fixed window longer than the server serves keeps its end.
-      const end = Date.parse(w.end!), start = Math.max(Date.parse(w.start!), end - maxH * 3_600_000)
-      return { limitsReady: true, win: { ...w, start: new Date(start).toISOString() } }
+      // A fixed window longer than the server serves keeps its end; one
+      // ending after the server's now ends at now.
+      const [start, end] = endByNow(w.start!, w.end!, serverNow())
+      const s0 = Math.max(Date.parse(start), Date.parse(end) - maxH * 3_600_000)
+      return { limitsReady: true, win: { ...w, start: new Date(s0).toISOString(), end } }
     }),
   filters: defaultFilters,
   toggles: typeof window === 'undefined' ? defaultToggles : loadToggles(),
@@ -174,13 +177,25 @@ export function toQuery(s: Pick<Store, 'win' | 'filters'> & { selection?: Select
   return q
 }
 
-export function fromQuery(q: URLSearchParams): Partial<Pick<Store, 'win' | 'filters' | 'selection'>> {
+/**
+ * A fixed window ending no later than now: the server refuses ends more than
+ * a few seconds ahead of its clock. A window that would be left shorter than
+ * an hour keeps an hour, ending now.
+ */
+export function endByNow(start: string, end: string, now: number): [string, string] {
+  if (Date.parse(end) <= now) return [start, end]
+  const s = Math.min(Date.parse(start), now - 3_600_000)
+  return [new Date(s).toISOString(), new Date(now).toISOString()]
+}
+
+export function fromQuery(q: URLSearchParams, now = serverNow()): Partial<Pick<Store, 'win' | 'filters' | 'selection'>> {
   const out: Partial<Pick<Store, 'win' | 'filters' | 'selection'>> = {}
   const node = q.get('node')?.toLowerCase()
   if (node && NODE_ID.test(node)) out.selection = { kind: 'node', id: node }
   const start = q.get('start'), end = q.get('end'), dur = q.get('duration')
   if (start && end && !Number.isNaN(Date.parse(start)) && !Number.isNaN(Date.parse(end))) {
-    out.win = { live: false, durationH: windowLimits.defaultH, start, end }
+    const [s, e] = endByNow(start, end, now)
+    out.win = { live: false, durationH: windowLimits.defaultH, start: s, end: e }
   } else if (dur) {
     const h = parseInt(dur, 10)
     if (h >= 1 && h <= 168) out.win = { live: true, durationH: h, start: null, end: null }

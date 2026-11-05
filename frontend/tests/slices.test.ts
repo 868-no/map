@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { cursorMs, DAY_MS, dayName, limiter, planDays, rangeEnd, requestedRange, sliceBounds } from '../src/derive/slices'
+import { Abandoned, cursorMs, DAY_MS, dayName, limiter, planDays, rangeEnd, requestedRange, settleFirst, sliceBounds } from '../src/derive/slices'
 
 describe('range fetch arithmetic', () => {
   it('reads a cursor as the millisecond it starts at', () => {
@@ -86,5 +86,41 @@ describe('whole-day planning (D-158)', () => {
     expect(peak).toBe(2)
     expect(results.map((r) => r.status)).toEqual(['fulfilled', 'fulfilled', 'rejected', 'fulfilled', 'fulfilled'])
     expect(order.sort()).toEqual([1, 2, 3, 4, 5])
+  })
+})
+
+describe('a failing range', () => {
+  const tick = () => new Promise((r) => setTimeout(r, 0))
+
+  it('reports the first failure in time, not a task abandoned after it', async () => {
+    let failed = false
+    const moved = new Error('409: the server changed generation')
+    const tasks = [
+      // Listed first, but it stops only at its next page, after the day failed.
+      async () => {
+        await tick()
+        await tick()
+        if (failed) throw new Abandoned('range abandoned')
+      },
+      async () => {
+        await tick()
+        throw moved
+      },
+      async () => {
+        await tick()
+        await tick()
+        await tick()
+        throw new Error('a later failure')
+      },
+    ]
+    const err = await settleFirst(tasks, () => (failed = true))
+    expect(failed).toBe(true)
+    expect(err?.reason).toBe(moved)
+  })
+
+  it('resolves null when every task succeeds', async () => {
+    let failed = false
+    expect(await settleFirst([async () => 1, async () => 2], () => (failed = true))).toBeNull()
+    expect(failed).toBe(false)
   })
 })

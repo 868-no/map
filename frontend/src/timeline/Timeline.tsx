@@ -5,6 +5,7 @@ import type { Capabilities, Retention } from '../api/types'
 import type { SnapshotView } from '../derive/views'
 import { useTraffic } from '../state/data'
 import { useStore } from '../state/store'
+import { serverNow } from '../lib/serverClock'
 import { formatLocal, formatShort, fromLocalInput, isAmbiguousLocal, toLocalInput, zoneLabel } from '../lib/time'
 
 const H = 3600_000
@@ -25,10 +26,10 @@ function useWindowModel(caps: Capabilities, retention: Retention | undefined, sn
   const win = useStore((s) => s.win)
   const setLive = useStore((s) => s.setLive)
   const setFixed = useStore((s) => s.setFixed)
-  // The browser's clock, so the slider's end is now rather than when retention
-  // was last fetched (every 5 minutes), but never past the server's now plus
-  // that interval: a clock that runs ahead must not offer the future.
-  const now = retention ? Math.min(Date.now(), Date.parse(retention.now) + 6 * 60_000) : Date.now()
+  // The server's clock, advanced by the browser's since it was last heard
+  // (retention every 5 minutes, live heartbeats): the slider's end is now,
+  // and a local clock that runs ahead cannot offer an end the server refuses.
+  const now = serverNow()
   // The slider starts where data does (the oldest kept observation), not at
   // the retention limit, which can lie months before anything was recorded.
   const cutoffMs = retention ? Date.parse(retention.configured_cutoff) : now - 180 * 24 * H

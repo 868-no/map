@@ -86,9 +86,24 @@ export class HourWriter {
   }
 }
 
+/** An open that neither succeeds nor fails in this long (blocked by another tab) gives up: no copy this time. */
+export const OPEN_TIMEOUT_MS = 5000
+
 function open(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB, VERSION)
+    // Another tab holding an older version (or a pending delete, Settings →
+    // Reset) blocks the open: give up rather than wait, and close the database
+    // should the open still succeed later, so it blocks no one in turn.
+    let settled = false
+    const fail = (err: unknown) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      reject(err)
+    }
+    const timer = setTimeout(() => fail(new Error('indexedDB open timed out')), OPEN_TIMEOUT_MS)
+    req.onblocked = () => fail(new Error('indexedDB open blocked'))
     req.onupgradeneeded = (e) => {
       const db = req.result
       if (e.oldVersion < 2) {
@@ -100,8 +115,13 @@ function open(): Promise<IDBDatabase> {
       }
       if (!db.objectStoreNames.contains('deltas')) db.createObjectStore('deltas') // keys [hour, seq]
     }
-    req.onsuccess = () => resolve(req.result)
-    req.onerror = () => reject(req.error)
+    req.onsuccess = () => {
+      if (settled) return req.result.close()
+      settled = true
+      clearTimeout(timer)
+      resolve(req.result)
+    }
+    req.onerror = () => fail(req.error)
   })
 }
 
@@ -141,6 +161,13 @@ export async function openPersistence(engine: string): Promise<Persistence | nul
   } catch {
     return null
   }
+  // Another tab upgrades or deletes the database (Settings → Reset): let it,
+  // and carry on without a copy (every later write is skipped).
+  let closed = false
+  db.onversionchange = () => {
+    closed = true
+    db.close()
+  }
   const empty: Persisted = { chunks: [], cov: null, generation: null }
   const stored = new Map<number, number>() // hour -> highest delta seq
   const restored = await new Promise<Persisted>((resolve) => {
@@ -164,17 +191,42 @@ export async function openPersistence(engine: string): Promise<Persistence | nul
       for (const [h, seq] of deltaKeys.result as [number, number][]) stored.set(h, Math.max(stored.get(h) ?? 0, seq))
       resolve({ chunks: [...(chunks.result as Blob[]), ...(deltas.result as Blob[])], cov: m.cov, generation: m.generation })
     }
-    tx.onerror = () => resolve(empty)
+    tx.onerror = tx.onabort = () => resolve(empty)
   })
   const writer = new HourWriter()
+  let generation = restored.generation // as last given to meta()
+  // A row write failed (quota exceeded, say): the stored rows no longer match
+  // what the coverage record would claim, so it claims nothing from now on and
+  // the next load fetches its window afresh.
+  let lost = false
+  const putMeta = (cov: Coverage | null) => {
+    const tx = db.transaction('meta', 'readwrite')
+    tx.objectStore('meta').put({ cov: lost ? null : cov, generation, engine }, 'state')
+    return tx
+  }
   // Writes run one after another; failures are ignored (the store is a cache).
   let chain = Promise.resolve()
-  const run = (fn: () => Promise<IDBTransaction | null>) => {
-    chain = chain.then(async () => {
-      const tx = await fn()
-      if (tx) await done(tx)
-    }).catch(() => {})
+  const run = (fn: () => Promise<IDBTransaction | null>, onFail?: () => Promise<void>) => {
+    chain = chain
+      .then(async () => {
+        if (closed) return
+        const tx = await fn()
+        if (tx) await done(tx)
+      })
+      .catch(async () => {
+        if (closed || !onFail) return
+        try {
+          await onFail()
+        } catch {
+          /* nothing more to do */
+        }
+      })
     return chain
+  }
+  const rowsLost = async () => {
+    if (lost) return
+    lost = true
+    await done(putMeta(null))
   }
   // The export happens now (it must see the engine as planned); only the compression waits.
   const apply = (writes: Write[], before?: number) =>
@@ -196,7 +248,7 @@ export async function openPersistence(engine: string): Promise<Persistence | nul
         else chunks.delete(w.hour)
       })
       return tx
-    })
+    }, rowsLost)
   return {
     restored,
     attach: (src) => {
@@ -207,6 +259,7 @@ export async function openPersistence(engine: string): Promise<Persistence | nul
     removedBefore: (t, src) => void apply(writer.removedBefore(t, src), Math.floor(t / HOUR_MS) * HOUR_MS),
     reset: () => {
       writer.reset()
+      lost = false // nothing stored, so nothing missing
       void run(async () => {
         const tx = db.transaction(['chunks', 'deltas', 'meta'], 'readwrite')
         tx.objectStore('chunks').clear()
@@ -215,11 +268,9 @@ export async function openPersistence(engine: string): Promise<Persistence | nul
         return tx
       })
     },
-    meta: (cov, generation) =>
-      void run(async () => {
-        const tx = db.transaction('meta', 'readwrite')
-        tx.objectStore('meta').put({ cov, generation, engine }, 'state')
-        return tx
-      }),
+    meta: (cov, gen) => {
+      generation = gen
+      void run(async () => putMeta(cov))
+    },
   }
 }

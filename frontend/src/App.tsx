@@ -177,7 +177,7 @@ export default function App() {
           {empty && <div className="banner">No observed data for this interval.</div>}
           {counts?.nodes_truncated && <div className="banner">Large network: showing the most active nodes.</div>}
           {snap.data?.edges_truncated && <div className="banner">Showing the best-supported links only.</div>}
-          {notice && <div className="banner" role="status" onClick={() => setNotice(null)}>{notice} (click to dismiss)</div>}
+          {notice && <button type="button" className="banner" aria-live="polite" onClick={() => setNotice(null)}>{notice} (click to dismiss)</button>}
         </div>
       </main>
     </div>

@@ -31,15 +31,22 @@ export async function loadStyle(styleURL: string, tileSource: string): Promise<S
   return style
 }
 
+const paintRequests = new WeakMap<maplibregl.Map, number>()
+
 /**
  * Switch the map to another style with the same layers (the light and dark
  * themes) by copying its paint properties: unlike setStyle, this keeps the
  * deck.gl layers interleaved in the style and the viewer's layer visibility.
  */
 export async function applyStylePaint(map: maplibregl.Map, styleURL: string): Promise<void> {
+  // Only the latest request paints: after quick theme toggles, an earlier
+  // style answering last must not repaint the theme just left.
+  const token = (paintRequests.get(map) ?? 0) + 1
+  paintRequests.set(map, token)
   const res = await fetch(styleURL)
   if (!res.ok) throw new Error(`map style unavailable (${res.status})`)
   const style = (await res.json()) as StyleSpecification
+  if (paintRequests.get(map) !== token) return
   for (const l of style.layers) {
     if (!map.getLayer(l.id) || !('paint' in l) || !l.paint) continue
     for (const [k, v] of Object.entries(l.paint)) map.setPaintProperty(l.id, k, v)

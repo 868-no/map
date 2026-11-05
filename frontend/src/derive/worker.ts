@@ -11,9 +11,10 @@ import regionsUrl from '../assets/regions.geojson?url'
 import { gunzip, openPersistence, type Persistence, type Source } from './persist'
 import { RowStore, type Backend, type Fetched, type Synced, type WindowReq } from './rowStore'
 import { debounce, rebuildDelay } from './debounce'
-import { cursorMs, DAY_MS, dayName, limiter, planDays, rangeEnd, requestedRange, sliceBounds } from './slices'
+import { Abandoned, cursorMs, DAY_MS, dayName, limiter, planDays, rangeEnd, requestedRange, settleFirst, sliceBounds } from './slices'
 import type { Request, Response, Transmission, ViewRequest } from './protocol'
 import { ViewError, type ViewMeta } from './views'
+import { ViewMemo } from './memo'
 import { backendBusy, gatewayDown, retryDelay } from './httpStatus'
 
 const ready = init({ module_or_path: engineUrl })
@@ -126,7 +127,7 @@ async function fetchRange(params: URLSearchParams, retry = true): Promise<Fetche
   // and the batch is discarded, so no staged rows are stranded in the engine.
   let failed = false
   const stage = (text: string) => {
-    if (failed) throw new ViewError('upstream', 'observations: range abandoned')
+    if (failed) throw new Abandoned('observations: range abandoned')
     return JSON.parse(engine.stage(text, batch)) as Meta
   }
   const drain = async (meta: Meta, extra: Record<string, string>) => {
@@ -160,17 +161,10 @@ async function fetchRange(params: URLSearchParams, retry = true): Promise<Fetche
       })
     }
   }
-  const results = await Promise.allSettled(
-    tasks.map(async (t) => {
-      try {
-        return await t()
-      } catch (e) {
-        failed = true
-        throw e
-      }
-    }),
-  )
-  const err = results.find((r): r is PromiseRejectedResult => r.status === 'rejected')
+  // The range fails with the first failure in time (a 409 to retry under the
+  // new generation, a gateway's 502 that sends the page to the saved copy),
+  // never with another task's abandonment.
+  const err = await settleFirst(tasks, () => (failed = true))
   if (err) {
     engine.discard(batch)
     if (err.reason instanceof GenerationMoved) {
@@ -341,36 +335,8 @@ function liveRows(rows: unknown[], ping: number[]) {
 }
 
 // Views are memoised (as UTF-8 JSON bytes) by data revision, kind, window
-// and filters. A snapshot at reference density is several MB and every live
-// rebuild is a new revision, so entries of older revisions are dropped and
-// the total is capped.
-const MEMO_MAX_BYTES = 24_000_000
-const memo = new Map<string, Uint8Array>()
-let memoChars = 0
-function remember(key: string, revision: string, make: () => Uint8Array): Uint8Array {
-  const hit = memo.get(key)
-  if (hit !== undefined) return hit
-  const v = make()
-  for (const [k, x] of memo) {
-    if (!k.startsWith(revision + '|') || memoChars + v.length > MEMO_MAX_BYTES) {
-      memo.delete(k)
-      memoChars -= x.length
-    }
-  }
-  memo.set(key, v)
-  memoChars += v.length
-  return v
-}
-
-/** Drops memoised views of one kind, so they are built again. */
-function forget(kind: string) {
-  for (const [k, x] of memo) {
-    if (k.split('|')[4] === kind) {
-      memo.delete(k)
-      memoChars -= x.length
-    }
-  }
-}
+// and filters; the total is capped (memo.ts).
+const memo = new ViewMemo(24_000_000)
 
 // The regions' outlines are fetched once, from the same file the map's
 // Regions layer uses (HTTP-cached, content-hashed), not built into the
@@ -384,7 +350,7 @@ async function loadRegions() {
       const text = await res.text()
       await started
       engine.set_regions(text)
-      forget('health')
+      memo.forget('health')
       self.postMessage({ type: 'changed' } satisfies Response)
       return
     } catch (err) {
@@ -416,7 +382,7 @@ async function view(req: ViewRequest): Promise<{ body: Uint8Array; meta: ViewMet
   const key = `${revision}|${start}|${end}|${fj}|${req.kind}|${req.node ?? ''}`
   let body: Uint8Array
   try {
-    body = remember(key, revision, () => {
+    body = memo.remember(key, revision, req.kind, () => {
       const t0 = performance.now()
       const b = engine.view_bytes(req.kind, start, end, fj, req.node ?? '')
       if (req.kind === 'snapshot') lastBuildMs = performance.now() - t0
@@ -448,7 +414,6 @@ self.onmessage = async (e: MessageEvent<Request>) => {
       await inited
       engine.set_terrain(JSON.stringify(msg.links))
       memo.clear()
-      memoChars = 0
       self.postMessage({ type: 'changed' } satisfies Response)
     } catch (err) {
       if (!fatal(err)) console.warn('terrain classes dropped', err)
@@ -461,7 +426,6 @@ self.onmessage = async (e: MessageEvent<Request>) => {
       engine.set_options(JSON.stringify({ geo: msg.geo }))
       quantumMs = msg.liveQuantumMs
       memo.clear()
-      memoChars = 0
       pinned.clear()
     } catch (err) {
       startError = err instanceof Error ? err.message : String(err)

@@ -7,7 +7,6 @@ import { create } from 'zustand'
 interface PwaState {
   online: boolean
   servedOffline: boolean // the map's views are built from the saved copy (the banner says so)
-  apiOffline: boolean // the latest other API response (capabilities, weather, ...) came from the service worker's cache
   canInstall: boolean
   install: () => Promise<void>
 }
@@ -18,7 +17,6 @@ let deferred: InstallPrompt | null = null
 export const usePwa = create<PwaState>((set) => ({
   online: typeof navigator === 'undefined' ? true : navigator.onLine,
   servedOffline: false,
-  apiOffline: false,
   canInstall: false,
   install: async () => {
     if (!deferred) return
@@ -28,12 +26,6 @@ export const usePwa = create<PwaState>((set) => ({
     set({ canInstall: false })
   },
 }))
-
-/** Called for every API response other than the views' own (the worker reports those). */
-export function noteResponse(res: Response): void {
-  const offline = res.headers.get('x-meshmap-offline') === '1'
-  if (usePwa.getState().apiOffline !== offline) usePwa.setState({ apiOffline: offline })
-}
 
 export function setupPwa(): void {
   if (typeof window === 'undefined') return

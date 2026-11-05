@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { apiParams, defaultFilters, fromQuery, toQuery, useStore } from '../src/state/store'
+import { apiParams, defaultFilters, endByNow, fromQuery, toQuery, useStore } from '../src/state/store'
+import { noteServerTime, serverNow } from '../src/lib/serverClock'
 
 describe('URL and API parameters', () => {
   const fixed = { win: { live: false, durationH: 72, start: '2026-10-28T00:00:00Z', end: '2026-10-31T00:00:00Z' },
@@ -53,5 +54,31 @@ describe('server window limits', () => {
     useStore.getState().applyLimits(24, 48)
     expect(useStore.getState().win.start).toBe('2026-10-03T00:00:00.000Z') // keeps the end
     useStore.getState().applyLimits(72, 168) // restore for other tests
+  })
+})
+
+describe('window ends follow the server clock', () => {
+  const t = (s: string) => Date.parse(s)
+
+  it('tracks the server time from when it was received', () => {
+    // The local clock runs 10 minutes ahead of the server.
+    noteServerTime('2026-11-05T12:00:00Z', t('2026-11-05T12:10:00Z'))
+    expect(serverNow(t('2026-11-05T12:15:00Z'))).toBe(t('2026-11-05T12:05:00Z'))
+    noteServerTime('not a time') // ignored
+    expect(serverNow(t('2026-11-05T12:15:00Z'))).toBe(t('2026-11-05T12:05:00Z'))
+    noteServerTime(new Date().toISOString()) // back in step for other tests
+  })
+
+  it('clamps a fixed window ending in the future to end now', () => {
+    const now = t('2026-11-05T12:00:00Z')
+    expect(endByNow('2026-11-05T00:00:00Z', '2026-11-05T11:00:00Z', now)).toEqual(['2026-11-05T00:00:00Z', '2026-11-05T11:00:00Z'])
+    expect(endByNow('2026-11-05T00:00:00Z', '2026-11-05T13:00:00Z', now)).toEqual(['2026-11-05T00:00:00.000Z', '2026-11-05T12:00:00.000Z'])
+    // Wholly in the future: an hour up to now.
+    expect(endByNow('2026-11-06T00:00:00Z', '2026-11-06T06:00:00Z', now)).toEqual(['2026-11-05T11:00:00.000Z', '2026-11-05T12:00:00.000Z'])
+  })
+
+  it('clamps an end from the URL', () => {
+    const q = new URLSearchParams({ start: '2026-11-04T00:00:00Z', end: '2026-11-06T00:00:00Z' })
+    expect(fromQuery(q, t('2026-11-05T12:00:00Z')).win).toMatchObject({ live: false, start: '2026-11-04T00:00:00.000Z', end: '2026-11-05T12:00:00.000Z' })
   })
 })

@@ -48,14 +48,16 @@ self.addEventListener('fetch', (event) => {
   // keeps and revalidates them, so a copy here would be a second one.
   if (p.startsWith('/tiles/') || p === '/api/v1/stream' || p === '/api/v1/observations' || p.startsWith('/api/v1/observations/') || p.startsWith('/health/') || p === '/metrics') return
 
+  // Before navigations: an API URL opened in a tab (or the API docs) is an
+  // API response, never a stand-in for the app shell.
+  if (p.startsWith('/api/')) {
+    event.respondWith(apiNetworkFirst(req))
+    return
+  }
   if (req.mode === 'navigate') {
     // Pages of their own (the privacy policy) are cached under their own
     // path; every other navigation is the app, whose offline copy is /index.html.
     event.respondWith(networkFirst(req, SHELL, p !== '/' && PRECACHE.includes(p) ? p : '/index.html'))
-    return
-  }
-  if (p.startsWith('/api/')) {
-    event.respondWith(apiNetworkFirst(req))
     return
   }
   if (p.startsWith('/fonts/')) {
@@ -100,7 +102,9 @@ async function staleWhileRevalidate(req, name) {
 async function networkFirst(req, name, fallbackPath) {
   try {
     const res = await fetch(req)
-    if (res.ok) (await caches.open(name)).put(fallbackPath, res.clone())
+    // Only a page is kept as the shell: a navigation to any other file (JSON,
+    // an image) answered 200 must not become what an offline start shows.
+    if (res.ok && (res.headers.get('content-type') || '').includes('text/html')) (await caches.open(name)).put(fallbackPath, res.clone())
     return res
   } catch {
     return (await caches.match(fallbackPath)) || Response.error()

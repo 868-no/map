@@ -95,3 +95,26 @@ export function limiter(n: number): <T>(f: () => Promise<T>) => Promise<T> {
     }
   }
 }
+
+/** Thrown by the tasks of a range that stop because another one failed: never the range's reason. */
+export class Abandoned extends Error {}
+
+/**
+ * Runs a range's tasks together and waits for all of them. The first task to
+ * fail calls onFail (the others then stop at their next page, with Abandoned);
+ * resolves to that first real failure in time, or null when all succeeded.
+ */
+export async function settleFirst(tasks: (() => Promise<unknown>)[], onFail: () => void): Promise<{ reason: unknown } | null> {
+  let first: { reason: unknown } | null = null
+  await Promise.allSettled(
+    tasks.map(async (t) => {
+      try {
+        await t()
+      } catch (e) {
+        onFail()
+        if (!(e instanceof Abandoned)) first ??= { reason: e }
+      }
+    }),
+  )
+  return first
+}

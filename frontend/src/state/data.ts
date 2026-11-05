@@ -8,6 +8,7 @@ import { create } from 'zustand'
 import { deriveView, onDerivedChange } from '../derive/client'
 import type { ViewKind } from '../derive/protocol'
 import { usePwa } from '../pwa'
+import { noteServerTime } from '../lib/serverClock'
 
 /**
  * epoch: bumped by live heartbeats to refresh rolling-window views (a sync
@@ -26,7 +27,15 @@ export function useCapabilities() {
 }
 
 export function useRetention() {
-  return useQuery({ queryKey: ['retention'], queryFn: ({ signal }) => getJSON<Retention>('/api/v1/retention', undefined, signal), refetchInterval: 300_000 })
+  return useQuery({
+    queryKey: ['retention'],
+    queryFn: async ({ signal }) => {
+      const r = await getJSON<Retention>('/api/v1/retention', undefined, signal)
+      noteServerTime(r.now) // window ends follow the server's clock
+      return r
+    },
+    refetchInterval: 300_000,
+  })
 }
 
 /** Current API params plus a stable identity for "same window, rolling forward". */
@@ -65,7 +74,10 @@ function useWindowQuery<T extends { meta: ViewMeta }>(kind: ViewKind, node?: str
   const filters = useStore((s) => s.filters)
   const rev = useLiveEpoch((s) => s.rev)
   const limitsReady = useStore((s) => s.limitsReady) // the server's window limits applied
-  const key: Key = [kind + (node ? ':' + node : ''), params.toString(), identity, win.live ? `${epoch}#${rev}` : epoch]
+  // rev for fixed windows too: the stream runs only for live ones, so there it
+  // moves only when the worker's views changed without new rows (terrain
+  // classes, D-143; the regions health checks topic roots against, D-161).
+  const key: Key = [kind + (node ? ':' + node : ''), params.toString(), identity, `${epoch}#${rev}`]
   return useQuery<T, Error, T, Key>({
     queryKey: key,
     enabled: enabled && limitsReady,

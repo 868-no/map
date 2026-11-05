@@ -4,6 +4,7 @@
 import { useEffect, useRef, useState, type RefObject } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { subscribeLive } from '../api/client'
+import { noteServerTime } from '../lib/serverClock'
 import type { ObsRow } from '../api/types'
 import { onTransmissions, sendLiveRows } from '../derive/client'
 import { addTransmission, clearPings, painting, PING_MAX_AGE_MS, pingWanted, type Transmission } from '../map/pings'
@@ -81,6 +82,7 @@ export function useLiveStream(positions: RefObject<Map<string, [number, number]>
     const unsub = subscribeLive(params, {
       onHeartbeat: (h) => {
         clockOffset = Date.parse(h.now) - Date.now()
+        noteServerTime(h.now)
         // Every row arrives over the stream; this sync only fills gaps the
         // stream might have left (and slides an idle window), once a minute.
         if (Date.now() - lastRefresh > 60_000) {
