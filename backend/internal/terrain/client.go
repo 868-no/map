@@ -14,6 +14,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/868-no/map/internal/upstream"
 )
 
 // DefaultBaseURL is Geonorge's height API (Kartverket's terrain model, CC BY 4.0).
@@ -55,12 +57,6 @@ type Height struct {
 	OK bool
 }
 
-// Which queue holds a point (Client.queued); absent: neither.
-const (
-	inBackground uint8 = iota + 1
-	inUrgent
-)
-
 // ErrTooManyPoints: one lookup asked for more than MaxPoints grid points.
 var ErrTooManyPoints = errors.New("terrain: too many points")
 
@@ -75,16 +71,12 @@ type Client struct {
 	Log       *slog.Logger
 
 	mu    sync.Mutex
-	cache map[Key]Height
-	order []Key // insertion order, for eviction
-	// Points to fetch: visitors' first, each visitor's in turn, then what
-	// the warmer queued (D-147).
-	urgent     map[string][]Key // per visitor (Protect's client key), in asking order
-	turns      []string         // visitors with points waiting, next first
-	nUrgent    int              // points in urgent
-	background []Key
-	queued     map[Key]uint8 // the furthest-forward queue holding the point
-	wake       chan struct{}
+	cache *upstream.Cache[Key, Height]
+	// Points to fetch: visitors' (Protect's client key) first, each
+	// visitor's in turn, then what the warmer queued (D-147). A point stays
+	// queued until it is stored.
+	queue *upstream.Queue[Key]
+	wake  chan struct{}
 }
 
 func New(baseURL, userAgent string) *Client {
@@ -92,7 +84,8 @@ func New(baseURL, userAgent string) *Client {
 		baseURL = DefaultBaseURL
 	}
 	return &Client{HTTP: &http.Client{Timeout: 30 * time.Second}, BaseURL: strings.TrimRight(baseURL, "/"), UserAgent: userAgent,
-		Interval: defaultInterval, cache: map[Key]Height{}, urgent: map[string][]Key{}, queued: map[Key]uint8{}, wake: make(chan struct{}, 1)}
+		Interval: defaultInterval, cache: upstream.NewCache[Key, Height](maxEntries), queue: upstream.NewQueue[Key](maxPerClient, maxQueue, 0),
+		wake: make(chan struct{}, 1)}
 }
 
 func (c *Client) warn(msg string, err error) {
@@ -178,7 +171,7 @@ func (c *Client) lookup(ctx context.Context, client string, keys []Key) (Lookup,
 		}
 		c.mu.Lock()
 		for k, h := range got {
-			c.put(k, h)
+			c.cache.Put(k, h)
 		}
 		c.mu.Unlock()
 	}
@@ -186,7 +179,7 @@ func (c *Client) lookup(ctx context.Context, client string, keys []Key) (Lookup,
 	incomplete := false
 	snapshot := make(map[Key]Height, len(keys))
 	for _, k := range keys {
-		if h, ok := c.cache[k]; ok {
+		if h, ok := c.cache.Get(k); ok {
 			snapshot[k] = h
 			continue
 		}
@@ -194,14 +187,7 @@ func (c *Client) lookup(ctx context.Context, client string, keys []Key) (Lookup,
 		// A point already waiting in the background queue is queued again in
 		// front; the worker skips whichever copy comes second. One already
 		// waiting for a visitor is not added again: browsers re-poll.
-		if c.queued[k] < inUrgent && c.room(client) {
-			if len(c.urgent[client]) == 0 {
-				c.turns = append(c.turns, client)
-			}
-			c.urgent[client] = append(c.urgent[client], k)
-			c.nUrgent++
-			c.queued[k] = inUrgent
-		}
+		c.queue.PushUrgent(client, k)
 	}
 	c.mu.Unlock()
 	if incomplete {
@@ -237,7 +223,7 @@ func (c *Client) uncached(keys []Key) []Key {
 	defer c.mu.Unlock()
 	var out []Key
 	for _, k := range keys {
-		if _, ok := c.cache[k]; !ok {
+		if _, ok := c.cache.Get(k); !ok {
 			out = append(out, k)
 		}
 	}
@@ -251,41 +237,11 @@ func (c *Client) unknown(keys []Key) []Key {
 	defer c.mu.Unlock()
 	var out []Key
 	for _, k := range keys {
-		if _, ok := c.cache[k]; !ok && c.queued[k] == 0 {
+		if _, ok := c.cache.Get(k); !ok && c.queue.State(k) == upstream.None {
 			out = append(out, k)
 		}
 	}
 	return out
-}
-
-// room reports whether a visitor may queue another point: it holds fewer
-// than maxPerClient, and the visitors' queue has room, or makes room by
-// taking the last point of the visitor holding the most, when that one
-// holds at least two more (as the weather queue does, D-141). c.mu is held.
-func (c *Client) room(client string) bool {
-	mine := len(c.urgent[client])
-	if mine >= maxPerClient {
-		return false
-	}
-	if c.nUrgent < maxQueue {
-		return true
-	}
-	big, n := "", 0
-	for id, q := range c.urgent {
-		if len(q) > n {
-			big, n = id, len(q)
-		}
-	}
-	if n < mine+2 {
-		return false
-	}
-	k := c.urgent[big][n-1]
-	c.urgent[big] = c.urgent[big][:n-1] // n ≥ 2: never emptied, so still in turns
-	c.nUrgent--
-	if c.queued[k] == inUrgent {
-		delete(c.queued, k) // a copy in the background queue goes too; the warmer queues it again
-	}
-	return true
 }
 
 // missing is which of keys have no height in memory or the store and are
@@ -302,7 +258,7 @@ func (c *Client) missing(ctx context.Context, keys []Key) (out []Key, waiting in
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	for _, k := range keys {
-		if c.queued[k] == 0 {
+		if c.queue.State(k) == upstream.None {
 			out = append(out, k)
 		} else {
 			waiting++
@@ -316,9 +272,7 @@ func (c *Client) queueBackground(keys []Key) int {
 	c.mu.Lock()
 	n := 0
 	for _, k := range keys {
-		if c.queued[k] == 0 {
-			c.background = append(c.background, k)
-			c.queued[k] = inBackground
+		if c.queue.PushBackground(k) {
 			n++
 		}
 	}
@@ -333,30 +287,14 @@ func (c *Client) queueBackground(keys []Key) int {
 func (c *Client) Waiting() int {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.nUrgent + len(c.background)
+	return c.queue.Len()
 }
 
 // backgroundWaiting is how many points the warmer has waiting.
 func (c *Client) backgroundWaiting() int {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return len(c.background)
-}
-
-// put stores a height in memory, dropping the oldest tenth when full.
-// Callers hold mu.
-func (c *Client) put(k Key, h Height) {
-	if _, ok := c.cache[k]; !ok {
-		if len(c.order) >= maxEntries {
-			drop := maxEntries / 10
-			for _, old := range c.order[:drop] {
-				delete(c.cache, old)
-			}
-			c.order = append(c.order[:0], c.order[drop:]...)
-		}
-		c.order = append(c.order, k)
-	}
-	c.cache[k] = h
+	return c.queue.BackgroundLen()
 }
 
 // next takes up to perRequest points to fetch: one from each visitor in
@@ -367,33 +305,21 @@ func (c *Client) next() (batch []Key, keep map[Key]bool) {
 	take := func(k Key) {
 		// Skip a copy whose point was fetched (through its other copy) or
 		// loaded from the store since it was queued, or taken already.
-		if _, taken := keep[k]; taken || c.queued[k] == 0 {
+		if _, taken := keep[k]; taken || c.queue.State(k) == upstream.None {
 			return
 		}
-		if _, cached := c.cache[k]; cached {
-			delete(c.queued, k)
+		if _, cached := c.cache.Get(k); cached {
+			c.queue.Done(k)
 			return
 		}
-		keep[k] = c.queued[k] == inUrgent || c.Store == nil
+		keep[k] = c.queue.State(k) == upstream.Urgent || c.Store == nil
 		batch = append(batch, k)
 	}
-	for len(batch) < perRequest && c.nUrgent > 0 {
-		id := c.turns[0]
-		q := c.urgent[id]
-		k, q := q[0], q[1:]
-		c.nUrgent--
-		c.turns = c.turns[1:]
-		if len(q) == 0 {
-			delete(c.urgent, id)
-		} else {
-			c.urgent[id] = q
-			c.turns = append(c.turns, id)
+	for len(batch) < perRequest {
+		k, ok := c.queue.Pop()
+		if !ok {
+			break
 		}
-		take(k)
-	}
-	for len(batch) < perRequest && len(c.background) > 0 {
-		k := c.background[0]
-		c.background = c.background[1:]
 		take(k)
 	}
 	return batch, keep
@@ -421,7 +347,7 @@ func (c *Client) Run(ctx context.Context) {
 			// Warmer-only points go to the store, not memory: they would
 			// crowd out what visitors look at (D-147).
 			if keep[k] {
-				c.put(k, h)
+				c.cache.Put(k, h)
 			}
 		}
 		c.mu.Unlock()
@@ -434,7 +360,7 @@ func (c *Client) Run(ctx context.Context) {
 		}
 		c.mu.Lock()
 		for _, k := range batch {
-			delete(c.queued, k)
+			c.queue.Done(k)
 		}
 		c.mu.Unlock()
 		select {

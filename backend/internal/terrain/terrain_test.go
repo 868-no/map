@@ -182,27 +182,6 @@ func TestVisitorsBeforeWarmer(t *testing.T) {
 	}
 }
 
-// A full cache drops its oldest tenth, not everything.
-func TestPutEvictsOldest(t *testing.T) {
-	c := New("http://unused.invalid", "test")
-	c.order = make([]Key, 0, maxEntries)
-	for i := range maxEntries {
-		k := Key{Lat: int32(i), Lon: 0}
-		c.cache[k] = Height{}
-		c.order = append(c.order, k)
-	}
-	c.put(Key{Lat: -1}, Height{Z: 1, OK: true})
-	if len(c.cache) != maxEntries-maxEntries/10+1 {
-		t.Fatalf("%d cached", len(c.cache))
-	}
-	if _, ok := c.cache[Key{Lat: 0}]; ok {
-		t.Fatal("oldest kept")
-	}
-	if _, ok := c.cache[Key{Lat: maxEntries - 1}]; !ok {
-		t.Fatal("newest dropped")
-	}
-}
-
 // LinksFor queues what HeightsFor of every link's Points would, and refuses
 // links needing more than MaxPoints distinct points without holding them
 // all: 400 links of about 290 km are some 580 000 points (9 MB as Points,
@@ -224,9 +203,14 @@ func TestLinksFor(t *testing.T) {
 	if a.Waiting() != b.Waiting() || a.Waiting() != len(dedupe(pts)) {
 		t.Fatalf("queued %d, HeightsFor %d", a.Waiting(), b.Waiting())
 	}
-	for i := range a.urgent["v"] {
-		if a.urgent["v"][i] != b.urgent["v"][i] {
+	for i := 0; ; i++ {
+		ka, oka := a.queue.Pop()
+		kb, okb := b.queue.Pop()
+		if ka != kb || oka != okb {
 			t.Fatalf("order differs at %d", i)
+		}
+		if !oka {
+			break
 		}
 	}
 
@@ -257,7 +241,7 @@ func TestUnknownSkipsQueued(t *testing.T) {
 	c := New("http://unused.invalid", "test")
 	p, q, r := Key{1, 1}, Key{2, 2}, Key{3, 3}
 	c.queueBackground([]Key{p})
-	c.cache[r] = Height{}
+	c.cache.Put(r, Height{})
 	if got := c.unknown([]Key{p, q, r}); len(got) != 1 || got[0] != q {
 		t.Fatalf("unknown %v, want only %v", got, q)
 	}

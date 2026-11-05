@@ -293,13 +293,13 @@ func TestQueueOnce(t *testing.T) {
 	for range 5 {
 		c.Series(ctx, visitor, now.Add(-3*time.Hour), now)
 	}
-	if c.nUrgent != 3 || len(c.background) != 6 {
-		t.Fatalf("urgent %d, background %d; want 3, 6", c.nUrgent, len(c.background))
+	if c.queue.UrgentLen() != 3 || c.queue.BackgroundLen() != 6 {
+		t.Fatalf("urgent %d, background %d; want 3, 6", c.queue.UrgentLen(), c.queue.BackgroundLen())
 	}
 	c.Series(ctx, kept, now.Add(-2*time.Hour), now)
 	c.Series(ctx, kept, now.Add(-2*time.Hour), now)
-	if c.nUrgent != 5 || len(c.background) != 6 {
-		t.Fatalf("after promotion: urgent %d, background %d; want 5, 6", c.nUrgent, len(c.background))
+	if c.queue.UrgentLen() != 5 || c.queue.BackgroundLen() != 6 {
+		t.Fatalf("after promotion: urgent %d, background %d; want 5, 6", c.queue.UrgentLen(), c.queue.BackgroundLen())
 	}
 }
 
@@ -314,16 +314,18 @@ func TestVisitorsTakeTurns(t *testing.T) {
 	for x := range 10 {
 		c.SeriesFor(ctx, "greedy", Cell{x, 0}, now.Add(-30*24*time.Hour), now)
 	}
-	if n := len(c.urgent["greedy"]); n != maxPerClient {
+	if n := c.queue.ClientLen("greedy"); n != maxPerClient {
 		t.Fatalf("greedy holds %d hours, want the cap %d", n, maxPerClient)
 	}
 	c.SeriesFor(ctx, "visitor", Cell{0, 1}, now.Add(-3*time.Hour), now)
 	var order []string
 	for range 6 {
-		id := c.turns[0]
+		k, _ := c.queue.Pop()
+		id := "greedy"
+		if k.c == (Cell{0, 1}) {
+			id = "visitor"
+		}
 		order = append(order, id)
-		q := c.urgent[id]
-		c.urgent[id], c.nUrgent, c.turns = q[1:], c.nUrgent-1, append(c.turns[1:], id)
 	}
 	if want := []string{"greedy", "visitor", "greedy", "visitor", "greedy", "visitor"}; !slices.Equal(order, want) {
 		t.Errorf("served %v, want %v", order, want)
@@ -337,14 +339,14 @@ func TestVisitorsTakeTurns(t *testing.T) {
 			c.SeriesFor(ctx, fmt.Sprint("greedy", i), Cell{x, i}, now.Add(-30*24*time.Hour), now)
 		}
 	}
-	if c.nUrgent != maxQueue {
-		t.Fatalf("%d hours queued, want the cap %d", c.nUrgent, maxQueue)
+	if c.queue.UrgentLen() != maxQueue {
+		t.Fatalf("%d hours queued, want the cap %d", c.queue.UrgentLen(), maxQueue)
 	}
-	if _, inc := c.SeriesFor(ctx, "visitor", Cell{0, 999}, now.Add(-3*time.Hour), now); !inc || len(c.urgent["visitor"]) != 3 {
-		t.Errorf("a newcomer to a full queue got %d of its 3 hours queued", len(c.urgent["visitor"]))
+	if _, inc := c.SeriesFor(ctx, "visitor", Cell{0, 999}, now.Add(-3*time.Hour), now); !inc || c.queue.ClientLen("visitor") != 3 {
+		t.Errorf("a newcomer to a full queue got %d of its 3 hours queued", c.queue.ClientLen("visitor"))
 	}
-	if c.nUrgent != maxQueue || len(c.queued) != maxQueue {
-		t.Errorf("queue %d, index %d after making room; want %d", c.nUrgent, len(c.queued), maxQueue)
+	if c.queue.UrgentLen() != maxQueue || c.queue.Keys() != maxQueue {
+		t.Errorf("queue %d, index %d after making room; want %d", c.queue.UrgentLen(), c.queue.Keys(), maxQueue)
 	}
 }
 
@@ -422,16 +424,15 @@ func TestUnknownSkipsQueued(t *testing.T) {
 	for h := range 5 {
 		ks = append(ks, key{cell, now.Unix()/3600 - 10 + int64(h)})
 	}
-	c.queued[ks[0]] = inUrgent
-	c.queued[ks[4]] = inBackground
-	c.cache[ks[2]] = entry{expires: now.Add(time.Minute)}
-	c.cache[ks[3]] = entry{expires: now.Add(-time.Minute)} // outdated
+	c.queue.PushUrgent("v", ks[0])
+	c.queue.PushBackground(ks[4])
+	c.cache.Put(ks[2], entry{expires: now.Add(time.Minute)})
+	c.cache.Put(ks[3], entry{expires: now.Add(-time.Minute)}) // outdated
 	if lo, hi, ok := c.unknown(ks, now); !ok || lo != ks[1] || hi != ks[3] {
 		t.Fatalf("unknown [%v, %v] %v, want [%v, %v]", lo, hi, ok, ks[1], ks[3])
 	}
-	c.cache[ks[1]] = entry{}
-	delete(c.cache, ks[3])
-	c.queued[ks[3]] = inBackground
+	c.cache.Put(ks[1], entry{})
+	c.queue.PushBackground(ks[3]) // outdated, but queued
 	if _, _, ok := c.unknown(ks, now); ok {
 		t.Fatal("every hour is cached or queued")
 	}

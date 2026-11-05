@@ -13,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/868-no/map/internal/upstream"
 )
 
 // DefaultBaseURL is MET Norway's OPeNDAP root, holding the MET Nordic
@@ -68,17 +70,13 @@ type Client struct {
 	Log       *slog.Logger
 
 	mu    sync.Mutex
-	cache map[key]entry
-	order []key // insertion order, for eviction
-	// Hours to fetch: what visitors asked for first, each visitor's in turn,
-	// then what Keep queued.
-	urgent     map[string][]key // per visitor (Protect's client key), in asking order
-	turns      []string         // visitors with hours waiting, next first
-	nUrgent    int              // hours in urgent
-	background []key
-	queued     map[key]uint8 // the furthest-forward queue holding the hour
-	runs       map[runKey]runEntry
-	wake       chan struct{}
+	cache *upstream.Cache[key, entry]
+	// Hours to fetch: what visitors (Protect's client key) asked for first,
+	// each visitor's in turn, then what Keep queued. An hour stays queued
+	// until it is in memory.
+	queue *upstream.Queue[key]
+	runs  map[runKey]runEntry
+	wake  chan struct{}
 }
 
 // runKey is one MEPS run at one MEPS cell.
@@ -93,12 +91,6 @@ type runEntry struct {
 	gusts   []float64
 	expires time.Time // zero: never
 }
-
-// Which queue holds an hour (queued); absent: neither.
-const (
-	inBackground uint8 = iota + 1
-	inUrgent
-)
 
 type key struct {
 	c Cell
@@ -138,7 +130,8 @@ func New(baseURL, userAgent string) *Client {
 		baseURL = DefaultBaseURL
 	}
 	return &Client{HTTP: &http.Client{Timeout: 15 * time.Second}, BaseURL: strings.TrimRight(baseURL, "/"), UserAgent: userAgent,
-		Interval: defaultInterval, cache: map[key]entry{}, urgent: map[string][]key{}, queued: map[key]uint8{}, runs: map[runKey]runEntry{}, wake: make(chan struct{}, 1)}
+		Interval: defaultInterval, cache: upstream.NewCache[key, entry](maxEntries),
+		queue: upstream.NewQueue[key](maxPerClient, maxQueue, maxQueue), runs: map[runKey]runEntry{}, wake: make(chan struct{}, 1)}
 }
 
 func (c *Client) now() time.Time {
@@ -209,7 +202,7 @@ func (c *Client) series(ctx context.Context, client string, cell Cell, start, en
 		c.mu.Lock()
 		for _, r := range rows {
 			k := key{cell, r.h.T.Unix() / 3600}
-			if e, ok := c.cache[k]; ok && e.valid(now) {
+			if e, ok := c.cache.Get(k); ok && e.valid(now) {
 				// Memory is as new as the store or newer, and may hold what
 				// was deliberately not stored (an hour whose gust failed).
 				continue
@@ -218,7 +211,7 @@ func (c *Client) series(ctx context.Context, client string, cell Cell, start, en
 			if r.old {
 				exp = r.fetched // already due: lacks what this version fetches
 			}
-			c.put(k, entry{r.h, r.missing, exp})
+			c.cache.Put(k, entry{r.h, r.missing, exp})
 		}
 		c.mu.Unlock()
 	}
@@ -226,7 +219,7 @@ func (c *Client) series(ctx context.Context, client string, cell Cell, start, en
 	defer c.mu.Unlock()
 	var want []key
 	for _, k := range ks {
-		e, ok := c.cache[k]
+		e, ok := c.cache.Get(k)
 		if !ok || !e.valid(now) {
 			want = append(want, k)
 			incomplete = true
@@ -244,17 +237,10 @@ func (c *Client) series(ctx context.Context, client string, cell Cell, start, en
 		// hour already waiting (for anyone) is not added again: browsers
 		// re-poll every few seconds while incomplete.
 		k := want[i]
-		switch {
-		case urgent && c.queued[k] < inUrgent && c.room(client):
-			if len(c.urgent[client]) == 0 {
-				c.turns = append(c.turns, client)
-			}
-			c.urgent[client] = append(c.urgent[client], k)
-			c.nUrgent++
-			c.queued[k] = inUrgent
-		case !urgent && c.queued[k] == 0 && len(c.background) < maxQueue:
-			c.background = append(c.background, k)
-			c.queued[k] = inBackground
+		if urgent {
+			c.queue.PushUrgent(client, k)
+		} else {
+			c.queue.PushBackground(k)
 		}
 	}
 	if len(want) > 0 {
@@ -266,41 +252,11 @@ func (c *Client) series(ctx context.Context, client string, cell Cell, start, en
 	return hours, incomplete
 }
 
-// room reports whether a visitor may queue another hour: it holds fewer
-// than maxPerClient, and the urgent queue has room, or makes room by taking
-// the last hour of the visitor holding the most, when that one holds at
-// least two more. c.mu is held.
-func (c *Client) room(client string) bool {
-	mine := len(c.urgent[client])
-	if mine >= maxPerClient {
-		return false
-	}
-	if c.nUrgent < maxQueue {
-		return true
-	}
-	big, n := "", 0
-	for id, q := range c.urgent {
-		if len(q) > n {
-			big, n = id, len(q)
-		}
-	}
-	if n < mine+2 {
-		return false
-	}
-	k := c.urgent[big][n-1]
-	c.urgent[big] = c.urgent[big][:n-1] // n ≥ 2: never emptied, so still in turns
-	c.nUrgent--
-	if c.queued[k] == inUrgent {
-		delete(c.queued, k) // a copy in the background queue goes too; Keep queues it again
-	}
-	return true
-}
-
 // pending is how many hours wait in the queues.
 func (c *Client) pending() int {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.nUrgent + len(c.background)
+	return c.queue.Len()
 }
 
 // unknown is the first and last of ks (in order) missing from memory or
@@ -311,7 +267,7 @@ func (c *Client) unknown(ks []key, now time.Time) (lo, hi key, ok bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	for _, k := range ks {
-		if e, cached := c.cache[k]; (!cached || !e.valid(now)) && c.queued[k] == 0 {
+		if e, cached := c.cache.Get(k); (!cached || !e.valid(now)) && c.queue.State(k) == upstream.None {
 			if !ok {
 				lo, ok = k, true
 			}
@@ -334,30 +290,18 @@ func (c *Client) Run(ctx context.Context) {
 		c.mu.Lock()
 		var k key
 		ok := false
-		for !ok && (c.nUrgent > 0 || len(c.background) > 0) {
-			if c.nUrgent > 0 {
-				// The next visitor's oldest request; it goes to the back of the line.
-				id := c.turns[0]
-				q := c.urgent[id]
-				k, q = q[0], q[1:]
-				c.nUrgent--
-				c.turns = c.turns[1:]
-				if len(q) == 0 {
-					delete(c.urgent, id)
-				} else {
-					c.urgent[id] = q
-					c.turns = append(c.turns, id)
-				}
-			} else {
-				k, c.background = c.background[0], c.background[1:]
+		for !ok {
+			var more bool
+			if k, more = c.queue.Pop(); !more {
+				break
 			}
 			// Skip a copy whose hour was fetched (through its other copy) or
 			// loaded from the store since it was queued.
-			if e, cached := c.cache[k]; cached && e.valid(c.now()) {
-				delete(c.queued, k)
+			if e, cached := c.cache.Get(k); cached && e.valid(c.now()) {
+				c.queue.Done(k)
 				continue
 			}
-			ok = c.queued[k] != 0
+			ok = c.queue.State(k) != upstream.None
 		}
 		c.mu.Unlock()
 		if !ok {
@@ -371,14 +315,14 @@ func (c *Client) Run(ctx context.Context) {
 		h, missing, gustFailed, wait, err := c.fetch(ctx, k.c, k.t())
 		now := c.now()
 		c.mu.Lock()
-		delete(c.queued, k)
+		c.queue.Done(k)
 		if err == nil {
 			exp := expiry(h, now, missing)
 			if gustFailed {
 				// Not "no run has it": ask again soon, whatever the hour's age.
 				exp = now.Add(missingTTL)
 			}
-			c.put(k, entry{h, missing, exp})
+			c.cache.Put(k, entry{h, missing, exp})
 		}
 		c.mu.Unlock()
 		// An hour whose gust request failed is not stored: an old hour
@@ -394,21 +338,6 @@ func (c *Client) Run(ctx context.Context) {
 			return
 		}
 	}
-}
-
-// put stores an entry, dropping the oldest tenth when full. Callers hold mu.
-func (c *Client) put(k key, e entry) {
-	if _, ok := c.cache[k]; !ok {
-		if len(c.order) >= maxEntries {
-			drop := maxEntries / 10
-			for _, old := range c.order[:drop] {
-				delete(c.cache, old)
-			}
-			c.order = append(c.order[:0], c.order[drop:]...)
-		}
-		c.order = append(c.order, k)
-	}
-	c.cache[k] = e
 }
 
 // get reads single values from an OPeNDAP ASCII URL; missing is true when

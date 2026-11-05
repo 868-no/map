@@ -46,8 +46,8 @@ func TestWarmerQueuesInfrastructurePairs(t *testing.T) {
 			if !keep[k] {
 				t.Fatal("without a store, warmed points must be kept in memory")
 			}
-			c.put(k, Height{Z: 1, OK: true})
-			delete(c.queued, k)
+			c.cache.Put(k, Height{Z: 1, OK: true})
+			c.queue.Done(k)
 		}
 		batch, keep = c.next()
 	}
