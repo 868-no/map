@@ -181,6 +181,13 @@ function PacketLogs({ id, names, positioned, moved }: { id: string; names: Map<s
       else if (now - t < NEW_ROW_MS) fresh.add(k)
       if (t === undefined && !initial) fresh.add(k)
     }
+    // Forget rows long gone from the log, so a log left open does not
+    // remember every packet it ever showed.
+    const at = firstSeen.current.at
+    if (at.size > 2 * entries.length + 100) {
+      const shown = new Set(entries.map((e) => e.kind + e.lp))
+      for (const k of at.keys()) if (!shown.has(k)) at.delete(k)
+    }
   }
   // Re-render once the slide-in is over, so the class goes.
   const [, tick] = useState(0)
