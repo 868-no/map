@@ -431,8 +431,10 @@ test('the packet log combines own and relayed packets, and draws a packet route 
   const layers = () => page.evaluate(() => Object.fromEntries((window as unknown as { __meshmap: Hook }).__meshmap.layers().map((l) => [l.id, l.data.length])))
   const links = async () => Object.entries(await layers()).reduce((n, [k, v]) => n + (k.startsWith('links-') ? v : 0), 0)
   await expect.poll(links).toBeGreaterThan(0)
-  // Pick a packet; its route replaces the links.
-  await log.locator('tbody tr').first().click()
+  // Pick a packet; its route replaces the links. A settled row, with Enter:
+  // live rows keep sliding in at the top, so the first row may never hold
+  // still long enough for a click.
+  await log.locator('tbody tr:not([data-pending])').first().press('Enter')
   await expect(page.locator('.route-note')).toBeVisible()
   await expect.poll(async () => 'route' in (await layers()) && (await links()) === 0).toBe(true)
   await expect(log.locator('tbody tr.active')).toHaveCount(1)
