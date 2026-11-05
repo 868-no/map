@@ -18,7 +18,7 @@ import { clusterLabels, type Cluster, type LabelDatum } from './labels'
 import { usePacketRoute, useReach } from '../state/data'
 import { installTestHook } from './testHook'
 import { useTheme, type Theme } from '../theme'
-import { PALETTES } from './palette'
+import { PALETTES, type MapPalette } from './palette'
 import { useRegions } from './regions'
 import { create } from 'zustand'
 
@@ -97,6 +97,16 @@ interface Props {
 // tested first (D-146).
 const PICK_RADIUS = 6
 
+/** The marker on the selected link where its cross section is hovered. */
+function probeLayer(probe: [number, number], palette: MapPalette) {
+  return new ScatterplotLayer<[number, number]>({
+    id: 'terrain-probe', data: [probe], getPosition: (p) => p, radiusUnits: 'pixels', getRadius: 6,
+    filled: true, getFillColor: palette.selected, stroked: true, lineWidthUnits: 'pixels', getLineWidth: 2.5,
+    // An outline in the opposite tone: the marker sits on the selected link, drawn in the same colour.
+    getLineColor: palette.selected[0] + palette.selected[1] + palette.selected[2] > 384 ? [14, 17, 22, 255] : [255, 255, 255, 255], pickable: false,
+  })
+}
+
 /**
  * Memoised: its props change with the snapshot, while the app around it
  * re-renders on every fetch state of each live rebuild.
@@ -113,7 +123,7 @@ export default memo(function MapView({ caps, snapshot, onPositions }: Props) {
   const coords = useRef<HTMLDivElement>(null) // written directly: a re-render per mousemove is too costly
   const [zoom, setZoom] = useState(caps.map.zoom)
   // Mouse drag never rotates, but a two-finger twist or Shift+arrow keys do.
-  const [bearing, setBearing] = useState(0)
+  const needle = useRef<SVGSVGElement>(null) // turned directly: a re-render per rotate frame is too costly
   const [bounds, setBounds] = useState<[number, number, number, number] | null>(null)
   const filters = useStore((s) => s.filters)
   const toggles = useStore((s) => s.toggles)
@@ -175,7 +185,9 @@ export default memo(function MapView({ caps, snapshot, onPositions }: Props) {
         }
         map.on('moveend', view)
         map.on('load', view)
-        map.on('rotate', () => setBearing(map.getBearing()))
+        map.on('rotate', () => {
+          if (needle.current) needle.current.style.transform = `rotate(${-map.getBearing()}deg)`
+        })
         map.on('error', (e: maplibregl.ErrorEvent) => console.warn('map error', e.error?.message))
         const overlay = new MapboxOverlay({ interleaved: true, pickingRadius: PICK_RADIUS, layers: [] })
         map.addControl(overlay as unknown as maplibregl.IControl)
@@ -348,21 +360,22 @@ export default memo(function MapView({ caps, snapshot, onPositions }: Props) {
     [buildMeshLayers, placed, shownLinks, selection, search, toggles, zoom, clusters, exploded, route, routeGhosts, palette, regions, reach],
   )
 
-  // Where the selected link's cross section is hovered (D-143): a marker on the line.
-  const probe = useStore((s) => s.probe)
-  const probeLayer = useMemo(() => probe && new ScatterplotLayer<[number, number]>({
-    id: 'terrain-probe', data: [probe], getPosition: (p) => p, radiusUnits: 'pixels', getRadius: 6,
-    filled: true, getFillColor: palette.selected, stroked: true, lineWidthUnits: 'pixels', getLineWidth: 2.5,
-    // An outline in the opposite tone: the marker sits on the selected link, drawn in the same colour.
-    getLineColor: palette.selected[0] + palette.selected[1] + palette.selected[2] > 384 ? [14, 17, 22, 255] : [255, 255, 255, 255], pickable: false,
-  }), [probe, palette])
-
-  // The mesh layers change only with data, filters and selection.
+  // The mesh layers change only with data, filters and selection; the
+  // marker where the selected link's cross section is hovered (D-143)
+  // follows the store without re-rendering the map at every step.
   useEffect(() => {
-    if (!ready || !overlayRef.current) return
-    overlayRef.current.setProps({ layers: probeLayer ? [...baseLayers, probeLayer] : baseLayers })
-    meshLayers.current = probeLayer ? [...baseLayers, probeLayer] : baseLayers // the e2e hook sees the probe too
-  }, [ready, baseLayers, probeLayer])
+    const overlay = overlayRef.current
+    if (!ready || !overlay) return
+    const show = (probe: [number, number] | null) => {
+      const layers = probe ? [...baseLayers, probeLayer(probe, palette)] : baseLayers
+      overlay.setProps({ layers })
+      meshLayers.current = layers // the e2e hook sees the probe too
+    }
+    show(useStore.getState().probe)
+    return useStore.subscribe((s, prev) => {
+      if (s.probe !== prev.probe) show(s.probe)
+    })
+  }, [ready, baseLayers, palette])
 
   // Animation loop, in the ping canvas: runs (~30 fps) only while pings are
   // alive and starts when one is added. Idle, it only probes for a frame
@@ -500,7 +513,7 @@ export default memo(function MapView({ caps, snapshot, onPositions }: Props) {
         </button>
         <button type="button" onClick={() => mapRef.current?.resetNorth({ duration: 400 })} aria-label="Reset north" title="Turn the map so north is up">
           {/* The needle points north wherever the map is turned. */}
-          <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden style={{ transform: `rotate(${-bearing}deg)` }}>
+          <svg ref={needle} viewBox="0 0 20 20" width="18" height="18" aria-hidden>
             <path d="M10 1.5 14.5 10h-9z" fill="var(--err)" />
             <path d="M10 18.5 5.5 10h9z" fill="currentColor" opacity="0.7" />
           </svg>
