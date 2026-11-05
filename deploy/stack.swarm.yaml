@@ -108,7 +108,7 @@ services:
 
   redis:
     image: redis:7-alpine
-    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "512mb", "--maxmemory-policy", "allkeys-lru"]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -161,6 +161,7 @@ services:
     environment:
       API_UPSTREAM: backend:8000
       FETCH_UPSTREAM: ingest:8000
+      CSP_CONNECT_EXTRA: ${CSP_CONNECT_EXTRA:-} # e.g. an online basemap's host (docs/basemap.md)
     ports:
       - "8080:80" # the reverse proxy's upstream (Swarm ingress: any node)
     volumes:
@@ -198,6 +199,15 @@ services:
 # written by `basemap` and read by every `web` replica, so both are NFS
 # volumes here (fill in the server and export paths), or else pin the
 # services to one node with placement constraints.
+# NFS caveats:
+# - Postgres's entrypoint chowns its data directory: export pgdata with
+#   no_root_squash, or chown it beforehand to uid/gid 70 (postgres in
+#   postgres:16-alpine).
+# - Docker never updates a named volume's driver_opts once it exists on a
+#   node: to change them, remove the volume on every node (docker volume rm
+#   meshmap_pgdata / meshmap_basemap) and redeploy.
+# - Planetiler's downloads and temporary files (several GB during a build)
+#   go to the basemap volume.
 volumes:
   pgdata:
     driver: local

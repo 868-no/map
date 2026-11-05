@@ -57,7 +57,7 @@ services:
     image: redis:7-alpine
     restart: unless-stopped
     # Ephemeral by design: no RDB snapshots, no AOF; bounded memory with LRU eviction.
-    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "${REDIS_MAXMEMORY:-256mb}", "--maxmemory-policy", "allkeys-lru"]
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "${REDIS_MAXMEMORY:-512mb}", "--maxmemory-policy", "allkeys-lru"]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -90,6 +90,9 @@ services:
         SOURCE_REVISION: ${SOURCE_REVISION:-}
     image: ${WEB_IMAGE:-meshmap-web:local}
     restart: unless-stopped
+    environment:
+      # Extra hosts the page may fetch from, e.g. an online basemap (docs/basemap.md).
+      CSP_CONNECT_EXTRA: ${CSP_CONNECT_EXTRA:-}
     ports:
       - "${WEB_PORT:-8080}:80"
     volumes:
