@@ -9,12 +9,12 @@ import (
 	"time"
 )
 
-// Defaults and limits (design §3.5).
+// Limits (design §3.5). The default window (72 h) is configuration:
+// DEFAULT_WINDOW_HOURS.
 const (
-	MinDuration     = time.Hour
-	MaxDuration     = 7 * 24 * time.Hour
-	DefaultDuration = 72 * time.Hour
-	ClockSkew       = 5 * time.Second
+	MinDuration = time.Hour
+	MaxDuration = 7 * 24 * time.Hour
+	ClockSkew   = 5 * time.Second
 )
 
 // Window is an immutable, validated interval.

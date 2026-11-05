@@ -44,11 +44,11 @@ func TestRejections(t *testing.T) {
 }
 
 func TestRollingQuantized(t *testing.T) {
-	w, err := Rolling(DefaultDuration, bounds())
+	w, err := Rolling(72*time.Hour, bounds())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !w.End.Equal(time.Date(2026, 10, 31, 12, 0, 0, 0, time.UTC)) || w.Duration() != DefaultDuration || !w.Rolling {
+	if !w.End.Equal(time.Date(2026, 10, 31, 12, 0, 0, 0, time.UTC)) || w.Duration() != 72*time.Hour || !w.Rolling {
 		t.Fatalf("got %v..%v", w.Start, w.End)
 	}
 }

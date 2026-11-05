@@ -19,6 +19,7 @@ import (
 	"github.com/868-no/map/internal/protocol"
 	"github.com/868-no/map/internal/query"
 	"github.com/868-no/map/internal/storage"
+	"github.com/868-no/map/internal/window"
 )
 
 // ---- capabilities ----
@@ -101,7 +102,7 @@ func (s *Server) capabilities(ctx context.Context, _ *struct{}) (*CapabilitiesOu
 			b.Presets = append(b.Presets, p)
 		}
 	}
-	b.DefaultWindowHours, b.MinWindowHours, b.MaxWindowHours = s.Env.DefaultWindowHours, 1, s.Env.MaxWindowHours
+	b.DefaultWindowHours, b.MinWindowHours, b.MaxWindowHours = s.Env.DefaultWindowHours, int(window.MinDuration/time.Hour), s.Env.MaxWindowHours
 	b.LiveQuantumSeconds = int(s.Env.LiveQuantum / time.Second)
 	b.RetentionMonths = s.Env.RetentionMonths
 	b.Map.Lat, b.Map.Lon, b.Map.Zoom, b.Map.StyleURL, b.Map.TileSource = s.Env.DefaultMapLat, s.Env.DefaultMapLon, s.Env.DefaultMapZoom, s.Env.MapStyleURL, s.Env.MapTileSource

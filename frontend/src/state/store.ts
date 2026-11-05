@@ -107,7 +107,7 @@ function saveToggles(t: Toggles) {
 }
 
 export const useStore = create<Store>((set) => ({
-  win: { live: true, durationH: 72, start: null, end: null },
+  win: { live: true, durationH: windowLimits.defaultH, start: null, end: null },
   limitsReady: false,
   applyLimits: (defaultH, maxH) =>
     set((s) => {
@@ -170,11 +170,16 @@ export function toQuery(s: Pick<Store, 'win' | 'filters'> & { selection?: Select
     q.set('start', s.win.start)
     q.set('end', s.win.end)
   }
-  if (s.filters.channels.length) q.set('channel', s.filters.channels.join(','))
-  if (s.filters.brokers.length) q.set('broker', s.filters.brokers.join(','))
-  if (s.filters.types.length) q.set('type', s.filters.types.join(','))
+  setFilterParams(q, s.filters)
   if (s.filters.roles.length) q.set('role', s.filters.roles.join(','))
   return q
+}
+
+/** The channel, broker and type filters, as the URL and the API name them. */
+function setFilterParams(q: URLSearchParams, f: Filters) {
+  if (f.channels.length) q.set('channel', f.channels.join(','))
+  if (f.brokers.length) q.set('broker', f.brokers.join(','))
+  if (f.types.length) q.set('type', f.types.join(','))
 }
 
 /**
@@ -198,7 +203,7 @@ export function fromQuery(q: URLSearchParams, now = serverNow()): Partial<Pick<S
     out.win = { live: false, durationH: windowLimits.defaultH, start: s, end: e }
   } else if (dur) {
     const h = parseInt(dur, 10)
-    if (h >= 1 && h <= 168) out.win = { live: true, durationH: h, start: null, end: null }
+    if (h >= 1 && h <= windowLimits.maxH) out.win = { live: true, durationH: h, start: null, end: null }
   }
   const list = (k: string) => (q.get(k) ?? '').split(',').map((x) => x.trim()).filter(Boolean)
   out.filters = { ...defaultFilters, channels: list('channel'), brokers: list('broker'), types: list('type'), roles: list('role') }
@@ -217,9 +222,7 @@ export function apiParams(s: Pick<Store, 'win' | 'filters'>, extra?: Record<stri
     q.set('start', s.win.start)
     q.set('end', s.win.end)
   }
-  if (s.filters.channels.length) q.set('channel', s.filters.channels.join(','))
-  if (s.filters.brokers.length) q.set('broker', s.filters.brokers.join(','))
-  if (s.filters.types.length) q.set('type', s.filters.types.join(','))
+  setFilterParams(q, s.filters)
   for (const [k, v] of Object.entries(extra ?? {})) q.set(k, v)
   return q
 }

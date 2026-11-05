@@ -20,6 +20,7 @@ import (
 
 	"github.com/868-no/map/internal/geo"
 	"github.com/868-no/map/internal/security"
+	"github.com/868-no/map/internal/window"
 )
 
 // Env holds settings from environment variables (.env.example documents them).
@@ -231,8 +232,8 @@ func (c *Config) validate() error {
 	if e.RetentionMonths < 1 || e.RetentionMonths > 120 {
 		add("RETENTION_MONTHS must be 1..120")
 	}
-	if e.MaxWindowHours < 1 || e.MaxWindowHours > 168 {
-		add("MAX_WINDOW_HOURS must be 1..168 (spec maximum is 7 days)")
+	if maxH := int(window.MaxDuration / time.Hour); e.MaxWindowHours < 1 || e.MaxWindowHours > maxH {
+		add("MAX_WINDOW_HOURS must be 1..%d (spec maximum is 7 days)", maxH)
 	}
 	if e.DefaultWindowHours < 1 || e.DefaultWindowHours > e.MaxWindowHours {
 		add("DEFAULT_WINDOW_HOURS must be 1..MAX_WINDOW_HOURS")
