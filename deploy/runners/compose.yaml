@@ -39,8 +39,20 @@ configs:
   job-started:
     content: |
       #!/bin/sh
+      # Only main's own workflows, pushed or started by hand. The workflows
+      # send nothing else here, but a pull request (a fork's too) runs the
+      # workflow as the pull request changed it, which may ask for these
+      # runners: such a job fails here, before any of its steps runs.
+      case "$${GITHUB_EVENT_NAME:-}|$${GITHUB_REF:-}|$${GITHUB_WORKFLOW_REF:-}" in
+        push\|refs/heads/main\|*@refs/heads/main | workflow_dispatch\|refs/heads/main\|*@refs/heads/main) ;;
+        *)
+          echo "Refused: $${GITHUB_EVENT_NAME:-?} on $${GITHUB_REF:-?} ($${GITHUB_WORKFLOW_REF:-?})." >&2
+          echo "These runners take only main's own workflows, pushed or started by hand." >&2
+          exit 1
+          ;;
+      esac
       # The runner runs it with bash -e, and a failing hook fails the job:
-      # nothing here may stop it.
+      # nothing below may stop it.
       set +e
       docker ps -aq | xargs -r docker rm -f >/dev/null 2>&1
       docker network prune -f >/dev/null 2>&1

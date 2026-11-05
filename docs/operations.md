@@ -31,7 +31,9 @@ The `deploy` job runs on pushes to `main` only, after the images job has publish
 
 ### Self-hosted runners
 
-The test and image jobs run on GitHub-hosted runners unless the repository variable `RUNNER_LABELS` (Settings → Secrets and variables → Actions → Variables) names self-hosted ones as a JSON list, e.g. `["self-hosted","meshmap"]`. Even then, **pull requests always run on GitHub's**: the repository is public, and a pull request from a fork runs its own code, which must never reach a machine of ours. So does the `deploy` job. Pushes, tags and manual runs take the self-hosted runners; with none online they queue, and clearing the variable sends them back to GitHub's.
+The test and image jobs run on GitHub-hosted runners unless the repository variable `RUNNER_LABELS` (Settings → Secrets and variables → Actions → Variables) names self-hosted ones as a JSON list, e.g. `["self-hosted","meshmap"]`. Even then, only runs on `main` (pushes and manual runs) take them; **pull requests always run on GitHub's**: the repository is public, and a pull request from a fork runs its own code, which must never reach a machine of ours. So do tags, other branches and the `deploy` job. With no self-hosted runner online, runs on `main` queue; clearing the variable sends them back to GitHub's.
+
+The workflow files alone cannot guarantee that: a pull request runs the workflow as it changed it, so one could ask for the self-hosted labels. The runners enforce it themselves: their job-started hook, which runs before any step and which no workflow can skip, fails every job that is not a `push` or `workflow_dispatch` on `refs/heads/main` with its workflow file from `main` (`GITHUB_EVENT_NAME`, `GITHUB_REF`, `GITHUB_WORKFLOW_REF`). Also set Settings → Actions → General → "Approval for running fork pull request workflows" to all external contributors, so no fork's workflow runs anywhere before someone has read it.
 
 `deploy/runners/compose.yaml` runs four just-in-time runners, each with a Docker daemon of its own (Docker-in-Docker) whose network namespace it shares:
 
@@ -39,7 +41,7 @@ The test and image jobs run on GitHub-hosted runners unless the repository varia
 
 - Jobs start containers as on a hosted runner: their published ports are on the runner's `localhost` (the end-to-end stack on 8080, Playwright's `--network host`), and parallel jobs never collide on ports, container names or networks.
 - The work directory is mounted at the same path (`/_work`) in the runner and its daemon, so `docker run -v "$repo":/src` in `scripts/*.sh` finds the checkout.
-- Each daemon keeps its state on a volume of its own: pulled images, the build cache and the toolchains' cache volumes (`meshmap-rust-cache`, `meshmap-go-cache`, `meshmap-node-cache`) stay warm between jobs, while each runner is registered afresh for every job. Before each job a hook (inline in `compose.yaml`, run by the runner with bash) removes leftover containers, networks, anonymous volumes and untagged images, and trims the build cache to 20 GB, least recently used first. Tagged images and the cache volumes are kept; to start a runner from cold, remove its `docker-N` volume.
+- Each daemon keeps its state on a volume of its own: pulled images, the build cache and the toolchains' cache volumes (`meshmap-rust-cache`, `meshmap-go-cache`, `meshmap-node-cache`) stay warm between jobs, while each runner is registered afresh for every job. Before each job, after that check, the hook (inline in `compose.yaml`, run by the runner with bash) removes leftover containers, networks, anonymous volumes and untagged images, and trims the build cache to 20 GB, least recently used first. Tagged images and the cache volumes are kept; to start a runner from cold, remove its `docker-N` volume.
 - Only the daemons are privileged; the runners are not, and the daemons listen on a socket shared with their runner alone, not on TCP.
 
 To set it up on a dedicated host (a VM, not one with access to production or other secrets: a job, and so anyone who can push to `main`, controls the daemon):
@@ -52,7 +54,7 @@ docker compose up -d
 
 The stack is `compose.yaml` alone, so it also runs as a Portainer stack from this repository: Add stack → Repository, the repository URL, reference `refs/heads/main`, compose path `deploy/runners/compose.yaml`, and the variables of `.env.example` (at least `ACCESS_TOKEN`) under Environment variables. With automatic updates on, Portainer redeploys it when the file changes on `main`, such as a bumped runner image.
 
-The runners appear under Settings → Actions → Runners as `meshmap-N-<time>`, one per slot waiting for a job (`RUNNER_NAME_PREFIX` per host); `docker compose logs controller` says what it issued and any API errors. Then set `RUNNER_LABELS`. Also set Settings → Actions → General → "Require approval for all external contributors". Bump the runner image in `compose.yaml` at least monthly: GitHub refuses runners that are too far behind, and a runner a little behind updates itself first, at every job, since each starts from the image. Multi-platform images still build arm64 under QEMU unless the host is arm64.
+The runners appear under Settings → Actions → Runners as `meshmap-N-<time>`, one per slot waiting for a job (`RUNNER_NAME_PREFIX` per host); `docker compose logs controller` says what it issued and any API errors. Then set `RUNNER_LABELS`. Bump the runner image in `compose.yaml` at least monthly: GitHub refuses runners that are too far behind, and a runner a little behind updates itself first, at every job, since each starts from the image. Multi-platform images still build arm64 under QEMU unless the host is arm64.
 
 ### Published images
 

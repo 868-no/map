@@ -9,8 +9,10 @@
 # skip themselves (MESHMAP_NO_BASEMAP); run them against a full deployment.
 # Runners: GitHub-hosted, unless the repository variable RUNNER_LABELS names
 # self-hosted ones (a JSON list, e.g. ["self-hosted","meshmap"]; see
-# deploy/runners). Pull requests, which may come from forks, always run on
-# GitHub's; so does the deploy job.
+# deploy/runners): then runs on main (pushes and manual runs) take those.
+# Pull requests, which may come from forks, tags, other branches and the
+# deploy job always run on GitHub's. The runners themselves refuse any other
+# job, since a pull request runs the workflow as it changed it.
 name: tests
 
 on:
@@ -30,7 +32,7 @@ concurrency:
 jobs:
   backend:
     name: backend (vet, format, unit)
-    runs-on: ${{ github.event_name != 'pull_request' && vars.RUNNER_LABELS && fromJSON(vars.RUNNER_LABELS) || 'ubuntu-24.04' }}
+    runs-on: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.RUNNER_LABELS && fromJSON(vars.RUNNER_LABELS) || 'ubuntu-24.04' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/toolchain-cache
@@ -47,7 +49,7 @@ jobs:
 
   integration:
     name: backend integration (Postgres, Redis, Mosquitto)
-    runs-on: ${{ github.event_name != 'pull_request' && vars.RUNNER_LABELS && fromJSON(vars.RUNNER_LABELS) || 'ubuntu-24.04' }}
+    runs-on: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.RUNNER_LABELS && fromJSON(vars.RUNNER_LABELS) || 'ubuntu-24.04' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/toolchain-cache
@@ -58,7 +60,7 @@ jobs:
 
   engine:
     name: engine (Rust tests, golden fixture)
-    runs-on: ${{ github.event_name != 'pull_request' && vars.RUNNER_LABELS && fromJSON(vars.RUNNER_LABELS) || 'ubuntu-24.04' }}
+    runs-on: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.RUNNER_LABELS && fromJSON(vars.RUNNER_LABELS) || 'ubuntu-24.04' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/toolchain-cache
@@ -70,7 +72,7 @@ jobs:
 
   frontend:
     name: frontend (types, lint, unit, build)
-    runs-on: ${{ github.event_name != 'pull_request' && vars.RUNNER_LABELS && fromJSON(vars.RUNNER_LABELS) || 'ubuntu-24.04' }}
+    runs-on: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.RUNNER_LABELS && fromJSON(vars.RUNNER_LABELS) || 'ubuntu-24.04' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/toolchain-cache
@@ -92,7 +94,7 @@ jobs:
     # time: two at once starve the page, and the map takes clicks for long
     # presses.
     name: end-to-end ${{ matrix.shard }}/4 (demo stack, Playwright)
-    runs-on: ${{ github.event_name != 'pull_request' && vars.RUNNER_LABELS && fromJSON(vars.RUNNER_LABELS) || 'ubuntu-24.04' }}
+    runs-on: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.RUNNER_LABELS && fromJSON(vars.RUNNER_LABELS) || 'ubuntu-24.04' }}
     timeout-minutes: 45
     strategy:
       fail-fast: false

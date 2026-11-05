@@ -17,8 +17,8 @@ permissions:
 jobs:
   build:
     name: ${{ matrix.image }}
-    # Self-hosted when RUNNER_LABELS is set, never for pull requests (tests.yml).
-    runs-on: ${{ github.event_name != 'pull_request' && vars.RUNNER_LABELS && fromJSON(vars.RUNNER_LABELS) || 'ubuntu-24.04' }}
+    # Self-hosted when RUNNER_LABELS is set, for runs on main only (tests.yml).
+    runs-on: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.RUNNER_LABELS && fromJSON(vars.RUNNER_LABELS) || 'ubuntu-24.04' }}
     permissions:
       contents: read
       packages: write # push to ghcr.io (not used for pull requests)
