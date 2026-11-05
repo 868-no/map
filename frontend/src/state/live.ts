@@ -8,12 +8,12 @@ import { noteServerTime, serverNow } from '../lib/serverClock'
 import type { ObsRow } from '../api/types'
 import { onTransmissions, sendLiveRows } from '../derive/client'
 import { addTransmission, clearPings, painting, PING_MAX_AGE_MS, pingWanted, type Transmission } from '../map/pings'
-
-/** Transmission batches kept for the next frame while the page is not painted. */
-const MAX_DEFERRED = 50
 import { useLiveEpoch } from './data'
 import { apiParams, defaultFilters, useStore, type Filters } from './store'
 import { useLiveLog } from './liveLog'
+
+/** Transmission batches kept for the next frame while the page is not painted. */
+const MAX_DEFERRED = 50
 
 /**
  * A live row passes the view filters (the stream itself is unfiltered).
@@ -31,14 +31,11 @@ export function passes(r: ObsRow, f: Filters): boolean {
 export function useLiveStream(positions: RefObject<Map<string, [number, number]>>, onNotice: (text: string) => void): boolean {
   const win = useStore((s) => s.win)
   const limitsReady = useStore((s) => s.limitsReady)
-  const filters = useStore((s) => s.filters)
   const bump = useLiveEpoch((s) => s.bump)
   const qc = useQueryClient()
   const [liveOK, setLiveOK] = useState(true)
-  const filtersRef = useRef(filters)
   const noticeRef = useRef(onNotice)
   useEffect(() => {
-    filtersRef.current = filters
     noticeRef.current = onNotice
   })
 
@@ -53,22 +50,23 @@ export function useLiveStream(positions: RefObject<Map<string, [number, number]>
     // frames holds at most the last MAX_DEFERRED batches, none older than
     // PING_MAX_AGE_MS when they finally play.
     const deferred: { at: number; ts: Transmission[] }[] = []
-    let pending = false
+    let pending = 0
     const flush = () => {
-      pending = false
+      pending = 0
       const now = Date.now(), perf = performance.now()
       for (const d of deferred.splice(0)) if (now - d.at < PING_MAX_AGE_MS) d.ts.forEach((t) => addTransmission(t, positions.current, perf - (now - d.at)))
     }
-    onTransmissions((ts) => {
+    const off = onTransmissions((ts) => {
       useLiveLog.getState().addTransmissions(ts) // the open packet log, at once
       if (painting()) return ts.forEach((t) => addTransmission(t, positions.current))
       deferred.push({ at: Date.now(), ts })
       if (deferred.length > MAX_DEFERRED) deferred.shift()
-      if (!pending) {
-        pending = true
-        requestAnimationFrame(flush)
-      }
+      if (!pending) pending = requestAnimationFrame(flush)
     })
+    return () => {
+      off()
+      cancelAnimationFrame(pending)
+    }
   }, [positions])
 
   // Live updates for the rolling window only. The stream carries every new
@@ -90,7 +88,8 @@ export function useLiveStream(positions: RefObject<Map<string, [number, number]>
       },
       onDelta: (events) => {
         const rows = events.flatMap((e) => (e.row ? [e.row] : []))
-        const f = filtersRef.current
+        // Read here, not subscribed: a filter change needs no re-render.
+        const f = useStore.getState().filters
         // By the server's clock, which a thawing tab's backlog of stale
         // heartbeats does not set back (D-176).
         const now = serverNow()

@@ -75,14 +75,27 @@ export function stopDerive(): void {
   waiting.clear()
 }
 
-/** Called (batched) when streamed rows changed what the views would show. */
-export function onDerivedChange(fn: () => void): void {
+/**
+ * Called (batched) when streamed rows changed what the views would show.
+ * One listener, as for onTransmissions; returns its removal.
+ */
+export function onDerivedChange(fn: () => void): () => void {
   onChanged = fn
+  return () => {
+    if (onChanged === fn) onChanged = undefined
+  }
 }
 
-/** Called with the transmissions of live rows sent with sendLiveRows(…, ping). */
-export function onTransmissions(fn: (t: Transmission[]) => void): void {
+/**
+ * Called with the transmissions of live rows sent with sendLiveRows(…, ping).
+ * One listener (the live stream's): a later one replaces it. Returns its
+ * removal.
+ */
+export function onTransmissions(fn: (t: Transmission[]) => void): () => void {
   onPings = fn
+  return () => {
+    if (onPings === fn) onPings = undefined
+  }
 }
 
 /** Hand rows from the live stream to the worker; ping lists the indexes to animate. */
