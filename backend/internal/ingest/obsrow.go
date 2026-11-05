@@ -21,28 +21,38 @@ func RowOf(o *Observation, id int64, meta []byte) obsrow.ObsRow {
 // id (obsrow.EncodeTail), encoded once: storage writes both, and the live
 // stream completes the tail with the committed id rather than encoding the
 // row again (D-046). Meta must not change afterwards except through the
-// pipeline's takeAlsoVia, which resets the encoding.
+// pipeline's takeAlsoVia, which resets the encoding. Called by the writer
+// (storage.Row), which owns the observation until it commits.
 func (o *Observation) Encoded() (meta, tail []byte, err error) {
 	if o.tail == nil {
-		m, err := json.Marshal(o.Meta)
-		if err != nil {
+		if o.meta, o.tail, err = o.encode(); err != nil {
 			return nil, nil, err
 		}
-		t, err := obsrow.EncodeTail(RowOf(o, 0, m))
-		if err != nil {
-			return nil, nil, err
-		}
-		o.meta, o.tail = m, t
 	}
 	return o.meta, o.tail, nil
 }
 
+func (o *Observation) encode() (meta, tail []byte, err error) {
+	if meta, err = json.Marshal(o.Meta); err != nil {
+		return nil, nil, err
+	}
+	if tail, err = obsrow.EncodeTail(RowOf(o, 0, meta)); err != nil {
+		return nil, nil, err
+	}
+	return meta, tail, nil
+}
+
 // LiveRow is the encoded row for an observation just committed as row id:
-// byte for byte what /observations serves for it.
+// byte for byte what /observations serves for it. It reads the encoding
+// storage made and never writes the observation (a sink may still hold it);
+// without one (a sink that did not encode) it encodes anew.
 func LiveRow(o *Observation, id int64) (json.RawMessage, error) {
-	_, tail, err := o.Encoded()
-	if err != nil {
-		return nil, err
+	tail := o.tail
+	if tail == nil {
+		var err error
+		if _, tail, err = o.encode(); err != nil {
+			return nil, err
+		}
 	}
 	return obsrow.WithID(id, tail), nil
 }

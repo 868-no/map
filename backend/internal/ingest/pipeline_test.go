@@ -296,7 +296,8 @@ func TestLiveEventCarriesTheRow(t *testing.T) {
 		t.Fatalf("live row %s: %v", raw, err)
 	}
 	// Byte for byte the stored encoding completed with the id (D-046).
-	if want, _ := json.Marshal(RowOf(o, 42, o.meta)); string(raw) != string(want) {
+	meta, _ := json.Marshal(o.Meta)
+	if want, _ := json.Marshal(RowOf(o, 42, meta)); string(raw) != string(want) {
 		t.Fatalf("live row %s, want %s", raw, want)
 	}
 }
