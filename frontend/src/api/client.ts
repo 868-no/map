@@ -69,15 +69,23 @@ export function subscribeLive(params: URLSearchParams, h: LiveHandlers): () => v
     es?.close()
     if (closed) return
     es = new EventSource(`/api/v1/stream?${params}`)
-    es.addEventListener('delta', (e) => h.onDelta(JSON.parse((e as MessageEvent).data).events ?? []))
-    es.addEventListener('heartbeat', (e) => {
-      arm()
-      h.onHeartbeat(JSON.parse((e as MessageEvent).data))
-    })
-    es.addEventListener('status', (e) => {
-      const s = JSON.parse((e as MessageEvent).data)
-      h.onStatus(!!s.live, s.reason)
-    })
+    // A frame that is not JSON is skipped (and logged), not thrown from the
+    // event handler; a heartbeat still counts as a sign of life.
+    const on = (type: string, fn: (data: any) => void) => // eslint-disable-line @typescript-eslint/no-explicit-any
+      es!.addEventListener(type, (e) => {
+        let data
+        try {
+          data = JSON.parse((e as MessageEvent).data)
+        } catch (err) {
+          console.warn(`live ${type}: unreadable frame`, err)
+          return
+        }
+        fn(data)
+      })
+    es.addEventListener('heartbeat', () => arm())
+    on('delta', (d) => h.onDelta(d.events ?? []))
+    on('heartbeat', (d) => h.onHeartbeat(d))
+    on('status', (s) => h.onStatus(!!s.live, s.reason))
     es.addEventListener('retention', () => h.onRetention())
     es.onerror = () => h.onStatus(false, 'reconnecting')
     arm()
