@@ -33,6 +33,10 @@ interface Ping {
   // until that ring reaches this transmitter; so does a traceroute reply
   // leaving the target until its request's ring gets there.
   waitFor?: { key: string; rx: string; since: number }
+  // Not a radio transmission: the way to its one receiver, whose hops are
+  // not known (D-173). It travels as a line, dashed (dotted over the
+  // internet), at the pace of a ring, and draws no ring.
+  gap?: 'gap' | 'unknown_relay' | 'internet'
 }
 
 const packetOf = (key: string) => key.slice(0, key.lastIndexOf('|'))
@@ -137,7 +141,8 @@ export type DeliveryStyle = 'solid' | 'dashed' | 'delivered' | 'internet'
 type Hop = { a: string; b: string; dashed: boolean; why: string }
 // nodes and hops: the whole way; pos and styles: its placed nodes, as last drawn.
 interface Way { nodes: string[]; hops: DeliveryStyle[]; pos: LngLat[]; styles: DeliveryStyle[] }
-interface Delivery { there?: Way; back?: Way; born: number }
+// waitFor: the packet answered, animated already, whose pings the ACK waits for (since: when it began waiting).
+interface Delivery { there?: Way; back?: Way; born: number; waitFor?: { packet: string; since: number } }
 export const DELIVERY_TRAVEL = 2000 // ms, for one hop
 const DELIVERY_TRAVEL_MAX = 5000 // ms, however many hops
 const DELIVERY_LINGER = 3000 // ms
@@ -208,7 +213,8 @@ function addDelivery(t: Transmission, pos: Map<string, LngLat>, now: number): vo
   if (!there && !back) return
   if (there && t.packet) animated.set(t.packet, { at: now, replay: true })
   if (deliveries.size >= MAX_PINGS) deliveries.delete(deliveries.keys().next().value!)
-  deliveries.set(t.key, { there, back, born: now })
+  // A packet animated already may still be on its way: the ACK leaves once its pings have arrived.
+  deliveries.set(t.key, { there, back, born: now, waitFor: shown && t.packet ? { packet: t.packet, since: now } : undefined })
   added.forEach((fn) => fn())
 }
 
@@ -238,12 +244,24 @@ function wayLines(w: Way, elapsed: number, alpha: number, leg: DeliveryLine['leg
   }
 }
 
+/** Whether a packet's pings are still on their way: a ring growing, or a rebroadcast waiting for its upstream ring. */
+function travelling(packet: string, now: number): boolean {
+  for (const p of pings.values()) if (p.packet === packet && (p.waitFor || (p.heard && now < p.growStart + PING_GROW))) return true
+  return false
+}
+
 function activeDeliveries(now: number): { lines: DeliveryLine[]; arrivals: Flash[] } {
   const lines: DeliveryLine[] = [], arrivals: Flash[] = []
   const flash = (pos: LngLat, since: number) => {
     if (since >= 0 && since < FLASH * 1.5) arrivals.push({ pos, alpha: Math.round(255 * (1 - since / (FLASH * 1.5))), scale: since / (FLASH * 1.5), rebroadcast: false })
   }
   for (const [k, d] of deliveries) {
+    if (d.waitFor) {
+      // Never later than the collection time, so a ring that keeps growing cannot hold it forever.
+      if (travelling(d.waitFor.packet, now) && now - d.waitFor.since < PING_COLLECT) continue
+      d.born = now
+      d.waitFor = undefined
+    }
     const age = now - d.born
     if (!followWay(d.there) || !followWay(d.back)) {
       deliveries.delete(k)
@@ -293,7 +311,9 @@ export function addTransmission(t: Transmission, pos: Map<string, LngLat>, now =
     const s = seen.get(t.key)
     if (s !== undefined && now - s < SEEN_TTL) return
     if (pings.size >= MAX_PINGS) pings.delete(pings.keys().next().value!) // drop the oldest under heavy traffic
-    p = { tx: t.tx, center, born: now, rebroadcast: t.rebroadcast, heard: false, heardAt: 0, receivers: new Map(), from: 0, to: 0, growStart: now, settled: now + PING_GROW, packet: t.packet }
+    // A gap needs both ends placed to be drawn at all.
+    if (t.gap && !(t.rx && pos.get(t.rx))) return
+    p = { tx: t.tx, center, born: now, rebroadcast: t.rebroadcast, heard: false, heardAt: 0, receivers: new Map(), from: 0, to: 0, growStart: now, settled: now + PING_GROW, packet: t.packet, gap: t.gap }
     // Who did this transmitter hear the packet from? If that ping is on the
     // map, start only when its ring arrives here. A traceroute reply starts
     // only when its request, live or replayed, has reached the target.
@@ -362,6 +382,8 @@ export interface Blip { center: LngLat; scale: number; alpha: number; rebroadcas
  */
 export interface Trail { from: LngLat; to: LngLat; tip: LngLat; progress: number; alpha: number; rebroadcast: boolean }
 export interface Flash { pos: LngLat; alpha: number; scale: number; rebroadcast: boolean }
+/** A stretch of a packet's way whose hops are not known (D-173), drawn as far as it has travelled. */
+export interface GapLine { from: LngLat; to: LngLat; tip: LngLat; progress: number; alpha: number; rebroadcast: boolean; internet: boolean }
 
 /** Ground metres per screen pixel at a latitude and MapLibre zoom (512 px tiles). */
 export function metresPerPixel(lat: number, zoom: number): number {
@@ -401,8 +423,8 @@ export function along(a: LngLat, b: LngLat, f: number): LngLat {
 }
 
 /** Current rings and blips (pixels at this zoom) and receiver flashes. */
-export function activePings(now: number, zoom: number): { rings: Ring[]; blips: Blip[]; flashes: Flash[]; trails: Trail[]; deliveries: DeliveryLine[]; arrivals: Flash[] } {
-  const rings: Ring[] = [], blips: Blip[] = [], flashes: Flash[] = [], trails: Trail[] = []
+export function activePings(now: number, zoom: number): { rings: Ring[]; blips: Blip[]; flashes: Flash[]; trails: Trail[]; gaps: GapLine[]; deliveries: DeliveryLine[]; arrivals: Flash[] } {
+  const rings: Ring[] = [], blips: Blip[] = [], flashes: Flash[] = [], trails: Trail[] = [], gaps: GapLine[] = []
   for (const [k, p] of pings) {
     if (p.waitFor) {
       const parent = pings.get(p.waitFor.key)
@@ -435,7 +457,18 @@ export function activePings(now: number, zoom: number): { rings: Ring[]; blips: 
       pings.delete(k) // its transmitter is no longer on the map
       continue
     }
-    if (p.heard) {
+    if (p.heard && p.gap) {
+      // A line, no ring: it reaches its receiver as a ring would.
+      const fadeStart = end - PING_FADE
+      const alpha = Math.round(255 * (now < fadeStart ? 1 : 1 - (now - fadeStart) / PING_FADE))
+      for (const rx of p.receivers.values()) {
+        const progress = Math.min(radiusAt(p, now) / Math.max(rx.dist, 1), 1)
+        if (rx.reachedAt === undefined && progress >= 1) rx.reachedAt = now
+        gaps.push({ from: p.center, to: rx.pos, tip: along(p.center, rx.pos, progress), progress, alpha, rebroadcast: p.rebroadcast, internet: p.gap === 'internet' })
+        const since = rx.reachedAt === undefined ? -1 : now - rx.reachedAt
+        if (since >= 0 && since < FLASH) flashes.push({ pos: rx.pos, alpha: Math.round(255 * (1 - since / FLASH)), scale: since / FLASH, rebroadcast: p.rebroadcast })
+      }
+    } else if (p.heard) {
       const fadeStart = end - PING_FADE
       const alpha = Math.round(255 * (now < fadeStart ? 1 : 1 - (now - fadeStart) / PING_FADE))
       const mpp = metresPerPixel(p.center[1], zoom)
@@ -453,14 +486,14 @@ export function activePings(now: number, zoom: number): { rings: Ring[]; blips: 
         const since = rx.reachedAt === undefined ? -1 : now - rx.reachedAt
         if (since >= 0 && since < FLASH) flashes.push({ pos: rx.pos, alpha: Math.round(255 * (1 - since / FLASH)), scale: since / FLASH, rebroadcast: p.rebroadcast })
       }
-    } else if (now - p.born < BLIP_LIFE) {
+    } else if (!p.gap && now - p.born < BLIP_LIFE) {
       const t = (now - p.born) / BLIP_LIFE
       blips.push({ center: p.center, scale: ease(t), alpha: Math.round(255 * (1 - t)), rebroadcast: p.rebroadcast })
     }
   }
   const { lines, arrivals } = activeDeliveries(now)
   for (const [k, s] of seen) if (now - s > SEEN_TTL) seen.delete(k)
-  return { rings, blips, flashes, trails, deliveries: lines, arrivals }
+  return { rings, blips, flashes, trails, gaps, deliveries: lines, arrivals }
 }
 
 export function clearPings(): void {

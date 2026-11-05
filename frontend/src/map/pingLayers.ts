@@ -2,7 +2,7 @@
 import { LineLayer, PathLayer, ScatterplotLayer } from '@deck.gl/layers'
 import type { PathStyleExtensionProps } from '@deck.gl/extensions'
 import type { Layer } from '@deck.gl/core'
-import { activePings, RING_BANDS, type Blip, type DeliveryLine, type DeliveryStyle, type Flash, type Ring, type Trail } from './pings'
+import { activePings, RING_BANDS, type Blip, type DeliveryLine, type DeliveryStyle, type Flash, type GapLine, type Ring, type Trail } from './pings'
 import { dashExt, type RGBA } from './deckShared'
 import type { MapPalette } from './palette'
 // Rings have no outline: a soft fill whose opacity follows the signal at each
@@ -18,7 +18,7 @@ export function buildPingLayers(now: number, zoom: number, palette: MapPalette):
   // the travelling link's core stands out from its glow.
   const rgb = (r: { rebroadcast: boolean }) => (r.rebroadcast ? palette.pingRelay : palette.pingOrigin)
   const bright = (r: { rebroadcast: boolean }) => palette.pingCore(rgb(r))
-  const { rings, blips, flashes, trails, deliveries, arrivals } = activePings(now, zoom)
+  const { rings, blips, flashes, trails, gaps, deliveries, arrivals } = activePings(now, zoom)
   const ok = palette.delivered
   const moving = trails.filter((t) => t.progress < 1)
   const known = deliveries.filter((d) => d.style === 'solid'), unknown = deliveries.filter((d) => d.style !== 'solid')
@@ -48,6 +48,20 @@ export function buildPingLayers(now: number, zoom: number, palette: MapPalette):
     new ScatterplotLayer<Trail>({
       id: 'ping-trail-heads', data: moving, getPosition: (t) => t.tip, getRadius: 5, radiusUnits: 'pixels',
       filled: true, stroked: false, getFillColor: (t) => [...bright(t), t.alpha] as RGBA,
+      updateTriggers: { getPosition: now, getFillColor: now },
+    }),
+    // Stretches of the way whose hops are not known (D-173): dashed as in a
+    // packet's routing graph, dotted green over the internet, a head where
+    // they have got to. Not justified: the dashes stay put while they grow.
+    new PathLayer<GapLine, PathStyleExtensionProps<GapLine>>({
+      id: 'ping-gaps', data: gaps, getPath: (g) => [g.from, g.tip], widthUnits: 'pixels', getWidth: (g) => (g.progress < 1 ? 3 : 2),
+      getColor: (g) => [...(g.internet ? palette.linkMqtt : bright(g)), Math.round(g.alpha * (g.progress < 1 ? 1 : 0.6))] as RGBA,
+      getDashArray: (g) => (g.internet ? [1, 2.5] : [5, 4]), dashJustified: false, extensions: [dashExt],
+      updateTriggers: { getPath: now, getWidth: now, getColor: now },
+    }),
+    new ScatterplotLayer<GapLine>({
+      id: 'ping-gap-heads', data: gaps.filter((g) => g.progress > 0 && g.progress < 1), getPosition: (g) => g.tip, getRadius: 4, radiusUnits: 'pixels',
+      filled: true, stroked: false, getFillColor: (g) => [...(g.internet ? palette.linkMqtt : bright(g)), g.alpha] as RGBA,
       updateTriggers: { getPosition: now, getFillColor: now },
     }),
     // The ring itself: concentric bands whose opacity follows the signal

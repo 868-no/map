@@ -523,7 +523,7 @@ fn traceroute_chain(r: &Row, t: &crate::row::Traceroute, gw: u32, over_radio: bo
 // ---- live pings ----
 
 /// Who transmitted, and (if known) who heard that transmission directly.
-#[derive(Serialize, Clone, Debug, PartialEq)]
+#[derive(Serialize, Clone, Debug, PartialEq, Default)]
 pub struct Transmission {
     pub key: String, // packet + transmitter: one ping per RF transmission
     pub tx: String,
@@ -560,6 +560,12 @@ pub struct Transmission {
     /// the sender, dashed where a part is not known (D-172).
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub back: Vec<RouteSegment>,
+    /// Not a radio transmission: a stretch of the packet's way from `tx` to
+    /// `rx` whose hops are not known, drawn as the routing graph draws it
+    /// (D-173): "gap" (nodes between are missing), "unknown_relay" (an
+    /// unresolved last-hop byte), "internet" (over MQTT).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub gap: Option<&'static str>,
 }
 
 fn packet_ref(origin: u32, id: u32) -> String {
@@ -593,28 +599,27 @@ pub fn forward_route(r: &Row, ctx: &RelayContext) -> Vec<Transmission> {
     let Some((requester, chain)) = recorded_request(r, ctx) else { return vec![] };
     let Some(t) = r.traceroute() else { return vec![] };
     let packet = packet_ref(requester, t.request);
-    let mut out = vec![];
-    for k in 0..chain.len() - 1 {
-        let ((Some(tx), _), (rx, internet)) = (chain[k], chain[k + 1]) else { continue };
-        let snr = t.snr_towards.get(k).copied().flatten();
-        if internet {
-            continue; // over the internet
-        }
-        out.push(Transmission {
-            key: format!("rq{packet}|{}", node_id(tx)),
-            tx: node_id(tx),
-            rx: rx.map(node_id),
-            rebroadcast: k > 0,
-            strength: snr.and_then(|s| signal_strength(Some(s), None)),
-            delivered: false,
-            packet: Some(packet.clone()),
-            replay: true,
-            after: None,
-            path: vec![],
-            back: vec![],
-        });
-    }
-    out
+    chain_steps(&chain)
+        .into_iter()
+        .map(|st| {
+            // The SNR at the receiver, for a radio hop to the very next node.
+            let snr = st.gap.is_none().then(|| st.rx.and(t.snr_towards.get(st.k).copied().flatten())).flatten();
+            Transmission {
+                key: match st.gap {
+                    Some(_) => format!("rq{packet}|{}>{}", node_id(st.tx), st.rx.map_or(String::new(), node_id)),
+                    None => format!("rq{packet}|{}", node_id(st.tx)),
+                },
+                tx: node_id(st.tx),
+                rx: st.rx.map(node_id),
+                rebroadcast: st.k > 0,
+                strength: snr.and_then(|s| signal_strength(Some(s), None)),
+                packet: Some(packet.clone()),
+                replay: true,
+                gap: st.gap,
+                ..Default::default()
+            }
+        })
+        .collect()
 }
 
 /// An ACK proves its sender received the packet it answers: the original
@@ -631,7 +636,7 @@ pub fn delivery_ping(r: &Row, ack: Option<u32>, original: &[&Row], copies: &[&Ro
     let path = delivery_path(&segments, &from, &to);
     let segments = if copies.is_empty() { vec![] } else { packet_route(copies, ctx, roles, i, &[], &[]).segments };
     let back = delivery_path(&segments, &to, &from);
-    Some(Transmission { key: format!("{:08x}|{from}|delivered", rt.request), tx: from, rx: Some(to), rebroadcast: false, strength: None, delivered: true, packet: Some(packet_ref(sender, rt.request)), replay: false, after: None, path, back })
+    Some(Transmission { key: format!("{:08x}|{from}|delivered", rt.request), tx: from, rx: Some(to), rebroadcast: false, strength: None, delivered: true, packet: Some(packet_ref(sender, rt.request)), replay: false, after: None, path, back, gap: None })
 }
 
 /// The way a packet took from its origin to one node, through its routing
@@ -697,40 +702,82 @@ pub fn transmissions(r: &Row, ctx: &RelayContext, roles: &FxMap<u32, String>) ->
         };
         // A reply answers its request: drawn after the request reaches the target.
         let after = t.is_reply.then(|| r.dst.filter(|&d| d != BROADCAST && d != r.src && t.request != 0).map(|d| packet_ref(d, t.request))).flatten();
-        let mut out = vec![];
-        for k in 0..chain.len() {
-            let Some(tx) = chain[k].0 else { continue };
-            if k > 0 && k == chain.len() - 1 {
-                break; // the last node only received
-            }
-            // A hop over the internet is no radio transmission: no ping for it.
-            if chain.get(k + 1).is_some_and(|c| c.1) {
-                continue;
-            }
-            let rx = chain.get(k + 1).and_then(|c| c.0);
-            out.push(Transmission { key: key(tx), tx: node_id(tx), rx: rx.map(node_id), rebroadcast: k > 0, strength: rx.filter(|&x| Some(x) == r.gw).and(strength), delivered: false, packet: r.pid.map(|p| packet_ref(r.src, p)), replay: false, after: after.clone(), path: vec![], back: vec![] });
-        }
-        return out;
+        let packet = r.pid.map(|p| packet_ref(r.src, p));
+        return chain_steps(&chain)
+            .into_iter()
+            .map(|st| Transmission {
+                key: if st.gap.is_some() { format!("{lp}|{}>{}", node_id(st.tx), st.rx.map_or(String::new(), node_id)) } else { key(st.tx) },
+                tx: node_id(st.tx),
+                rx: st.rx.map(node_id),
+                rebroadcast: st.k > 0,
+                strength: st.rx.filter(|&x| Some(x) == r.gw && st.gap.is_none()).and(strength),
+                packet: packet.clone(),
+                after: after.clone(),
+                gap: st.gap,
+                ..Default::default()
+            })
+            .collect();
     }
-    let first = |rx: Option<u32>, s: Option<f64>| Transmission { key: key(r.src), tx: node_id(r.src), rx: rx.map(node_id), rebroadcast: false, strength: s, delivered: false, packet: r.pid.map(|p| packet_ref(r.src, p)), replay: false, after: None, path: vec![], back: vec![] };
+    let first = |rx: Option<u32>, s: Option<f64>| Transmission { key: key(r.src), tx: node_id(r.src), rx: rx.map(node_id), rebroadcast: false, strength: s, delivered: false, packet: r.pid.map(|p| packet_ref(r.src, p)), replay: false, after: None, path: vec![], back: vec![], gap: None };
+    // The way from the sender to a node, its hops not known (D-173).
+    let gap = |rx: u32, kind: &'static str| Transmission { key: format!("{lp}|{}>{}", node_id(r.src), node_id(rx)), tx: node_id(r.src), rx: Some(node_id(rx)), packet: r.pid.map(|p| packet_ref(r.src, p)), gap: Some(kind), ..Default::default() };
     let Some(gw) = r.gw else { return vec![first(None, None)] };
     let (byte, downlinked) = match r.heard_from() {
         HeardFrom::Direct => return vec![first(Some(gw), strength)],
         HeardFrom::Relayed(b) => (b, false),
-        HeardFrom::Downlinked(Some(b)) => (Some(b), true),
-        // The gateway did not hear it over the air, or not from whom.
-        HeardFrom::NotRadio | HeardFrom::Downlinked(None) | HeardFrom::Unknown => return vec![first(None, None)],
+        HeardFrom::Downlinked(b) => (b, true),
+        HeardFrom::Unknown => (None, false),
+        // Not heard over the air.
+        HeardFrom::NotRadio => return vec![first(None, None)],
     };
     let relay = match byte.and_then(|b| ctx.resolve(b, r.src, gw, r.rssi.map(f64::from))) {
         Some(Ok(n)) => n,
-        _ => return vec![first(None, None)],
+        // Heard, but not from whom: the sender's way to the gateway, as the
+        // routing graph draws it.
+        _ => return vec![first(None, None), gap(gw, if downlinked { "internet" } else { "unknown_relay" })],
     };
     // A downlinked copy (D-088) carries no hop count: the relay got it from MQTT.
     let heard_origin = !downlinked && r.hops() == Some(1) && roles.get(&relay).is_some_and(|ro| !ro.is_empty() && !zero_cost_role(ro));
-    vec![
-        first(heard_origin.then_some(relay), None),
-        Transmission { key: key(relay), tx: node_id(relay), rx: Some(node_id(gw)), rebroadcast: true, strength, delivered: false, packet: r.pid.map(|p| packet_ref(r.src, p)), replay: false, after: None, path: vec![], back: vec![] },
-    ]
+    let mut out = vec![first(heard_origin.then_some(relay), None)];
+    if !heard_origin {
+        out.push(gap(relay, if downlinked { "internet" } else { "gap" }));
+    }
+    out.push(Transmission { key: key(relay), tx: node_id(relay), rx: Some(node_id(gw)), rebroadcast: true, strength, packet: r.pid.map(|p| packet_ref(r.src, p)), ..Default::default() });
+    out
+}
+
+/// One step of a recorded way (`k`: the transmitter's place in it).
+struct Step {
+    k: usize,
+    tx: u32,
+    rx: Option<u32>,
+    gap: Option<&'static str>,
+}
+
+/// A recorded way's transmissions: each known node passes the packet on to
+/// the next known one, by radio when that is the very next node and the hop
+/// is over the air, else as a gap (D-173): "internet" when a hop between them
+/// crossed it, "gap" when nodes between them are missing. A node followed by
+/// missing ones also transmitted, to whom is not known. The last node only
+/// received.
+fn chain_steps(chain: &[(Option<u32>, bool)]) -> Vec<Step> {
+    let known: Vec<(usize, u32)> = chain.iter().enumerate().filter_map(|(k, c)| c.0.map(|n| (k, n))).collect();
+    let mut out = vec![];
+    for (i, &(k, tx)) in known.iter().enumerate() {
+        if k > 0 && k + 1 == chain.len() {
+            break;
+        }
+        match known.get(i + 1) {
+            Some(&(j, rx)) if j == k + 1 => out.push(Step { k, tx, rx: Some(rx), gap: chain[j].1.then_some("internet") }),
+            Some(&(j, rx)) => {
+                out.push(Step { k, tx, rx: None, gap: None });
+                let internet = chain[k + 1..=j].iter().any(|c| c.1);
+                out.push(Step { k, tx, rx: Some(rx), gap: Some(if internet { "internet" } else { "gap" }) });
+            }
+            None => out.push(Step { k, tx, rx: None, gap: None }),
+        }
+    }
+    out
 }
 
 #[cfg(test)]
@@ -766,8 +813,13 @@ mod tests {
     fn roles(m: &[(u32, &str)]) -> FxMap<u32, String> {
         m.iter().map(|&(n, r)| (n, r.to_string())).collect()
     }
+    /// The radio transmissions, transmitter and receiver.
     fn pairs(t: &[Transmission]) -> Vec<(String, Option<String>)> {
-        t.iter().map(|x| (x.tx.clone(), x.rx.clone())).collect()
+        t.iter().filter(|x| x.gap.is_none()).map(|x| (x.tx.clone(), x.rx.clone())).collect()
+    }
+    /// The stretches whose hops are not known (D-173).
+    fn gaps(t: &[Transmission]) -> Vec<(String, String, &'static str)> {
+        t.iter().filter_map(|x| Some((x.tx.clone(), x.rx.clone()?, x.gap?))).collect()
     }
     fn id(n: u32) -> String {
         node_id(n)
@@ -788,7 +840,11 @@ mod tests {
     fn relayed_reception_is_a_rebroadcast_by_the_resolved_last_hop() {
         let t = transmissions(&relayed(row(A, GW), 0xcc, 2), &ctx(&[A, C, GW], &[]), &map());
         assert_eq!(pairs(&t), vec![(id(A), None), (id(C), Some(id(GW)))]);
-        assert!(t[1].rebroadcast);
+        assert!(t.iter().find(|x| x.tx == id(C)).unwrap().rebroadcast);
+        // How A's packet reached C is not known: a gap, ahead of C's transmission so C's ring can wait for it.
+        assert_eq!(gaps(&t), vec![(id(A), id(C), "gap")]);
+        assert_eq!(t.iter().map(|x| x.gap.is_some()).collect::<Vec<_>>(), vec![false, true, false]);
+        assert_eq!(t[1].key, format!("{:016x}|{}>{}", 0xabc, id(A), id(C)));
     }
 
     #[test]
@@ -802,13 +858,17 @@ mod tests {
         assert_eq!(transmissions(&ev, &c, &map())[0].rx, None, "unknown role");
         assert_eq!(transmissions(&relayed(row(A, GW), 0xcc, 2), &c, &roles(&[(C, "CLIENT")]))[0].rx, None);
         assert_eq!(pairs(&transmissions(&ev, &c, &map()))[1], (id(C), Some(id(GW))));
+        // Heard directly: no gap.
+        assert_eq!(gaps(&transmissions(&ev, &c, &roles(&[(C, "CLIENT")]))), vec![]);
     }
 
     #[test]
     fn ambiguous_bytes_are_never_guessed() {
         assert_eq!(ctx(&[A, C, C2, GW], &[]).resolve(0xcc, A, GW, None), Some(Err(())));
         assert_eq!(ctx(&[A, C, C2, GW], &[(C2, GW)]).resolve(0xcc, A, GW, None), Some(Ok(C2)));
-        assert_eq!(transmissions(&relayed(row(A, GW), 0xcc, 1), &ctx(&[A, C, C2, GW], &[]), &map()).len(), 1);
+        let t = transmissions(&relayed(row(A, GW), 0xcc, 1), &ctx(&[A, C, C2, GW], &[]), &map());
+        assert_eq!(pairs(&t), vec![(id(A), None)]);
+        assert_eq!(gaps(&t), vec![(id(A), id(GW), "unknown_relay")], "the way to the gateway, relay unknown");
         assert_eq!(ctx(&[A, GW], &[]).resolve(0xaa, A, GW, None), None, "never the originator");
     }
 
@@ -824,7 +884,11 @@ mod tests {
         assert_eq!(pairs(&transmissions(&traceroute(row(A, GW), &[Some(C)]), &ctx(&[A, C, GW], &[]), &map())), vec![(id(A), Some(id(C))), (id(C), Some(id(GW)))]);
         assert_eq!(pairs(&transmissions(&traceroute(row(A, GW), &[]), &ctx(&[A, GW], &[]), &map())), vec![(id(A), Some(id(GW)))]);
         // An unrecorded hop breaks the chain without inventing receivers.
-        assert_eq!(pairs(&transmissions(&traceroute(row(A, GW), &[None, Some(C)]), &ctx(&[A, C, GW], &[]), &map())), vec![(id(A), None), (id(C), Some(id(GW)))]);
+        let t = transmissions(&traceroute(row(A, GW), &[None, Some(C)]), &ctx(&[A, C, GW], &[]), &map());
+        assert_eq!(pairs(&t), vec![(id(A), None), (id(C), Some(id(GW)))]);
+        // ... and bridges it with a gap, before C transmits.
+        assert_eq!(gaps(&t), vec![(id(A), id(C), "gap")]);
+        assert_eq!(t.iter().position(|x| x.gap.is_some()), Some(1));
     }
 
     #[test]
@@ -891,9 +955,14 @@ mod tests {
         let flagged = Row { rr: crate::row::ty::VIA_MQTT, ..relayed(row(A, GW), 0xcc, 0) };
         assert!(RelayContext::downlinked(&flagged));
         assert_eq!(pairs(&transmissions(&flagged, &c, &ro)), vec![(id(A), None), (id(C), Some(id(GW)))]);
+        assert_eq!(gaps(&transmissions(&flagged, &c, &ro)), vec![(id(A), id(C), "internet")]);
+        assert_eq!(gaps(&transmissions(&plain, &c, &ro)), vec![]);
         // With no last hop, nothing radio is proven.
         let bare = Row { rr: crate::row::ty::VIA_MQTT, ..row(A, GW) };
         assert_eq!(pairs(&transmissions(&bare, &c, &ro)), vec![(id(A), None)]);
+        assert_eq!(gaps(&transmissions(&bare, &c, &ro)), vec![(id(A), id(GW), "internet")]);
+        // Not over the air at all: nothing but the sender's own broadcast.
+        assert_eq!(gaps(&transmissions(&Row { rr: crate::row::ty::NON_RF, ..row(A, GW) }, &c, &ro)), vec![]);
     }
 
     #[test]
@@ -1032,6 +1101,23 @@ mod tests {
         // A reply to someone else's request with the same id adds nothing.
         let other = Row { dst: Some(GW), ..reply.clone() };
         assert_eq!(segs(&[&request], &[&other]), vec![(id(C), id(GW), false, f)]);
+    }
+
+    #[test]
+    fn a_replayed_route_bridges_unrecorded_hops_with_a_gap() {
+        // C2 asked A (request 77); the reply records C2 -> ? -> C -> A.
+        let reply = Row {
+            dst: Some(C2),
+            pid: Some(500),
+            detail: Some(Box::new(Detail::Traceroute(Traceroute { valid: true, is_reply: true, route: vec![Hop { id: 0xffff_ffff, unknown: true }, Hop { id: C, unknown: false }], snr_towards: vec![Some(4.0), Some(2.0), Some(-6.0)], route_back: vec![], snr_back: vec![], request: 77 }))),
+            ..row(A, GW)
+        };
+        let t = forward_route(&reply, &ctx(&[A, C, C2, GW], &[]));
+        assert_eq!(pairs(&t), vec![(id(C2), None), (id(C), Some(id(A)))]);
+        assert_eq!(gaps(&t), vec![(id(C2), id(C), "gap")]);
+        assert!(t.iter().all(|x| x.replay && x.packet.as_deref() == Some("111111cc:0000004d")));
+        let g = t.iter().find(|x| x.gap.is_some()).unwrap();
+        assert_eq!((g.key.as_str(), g.strength), ("rq111111cc:0000004d|!111111cc>!000000cc", None));
     }
 
     #[test]

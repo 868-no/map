@@ -71,8 +71,12 @@ describe('ping animation', () => {
   it('a packet already animated does not travel again: only the ACK goes back', () => {
     addTransmission({ key: `lp|${A}`, tx: A, rx: GW, rebroadcast: false, packet: 'aa:51' }, pos, 0)
     addTransmission(ack, pos, 1000)
-    const now = activePings(1050).deliveries
+    // Its ring is still on its way to GW: the ACK waits for it.
+    expect(activePings(1050).deliveries).toHaveLength(0)
+    expect(activePings(PING_GROW - 10).deliveries).toHaveLength(0)
+    const now = activePings(PING_GROW + 10).deliveries
     expect(now.map((d) => [d.leg, d.from])).toEqual([['back', pos.get(B)]])
+    expect(now[0].progress).toBeLessThan(0.1) // it leaves only now
     // And the delivery's own way there counts as animating it: a late live copy pings no more.
     clearPings()
     addTransmission(ack, pos, 0)
@@ -85,6 +89,32 @@ describe('ping animation', () => {
     expect(activePings(deliveryTravel(1) + 50).deliveries.filter((d) => d.leg === 'back').map((d) => d.to)).toEqual([pos.get(GW)])
     addTransmission({ ...ack, back: [{ a: B, b: A, dashed: true, why: 'delivered' }] }, pos, deliveryTravel(1) + 100)
     expect(activePings(deliveryTravel(1) + 150).deliveries.filter((d) => d.leg === 'back').map((d) => d.to)).toEqual([pos.get(GW)])
+  })
+  it('a stretch whose hops are not known travels as a line, and the relay beyond it waits for it', () => {
+    // A sent it; how it reached B is not known; B relayed it to GW.
+    addTransmission({ key: `p|${A}`, tx: A, rebroadcast: false }, pos, 0)
+    addTransmission({ key: `p|${A}>${B}`, tx: A, rx: B, rebroadcast: false, gap: 'gap' }, pos, 0)
+    addTransmission({ key: `p|${B}`, tx: B, rx: GW, rebroadcast: true }, pos, 0)
+    const mid = activePings(PING_GROW / 2)
+    expect(mid.rings).toHaveLength(0) // B waits; the gap draws no ring
+    expect(mid.gaps).toHaveLength(1)
+    expect(mid.gaps[0]).toMatchObject({ from: pos.get(A), to: pos.get(B), internet: false })
+    expect(mid.gaps[0].progress).toBeGreaterThan(0)
+    expect(mid.gaps[0].progress).toBeLessThan(1)
+    const reached = activePings(PING_GROW)
+    expect(reached.gaps[0].progress).toBe(1)
+    expect(reached.flashes.map((f) => f.pos)).toEqual([pos.get(B)])
+    // B's ring starts as the gap arrives.
+    const relayed = activePings(PING_GROW + PING_GROW / 2)
+    expect(relayed.rings.map((r) => r.center)).toEqual([pos.get(B)])
+  })
+  it('a gap over the internet is marked so, and one with an end not placed is not drawn', () => {
+    addTransmission({ key: `q|${A}>${GW}`, tx: A, rx: GW, rebroadcast: false, gap: 'internet' }, pos, 0)
+    expect(activePings(100).gaps.map((g) => g.internet)).toEqual([true])
+    clearPings()
+    addTransmission({ key: `q|${A}>${C}`, tx: A, rx: C, rebroadcast: false, gap: 'unknown_relay' }, pos, 0)
+    expect(pingCount()).toBe(0)
+    expect(activePings(100).blips).toHaveLength(0)
   })
   it('a traceroute reply replays its request only if the request was not animated already', () => {
     const live = { key: `lp|${A}`, tx: A, rx: B, rebroadcast: false, packet: 'aa:4d' }

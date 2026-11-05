@@ -47,8 +47,8 @@ export const useLiveLog = create<LiveLog>((set) => ({
     })
   },
   addTransmissions: (ts, now = Date.now()) => {
-    // A rebroadcast of a live packet (not a replayed route, not an ACK): the transmitter relayed it.
-    const add = ts.filter((t) => t.rebroadcast && !t.replay && !t.delivered).map((t) => ({ lp: t.key.slice(0, t.key.indexOf('|')), tx: t.tx, at: now }))
+    // A rebroadcast of a live packet (not a replayed route, an ACK or a gap): the transmitter relayed it.
+    const add = ts.filter((t) => t.rebroadcast && !t.replay && !t.delivered && !t.gap).map((t) => ({ lp: t.key.slice(0, t.key.indexOf('|')), tx: t.tx, at: now }))
     if (add.length) set((s) => ({ relays: prune([...s.relays, ...add], (r) => r.at, now) }))
   },
   clear: () => set({ rows: [], relays: [] }),

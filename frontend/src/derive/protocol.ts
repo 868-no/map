@@ -57,6 +57,7 @@ export interface Transmission {
   after?: string // a traceroute reply: the request ("origin:id") whose way to the target is drawn first
   path?: { a: string; b: string; dashed: boolean; why: string }[] // a delivery: the answered packet's way from tx to rx, dashed where unknown (D-172)
   back?: { a: string; b: string; dashed: boolean; why: string }[] // a delivery: the ACK's way back from rx to tx, dashed where unknown (D-172)
+  gap?: 'gap' | 'unknown_relay' | 'internet' // not radio: the packet's way from tx to rx, its hops not known (D-173)
 }
 
 export type Response =
