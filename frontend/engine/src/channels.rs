@@ -20,7 +20,6 @@
 use serde::Serialize;
 
 use crate::graph::Ev;
-use crate::radio::preset_of;
 use crate::row::{ty, Interner, Row};
 use crate::util::{map, node_id, set, FxMap, FxSet};
 
@@ -148,7 +147,7 @@ fn evidence(rows: &[&Row], i: &Interner) -> FxMap<u32, (String, bool)> {
                 report.insert(r.src, r);
             }
         } else if r.channel != 0
-            && let Some(p) = preset_of(i.s(r.channel))
+            && let Some(p) = i.preset(r.channel)
         {
             *named.entry(r.src).or_insert_with(map).entry(p).or_insert(0) += 1;
         }

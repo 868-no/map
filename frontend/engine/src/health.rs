@@ -471,8 +471,7 @@ pub fn health(rows: &[&Row], invalid: &[&Row], nodes: &[Node], copies: &Copies, 
         }
         let moving = x.moved_at.is_some();
         let rate = |t: u32| count(n, t, &|_| true) as f64 / hours;
-        let device = i.get("device");
-        let tel = count(n, ty::TELEMETRY, &|r| r.telemetry().is_some_and(|t| Some(t.kind) == device)) as f64 / hours;
+        let tel = count(n, ty::TELEMETRY, &|r| r.telemetry().is_some_and(|t| t.kind == ty::DEVICE)) as f64 / hours;
         for (kind, r, limit, what, default) in [
             ("chatty_position", if moving { 0.0 } else { rate(ty::POSITION) }, POSITION_PER_H, "positions", "the firmware default is one every 15 minutes at most, less when it is not moving"),
             ("chatty_nodeinfo", rate(ty::NODEINFO), NODEINFO_PER_H, "NodeInfo announcements", "the default is one every 3 hours"),
@@ -484,9 +483,8 @@ pub fn health(rows: &[&Row], invalid: &[&Row], nodes: &[Node], copies: &Copies, 
         }
     }
     // Battery trend and restarts, from its device telemetry (D-099).
-    let device = i.get("device");
     for (&n, pk) in &own {
-        let mut tel: Vec<(i64, &crate::row::Telemetry)> = pk.values().filter_map(|r| r.telemetry().filter(|t| Some(t.kind) == device).map(|t| (r.t, t))).collect();
+        let mut tel: Vec<(i64, &crate::row::Telemetry)> = pk.values().filter_map(|r| r.telemetry().filter(|t| t.kind == ty::DEVICE).map(|t| (r.t, t))).collect();
         tel.sort_by_key(|x| x.0);
         let batt: Vec<(f64, f64)> = tel.iter().filter_map(|(t, x)| x.battery.filter(|&b| b <= 100.0).map(|b| (*t as f64 / 86_400_000.0, b))).collect();
         if batt.len() >= BATTERY_TREND_MIN_REPORTS && batt[batt.len() - 1].0 - batt[0].0 >= 1.0 {
