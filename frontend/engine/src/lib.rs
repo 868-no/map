@@ -152,9 +152,10 @@ impl Engine {
                 let rows: Vec<&row::Row> = all.iter().copied().filter(|r| r.lp == lp).collect();
                 // ACKs answering it: their senders received it (D-096).
                 let ack = self.i.get("ack");
+                let index = self.built.as_ref().unwrap().1.replies.get_or_init(|| packets::ReplyIndex::new(&all));
                 let acked: Vec<u32> = match rows.first().and_then(|r| r.pid.map(|p| (r.src, p))) {
                     Some((src, pid)) => {
-                        let mut v: Vec<u32> = all.iter().filter(|r| r.dst == Some(src) && r.routing().is_some_and(|rt| Some(rt.kind) == ack && rt.request == pid)).map(|r| r.src).collect();
+                        let mut v: Vec<u32> = index.answering(pid, src, &all).filter(|r| r.routing().is_some_and(|rt| Some(rt.kind) == ack)).map(|r| r.src).collect();
                         v.sort_unstable();
                         v.dedup();
                         v

@@ -284,6 +284,12 @@ impl ReplyIndex {
         out
     }
 
+    /// The routing rows answering `sender`'s packet `pid`. rows: those it
+    /// was made from.
+    pub fn answering<'a>(&self, pid: u32, sender: u32, rows: &[&'a Row]) -> impl Iterator<Item = &'a Row> {
+        self.by_request.get(&(pid, sender)).into_iter().flatten().map(|&k| rows[k as usize])
+    }
+
     /// Replies to `sender`'s packet `pid`, grouped by who answered and how.
     /// rows: those it was made from.
     pub fn replies(&self, pid: u32, sender: u32, rows: &[&Row], i: &Interner) -> Vec<Reply> {

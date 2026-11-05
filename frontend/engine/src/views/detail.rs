@@ -309,19 +309,30 @@ fn delivery_by_recipient(rows: &[&Row], mine: &[&Row], own: &[&Row], num: u32, r
     }
     // Replies answering one of its packets: (replier, request id).
     let answered: FxSet<(u32, u32)> = mine.iter().filter(|r| r.dst == Some(num)).filter_map(|r| r.traceroute().filter(|t| t.is_reply && t.request != 0).map(|t| (r.src, t.request))).collect();
+    let (ack, error) = (i.get("ack"), i.get("error"));
     let mut per: FxMap<u32, PairDelivery> = map();
     for r in first.values() {
         let to = r.dst.unwrap();
         let e = per.entry(to).or_insert_with(|| PairDelivery { to: node_id(to), asked: 0, acked: 0, errors: 0, retried: 0 });
         e.asked += 1;
-        let reps = replies.replies(r.pid.unwrap(), num, rows, i);
-        let acks: usize = reps.iter().filter(|x| x.kind == "ack").map(|x| x.count).sum();
-        if acks > 0 || answered.contains(&(to, r.pid.unwrap())) {
+        // Distinct ACK packets (by who sent them and with what error, as
+        // ReplyIndex::replies counts them), and whether an error came.
+        let mut acks: FxSet<(u32, u32, u64)> = set();
+        let mut erred = false;
+        for a in replies.answering(r.pid.unwrap(), num, rows) {
+            let rt = a.routing().unwrap();
+            if Some(rt.kind) == ack {
+                acks.insert((a.src, rt.error, a.lp));
+            } else if Some(rt.kind) == error {
+                erred = true;
+            }
+        }
+        if !acks.is_empty() || answered.contains(&(to, r.pid.unwrap())) {
             e.acked += 1;
-            if acks > 1 {
+            if acks.len() > 1 {
                 e.retried += 1;
             }
-        } else if reps.iter().any(|x| x.kind == "error") {
+        } else if erred {
             e.errors += 1;
         }
     }
