@@ -9,8 +9,8 @@ set -euo pipefail
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 image="${RUST_IMAGE:-rust:1.99.1-slim-bookworm}"
 bindgen="0.2.129" # must equal the wasm-bindgen crate version in Cargo.toml
-# Binaryen's wasm-opt shrinks the bindgen output (-Os, as the release
-# profile's opt-level "s") and strips the name section (debug names only). The image has no curl, so the
+# Binaryen's wasm-opt optimises the bindgen output (-O3, as the release
+# profile's opt-level 3) and strips the name section (debug names only). The image has no curl, so the
 # release is fetched on the host, checked and cached outside the repo.
 binaryen="version_133"
 binaryen_sha256="2dc9c7813f5375db93d96ead4b78222fcc3e2677bbb832297af4797782a37489" # binaryen-version_133-x86_64-linux.tar.gz
@@ -43,7 +43,7 @@ case "${1:-build}" in
       cargo build --release --target wasm32-unknown-unknown
       /cache/cargo/bin/wasm-bindgen --target web --out-dir /src/frontend/src/engine/pkg --out-name engine \
         /cache/target/wasm32-unknown-unknown/release/meshmap_engine.wasm
-      /binaryen/wasm-opt -Os --strip-debug --strip-producers \
+      /binaryen/wasm-opt -O3 --strip-debug --strip-producers \
         /src/frontend/src/engine/pkg/engine_bg.wasm -o /src/frontend/src/engine/pkg/engine_bg.wasm"
     ls -l "$repo/frontend/src/engine/pkg" ;;
   *) echo "usage: $0 [build|test|clippy]" >&2; exit 2 ;;

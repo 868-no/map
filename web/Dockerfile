@@ -11,8 +11,8 @@ RUN rustup target add wasm32-unknown-unknown \
 WORKDIR /src/engine
 COPY frontend/engine/Cargo.toml frontend/engine/Cargo.lock ./
 COPY frontend/engine/src ./src
-# Binaryen's wasm-opt, as scripts/wasm.sh runs it: -Os (as the release
-# profile's opt-level "s") and no name or producers sections. Its release has
+# Binaryen's wasm-opt, as scripts/wasm.sh runs it: -O3 (as the release
+# profile's opt-level 3) and no name or producers sections. Its release has
 # x86_64 Linux binaries; another build machine strips the sections only.
 ARG BINARYEN=version_133
 ADD --checksum=sha256:2dc9c7813f5375db93d96ead4b78222fcc3e2677bbb832297af4797782a37489 \
@@ -23,7 +23,7 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,targe
  && wasm-bindgen --target web --out-dir /out --out-name engine target/wasm32-unknown-unknown/release/meshmap_engine.wasm \
  && if [ "$BUILDARCH" = amd64 ]; then \
       tar xzf /tmp/binaryen.tar.gz -C /usr/local/bin --strip-components=2 "binaryen-${BINARYEN}/bin/wasm-opt" \
-      && wasm-opt -Os --strip-debug --strip-producers /out/engine_bg.wasm -o /out/engine_bg.wasm; \
+      && wasm-opt -O3 --strip-debug --strip-producers /out/engine_bg.wasm -o /out/engine_bg.wasm; \
     else \
       wasm-bindgen --target web --remove-name-section --remove-producers-section --out-dir /out --out-name engine target/wasm32-unknown-unknown/release/meshmap_engine.wasm; \
     fi

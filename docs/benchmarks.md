@@ -41,13 +41,13 @@ These figures predate stored row encodings (D-046), which roughly halved whole-w
 
 ## Engine build: size against speed (2026-11-05)
 
-The production log's last 7 days (98 267 rows), Node 22, median of 3 runs. All builds strip the name section (debug names only, 180 KB) and use unstable sorts where ties cannot differ (one sort routine per call site was 276 KB of code); the release profile is now opt-level "s" with `wasm-opt -Os` (`scripts/wasm.sh`).
+The production log's last 7 days (98 267 rows), Node 22, median of 3 runs. All builds strip the name section (debug names only, 180 KB) and use unstable sorts where ties cannot differ (one sort routine per call site was 276 KB of code); the release profile is opt-level 3 with `wasm-opt -O3` (`scripts/wasm.sh`): opt-level "s" saves 33 KB gzipped, once per engine version, but slows every live rebuild by 10-15 % and health by 35 %, so speed was chosen.
 
 | Build | Raw | gzip | Load | Snapshot 72 h | Snapshot 168 h | Health 168 h | Live batch + rebuild 168 h |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | opt-level 3, before | 1 175 KB | 342 KB | 832 ms | 125 ms | 297 ms | 63 ms | 302 ms |
-| opt-level 3, `wasm-opt -O3` | 927 KB | 342 KB | 832 ms | 136 ms | 293 ms | 68 ms | 300 ms |
-| **opt-level "s", `wasm-opt -Os`** | **803 KB** | **309 KB** | 968 ms | 147 ms | 333 ms | 89 ms | 336 ms |
+| **opt-level 3, `wasm-opt -O3`** | **927 KB** | **342 KB** | 832 ms | 136 ms | 293 ms | 68 ms | 300 ms |
+| opt-level "s", `wasm-opt -Os` | 803 KB | 309 KB | 968 ms | 147 ms | 333 ms | 89 ms | 336 ms |
 | opt-level "z", `wasm-opt -Oz` | 677 KB | 272 KB | 1 464 ms | 240 ms | 543 ms | 134 ms | 556 ms |
 
 "s" sends about 10 % less for views 10–15 % slower (health 35 %), all in the worker; "z" halves view speed for another 10 %.
