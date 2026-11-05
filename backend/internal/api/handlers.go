@@ -2,6 +2,7 @@ package api
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -307,18 +308,21 @@ func (s *Server) observations(ctx context.Context, in *ObservationsInput) (*Obse
 // buffered in chunks.
 func writeObservations(dst io.Writer, head ObservationsBody, page rowSource, after *query.Cursor) error {
 	bw := bufio.NewWriterSize(dst, 64<<10)
-	prefix, err := json.Marshal(struct {
-		Window     WindowEcho `json:"window"`
-		Since      time.Time  `json:"since"`
-		Until      time.Time  `json:"until"`
-		Generation string     `json:"generation"`
-		Now        time.Time  `json:"now"`
-	}{head.Window, head.Since, head.Until, head.Generation, head.Now})
+	// The head is ObservationsBody's encoding up to its rows, which it
+	// declares last with more and next_cursor: a field added to the body
+	// is written too. Quotes inside string values are escaped, so the key
+	// cannot be matched inside one.
+	head.Rows, head.More, head.NextCursor = nil, false, ""
+	enc, err := json.Marshal(head)
 	if err != nil {
 		return err
 	}
-	bw.Write(prefix[:len(prefix)-1]) //nolint:errcheck // bufio keeps the first error for Flush
-	bw.WriteString(`,"rows":[`)      //nolint:errcheck
+	cut := bytes.Index(enc, []byte(`,"rows":`))
+	if cut < 0 {
+		return errors.New("observations head: no rows field")
+	}
+	bw.Write(enc[:cut])         //nolint:errcheck // bufio keeps the first error for Flush
+	bw.WriteString(`,"rows":[`) //nolint:errcheck
 	more, next := false, after
 	if page != nil {
 		first := true

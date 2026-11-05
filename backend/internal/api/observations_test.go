@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"reflect"
 	"testing"
 	"time"
 
@@ -29,5 +30,24 @@ func TestWriteObservationsEmptyPage(t *testing.T) {
 	_ = writeObservations(&buf, head, nil, nil)
 	if bytes.Contains(buf.Bytes(), []byte("next_cursor")) {
 		t.Fatalf("no cursor expected: %s", buf.String())
+	}
+}
+
+// writeObservations writes ObservationsBody's fields up to its rows from
+// the struct itself: they must come first, rows, more and next_cursor last.
+func TestObservationsBodyRowsLast(t *testing.T) {
+	ty := reflect.TypeFor[ObservationsBody]()
+	n := ty.NumField()
+	if ty.Field(n-3).Name != "Rows" || ty.Field(n-2).Name != "More" || ty.Field(n-1).Name != "NextCursor" {
+		t.Fatal("ObservationsBody must end with Rows, More, NextCursor")
+	}
+	var b bytes.Buffer
+	head := ObservationsBody{Generation: `g,"rows":x`, Now: time.Unix(0, 0).UTC()}
+	if err := writeObservations(&b, head, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(b.Bytes(), &got); err != nil || got["generation"] != `g,"rows":x` || got["more"] != false || len(got) != 7 {
+		t.Fatalf("%s: %v", b.Bytes(), err)
 	}
 }
