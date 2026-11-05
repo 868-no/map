@@ -122,8 +122,11 @@ pub fn build_snapshot(rows: &[&Row], i: &Interner, g: &GeoOptions, rules: Rules)
         x.mqtt_opt_out = o.opt_out;
     }
     // Gateway activity (an unauthenticated MQTT claim, but still an in-window observation).
+    // The same pass finds the window's latest observation (now, below).
     let mut gws: FxMap<u32, (i64, i64, FxSet<u64>)> = map();
+    let mut now = 0;
     for r in rows {
+        now = now.max(r.t);
         if let Some(g) = r.gw {
             let a = gws.entry(g).or_insert_with(|| (r.t, r.t, set()));
             a.0 = a.0.min(r.t);
@@ -131,6 +134,7 @@ pub fn build_snapshot(rows: &[&Row], i: &Interner, g: &GeoOptions, rules: Rules)
             a.2.insert(r.ok);
         }
     }
+    let gateways: FxSet<u32> = gws.keys().copied().collect();
     for (n, (first, last, rx)) in gws {
         let x = nodes.entry(n).or_insert_with(|| Node::new(n));
         x.is_gateway = true;
@@ -164,7 +168,6 @@ pub fn build_snapshot(rows: &[&Row], i: &Interner, g: &GeoOptions, rules: Rules)
     // Positions reported more than a day (a week for fixed nodes) before the
     // window's latest observation are stale: no anchor, and the node is
     // estimated (D-094, D-138).
-    let now = rows.iter().map(|r| r.t).max().unwrap_or(0);
     let fixed: FxSet<u32> = nodes.iter().filter(|(_, x)| x.identity.as_ref().is_some_and(|id| super::node::fixed_role(&id.role))).map(|(&n, _)| n).collect();
     let (fresh, stale) = fresh_position_rows(&by.positioned, now, |n| fixed.contains(&n));
     for (n, r) in fresh {
@@ -249,7 +252,6 @@ pub fn build_snapshot(rows: &[&Row], i: &Interner, g: &GeoOptions, rules: Rules)
         e.zero_cost = zc.remove(&(e.src_num, e.dst_num));
     }
     // Routers' relaying, from the links and every packet's copies (D-078).
-    let gateways: FxSet<u32> = rows.iter().filter_map(|r| r.gw).collect();
     for (n, r) in crate::reliability::relaying(&copies, rows, &gateways, &er.edges, &roles) {
         if let Some(x) = nodes.get_mut(&n) {
             x.relaying = Some(r);
