@@ -139,7 +139,6 @@ type Options struct {
 	AcceptRetained func(broker string) bool
 }
 
-// Process validates, decrypts, verifies and normalises one message.
 // Longest channel name and topic root stored (runes): Meshtastic channel
 // names are at most 11 bytes; roots are a few segments.
 const (
@@ -147,6 +146,7 @@ const (
 	MaxShownRoot    = 160
 )
 
+// Process validates, decrypts, verifies and normalises one message.
 func Process(m RawMessage, o Options) (Observation, error) {
 	if m.Retained && (o.AcceptRetained == nil || !o.AcceptRetained(m.BrokerID)) {
 		return Observation{}, reject("retained_ignored")

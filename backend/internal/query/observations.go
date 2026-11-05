@@ -143,18 +143,3 @@ func (p *Page) Next() *Cursor {
 
 // Close releases the connection; safe to call more than once.
 func (p *Page) Close() { p.rows.Close() }
-
-// ListObservations collects one page in memory (tests and tools; the API
-// streams with OpenPage).
-func ListObservations(ctx context.Context, pool *pgxpool.Pool, w window.Window, after *Cursor, limit int) ([]json.RawMessage, *Cursor, bool, error) {
-	p, err := OpenPage(ctx, pool, w, after, limit)
-	if err != nil {
-		return nil, nil, false, err
-	}
-	defer p.Close()
-	out := []json.RawMessage{}
-	if err := p.Each(func(row []byte) error { out = append(out, append([]byte(nil), row...)); return nil }); err != nil {
-		return nil, nil, false, err
-	}
-	return out, p.Next(), p.More(), nil
-}

@@ -106,7 +106,6 @@ type Pipeline struct {
 	closeMu  sync.RWMutex // Submit sends under the read lock; Run closes queue under the write lock
 	stopAt   atomic.Int64 // UnixNano when shutdown began
 	degraded atomic.Bool  // writer currently failing
-	lastOK   atomic.Int64
 
 	dedupeWait    time.Duration // dedupeBackoff; shorter in tests
 	dedupeRetryAt atomic.Int64  // UnixNano before which Redis dedupe is skipped
@@ -428,32 +427,29 @@ func (p *Pipeline) flush(batch []*Observation) {
 	}
 	// No two copies of one observation reach the writer: claim holds a key
 	// in flight until afterCommit.
-	uniq := batch
 	backoff := 250 * time.Millisecond
 	for {
+		// Shutting down: no attempt may outlast the drain deadline, and past
+		// it the rows are given up as a gap without trying (D-059).
 		timeout := 30 * time.Second
-		if p.closed.Load() {
-			// Shutting down: no attempt may outlast the drain deadline, and past
-			// it the rows are given up as a gap without trying (D-059).
-			left := time.Until(time.Unix(0, p.stopAt.Load()).Add(p.cfg.DrainTimeout))
+		if left, closing := p.drainLeft(); closing {
 			if left <= 0 {
-				p.giveUp(uniq, errors.New("drain deadline passed"))
+				p.giveUp(batch, errors.New("drain deadline passed"))
 				return
 			}
 			timeout = min(timeout, left)
 		}
-		p.takeAlsoVia(uniq)
+		p.takeAlsoVia(batch)
 		start := time.Now()
 		ctx, cancel := context.WithTimeout(context.Background(), timeout)
-		ids, err := p.sink.InsertBatch(ctx, uniq)
+		ids, err := p.sink.InsertBatch(ctx, batch)
 		cancel()
 		if err == nil {
 			p.degraded.Store(false)
-			p.lastOK.Store(time.Now().Unix())
 			p.m.WriterLatency.Observe(time.Since(start).Seconds())
 			p.m.WriterBatches.Inc()
-			p.m.WriterRows.Add(float64(len(uniq)))
-			p.afterCommit(uniq, ids)
+			p.m.WriterRows.Add(float64(len(batch)))
+			p.afterCommit(batch, ids)
 			return
 		}
 		p.m.WriterErrors.Inc()
@@ -464,34 +460,42 @@ func (p *Pipeline) flush(batch []*Observation) {
 			// When it refuses every row of a batch of several, the cause is
 			// the database rather than the data (a schema out of step during
 			// a deploy): keep the rows and retry, as for any outage.
-			refused, again := p.isolate(uniq, timeout)
-			if len(uniq) == 1 || len(refused) < len(uniq) {
+			refused, again := p.isolate(batch, timeout)
+			if len(batch) == 1 || len(refused) < len(batch) {
 				for _, o := range refused {
 					p.reject(o, err)
 				}
 				if len(again) == 0 {
 					return
 				}
-				uniq = again // stored or dropped the rest; retry what failed transiently
+				batch = again // stored or dropped the rest; retry what failed transiently
 				continue
 			}
 		}
 		p.degraded.Store(true)
+		// Shutting down: retry only until the drain deadline, then give the
+		// rows up as a gap rather than hang until killed.
 		wait := backoff
-		if p.closed.Load() {
-			// Shutting down: retry only until the drain deadline, then give
-			// the rows up as a gap rather than hang until killed.
-			left := time.Until(time.Unix(0, p.stopAt.Load()).Add(p.cfg.DrainTimeout))
+		if left, closing := p.drainLeft(); closing {
 			if left <= 0 {
-				p.giveUp(uniq, err)
+				p.giveUp(batch, err)
 				return
 			}
 			wait = min(wait, left)
 		}
-		p.log.Warn("batch insert failed; retrying", "rows", len(uniq), "err", err, "backoff", wait)
+		p.log.Warn("batch insert failed; retrying", "rows", len(batch), "err", err, "backoff", wait)
 		time.Sleep(wait)
 		backoff = min(backoff*2, 30*time.Second)
 	}
+}
+
+// drainLeft is how long the shutdown drain may still take, and whether the
+// pipeline is shutting down at all.
+func (p *Pipeline) drainLeft() (time.Duration, bool) {
+	if !p.closed.Load() {
+		return 0, false
+	}
+	return time.Until(time.Unix(0, p.stopAt.Load()).Add(p.cfg.DrainTimeout)), true
 }
 
 // isolate inserts rows the database refused as a batch, halving until the
@@ -515,6 +519,7 @@ func (p *Pipeline) isolate1(rows []*Observation, timeout time.Duration) (refused
 	cancel()
 	switch {
 	case err == nil:
+		p.degraded.Store(false)
 		p.m.WriterBatches.Inc()
 		p.m.WriterRows.Add(float64(len(rows)))
 		p.afterCommit(rows, ids)

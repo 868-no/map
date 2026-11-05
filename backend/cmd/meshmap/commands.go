@@ -180,7 +180,6 @@ type supervisor struct {
 	pipe    *ingest.Pipeline
 	mu      sync.Mutex
 	clients []mqtt.Client
-	demo    bool
 }
 
 func (s *supervisor) Healthy() (bool, string) { return s.pipe.Healthy() }
@@ -318,7 +317,7 @@ func serveCmd() *cobra.Command {
 					ProcessOpts: ingest.Options{Keyring: kr, Identities: ids, Policy: c.Policy, KeyBudget: c.Env.KeyAttemptBudget,
 						AcceptRetained: func(b string) bool { return retained[b] }},
 				}, storeSink{ipool}, dd, pub, ids, m, log)
-				sup = &supervisor{pipe: pipe, demo: c.Env.DemoMode}
+				sup = &supervisor{pipe: pipe}
 				wg.Add(1)
 				go func() { defer wg.Done(); pipe.Run(ingestCtx) }()
 				go ids.Run(ingestCtx, time.Hour, retentionTrigger(ingestCtx, rc, log))
@@ -339,7 +338,9 @@ func serveCmd() *cobra.Command {
 					if err != nil {
 						return err
 					}
+					sup.mu.Lock()
 					sup.clients = append(sup.clients, cl)
+					sup.mu.Unlock()
 					mqttWG.Add(1)
 					go func() {
 						defer mqttWG.Done()

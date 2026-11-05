@@ -24,10 +24,6 @@ import (
 	"github.com/868-no/map/internal/storage"
 )
 
-type benchIDs map[uint32]security.Identity
-
-func (m benchIDs) Lookup(n uint32) (security.Identity, bool) { id, ok := m[n]; return id, ok }
-
 // seedCmd fills a database with synthetic, protocol-correct observations
 // spread over a time range, through the production Process + COPY path.
 func seedCmd() *cobra.Command {
@@ -59,7 +55,7 @@ func seedCmd() *cobra.Command {
 			scen := demo.LargeScenario(nodes, seed)
 			fmt.Println("scenario:", scen.Describe())
 			kr, _ := security.NewKeyring(demo.Channels())
-			ids := benchIDs{}
+			ids := memIDs{}
 			o := ingest.Options{Keyring: kr, Identities: ids, KeyBudget: 4}
 			sim := demo.NewSimulator(scen, seed)
 			end := time.Now().UTC()

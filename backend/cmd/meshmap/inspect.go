@@ -16,6 +16,7 @@ import (
 	"github.com/868-no/map/internal/security"
 )
 
+// memIDs is an identity index held in memory (inspect, seed).
 type memIDs map[uint32]security.Identity
 
 func (m memIDs) Lookup(n uint32) (security.Identity, bool) { id, ok := m[n]; return id, ok }

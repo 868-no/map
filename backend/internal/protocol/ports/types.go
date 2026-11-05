@@ -140,7 +140,6 @@ func decodeTelemetry(b []byte) (*Telemetry, error) {
 	case nil:
 		return nil, ErrInvalid
 	default:
-		_ = v
 		return &Telemetry{Kind: "other"}, nil
 	}
 }
