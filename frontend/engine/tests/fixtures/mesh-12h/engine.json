@@ -16080,7 +16080,7 @@
         "traceroute": 722
       },
       "edges": 446,
-      "estimated": 15,
+      "estimated": 17,
       "first_event": "2026-10-31T03:17:03.038Z",
       "last_event": "2026-10-31T15:16:57.913Z",
       "nodes": 179,
@@ -38587,7 +38587,31 @@
         "brokers": [
           "no868"
         ],
-        "estimate_note": "anchors !2f349738 and !a721aca8 are collocated (< 200 m apart)",
+        "estimate": {
+          "anchor_count": 6,
+          "anchors": [
+            "!09a7ceb5",
+            "!1454ed85",
+            "!2f349738",
+            "!34bb8eaf",
+            "!8d52fe84",
+            "!a721aca8",
+            "!b2a114e3"
+          ],
+          "evidence_from": "2026-10-31T03:18:15.130Z",
+          "evidence_to": "2026-10-31T15:08:24.335Z",
+          "lat": 59.543,
+          "lon": 10.496,
+          "method": "weighted_centroid",
+          "quality": "very_low",
+          "reasons": [
+            "uncalibrated: weighted centroid of anchors heard directly; SNR does not measure distance",
+            "anchors !2f349738, !a721aca8 are less than 200 m apart: counted as one site",
+            "radius includes up to 800 m of anchor position imprecision"
+          ],
+          "sample_count": 154,
+          "uncertainty_radius_m": 45300.0
+        },
         "first_seen": "2026-10-31T05:39:12.931Z",
         "gateway_receptions": 0,
         "id": "!1d913813",
@@ -39369,7 +39393,28 @@
         "brokers": [
           "no868"
         ],
-        "estimate_note": "anchors !514664dd and !552ad94c are collocated (< 200 m apart)",
+        "estimate": {
+          "anchor_count": 3,
+          "anchors": [
+            "!34bb8eaf",
+            "!514664dd",
+            "!552ad94c",
+            "!8d52fe84"
+          ],
+          "evidence_from": "2026-10-31T04:15:24.619Z",
+          "evidence_to": "2026-10-31T14:50:44.748Z",
+          "lat": 59.317,
+          "lon": 11.116,
+          "method": "weighted_centroid",
+          "quality": "very_low",
+          "reasons": [
+            "uncalibrated: weighted centroid of anchors heard directly; SNR does not measure distance",
+            "anchors !552ad94c, !514664dd are less than 200 m apart: counted as one site",
+            "radius includes up to 800 m of anchor position imprecision"
+          ],
+          "sample_count": 41,
+          "uncertainty_radius_m": 20500.0
+        },
         "first_seen": "2026-10-31T05:12:12.779Z",
         "gateway_receptions": 0,
         "id": "!8742303f",

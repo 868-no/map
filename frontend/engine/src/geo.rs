@@ -103,6 +103,55 @@ struct Pt {
     y: f64,
     m: Measurement,
     a: Anchor,
+    /// Anchors at the same site merged into this one (D-175).
+    with: Vec<u32>,
+}
+
+/// Anchors closer than `spacing` are devices at one site: one viewpoint,
+/// not several, so each such group becomes one anchor (D-175). Its position
+/// is the sample-weighted mean of theirs, its error covers each of theirs
+/// from there, its samples add up, and its SNR and RSSI are sample-weighted
+/// means. The anchor with the most samples (then the lowest number) names
+/// the site. Returns the sites and the merged groups, each a site's nodes.
+fn merge_sites(mut pts: Vec<Pt>, spacing: f64) -> (Vec<Pt>, Vec<Vec<u32>>) {
+    pts.sort_by_key(|q| (std::cmp::Reverse(q.m.samples), q.a.node));
+    let mut out: Vec<Pt> = Vec::with_capacity(pts.len());
+    /// Per site: sample-weighted sums and weights of SNR and RSSI, and its members' (x, y, err).
+    struct Site {
+        sig: [f64; 4],
+        members: Vec<(f64, f64, f64)>,
+    }
+    let mut acc: Vec<Site> = Vec::new();
+    for q in pts {
+        let w = q.m.samples as f64;
+        let sig = [q.m.snr.map_or(0.0, |v| v * w), q.m.snr.map_or(0.0, |_| w), q.m.rssi.map_or(0.0, |v| v * w), q.m.rssi.map_or(0.0, |_| w)];
+        match out.iter().position(|s| (s.x - q.x).hypot(s.y - q.y) < spacing) {
+            Some(k) => {
+                let s = &mut out[k];
+                let (ws, t) = (s.m.samples as f64, s.m.samples as f64 + w);
+                let lerp = |a: f64, b: f64| (a * ws + b * w) / t;
+                (s.x, s.y, s.a.lat, s.a.lon) = (lerp(s.x, q.x), lerp(s.y, q.y), lerp(s.a.lat, q.a.lat), lerp(s.a.lon, q.a.lon));
+                s.m.samples += q.m.samples;
+                s.m.first = s.m.first.min(q.m.first);
+                s.m.last = s.m.last.max(q.m.last);
+                s.with.push(q.a.node);
+                let Site { sig: a, members } = &mut acc[k];
+                for (t, v) in a.iter_mut().zip(sig) {
+                    *t += v;
+                }
+                members.push((q.x, q.y, q.a.err_m));
+                s.m.snr = (a[1] > 0.0).then(|| a[0] / a[1]);
+                s.m.rssi = (a[3] > 0.0).then(|| a[2] / a[3]);
+                s.a.err_m = members.iter().map(|&(x, y, e)| e + (x - s.x).hypot(y - s.y)).fold(0.0, f64::max);
+            }
+            None => {
+                acc.push(Site { sig, members: vec![(q.x, q.y, q.a.err_m)] });
+                out.push(q);
+            }
+        }
+    }
+    let groups = out.iter().filter(|s| !s.with.is_empty()).map(|s| std::iter::once(s.a.node).chain(s.with.iter().copied()).collect()).collect();
+    (out, groups)
 }
 
 fn median(mut v: Vec<f64>) -> f64 {
@@ -224,7 +273,7 @@ pub fn locate(
     ranging: Option<&Ranging>,
     node_id: impl Fn(u32) -> String,
 ) -> Result<Estimate, String> {
-    let mut pts: Vec<Pt> = ms.iter().filter_map(|m| anchors.get(&m.anchor).filter(|_| m.samples > 0).map(|a| Pt { x: 0.0, y: 0.0, m: *m, a: *a })).collect();
+    let mut pts: Vec<Pt> = ms.iter().filter_map(|m| anchors.get(&m.anchor).filter(|_| m.samples > 0).map(|a| Pt { x: 0.0, y: 0.0, m: *m, a: *a, with: vec![] })).collect();
     if pts.len() < p.min_anchors {
         return Err(format!("only {} positioned anchor{} with direct links (need {})", pts.len(), if pts.len() == 1 { "" } else { "s" }, p.min_anchors));
     }
@@ -246,12 +295,9 @@ pub fn locate(
     if samples < p.min_samples {
         return Err(format!("only {samples} independent samples (need {})", p.min_samples));
     }
-    for i in 0..pts.len() {
-        for j in i + 1..pts.len() {
-            if (pts[i].x - pts[j].x).hypot(pts[i].y - pts[j].y) < p.min_anchor_spacing_m {
-                return Err(format!("anchors {} and {} are collocated (< {} m apart)", node_id(pts[i].a.node), node_id(pts[j].a.node), fmt0(p.min_anchor_spacing_m)));
-            }
-        }
+    let (pts, sites) = merge_sites(pts, p.min_anchor_spacing_m);
+    if pts.len() < p.min_anchors {
+        return Err(format!("only {} anchor sites: anchors less than {} m apart count as one (need {})", pts.len(), fmt0(p.min_anchor_spacing_m), p.min_anchors));
     }
     let n = pts.len() as f64;
     let cx = pts.iter().map(|q| q.x).sum::<f64>() / n;
@@ -277,6 +323,7 @@ pub fn locate(
     let mut names: Vec<String> = Vec::with_capacity(pts.len());
     for q in &pts {
         names.push(node_id(q.a.node));
+        names.extend(q.with.iter().map(|&n| node_id(n)));
         if from == 0 || q.m.first < from {
             from = q.m.first;
         }
@@ -333,6 +380,9 @@ pub fn locate(
     }
     if dropped > 0 {
         reasons.push(format!("{dropped} distant anchor(s) ignored as inconsistent"));
+    }
+    for g in &sites {
+        reasons.push(format!("anchors {} are less than {} m apart: counted as one site", g.iter().map(|&n| node_id(n)).collect::<Vec<_>>().join(", "), fmt0(p.min_anchor_spacing_m)));
     }
     // Anchors' reported positions may be off by up to err_m; added in full.
     let anchor_err = pts.iter().fold(0.0f64, |m, q| m.max(q.a.err_m));
@@ -461,6 +511,28 @@ mod tests {
     }
 
     #[test]
+    fn anchors_at_one_site_count_as_one() {
+        let mut anchors = map();
+        // 1 and 4 share a roof (identical coordinates), 5 is 100 m from them.
+        for (n, lat, lon) in [(1u32, 59.9, 10.7), (2, 59.95, 10.8), (3, 59.85, 10.85), (4, 59.9, 10.7), (5, 59.9009, 10.7)] {
+            anchors.insert(n, Anchor { node: n, lat, lon, err_m: 0.0 });
+        }
+        let m = |a, samples| Measurement { anchor: a, snr: Some(5.0), rssi: None, samples, first: a as i64, last: 10 + a as i64 };
+        let est = locate(&anchors, &[m(1, 2), m(2, 2), m(3, 2), m(4, 6), m(5, 2)], &Params::default(), None, node_id).unwrap();
+        assert_eq!((est.anchor_count, est.sample_count), (3, 14), "three sites, every sample kept");
+        assert_eq!(est.anchors.len(), 5, "all five named");
+        assert!(est.reasons.iter().any(|r| r == "anchors !00000004, !00000001, !00000005 are less than 200 m apart: counted as one site"), "{:?}", est.reasons);
+        // The site's own spread (up to ~100 m) counts as anchor imprecision.
+        assert!(est.reasons.iter().any(|r| r.starts_with("radius includes up to 100 m")), "{:?}", est.reasons);
+        // The same estimate as with the site's samples on one anchor.
+        let one = locate(&anchors, &[m(1, 10), m(2, 2), m(3, 2)], &Params::default(), None, node_id).unwrap();
+        assert!((est.lat - one.lat).abs() <= 0.001 && (est.lon - one.lon).abs() <= 0.001, "{est:?} {one:?}");
+        // Two sites are not enough, however many anchors they hold.
+        let e = locate(&anchors, &[m(1, 2), m(4, 2), m(5, 2), m(2, 2)], &Params::default(), None, node_id).unwrap_err();
+        assert_eq!(e, "only 2 anchor sites: anchors less than 200 m apart count as one (need 3)");
+    }
+
+    #[test]
     fn ranging_fit() {
         let links: Vec<(f64, f64)> = [2.0, 5.0, 10.0, 20.0, 40.0, 80.0, 3.0, 30.0].iter().map(|&km: &f64| (km, 10.0 - 7.0 * km.log10())).collect();
         let r = Ranging::fit(&links).unwrap();
@@ -485,7 +557,7 @@ mod tests {
             .map(|(i, &(x, y)): (usize, &(f64, f64))| {
                 let km = x.hypot(y) / 1000.0;
                 let m = Measurement { anchor: i as u32, snr: Some(10.0 - 7.0 * km.log10()), rssi: None, samples: 4, first: 1, last: 2 };
-                Pt { x, y, m, a: Anchor { node: i as u32, lat: 0.0, lon: 0.0, err_m: 0.0 } }
+                Pt { x, y, m, a: Anchor { node: i as u32, lat: 0.0, lon: 0.0, err_m: 0.0 }, with: vec![] }
             })
             .collect();
         assert_eq!(ranged(&pts, 0.0, 0.0, &r), None);

@@ -29,6 +29,8 @@ fn norm(v: &Value, server: bool) -> Value {
                     // Links and the estimates built on them left the retired server's rules in D-087
                     // (count-aware confidence, traceroute and relay evidence counted once): engine.json covers them.
                     || k == "edges" || k == "estimate" || k == "estimate_note" || k == "last_referenced" || k == "own_uplinks"
+                    // And so has how many are estimated: anchors at one site count as one (D-175).
+                    || k == "estimated"
                     // The server counted a packet under every status any copy had; one per packet now (D-087).
                     || k == "signatures" || k == "uptime") {
                     continue;
