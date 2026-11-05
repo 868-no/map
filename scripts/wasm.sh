@@ -42,12 +42,15 @@ case "${1:-build}" in
       cargo clippy --release --all-targets -- -D warnings" ;;
   build)
     if [ ! -x "$binaryen_dir/wasm-opt" ]; then
+      # Into a directory of its own, then moved into place: jobs sharing the
+      # cache (self-hosted runners) may fetch it at the same time.
       mkdir -p "$binaryen_dir"
-      tgz="$binaryen_dir/binaryen.tar.gz"
-      curl -sSfL -o "$tgz" "https://github.com/WebAssembly/binaryen/releases/download/$binaryen/binaryen-$binaryen-x86_64-linux.tar.gz"
-      echo "$binaryen_sha256  $tgz" | sha256sum -c --quiet -
-      tar xzf "$tgz" -C "$binaryen_dir" --strip-components=2 "binaryen-$binaryen/bin/wasm-opt"
-      rm "$tgz"
+      tmp="$(mktemp -d "$binaryen_dir/.fetch.XXXXXX")"
+      curl -sSfL -o "$tmp/binaryen.tar.gz" "https://github.com/WebAssembly/binaryen/releases/download/$binaryen/binaryen-$binaryen-x86_64-linux.tar.gz"
+      echo "$binaryen_sha256  $tmp/binaryen.tar.gz" | sha256sum -c --quiet -
+      tar xzf "$tmp/binaryen.tar.gz" -C "$tmp" --strip-components=2 "binaryen-$binaryen/bin/wasm-opt"
+      mv -f "$tmp/wasm-opt" "$binaryen_dir/wasm-opt"
+      rm -r "$tmp"
     fi
     run "rustup target add wasm32-unknown-unknown >/dev/null 2>&1 || true
       [ -x /cache/cargo/bin/wasm-bindgen ] && /cache/cargo/bin/wasm-bindgen --version | grep -q $bindgen \

@@ -15,9 +15,10 @@
 # runner's localhost, as on a hosted runner, and parallel jobs never collide
 # on ports, container names or networks. Jobs mount their checkout into
 # containers by path (scripts/*.sh), so the work directory is mounted at the
-# same path in the runner and in its daemon. Each daemon keeps its state:
-# pulled images, the build cache and the toolchains' cache volumes stay warm
-# across jobs. A hook clears what the last job left behind.
+# same path in the runner and in its daemon. Each daemon keeps its state
+# (pulled images, the build cache), and the toolchains' caches are on a
+# volume all slots share, so all stay warm across jobs. A hook clears what
+# the last job left behind.
 #
 #   cp .env.example .env    # set ACCESS_TOKEN
 #   docker compose up -d
@@ -166,6 +167,10 @@ x-runner: &runner
     RUNNER_ALLOW_RUNASROOT: "1"
     DOCKER_HOST: unix:///run/dind/docker.sock
     ACTIONS_RUNNER_HOOK_JOB_STARTED: /hooks/job-started.sh
+    # The toolchains' caches (scripts/*.sh: Go, npm, Cargo, wasm-opt), on a
+    # volume every runner and daemon mounts at this path: a job finds them
+    # warm on whichever slot it lands on.
+    MESHMAP_CACHE: /_cache
   configs:
     - { source: job-started, target: /hooks/job-started.sh }
   entrypoint: ["/bin/bash", "-c"]
@@ -193,42 +198,43 @@ services:
 
   dind-1:
     <<: *dind
-    volumes: [docker-1:/var/lib/docker, sock-1:/run/dind, work-1:/_work]
+    volumes: [docker-1:/var/lib/docker, sock-1:/run/dind, work-1:/_work, toolchains:/_cache]
   runner-1:
     <<: *runner
     network_mode: service:dind-1
     depends_on: { dind-1: { condition: service_healthy } }
-    volumes: [sock-1:/run/dind, work-1:/_work, jit-1:/jit]
+    volumes: [sock-1:/run/dind, work-1:/_work, jit-1:/jit, toolchains:/_cache]
 
   dind-2:
     <<: *dind
-    volumes: [docker-2:/var/lib/docker, sock-2:/run/dind, work-2:/_work]
+    volumes: [docker-2:/var/lib/docker, sock-2:/run/dind, work-2:/_work, toolchains:/_cache]
   runner-2:
     <<: *runner
     network_mode: service:dind-2
     depends_on: { dind-2: { condition: service_healthy } }
-    volumes: [sock-2:/run/dind, work-2:/_work, jit-2:/jit]
+    volumes: [sock-2:/run/dind, work-2:/_work, jit-2:/jit, toolchains:/_cache]
 
   dind-3:
     <<: *dind
-    volumes: [docker-3:/var/lib/docker, sock-3:/run/dind, work-3:/_work]
+    volumes: [docker-3:/var/lib/docker, sock-3:/run/dind, work-3:/_work, toolchains:/_cache]
   runner-3:
     <<: *runner
     network_mode: service:dind-3
     depends_on: { dind-3: { condition: service_healthy } }
-    volumes: [sock-3:/run/dind, work-3:/_work, jit-3:/jit]
+    volumes: [sock-3:/run/dind, work-3:/_work, jit-3:/jit, toolchains:/_cache]
 
   dind-4:
     <<: *dind
-    volumes: [docker-4:/var/lib/docker, sock-4:/run/dind, work-4:/_work]
+    volumes: [docker-4:/var/lib/docker, sock-4:/run/dind, work-4:/_work, toolchains:/_cache]
   runner-4:
     <<: *runner
     network_mode: service:dind-4
     depends_on: { dind-4: { condition: service_healthy } }
-    volumes: [sock-4:/run/dind, work-4:/_work, jit-4:/jit]
+    volumes: [sock-4:/run/dind, work-4:/_work, jit-4:/jit, toolchains:/_cache]
 
 volumes:
   state:
+  toolchains:
   docker-1:
   sock-1:
   work-1:

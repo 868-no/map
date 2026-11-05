@@ -41,7 +41,7 @@ The workflow files alone cannot guarantee that: a pull request runs the workflow
 
 - Jobs start containers as on a hosted runner: their published ports are on the runner's `localhost` (the end-to-end stack on 8080, Playwright's `--network host`), and parallel jobs never collide on ports, container names or networks.
 - The work directory is mounted at the same path (`/_work`) in the runner and its daemon, so `docker run -v "$repo":/src` in `scripts/*.sh` finds the checkout.
-- Each daemon keeps its state on a volume of its own: pulled images, the build cache and the toolchains' cache volumes (`meshmap-rust-cache`, `meshmap-go-cache`, `meshmap-node-cache`) stay warm between jobs, while each runner is registered afresh for every job. Before each job, after that check, the hook (inline in `compose.yaml`, run by the runner with bash) removes leftover containers, networks, anonymous volumes and untagged images, and trims the build cache to 20 GB, least recently used first. Tagged images and the cache volumes are kept; to start a runner from cold, remove its `docker-N` volume.
+- Each daemon keeps its state on a volume of its own (pulled images, the build cache), and the toolchains' caches are on one volume, `toolchains`, that every runner and daemon mounts at `/_cache` (`MESHMAP_CACHE`, as `scripts/*.sh` read it: Go's build and module caches, npm's, Cargo's registry and target directory with wasm-bindgen, wasm-opt). A job finds them warm on whichever slot it lands on; Go, npm and Cargo all take concurrent jobs (Cargo makes one wait for the other's build). All stay warm between jobs, while each runner is registered afresh for every job. Before each job, after that check, the hook (inline in `compose.yaml`, run by the runner with bash) removes leftover containers, networks, anonymous volumes and untagged images, and trims the build cache to 20 GB, least recently used first. Tagged images and the cache volumes are kept; to start a runner from cold, remove its `docker-N` volume.
 - Only the daemons are privileged; the runners are not, and the daemons listen on a socket shared with their runner alone, not on TCP.
 
 To set it up on a dedicated host (a VM, not one with access to production or other secrets: a job, and so anyone who can push to `main`, controls the daemon):
@@ -53,6 +53,12 @@ docker compose up -d
 ```
 
 The stack is `compose.yaml` alone, so it also runs as a Portainer stack from this repository: Add stack → Repository, the repository URL, reference `refs/heads/main`, compose path `deploy/runners/compose.yaml`, and the variables of `.env.example` (at least `ACCESS_TOKEN`) under Environment variables. With automatic updates on, Portainer redeploys it when the file changes on `main`, such as a bumped runner image.
+
+**AppArmor on the host.** Jobs' containers run in Docker-in-Docker without Docker's own AppArmor profile, so a profile the host attaches to a program by its path applies to that program in them too. Recent Ubuntu releases ship such profiles for many programs: the one for `mosquitto` only lets it read its config under `/etc/mosquitto`, so the integration and end-to-end tests' broker failed with "Unable to open config file" (`dmesg` shows `apparmor="DENIED" … profile="mosquitto"`). Disable such a profile on the runner host, which runs none of those programs itself:
+
+```sh
+f=$(grep -l '^profile mosquitto' /etc/apparmor.d/*); sudo ln -s "$f" /etc/apparmor.d/disable/ && sudo apparmor_parser -R "$f"
+```
 
 The runners appear under Settings → Actions → Runners as `meshmap-N-<time>`, one per slot waiting for a job (`RUNNER_NAME_PREFIX` per host); `docker compose logs controller` says what it issued and any API errors. Then set `RUNNER_LABELS`. Bump the runner image in `compose.yaml` at least monthly: GitHub refuses runners that are too far behind, and a runner a little behind updates itself first, at every job, since each starts from the image. Multi-platform images still build arm64 under QEMU unless the host is arm64.
 
