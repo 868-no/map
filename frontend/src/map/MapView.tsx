@@ -231,19 +231,24 @@ export default memo(function MapView({ caps, snapshot, onPositions }: Props) {
   const windowEnd = snapshot ? Date.parse(snapshot.meta.window.end) : Date.now()
   const windowMs = snapshot ? Date.parse(snapshot.meta.window.end) - Date.parse(snapshot.meta.window.start) : 1
 
-  const { placed, pos, links, allPos, roles } = useMemo(() => {
+  // Placement and links apart: a link toggle or edge filter must not move
+  // every marker (new positions re-run everything that follows them).
+  const { positionedOnly, onlineOnly, roles: roleFilter } = filters
+  const { placed, pos, allPos, roles } = useMemo(() => {
     const nodes = snapshot?.nodes ?? []
     const { placed: all } = placeNodes(nodes, windowEnd, windowMs)
-    const placed = all.filter((p) => passesNodeFilters(p.node, filters, windowEnd))
+    const placed = all.filter((p) => passesNodeFilters(p.node, { positionedOnly, onlineOnly, roles: roleFilter }, windowEnd))
     // Positions of the markers actually drawn: links, pings and the camera use only these.
     const pos = new Map<string, [number, number]>()
     for (const p of placed) pos.set(p.node.id, [p.lon, p.lat])
-    const edges = filterEdges(snapshot?.edges ?? [], filters, toggles)
     const roles = new Map(nodes.map((n) => [n.id, n.identity?.role]))
-    const links = linkGeometry(edges, pos, roles).filter((g) => (g.mqtt ? toggles.mqttLinks : g.infra ? toggles.infraLinks : toggles.otherLinks))
     const allPos = new Map<string, [number, number]>(all.map((p) => [p.node.id, [p.lon, p.lat]]))
-    return { placed, pos, links, allPos, roles }
-  }, [snapshot, filters, toggles.infraLinks, toggles.otherLinks, toggles.mqttLinks, toggles.inferred, windowEnd, windowMs]) // eslint-disable-line react-hooks/exhaustive-deps
+    return { placed, pos, allPos, roles }
+  }, [snapshot, positionedOnly, onlineOnly, roleFilter, windowEnd, windowMs])
+  const links = useMemo(() => {
+    const edges = filterEdges(snapshot?.edges ?? [], filters, toggles)
+    return linkGeometry(edges, pos, roles).filter((g) => (g.mqtt ? toggles.mqttLinks : g.infra ? toggles.infraLinks : toggles.otherLinks))
+  }, [snapshot, pos, roles, filters.minConfidence, filters.evidence, toggles.infraLinks, toggles.otherLinks, toggles.mqttLinks, toggles.inferred]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => onPositions(pos), [pos, onPositions])
 
