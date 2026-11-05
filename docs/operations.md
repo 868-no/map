@@ -78,6 +78,15 @@ Serve the map over HTTPS: browsers only enable the service worker (offline use) 
 
 `web` honours `X-Forwarded-For` only from private-range peers. The backend trusts `TRUSTED_PROXIES` (default: private ranges), so per-client rate limits see real client addresses.
 
+## Caching at Cloudflare
+
+Whole past days of rows (`/api/v1/observations/day/{date}?generation=…`, D-158) are the same for every visitor and, once final, answered `Cache-Control: public, max-age=31536000, immutable`; anything not final is `no-store`. Cloudflare does not cache JSON from extensionless paths by default, so add a Cache Rule (Caching → Cache Rules):
+
+- **When:** URI Path starts with `/api/v1/observations/day/`.
+- **Then:** Eligible for cache; Edge TTL "Use cache-control header if present, bypass cache if not"; Browser TTL "Respect origin"; keep the default cache key, which includes the query string (the generation).
+
+Every new visitor then reads past days from Cloudflare, and the backend reads each day from Postgres once per generation (Redis shares that read between replicas). A generation change (deploy with a decoder or row-format change, configuration change, history import) changes the URLs, so nothing needs purging. `/api/v1/trends` (`max-age=60, stale-while-revalidate=300`) may be added to the same rule; leave `/api/v1/observations` and the live stream out (they are `no-store` and per visitor anyway). `meshmap_api_day_requests_total{result}` shows how days reaching the backend are answered (`hit` from Redis, `built` from Postgres, `uncached` not final yet, `not_modified`).
+
 ## Scaling horizontally (Swarm)
 
 [`deploy/stack.swarm.yaml`](../deploy/stack.swarm.yaml) is `compose.production.yaml` split for Docker Swarm (`docker stack deploy -c deploy/stack.swarm.yaml meshmap`, or a Portainer stack) so the HTTP API can run as several replicas (D-157):
@@ -115,6 +124,7 @@ Public by default. For basic auth, create `deploy/caddy-auth/basic.caddy` (see t
   - `meshmap_ingest_dropped_total{reason}` (queue full = data loss window)
   - `meshmap_ingest_duplicate_deliveries_total{broker}`, `meshmap_ingest_provenance_updates_total`
   - `meshmap_writer_*`, `meshmap_identities`, `meshmap_retention_deleted_rows_total`
+  - `meshmap_api_day_requests_total{result}` (whole days, D-158), `meshmap_cache_errors_total{op}`
 
 ## Data loss windows
 
@@ -154,7 +164,7 @@ sqlite3 -readonly -csv meshstellar.db \
 - **What is imported:** envelopes received after the retention cutoff (`RETENTION_MONTHS`; raise it first to keep more) and before the broker's first row collected live (rows an earlier import stored do not count, so a re-run after an interruption resumes where it stopped; the command prints the bound it uses), since the two collectors received the same uploads at slightly different times and those would otherwise be stored twice. `--after` and `--before` (RFC 3339) narrow or move the span.
 - **Topics:** Meshstellar stores the payload but not the topic, so the topic is rebuilt from the envelope (`<root>/2/e/<channel>/<gateway>`, or `<root>/2/map/` for map reports). The root is each gateway's own, from its live rows where it has any, else the broker's subscription without `/#`, or `--topic-root`. Unless the broker has exactly one subscription of the form `<root>/#` (no other wildcards), `--topic-root` is required, even when every gateway has live rows.
 - **Duplicates:** the same upload delivered twice within 15 minutes is stored once, as at ingest; JSON and status messages are skipped.
-- **Browsers:** a browser that already holds a copy of a window reaching back before the broker's first row (within its last 8 days) keeps its empty copy of that span until it falls out of the window, or until Settings → Reset.
+- **Browsers and caches:** an import advances the history revision when it starts and ends (D-158), which changes the rows' generation: browsers discard what they held and fetch their window again, and no cached day from before the import is used again. While it runs, no day is cached as final.
 
 ## Backup and restore
 

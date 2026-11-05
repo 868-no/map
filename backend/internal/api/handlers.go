@@ -16,7 +16,6 @@ import (
 
 	"github.com/868-no/map/internal/geo"
 	"github.com/868-no/map/internal/ingest"
-	"github.com/868-no/map/internal/obsrow"
 	"github.com/868-no/map/internal/protocol"
 	"github.com/868-no/map/internal/query"
 	"github.com/868-no/map/internal/storage"
@@ -201,7 +200,7 @@ type ObservationsBody struct {
 	Window     WindowEcho `json:"window" doc:"The full window the rows belong to"`
 	Since      time.Time  `json:"since" doc:"Effective lower bound of the rows returned"`
 	Until      time.Time  `json:"until" doc:"Effective upper bound (exclusive)"`
-	Generation string     `json:"generation" doc:"Decoder, row-format and configuration generation; rows from another generation must be discarded"`
+	Generation string     `json:"generation" doc:"Decoder, row-format, configuration and history-revision generation; rows from another generation must be discarded"`
 	Now        time.Time  `json:"now" doc:"Server time when the rows were read; lets clients follow the server clock between fetches"`
 	Rows       RowList    `json:"rows"`
 	More       bool       `json:"more" doc:"More rows remain; request again with cursor = next_cursor"`
@@ -259,22 +258,28 @@ func (s *Server) observations(ctx context.Context, in *ObservationsInput) (*Obse
 		}
 		after = &c
 	}
-	head := ObservationsBody{Now: s.now(), Window: echo(w), Since: n.Start, Until: n.End,
-		Generation: fmt.Sprintf("d%d.r%d.c%s", ingest.DecodeVersion, obsrow.Version, s.ConfigRev)}
-	var page *query.Page
+	hist, err := s.rowsDB().History(ctx)
+	if err != nil {
+		return nil, err
+	}
+	head := ObservationsBody{Now: s.now(), Window: echo(w), Since: n.Start, Until: n.End, Generation: s.generation(hist.Rev)}
+	var page rowSource // nil interface when nothing is read
 	release := func() {}
 	if n.End.After(n.Start) {
 		if release, err = s.acquire(ctx); err != nil {
 			return nil, err
 		}
 		// Errors up to the first row still get a proper status.
-		if page, err = query.OpenPage(ctx, s.Pool, n, after, in.Limit); err != nil {
+		p, err := query.OpenPage(ctx, s.Pool, n, after, in.Limit)
+		if err != nil {
 			release()
 			return nil, err
 		}
+		page = p
 	}
-	// Rows are immutable, but the window may still be filling; the browser
-	// keeps its own copy, so nothing here is worth a shared cache.
+	// Rows are immutable, but the window may still be filling and its bounds
+	// are the visitor's own; whole past days are shared through
+	// /observations/day instead (D-158).
 	return &ObservationsOutput{CacheControl: "no-store", Body: func(hc huma.Context) {
 		defer release()
 		hc.SetHeader("Content-Type", "application/json")
@@ -292,7 +297,7 @@ func (s *Server) observations(ctx context.Context, in *ObservationsInput) (*Obse
 
 // writeObservations writes head as ObservationsBody with the page's rows,
 // buffered in chunks.
-func writeObservations(dst io.Writer, head ObservationsBody, page *query.Page, after *query.Cursor) error {
+func writeObservations(dst io.Writer, head ObservationsBody, page rowSource, after *query.Cursor) error {
 	bw := bufio.NewWriterSize(dst, 64<<10)
 	prefix, err := json.Marshal(struct {
 		Window     WindowEcho `json:"window"`

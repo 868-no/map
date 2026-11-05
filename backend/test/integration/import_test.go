@@ -120,8 +120,16 @@ func TestImportEnvelopesMatchesLiveIngest(t *testing.T) {
 			Opts: ingest.Options{Keyring: kr, Identities: ids, KeyBudget: 4, AcceptRetained: func(string) bool { return true }},
 			IDs:  ids, Pool: pool, Log: quiet,
 		}
+		hist, err := storage.History(ctx, pool)
+		if err != nil {
+			t.Fatal(err)
+		}
 		if err := im.Run(ctx, strings.NewReader(in[0])); err != nil {
 			t.Fatal(err)
+		}
+		// The history revision moved on both ends, and the import lock is free (D-158).
+		if h, err := storage.History(ctx, pool); err != nil || h.Rev != hist.Rev+2 || h.Importing {
+			t.Fatalf("history after an import: %+v (before %+v) %v", h, hist, err)
 		}
 		return im
 	}

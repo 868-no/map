@@ -20,3 +20,78 @@ export function sliceBounds(lo: number, hi: number, slices: number): number[] {
 export function rangeEnd(windowEnd: string, until: string | null): number {
   return Math.min(Date.parse(windowEnd), until ? Date.parse(until) : Infinity)
 }
+
+/** One UTC day. */
+export const DAY_MS = 86_400_000
+/**
+ * A UTC day can no longer change this long after it ends (the server's
+ * SettleMargin, D-159): only then is it fetched whole from
+ * /observations/day, which every visitor shares through HTTP caches (D-158).
+ */
+export const SETTLE_MS = 30 * 60_000
+/**
+ * The first day of a range is fetched whole, and trimmed by the window, when
+ * at least this much of it is needed; less goes through the paged endpoint.
+ * A whole day comes from a cache, so the extra rows cost transfer, not the
+ * database; for a sliver of a day the paged read is cheaper all round.
+ */
+export const PARTIAL_DAY_MIN_MS = 6 * 3_600_000
+
+/** The UTC day of ms as YYYY-MM-DD (the day endpoint's path). */
+export function dayName(ms: number): string {
+  return new Date(ms).toISOString().slice(0, 10)
+}
+
+/**
+ * The time range [lo, hi) an /observations request asks for, as the browser
+ * estimates it: start/end, or a rolling duration ending now, narrowed by
+ * since/until. NaN bounds when the parameters say nothing usable.
+ */
+export function requestedRange(params: URLSearchParams, now: number): { lo: number; hi: number } {
+  let lo: number, hi: number
+  if (params.has('start') && params.has('end')) {
+    lo = Date.parse(params.get('start')!)
+    hi = Date.parse(params.get('end')!)
+  } else {
+    const d = /^(\d+(?:\.\d+)?)h$/.exec(params.get('duration') ?? '')
+    hi = now
+    lo = d ? now - Number(d[1]) * 3_600_000 : NaN
+  }
+  if (params.has('since')) lo = Math.max(lo, Date.parse(params.get('since')!))
+  if (params.has('until')) hi = Math.min(hi, Date.parse(params.get('until')!))
+  return { lo, hi }
+}
+
+/**
+ * The UTC days (start instants, ascending) of [lo, hi) to fetch whole: every
+ * day that ended at least SETTLE_MS before now and lies within the range,
+ * and the range's first day too when at least PARTIAL_DAY_MIN_MS of it is
+ * needed. The rest of the range (before the first day, after the last) goes
+ * through the paged endpoint.
+ */
+export function planDays(lo: number, hi: number, now: number): number[] {
+  if (!Number.isFinite(lo) || !Number.isFinite(hi) || hi <= lo) return []
+  const settled = Math.floor((now - SETTLE_MS) / DAY_MS) * DAY_MS // days ending here or earlier are final
+  let d = Math.floor(lo / DAY_MS) * DAY_MS
+  if (d < lo && d + DAY_MS - lo < PARTIAL_DAY_MIN_MS) d += DAY_MS
+  const days: number[] = []
+  for (; d + DAY_MS <= Math.min(hi, settled); d += DAY_MS) days.push(d)
+  return days
+}
+
+/** Runs at most n of the functions given to it at once, the rest in order as others finish. */
+export function limiter(n: number): <T>(f: () => Promise<T>) => Promise<T> {
+  let active = 0
+  const waiting: (() => void)[] = []
+  return async <T>(f: () => Promise<T>): Promise<T> => {
+    if (active < n) active++
+    else await new Promise<void>((r) => waiting.push(r)) // the slot is handed over, still counted
+    try {
+      return await f()
+    } finally {
+      const next = waiting.shift()
+      if (next) next()
+      else active--
+    }
+  }
+}

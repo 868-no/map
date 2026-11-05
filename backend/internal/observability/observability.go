@@ -50,6 +50,7 @@ type Metrics struct {
 	KeyConflicts      prometheus.Counter
 	CacheErrors       *prometheus.CounterVec // op
 	RetentionRows     prometheus.Counter
+	DayRequests       *prometheus.CounterVec // result: not_modified, hit, waited, built, uncached
 }
 
 // NewMetrics registers all metrics on a fresh registry.
@@ -77,9 +78,10 @@ func NewMetrics() *Metrics {
 		KeyConflicts:      prometheus.NewCounter(prometheus.CounterOpts{Name: "meshmap_identity_key_conflicts_total", Help: "Unsigned NodeInfo announcing a key different from the authoritative one"}),
 		CacheErrors:       prometheus.NewCounterVec(prometheus.CounterOpts{Name: "meshmap_cache_errors_total", Help: "Redis errors (fallback used)"}, []string{"op"}),
 		RetentionRows:     prometheus.NewCounter(prometheus.CounterOpts{Name: "meshmap_retention_deleted_rows_total", Help: "Rows deleted by retention"}),
+		DayRequests:       prometheus.NewCounterVec(prometheus.CounterOpts{Name: "meshmap_api_day_requests_total", Help: "Whole-day observation requests by how they were answered (D-158)"}, []string{"result"}),
 	}
 	for _, c := range []prometheus.Collector{m.Received, m.Accepted, m.Rejected, m.Dropped, m.DupDeliveries, m.ProvenanceUpdates, m.QueueDepth, m.BrokerUp, m.BrokerConnects,
-		m.WriterBatches, m.WriterRows, m.WriterErrors, m.WriterLatency, m.ProcessLatency, m.Identities, m.KeyConflicts, m.CacheErrors, m.RetentionRows} {
+		m.WriterBatches, m.WriterRows, m.WriterErrors, m.WriterLatency, m.ProcessLatency, m.Identities, m.KeyConflicts, m.CacheErrors, m.RetentionRows, m.DayRequests} {
 		f(c)
 	}
 	return m

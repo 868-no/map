@@ -9,7 +9,7 @@ import engineUrl from '../engine/pkg/engine_bg.wasm?url'
 import { gunzip, openPersistence, type Persistence, type Source } from './persist'
 import { RowStore, type Backend, type Fetched, type Synced, type WindowReq } from './rowStore'
 import { debounce, rebuildDelay } from './debounce'
-import { cursorMs, rangeEnd, sliceBounds } from './slices'
+import { cursorMs, DAY_MS, dayName, limiter, planDays, rangeEnd, requestedRange, sliceBounds } from './slices'
 import type { Request, Response, Transmission, ViewRequest } from './protocol'
 import { ViewError, type ViewMeta } from './views'
 import { backendBusy, gatewayDown, retryDelay } from './httpStatus'
@@ -49,54 +49,78 @@ class EngineRows implements Backend<number, string> {
 
 /** Parallel requests for the rest of a range after its first page. */
 const SLICES = 4
+/** Requests in flight at once for one range: the server lets a client run 4 reads (API_READS_PER_CLIENT). */
+const PARALLEL = 4
 /** A page not answered in this long fails the range, as if offline. */
 const PAGE_TIMEOUT_MS = 30_000
 /** Retries of a page answered 429 or busy, each after its Retry-After (at most 10 s). */
 const RATE_RETRIES = 3
+
+/** A whole day was asked for under a generation the server no longer has (409): refetch the range. */
+class GenerationMoved extends Error {}
+
+/** GETs an API URL as text, retrying while the backend is busy; errors are typed as fetchRange's callers expect. */
+async function fetchText(url: string): Promise<string> {
+  let res: globalThis.Response
+  for (let attempt = 0; ; attempt++) {
+    try {
+      res = await fetch(url, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(PAGE_TIMEOUT_MS) })
+    } catch (e) {
+      throw new Error(`observations: ${e instanceof Error ? e.message : e}`, { cause: e })
+    }
+    // Rate-limited (several tabs or a shared address) or busy: wait and try again.
+    if (!backendBusy(res) || attempt >= RATE_RETRIES) break
+    await new Promise((r) => setTimeout(r, retryDelay(res, attempt)))
+  }
+  // Still busy after the retries falls through to an 'upstream' error below:
+  // the backend is up, so this is no reason to show the saved copy.
+  if (gatewayDown(res)) throw new Error(`observations: ${res.status}`)
+  if (res.status === 409) throw new GenerationMoved('observations: the server changed generation')
+  if (!res.ok) {
+    let detail = res.statusText
+    try {
+      const b = await res.json()
+      detail = b.detail ?? b.title ?? detail
+    } catch {
+      /* non-JSON error body */
+    }
+    throw new ViewError('upstream', `observations: ${res.status} ${detail}`)
+  }
+  try {
+    return await res.text()
+  } catch (e) {
+    throw new Error(`observations: ${e instanceof Error ? e.message : e}`, { cause: e }) // timed out or cut off mid-body
+  }
+}
+
 /**
- * Fetches every row of a range into one staged batch. The first page tells
- * the window and where the rest begins; the rest is split into time slices
- * fetched in parallel (each paged, all into the same batch; the engine drops
- * duplicates on commit).
+ * Fetches every row of a range into one staged batch. Whole past UTC days
+ * come from /observations/day, which every visitor shares (HTTP caches,
+ * Cloudflare, the server's Redis; D-158); the rest from /observations. The
+ * first request (the part after the last whole day, or the whole range)
+ * tells the window, the generation the days are asked under, and where its
+ * rest begins; that rest is split into time slices fetched in parallel with
+ * the days and the part before them (each paged, all into the same batch;
+ * the engine drops duplicates on commit). A whole first day may hold rows
+ * from before the window: views are built from the window only.
  */
-async function fetchRange(params: URLSearchParams): Promise<Fetched<number>> {
-  const page = async (extra: Record<string, string>) => {
+async function fetchRange(params: URLSearchParams, retry = true): Promise<Fetched<number>> {
+  const run = limiter(PARALLEL)
+  const page = (extra: Record<string, string>) => {
     const p = new URLSearchParams(params)
     for (const [k, v] of Object.entries(extra)) p.set(k, v)
-    let res: globalThis.Response
-    for (let attempt = 0; ; attempt++) {
-      try {
-        res = await fetch(`/api/v1/observations?${p}`, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(PAGE_TIMEOUT_MS) })
-      } catch (e) {
-        throw new Error(`observations: ${e instanceof Error ? e.message : e}`, { cause: e })
-      }
-      // Rate-limited (several tabs or a shared address) or busy: wait and try again.
-      if (!backendBusy(res) || attempt >= RATE_RETRIES) break
-      await new Promise((r) => setTimeout(r, retryDelay(res, attempt)))
-    }
-    // Still busy after the retries falls through to an 'upstream' error below:
-    // the backend is up, so this is no reason to show the saved copy.
-    if (gatewayDown(res)) throw new Error(`observations: ${res.status}`)
-    if (!res.ok) {
-      let detail = res.statusText
-      try {
-        const b = await res.json()
-        detail = b.detail ?? b.title ?? detail
-      } catch {
-        /* non-JSON error body */
-      }
-      throw new ViewError('upstream', `observations: ${res.status} ${detail}`)
-    }
-    try {
-      return await res.text()
-    } catch (e) {
-      throw new Error(`observations: ${e instanceof Error ? e.message : e}`, { cause: e }) // timed out or cut off mid-body
-    }
+    return run(() => fetchText(`/api/v1/observations?${p}`))
   }
+  const iso = (ms: number) => new Date(ms).toISOString()
+  const now = Date.now()
+  const { lo, hi } = requestedRange(params, now)
+  const days = planDays(lo, hi, now)
   type Meta = { window: Fetched<number>['window']; generation: string; more: boolean; next_cursor?: string; batch: number }
-  const first = JSON.parse(engine.stage(await page({}), 0)) as Meta
+  // With whole days, the first request is the part after them (empty when the range ends there).
+  const tail: Record<string, string> = days.length ? { since: iso(days[days.length - 1] + DAY_MS) } : {}
+  const first = JSON.parse(engine.stage(await page(tail), 0)) as Meta
   const batch = first.batch
-  // A failed page fails the range: the other slices stop at their next page,
+  // A failed request fails the range: the others stop at their next page,
   // and the batch is discarded, so no staged rows are stranded in the engine.
   let failed = false
   const stage = (text: string) => {
@@ -106,28 +130,54 @@ async function fetchRange(params: URLSearchParams): Promise<Fetched<number>> {
   const drain = async (meta: Meta, extra: Record<string, string>) => {
     while (meta.more) meta = stage(await page({ ...extra, cursor: meta.next_cursor ?? '' }))
   }
+  const tasks: (() => Promise<unknown>)[] = []
   if (first.more) {
     // The rest starts at the first page's cursor instant.
     const bounds = sliceBounds(cursorMs(first.next_cursor), rangeEnd(first.window.end, params.get('until')), SLICES)
-    const iso = (ms: number) => new Date(ms).toISOString()
-    const results = await Promise.allSettled(
-      bounds.slice(0, -1).map(async (b, k) => {
-        try {
-          const range = { until: iso(bounds[k + 1]) }
-          if (k === 0) return await drain(first, range) // continues after the first page
-          if (b >= bounds[k + 1]) return
-          return await drain(stage(await page({ since: iso(b), ...range })), { since: iso(b), ...range })
-        } catch (e) {
-          failed = true
-          throw e
-        }
+    bounds.slice(0, -1).forEach((b, k) =>
+      tasks.push(async () => {
+        const range = { ...tail, until: iso(bounds[k + 1]) }
+        if (k === 0) return drain(first, range) // continues after the first page
+        if (b >= bounds[k + 1]) return
+        return drain(stage(await page({ ...range, since: iso(b) })), { ...range, since: iso(b) })
       }),
     )
-    const err = results.find((r): r is PromiseRejectedResult => r.status === 'rejected')
-    if (err) {
-      engine.discard(batch)
-      throw err.reason
+  }
+  if (days.length) {
+    // Before the first whole day: from the window's start as the server set it.
+    const start = Math.max(Date.parse(first.window.start), params.has('since') ? Date.parse(params.get('since')!) : -Infinity)
+    if (start < days[0]) {
+      const head = { until: iso(days[0]) }
+      tasks.push(async () => drain(stage(await page(head)), head))
     }
+    const gen = encodeURIComponent(first.generation)
+    for (const d of days) {
+      tasks.push(async () => {
+        const meta = stage(await run(() => fetchText(`/api/v1/observations/day/${dayName(d)}?generation=${gen}`)))
+        if (meta.generation !== first.generation) throw new GenerationMoved('observations: a day of another generation')
+      })
+    }
+  }
+  const results = await Promise.allSettled(
+    tasks.map(async (t) => {
+      try {
+        return await t()
+      } catch (e) {
+        failed = true
+        throw e
+      }
+    }),
+  )
+  const err = results.find((r): r is PromiseRejectedResult => r.status === 'rejected')
+  if (err) {
+    engine.discard(batch)
+    if (err.reason instanceof GenerationMoved) {
+      // Decoder, configuration or history changed between our requests:
+      // start over once, under the new generation (the store then sees it).
+      if (retry) return fetchRange(params, false)
+      throw new ViewError('upstream', err.reason.message)
+    }
+    throw err.reason
   }
   return { window: first.window, generation: first.generation, batch }
 }

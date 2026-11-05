@@ -37,6 +37,20 @@ export async function mockObservations(page: Page, rows: ObsRow[], live?: Promis
       },
     })
   })
+  // Whole UTC days (D-158): the day's rows, under the generation asked for.
+  await page.route('**/api/v1/observations/day/*', (route) => {
+    const u = new URL(route.request().url())
+    const start = Date.parse(u.pathname.split('/').pop()! + 'T00:00:00Z')
+    const end = start + 86_400_000
+    const iso = (ms: number) => new Date(ms).toISOString()
+    if (u.searchParams.get('generation') !== 'e2e') return route.fulfill({ status: 409, contentType: 'application/problem+json', body: '{"status":409}' })
+    return route.fulfill({
+      json: {
+        window: { start: iso(start), end: iso(end), rolling: false }, since: iso(start), until: iso(end), now: iso(Date.now()),
+        generation: 'e2e', more: false, rows: rows.filter((r) => r.t >= start && r.t < end),
+      },
+    })
+  })
 }
 
 let seq = 0

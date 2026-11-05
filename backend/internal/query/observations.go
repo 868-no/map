@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -67,15 +68,31 @@ func OpenPage(ctx context.Context, pool *pgxpool.Pool, w window.Window, after *C
 	if limit <= 0 || limit > MaxObservationPage {
 		limit = MaxObservationPage
 	}
+	return openPage(ctx, pool, w, after, limit)
+}
+
+// OpenAll is OpenPage without a page size: every row of w, for the day
+// cache, which serves a whole UTC day as one body (D-158).
+func OpenAll(ctx context.Context, pool *pgxpool.Pool, w window.Window) (*Page, error) {
+	return openPage(ctx, pool, w, nil, 0)
+}
+
+// openPage reads at most limit rows after the cursor; limit 0 reads all.
+func openPage(ctx context.Context, pool *pgxpool.Pool, w window.Window, after *Cursor, limit int) (*Page, error) {
 	b := where(w)
 	if after != nil {
 		// A cursor inside the window, never a bound on it.
 		b.and("(observed_at, id) > (?, ?)", after.At, after.ID)
 	}
 	ver := b.arg(int16(obsrow.Version))
-	lim := b.arg(limit + 1)
+	tail := ""
+	if limit > 0 {
+		tail = ` LIMIT ` + b.arg(limit+1)
+	} else {
+		limit = math.MaxInt
+	}
 	rows, err := pool.Query(ctx, `SELECT `+storage.ObsColumns(ver)+`
-		FROM packet_log WHERE `+b.String()+` ORDER BY observed_at, id LIMIT `+lim, b.args...)
+		FROM packet_log WHERE `+b.String()+` ORDER BY observed_at, id`+tail, b.args...)
 	if err != nil {
 		return nil, err
 	}

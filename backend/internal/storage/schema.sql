@@ -55,6 +55,12 @@ CREATE TABLE IF NOT EXISTS packet_log (
 
 ALTER SEQUENCE packet_log_id_seq OWNED BY packet_log.id;
 
+-- The history revision (D-158): advanced when an import of recorded history
+-- starts and ends, and part of the /observations generation, so no browser
+-- or shared cache keeps a day from before an import. Not owned by the
+-- table: it survives a rebuilt packet_log, and so never goes back.
+CREATE SEQUENCE IF NOT EXISTS packet_log_history_rev AS BIGINT;
+
 -- Serves every /observations page ((observed_at, id) keyset order, D-038)
 -- and the retention delete inside the oldest kept month.
 CREATE INDEX IF NOT EXISTS packet_log_time_idx        ON packet_log (observed_at DESC, id DESC);

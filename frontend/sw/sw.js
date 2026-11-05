@@ -43,8 +43,10 @@ self.addEventListener('fetch', (event) => {
 
   // Network only: tiles (HTTP cache handles them), live stream, health,
   // metrics, and raw observations (the derivation worker keeps its own copy
-  // in IndexedDB, so offline copies of pages would only duplicate it).
-  if (p.startsWith('/tiles/') || p === '/api/v1/stream' || p === '/api/v1/observations' || p.startsWith('/health/') || p === '/metrics') return
+  // in IndexedDB, so offline copies of pages would only duplicate it). Whole
+  // days (/observations/day/…, D-158) are immutable: the browser's HTTP cache
+  // keeps and revalidates them, so a copy here would be a second one.
+  if (p.startsWith('/tiles/') || p === '/api/v1/stream' || p === '/api/v1/observations' || p.startsWith('/api/v1/observations/') || p.startsWith('/health/') || p === '/metrics') return
 
   if (req.mode === 'navigate') {
     // Pages of their own (the privacy policy) are cached under their own

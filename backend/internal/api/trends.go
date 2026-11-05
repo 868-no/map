@@ -42,6 +42,11 @@ type TrendsOutput struct {
 	Body         TrendsBody
 }
 
+// trendsCC lets browsers and shared caches reuse a trend for as long as the
+// server would (TrendsTTL), and show it a while longer while asking again:
+// trends cover months, so a few minutes behind is no loss.
+const trendsCC = "public, max-age=60, stale-while-revalidate=300"
+
 // TrendsTTL is how long a computed trend is reused before the hourly
 // summaries are refreshed again (D-112).
 const TrendsTTL = time.Minute
@@ -93,7 +98,7 @@ func (s *Server) trends(ctx context.Context, in *TrendsInput) (*TrendsOutput, er
 	}
 	key := in.Bucket + "|" + in.TZ
 	if b, ok := s.trendsMemo.get(key, s.now()); ok {
-		return &TrendsOutput{CacheControl: "public, max-age=60", Body: b}, nil
+		return &TrendsOutput{CacheControl: trendsCC, Body: b}, nil
 	}
 	// Hourly summaries in memory keep this fast however long retention is
 	// (D-112). They are refreshed at most once per TrendsTTL whatever bucket
@@ -107,5 +112,5 @@ func (s *Server) trends(ctx context.Context, in *TrendsInput) (*TrendsOutput, er
 		body.Buckets = append(body.Buckets, TrendBucket{Start: b.Start, Nodes: b.Nodes, Gateways: b.Gateways, NewNodes: b.NewNodes, Packets: b.Packets, Receptions: b.Receptions, ByType: b.ByType})
 	}
 	s.trendsMemo.put(key, body)
-	return &TrendsOutput{CacheControl: "public, max-age=60", Body: body}, nil
+	return &TrendsOutput{CacheControl: trendsCC, Body: body}, nil
 }

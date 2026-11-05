@@ -55,6 +55,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/observations/day/{date}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Every decoded observation of one UTC day, cached and immutable once the day is final (D-158)
+         * @description The rows /observations returns for [date, date + 24 h), as one body of the same shape (more is false). Once the day ended at least 30 minutes ago, lies wholly within retention, has no row awaiting a new decoding, and no import of history is running, the answer is Cache-Control: public, max-age=31536000, immutable with a strong ETag; otherwise no-store (a day the retention cutoff cuts into, or today, is served from the cutoff or up to now). The URL names the generation, so a cached body can never stand for another: a different one is answered 409.
+         */
+        get: operations["observations-day"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/retention": {
         parameters: {
             query?: never;
@@ -573,7 +593,7 @@ export interface components {
              * @example https://example.com/api/schemas/ObservationsBody.json
              */
             readonly $schema?: string;
-            /** @description Decoder, row-format and configuration generation; rows from another generation must be discarded */
+            /** @description Decoder, row-format, configuration and history-revision generation; rows from another generation must be discarded */
             generation: string;
             /** @description More rows remain; request again with cursor = next_cursor */
             more: boolean;
@@ -960,6 +980,88 @@ export interface operations {
             };
             /** @description Bad Request */
             400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "observations-day": {
+        parameters: {
+            query: {
+                /** @description The generation the client holds (from /observations); another one is answered 409 with the current one */
+                generation: string;
+            };
+            header?: {
+                /** @description ETag of a copy held; 304 when it is still the day's rows */
+                "If-None-Match"?: string;
+                "Accept-Encoding"?: string;
+            };
+            path: {
+                /** @description UTC day, YYYY-MM-DD */
+                date: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ObservationsBody"];
+                };
+            };
+            /** @description Not modified: the copy named by If-None-Match is still the day's rows */
+            304: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Conflict */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

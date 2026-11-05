@@ -363,6 +363,9 @@ func serveCmd() *cobra.Command {
 			apiSrv := &api.Server{Pool: pool,
 				Hub: hub, Env: c.Env, ConfigRev: c.Revision(), Metrics: m, Log: log, HeavySlots: c.Env.APIReadSlots,
 				Geo: api.GeoOptions{Enabled: c.Env.GeolocationEnabled, MinPrecisionBits: c.Env.GeolocationMinPrec, Exclude: c.Exclude, Params: c.GeoParams()}}
+			if rc != nil {
+				apiSrv.DayCache = rc // whole days shared between replicas (D-158)
+			}
 			ua := "868-map/" + api.Version + " github.com/868-no/map"
 			if c.Env.OperatorContact != "" {
 				ua += " " + c.Env.OperatorContact

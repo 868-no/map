@@ -109,7 +109,21 @@ type Importer struct {
 const dedupeWindow = 15 * time.Minute
 
 // Run reads CSV lines (receive time, payload hex) until EOF.
-func (im *Importer) Run(ctx context.Context, in io.Reader) error {
+func (im *Importer) Run(ctx context.Context, in io.Reader) (err error) {
+	if !im.DryRun && im.Pool != nil {
+		// Rows land in past days: while this runs no day is cached as final,
+		// and the history revision moves on both ends, so nothing read before
+		// or during the import is reused (D-158).
+		finish, err := storage.BeginHistoryChange(ctx, im.Pool)
+		if err != nil {
+			return err
+		}
+		defer func() {
+			if ferr := finish(); ferr != nil {
+				err = errors.Join(err, ferr)
+			}
+		}()
+	}
 	if im.Stats == nil {
 		im.Stats = map[string]int{}
 	}

@@ -113,6 +113,9 @@ func newAPI(t *testing.T, pool *pgxpool.Pool, rc *cache.Client, now time.Time) *
 	env := config.Env{RetentionMonths: 6, DefaultWindowHours: 72, MaxWindowHours: 168, LiveQuantum: 10 * time.Second}
 	s := &api.Server{Pool: pool, Env: env, ConfigRev: "it", Log: quiet,
 		Now: func() time.Time { return now }}
+	if rc != nil {
+		s.DayCache = rc
+	}
 	mux := http.NewServeMux()
 	s.NewHandler(mux)
 	srv := httptest.NewServer(mux)

@@ -100,8 +100,14 @@ func clientOf(ctx context.Context) string {
 
 // heavyPath is the endpoint whose reads hold a database connection while
 // they stream; each client may run only HeavyPerClient at once, so one
-// client cannot take every slot of Server.acquire.
+// client cannot take every slot of Server.acquire. Whole days (D-158) count
+// too: most come from a cache, but a client asking for many uncached days
+// at once would otherwise hold every slot building them.
 const heavyPath = "/api/v1/observations"
+
+func heavy(path string) bool {
+	return path == heavyPath || strings.HasPrefix(path, heavyPath+"/day/")
+}
 
 // heavyWait is how long a read queues behind the same client's others.
 var heavyWait = 5 * time.Second
@@ -162,7 +168,7 @@ func Protect(next http.Handler, l Limits) http.Handler {
 		}
 		ctx, cancel := context.WithTimeout(context.WithValue(r.Context(), clientCtxKey{}, key), l.Timeout)
 		defer cancel()
-		if r.URL.Path == heavyPath {
+		if heavy(r.URL.Path) {
 			// Queue behind this client's own reads (the browser runs a few
 			// in parallel), but not for long.
 			t := time.NewTimer(heavyWait)

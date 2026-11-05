@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { cursorMs, rangeEnd, sliceBounds } from '../src/derive/slices'
+import { cursorMs, DAY_MS, dayName, limiter, planDays, rangeEnd, requestedRange, sliceBounds } from '../src/derive/slices'
 
 describe('range fetch arithmetic', () => {
   it('reads a cursor as the millisecond it starts at', () => {
@@ -24,5 +24,67 @@ describe('range fetch arithmetic', () => {
   it('leaves trailing slices empty for very short ranges', () => {
     expect(sliceBounds(10, 12, 4)).toEqual([10, 11, 12, 12, 12])
     expect(sliceBounds(10, 10, 4)).toEqual([10, 10, 10, 10, 10])
+  })
+})
+
+describe('whole-day planning (D-158)', () => {
+  const t = (s: string) => Date.parse(s)
+  const names = (days: number[]) => days.map(dayName)
+
+  it('estimates the requested range from the parameters', () => {
+    const now = t('2026-11-05T14:00:00Z')
+    expect(requestedRange(new URLSearchParams({ duration: '72h' }), now)).toEqual({ lo: t('2026-11-02T14:00:00Z'), hi: now })
+    expect(requestedRange(new URLSearchParams({ duration: '72h', since: '2026-11-05T13:00:00Z' }), now)).toEqual({ lo: t('2026-11-05T13:00:00Z'), hi: now })
+    expect(requestedRange(new URLSearchParams({ start: '2026-10-01T00:00:00Z', end: '2026-10-08T00:00:00Z', until: '2026-10-04T06:00:00Z' }), now))
+      .toEqual({ lo: t('2026-10-01T00:00:00Z'), hi: t('2026-10-04T06:00:00Z') })
+    expect(requestedRange(new URLSearchParams({ duration: 'soon' }), now).lo).toBeNaN()
+  })
+
+  it('takes the settled days of a rolling window, the first one whole when enough of it is needed', () => {
+    // 72 h at 14:00: 10 h of Nov 2 are needed, so all of it; Nov 5 is today.
+    expect(names(planDays(t('2026-11-02T14:00:00Z'), t('2026-11-05T14:00:00Z'), t('2026-11-05T14:00:00Z')))).toEqual(['2026-11-02', '2026-11-03', '2026-11-04'])
+    // At 20:00 only 4 h of Nov 2 are needed: those come paged.
+    expect(names(planDays(t('2026-11-02T20:00:00Z'), t('2026-11-05T20:00:00Z'), t('2026-11-05T20:00:00Z')))).toEqual(['2026-11-03', '2026-11-04'])
+  })
+
+  it('waits for a day to settle', () => {
+    const lo = t('2026-11-03T00:00:00Z')
+    expect(names(planDays(lo, t('2026-11-05T00:20:00Z'), t('2026-11-05T00:20:00Z')))).toEqual(['2026-11-03'])
+    expect(names(planDays(lo, t('2026-11-05T00:30:00Z'), t('2026-11-05T00:30:00Z')))).toEqual(['2026-11-03', '2026-11-04'])
+  })
+
+  it('never takes a day reaching past the range or into the future', () => {
+    const now = t('2026-11-05T12:00:00Z')
+    // A fixed window ending mid-day: the last day is partly fetched paged.
+    expect(names(planDays(t('2026-10-01T00:00:00Z'), t('2026-10-03T06:00:00Z'), now))).toEqual(['2026-10-01', '2026-10-02'])
+    expect(planDays(t('2026-11-05T01:00:00Z'), now, now)).toEqual([])
+    expect(planDays(t('2026-11-04T23:00:00Z'), t('2026-11-05T01:00:00Z'), now)).toEqual([]) // a 2-hour window
+    expect(planDays(NaN, now, now)).toEqual([])
+    expect(planDays(now, now, now)).toEqual([])
+  })
+
+  it('names days in UTC', () => {
+    expect(dayName(t('2026-11-03T23:59:59.999Z'))).toBe('2026-11-03')
+    expect(dayName(t('2026-11-03T00:00:00Z') + DAY_MS)).toBe('2026-11-04')
+  })
+
+  it('limits requests in flight', async () => {
+    const run = limiter(2)
+    let active = 0
+    let peak = 0
+    const order: number[] = []
+    const job = (k: number, ms: number) => run(async () => {
+      active++
+      peak = Math.max(peak, active)
+      await new Promise((r) => setTimeout(r, ms))
+      active--
+      order.push(k)
+      if (k === 3) throw new Error('fails')
+      return k
+    })
+    const results = await Promise.allSettled([job(1, 20), job(2, 5), job(3, 5), job(4, 5), job(5, 5)])
+    expect(peak).toBe(2)
+    expect(results.map((r) => r.status)).toEqual(['fulfilled', 'fulfilled', 'rejected', 'fulfilled', 'fulfilled'])
+    expect(order.sort()).toEqual([1, 2, 3, 4, 5])
   })
 })

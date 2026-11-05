@@ -742,7 +742,7 @@ components:
           readOnly: true
           type: string
         generation:
-          description: Decoder, row-format and configuration generation; rows from another generation must be discarded
+          description: Decoder, row-format, configuration and history-revision generation; rows from another generation must be discarded
           type: string
         more:
           description: More rows remain; request again with cursor = next_cursor
@@ -1339,6 +1339,81 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Service Unavailable
       summary: Decoded observations of a window, paged, for deriving views in the browser
+      tags:
+        - mesh
+  /api/v1/observations/day/{date}:
+    get:
+      description: "The rows /observations returns for [date, date + 24 h), as one body of the same shape (more is false). Once the day ended at least 30 minutes ago, lies wholly within retention, has no row awaiting a new decoding, and no import of history is running, the answer is Cache-Control: public, max-age=31536000, immutable with a strong ETag; otherwise no-store (a day the retention cutoff cuts into, or today, is served from the cutoff or up to now). The URL names the generation, so a cached body can never stand for another: a different one is answered 409."
+      operationId: observations-day
+      parameters:
+        - description: UTC day, YYYY-MM-DD
+          in: path
+          name: date
+          required: true
+          schema:
+            description: UTC day, YYYY-MM-DD
+            examples:
+              - "2026-11-01"
+            pattern: ^[0-9]{4}-[0-9]{2}-[0-9]{2}$
+            type: string
+        - description: The generation the client holds (from /observations); another one is answered 409 with the current one
+          explode: false
+          in: query
+          name: generation
+          required: true
+          schema:
+            description: The generation the client holds (from /observations); another one is answered 409 with the current one
+            type: string
+        - description: ETag of a copy held; 304 when it is still the day's rows
+          in: header
+          name: If-None-Match
+          schema:
+            description: ETag of a copy held; 304 when it is still the day's rows
+            type: string
+        - in: header
+          name: Accept-Encoding
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ObservationsBody"
+          description: OK
+        "304":
+          description: "Not modified: the copy named by If-None-Match is still the day's rows"
+        "400":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Bad Request
+        "409":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Conflict
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Service Unavailable
+      summary: Every decoded observation of one UTC day, cached and immutable once the day is final (D-158)
       tags:
         - mesh
   /api/v1/retention:

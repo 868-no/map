@@ -13,6 +13,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"golang.org/x/sync/singleflight"
 
 	"github.com/868-no/map/internal/config"
 	"github.com/868-no/map/internal/geo"
@@ -52,7 +53,12 @@ type Server struct {
 	Weather *weather.Client
 	// Terrain serves /terrain (D-143); nil when disabled.
 	Terrain *terrain.Client
+	// DayCache shares whole days of rows between replicas (D-158); nil
+	// without Redis.
+	DayCache BlobStore
 
+	db         rowsDB // the database as the day endpoint reads it; nil: Pool
+	dayFlight  singleflight.Group
 	heavy      chan struct{}
 	closing    chan struct{}
 	trendsMemo trendsCache
@@ -205,6 +211,18 @@ func (s *Server) register(api huma.API) {
 		Summary: "Decoded observations of a window, paged, for deriving views in the browser", Tags: []string{"mesh"}, Errors: []int{400, 503},
 		Responses: map[string]*huma.Response{"200": {Description: "OK", Content: map[string]*huma.MediaType{
 			"application/json": {Schema: api.OpenAPI().Components.Schemas.Schema(reflect.TypeOf(ObservationsBody{}), true, "ObservationsBody")}}}}}, s.observations)
+	huma.Register(api, huma.Operation{OperationID: "observations-day", Method: http.MethodGet, Path: "/api/v1/observations/day/{date}",
+		Summary: "Every decoded observation of one UTC day, cached and immutable once the day is final (D-158)",
+		Description: "The rows /observations returns for [date, date + 24 h), as one body of the same shape (more is false). " +
+			"Once the day ended at least 30 minutes ago, lies wholly within retention, has no row awaiting a new decoding, and no " +
+			"import of history is running, the answer is Cache-Control: public, max-age=31536000, immutable with a strong ETag; " +
+			"otherwise no-store (a day the retention cutoff cuts into, or today, is served from the cutoff or up to now). " +
+			"The URL names the generation, so a cached body can never stand for another: a different one is answered 409.",
+		Tags: []string{"mesh"}, Errors: []int{400, 409, 503},
+		Responses: map[string]*huma.Response{
+			"200": {Description: "OK", Content: map[string]*huma.MediaType{
+				"application/json": {Schema: api.OpenAPI().Components.Schemas.Schema(reflect.TypeOf(ObservationsBody{}), true, "ObservationsBody")}}},
+			"304": {Description: "Not modified: the copy named by If-None-Match is still the day's rows"}}}, s.observationsDay)
 	huma.Register(api, huma.Operation{OperationID: "node-public-key", Method: http.MethodGet, Path: "/api/v1/nodes/{id}/public-key",
 		Summary: "A node's announced and trusted public keys from the retained log", Tags: []string{"mesh"}, Errors: []int{400, 404}}, s.nodeKey)
 	huma.Register(api, huma.Operation{OperationID: "trends", Method: http.MethodGet, Path: "/api/v1/trends",
