@@ -50,7 +50,7 @@ Pin a version tag or `sha-…` in production (`compose.production.yaml` takes it
 
 ## Configuration files
 
-- `secrets/mqtt-brokers.yaml`: a list of brokers, each with `id`, `host`, `port`, `protocol` (v5/v311), `tls` (enabled, ca_file, server_name), `username`, `password` or `password_file`, `client_id` and `topics` (filter, qos 0/1). Set `accept_retained: false` (the default) so retained messages never fabricate current activity.
+- `secrets/mqtt-brokers.yaml`: a list of brokers, each with `id`, `host`, `port`, `protocol` (v5/v311), `tls` (enabled, ca_file, server_name, insecure_skip_verify), `username`, `password` or `password_file`, `client_id` and `topics` (filter, qos 0/1). Set `accept_retained: false` (the default) so retained messages never fabricate current activity. Prefer `v5` on public brokers: it asks the broker (CONNECT Maximum Packet Size, 8 KiB) to discard larger publishes before they reach the backend. MQTT 3.1.1 has no equivalent, so with `v311` the client reads every packet whole (a hostile publisher can send up to the broker's own limit, which MQTT allows to be 256 MiB) before the 4 KiB payload limit drops it; cap `max_packet_size` on brokers you run yourself.
 - `secrets/channel-keys.yaml`: a list of channels, each with `name`, `broker_ids` (`*` for all), `mode` (`ctr`, or `ccm` for firmware 2.8.1+ AEAD channels), `psks` (current key first, then previous keys during rotation; base64, or `hex:`; `AQ==` is the public default key) and `accept_plaintext` (default true for configured channels). List as many channels as you like; a channel name may also appear more than once with different `broker_ids`.
 - Channels that are not listed are tried with the public default key (`AQ==`, CTR and CCM) under the channel name in the topic, so default-key channels with any name decode without configuration (D-065). The packet's channel byte (a hash of name and key) must match, so channels with their own key stay undecoded: they are stored header-only as `encrypted` rows (D-093). Set `DEFAULT_KEY_FALLBACK=false` to decode only listed channels.
 - Key rotation: add the new key first and keep the old one until no traffic uses it, then restart `backend`. The configuration hash is part of the `generation` that `/observations` reports, so browsers discard the rows they hold and refetch.
@@ -116,11 +116,11 @@ Public by default. For basic auth, create `deploy/caddy-auth/basic.caddy` (see t
 
 ## Health and metrics
 
-- `GET /health/live`: process up.
+- `GET /health/live`: process up. The container health checks probe this (`meshmap healthcheck --live`), not readiness; see "Data loss windows" (D-163).
 - `GET /health/ready`: database, schema version, Redis (degraded when unreachable; dedupe falls back to a database lookup), ingest writer and queue, broker connection states, and the last retention run (time, deleted rows, table size).
 - Prometheus metrics at `backend:9100/metrics` (compose network only). `PUBLIC_METRICS_ENABLED=true` also serves them on the backend's HTTP port (`backend:8000/metrics`); the `web` service does not proxy that path, so publishing them needs your own reverse-proxy route (protect it). Key series:
   - `meshmap_mqtt_received_total`, `meshmap_mqtt_connected`
-  - `meshmap_ingest_accepted_total{packet_type,signature_status}`, `meshmap_ingest_rejected_total{category}` (duplicates, unparseable envelopes and `map_report_invalid`; packets that fail keys, decoding or verification are accepted as `encrypted`/`invalid` header-only rows)
+  - `meshmap_ingest_accepted_total{packet_type,signature_status}`, `meshmap_ingest_rejected_total{category}` (duplicates, unparseable envelopes and topics, `oversize`, `map_report_invalid` and `db_refused_row`, rows the database refused as data errors (SQLSTATE class 22/23), dropped instead of stalling the writer; packets that fail keys, decoding or verification are accepted as `encrypted`/`invalid` header-only rows)
   - `meshmap_ingest_dropped_total{reason}` (queue full = data loss window)
   - `meshmap_ingest_duplicate_deliveries_total{broker}`, `meshmap_ingest_provenance_updates_total`
   - `meshmap_writer_*`, `meshmap_identities`, `meshmap_retention_deleted_rows_total`
@@ -128,7 +128,7 @@ Public by default. For basic auth, create `deploy/caddy-auth/basic.caddy` (see t
 
 ## Data loss windows
 
-MQTT delivers Meshtastic traffic at QoS 0, so senders cannot be slowed. If PostgreSQL is unavailable, the writer retries with backoff while the bounded queue (`INGEST_QUEUE_SIZE`, default 20 000 messages, several minutes at 100 msg/s) absorbs input. Beyond that, messages are dropped and counted (`reason="queue_full"`). Broker disconnections lose whatever the broker does not retain. The map shows what this service observed, not complete history.
+MQTT delivers Meshtastic traffic at QoS 0, so senders cannot be slowed. If PostgreSQL is unavailable, the writer retries with backoff while the bounded queue (`INGEST_QUEUE_SIZE`, default 20 000 messages, several minutes at 100 msg/s) absorbs input. Beyond that, messages are dropped and counted (`reason="queue_full"`). The queue lives in the process, so the backend's container health check probes `/health/live`, not `/health/ready` (which answers 503 while the database is unreachable): Swarm replaces a task that turns unhealthy, and a readiness check would kill `ingest` and its queue about a minute into an outage, its replacement then waiting for the database without ingesting. The API replicas use the same liveness check, since replacing them during an outage only churns and Swarm does not route by health (D-163). Broker disconnections lose whatever the broker does not retain. The map shows what this service observed, not complete history.
 
 ## Upgrading to schema 2 (monthly partitions)
 
@@ -186,11 +186,11 @@ Only `packet_log` matters; Redis is ephemeral and rebuilds itself. After a resto
 | Many `encrypted` rows on a listed channel | `meshmap_ingest_accepted_total{packet_type="encrypted"}`: packets that no key decrypts are kept header-only as `encrypted`. Wrong PSK for that channel name, or a CCM channel configured as `ctr` |
 | Many `invalid` rows | `meshmap_ingest_accepted_total{packet_type="invalid"}`; the row's `iv` field (in the sender's packet log) names the reason. `iv=sig_invalid`: forged or corrupted signed packets, expected to be rare on real traffic |
 | Live badge “paused” | Redis down in API-only mode (`serve --no-ingest`), or SSE blocked by a proxy (disable buffering) |
-| Inspect real traffic | `docker run --rm eclipse-mosquitto:2 mosquitto_sub -h HOST -u U -P P -t 'msh/#' -F '%U\|%r\|%t\|%x' -W 600 > cap.txt` then `scripts/go.sh go run ./cmd/meshmap inspect cap.txt` |
+| Inspect real traffic | `docker run --rm eclipse-mosquitto:2 mosquitto_sub -h HOST -u U -P P -t 'msh/#' -F '%U\|%r\|%t\|%x' -W 600 > cap.txt` then `scripts/go.sh go run ./cmd/meshmap inspect ../cap.txt` (it runs in `backend/`) |
 
 ## Production security checklist
 
-- [ ] Strong `POSTGRES_PASSWORD`; `.env` and `secrets/` readable only by the deploy user; neither is in Git.
+- [ ] Strong `POSTGRES_PASSWORD`; `.env` readable only by the deploy user, and `secrets/` only by the deploy user and the backend's user, uid 65532 (`sudo chgrp -R 65532 secrets && chmod 750 secrets && find secrets -type f -exec chmod 640 {} +`); neither is in Git.
 - [ ] TLS in front of `web`; HSTS at the TLS proxy.
 - [ ] `PUBLIC_METRICS_ENABLED=false` unless metrics are protected.
 - [ ] Brokers use TLS where available; `accept_retained: false`.

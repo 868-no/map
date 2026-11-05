@@ -13,7 +13,7 @@ docker run --rm -u "$(id -u):$(id -g)" \
   -e JAVA_TOOL_OPTIONS="-Xmx${PLANETILER_HEAP:-8g}" \
   -v "$out":/data \
   "ghcr.io/onthegomap/planetiler:$version" \
-  --area="$area" --bounds="${BASEMAP_BOUNDS:-world}" --download \
+  --area="$area" --bounds="${BASEMAP_BOUNDS:-world}" --download --refresh_osm=true \
   --download_dir=/data/sources --tmpdir=/data/tmp \
   --output=/data/basemap.building.pmtiles --force \
   --maxzoom=14 --languages="${BASEMAP_LANGUAGES:-no,nb,nn,se,en}"

@@ -66,7 +66,7 @@ One table of mesh data, `packet_log` (`backend/internal/storage/schema.sql`), an
 
 `internal/window` is the single definition of the interval `[start, end)`. All window-scoped SQL is built by `query.where()`, which starts with `window.Predicate`; a test fails if any other code compares `observed_at` (allowlist: ingestion dedupe fallback and the retention delete). `/observations` returns exactly the rows inside the interval; the `cursor` only positions within it (D-038). Pages are streamed from the database cursor, never collected in memory (D-057).
 
-The browser's engine computes node identity, positions, telemetry, links, estimates, counts and traffic buckets from the rows inside the selected window only; its isolation test covers the derived fields (D-041). `/observations` reports a `generation` (decoder version, `obsrow.Version` and configuration hash); a browser holding rows of another generation discards them and refetches. The server keeps no cache of results.
+The browser's engine computes node identity, positions, telemetry, links, estimates, counts and traffic buckets from the rows inside the selected window only; its isolation test covers the derived fields (D-041). `/observations` reports a `generation` (decoder version, `obsrow.Version` and configuration hash); a browser holding rows of another generation discards them and refetches. Whole past days are the one cached result: `/observations/day/{date}` keeps each settled day gzipped in Redis and answers it immutable, so browsers and Cloudflare keep it too (D-158); imports advance a history revision that is part of the generation.
 
 ## Trust model
 
@@ -93,7 +93,7 @@ backend/
   internal/window         window semantics, retention cutoff
   internal/query          streamed /observations pages (window-scoped SQL)
   internal/geo            location-estimate settings (the estimator runs in the browser)
-  internal/cache          Redis wrapper (dedupe, live pub/sub, maintenance status)
+  internal/cache          Redis wrapper (dedupe, live pub/sub, maintenance status, cached days)
   internal/api            huma handlers, SSE hub, health, per-client limits, client IP
   internal/maintenance    retention runner (drops expired months, trims the boundary month and weather_hour)
   internal/weather        MET Norway client (OPeNDAP, grid cells), weather_hour store, fetch queue
@@ -111,6 +111,6 @@ frontend/                 React + MapLibre GL 5 + deck.gl 9 (Vite); e2e/ Playwri
   src/state/              store, window queries, live stream (live.ts)
 web/                      Caddyfile, dark and light OpenMapTiles styles, image build (fonts)
 basemap/                  basemap service image: Planetiler + run.sh (builds and refreshes basemap.pmtiles)
-deploy/                   compose.production.yaml, Mosquitto config for the demo, caddy-auth snippets
+deploy/                   compose.production.yaml, stack.swarm.yaml (split for Swarm), Mosquitto config for the demo, caddy-auth snippets
 scripts/                  go.sh, node.sh, wasm.sh, integration.sh, bench.sh, basemap_import.sh, regions.sh/regions.js
 ```

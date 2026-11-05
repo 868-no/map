@@ -23,7 +23,7 @@ An interactive map, in light and dark themes, for observing Meshtastic mesh netw
 - **Tool rail and themes:** every control sits on a floating, resizable tool rail panel (Nodes, Details, Health, Trends, Period, Filters, Layers, Legend, Settings) beside a header island with the live indicator and counters (D-066, D-082, D-097). The map remembers where you left it. The theme follows the browser by default (Auto); viewers can pick Light or Dark under Settings.
 - **Privacy:** no accounts, cookies, analytics or third-party requests; a [privacy policy](frontend/public/privacy.html) at `/privacy.html` fills in the deployment's operator, contact and retention from the API.
 - **Installable and offline-capable:** add it to a phone's home screen; without a connection it opens with the last data it received (map tiles are not stored offline).
-- **Self-hosted:** Docker Compose, a self-hosted PMTiles basemap with switchable layers (roads, borders and city and country names on by default; local place names, peaks, road names and water names off) and an optional regions layer that splits Norway into Nord-Norge, Trøndelag, Vestlandet, Østlandet and Sørlandet. The only outside services it uses at runtime are the basemap service's OpenStreetMap downloads when it builds and, unless `WEATHER_ENABLED=false`, MET Norway's weather archive (`thredds.met.no`), which the backend queries.
+- **Self-hosted:** Docker Compose, a self-hosted PMTiles basemap with switchable layers (roads, borders and city and country names on by default; local place names, peaks, road names and water names off) and an optional regions layer that splits Norway into Nord-Norge, Trøndelag, Vestlandet, Østlandet and Sørlandet. The only outside services it uses at runtime are the basemap service's OpenStreetMap downloads when it builds and, unless turned off, MET Norway's weather archive (`thredds.met.no`, `WEATHER_ENABLED`) and Kartverket's terrain heights (Geonorge, `TERRAIN_ENABLED`), which the backend queries.
 
 ## Quick start (demo)
 
@@ -68,7 +68,8 @@ scripts/node.sh npx vitest run        # frontend unit tests
 scripts/wasm.sh test                  # engine (Rust) tests, incl. the golden 12 h fixture
 scripts/wasm.sh                       # build the engine to WebAssembly (needed before frontend tests/builds)
 docker run --rm --network host --ipc=host -v "$PWD":/src -w /src/frontend \
-  mcr.microsoft.com/playwright:v1.64.1-noble npx playwright test     # e2e against a running stack
+  mcr.microsoft.com/playwright:v1.64.1-noble npx playwright test     # e2e against a running demo stack built with
+                                      # E2E_HOOKS=true, DEMO_MODE=true and seeded history (as CI does)
                                       # (add -e UPDATE_SCREENSHOTS=1 to refresh docs/screenshots)
 scripts/bench.sh                      # 2M-row reference benchmark
 ```
