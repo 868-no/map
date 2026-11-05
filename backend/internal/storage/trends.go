@@ -70,6 +70,11 @@ var trendRangeSQL = `
 func (t *TrendHours) Refresh(ctx context.Context, pool *pgxpool.Pool, now time.Time) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	return t.refresh(ctx, pool, now)
+}
+
+// refresh is Refresh with t.mu held.
+func (t *TrendHours) refresh(ctx context.Context, pool *pgxpool.Pool, now time.Time) error {
 	if t.hours == nil {
 		t.hours = map[time.Time]*HourSummary{}
 	}
@@ -215,15 +220,17 @@ func (t *TrendHours) readRange(ctx context.Context, pool *pgxpool.Pool, lo, hi t
 }
 
 // RefreshEvery refreshes at most once per every (wall clock): requests in
-// between, whatever bucket or zone they ask for, reuse the summaries.
+// between, whatever bucket or zone they ask for, reuse the summaries. The
+// look and the refresh share the lock, so requests arriving while one
+// refreshes wait for it and then find the summaries fresh, instead of each
+// reading the log again in turn.
 func (t *TrendHours) RefreshEvery(ctx context.Context, pool *pgxpool.Pool, now time.Time, every time.Duration) error {
 	t.mu.Lock()
-	fresh := t.hours != nil && time.Since(t.last) < every
-	t.mu.Unlock()
-	if fresh {
+	defer t.mu.Unlock()
+	if t.hours != nil && time.Since(t.last) < every {
 		return nil
 	}
-	return t.Refresh(ctx, pool, now)
+	return t.refresh(ctx, pool, now)
 }
 
 // Oldest is the oldest retained row as of the last refresh (nil: none).
