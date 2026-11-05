@@ -118,17 +118,20 @@ func Protect(next http.Handler, l Limits) http.Handler {
 	var mu sync.Mutex
 	clients := map[netip.Prefix]*clientState{}
 	streams := 0
-	go func() {
-		for range time.Tick(time.Minute) {
-			mu.Lock()
-			for k, c := range clients {
-				if c.streams == 0 && len(c.heavy) == 0 && time.Since(c.seen) > 10*time.Minute {
-					delete(clients, k)
-				}
-			}
-			mu.Unlock()
+	// Clients idle for 10 minutes are forgotten, looked for at most once a
+	// minute by a request (no goroutine outliving the handler).
+	var pruned time.Time
+	prune := func(now time.Time) {
+		if now.Sub(pruned) < time.Minute {
+			return
 		}
-	}()
+		pruned = now
+		for k, c := range clients {
+			if c.streams == 0 && len(c.heavy) == 0 && now.Sub(c.seen) > 10*time.Minute {
+				delete(clients, k)
+			}
+		}
+	}
 	tooMany := func(w http.ResponseWriter) {
 		w.Header().Set("Retry-After", "2")
 		http.Error(w, `{"title":"Too Many Requests","status":429}`, http.StatusTooManyRequests)
@@ -139,15 +142,17 @@ func Protect(next http.Handler, l Limits) http.Handler {
 			return
 		}
 		key := ClientKey(ClientIP(r, l.Trusted))
+		now := time.Now()
 		mu.Lock()
+		prune(now)
 		c := clients[key]
 		if c == nil {
 			c = &clientState{lim: rate.NewLimiter(rate.Limit(l.PerSecond), l.Burst), heavy: make(chan struct{}, max(l.HeavyPerClient, 1))}
 			clients[key] = c
 		}
-		c.seen = time.Now()
+		c.seen = now
 		allowed := c.lim.Allow()
-		stream := r.URL.Path == "/api/v1/stream"
+		stream := r.URL.Path == streamPath
 		if stream && allowed {
 			if c.streams >= l.MaxStreams || (l.MaxStreamsTotal > 0 && streams >= l.MaxStreamsTotal) {
 				allowed = false

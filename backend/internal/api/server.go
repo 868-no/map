@@ -220,7 +220,7 @@ func (s *Server) register(api huma.API) {
 		Summary: "Supported windows, presets, feature flags and map defaults (no secrets)", Tags: []string{"meta"}}, s.capabilities)
 	huma.Register(api, huma.Operation{OperationID: "retention", Method: http.MethodGet, Path: "/api/v1/retention",
 		Summary: "Retention cutoff, earliest/latest retained observation and server time", Tags: []string{"meta"}}, s.retention)
-	huma.Register(api, huma.Operation{OperationID: "observations", Method: http.MethodGet, Path: "/api/v1/observations",
+	huma.Register(api, huma.Operation{OperationID: "observations", Method: http.MethodGet, Path: heavyPath,
 		Summary: "Decoded observations of a window, paged, for deriving views in the browser", Tags: []string{"mesh"}, Errors: []int{400, 503},
 		Responses: map[string]*huma.Response{"200": {Description: "OK", Content: map[string]*huma.MediaType{
 			"application/json": {Schema: api.OpenAPI().Components.Schemas.Schema(reflect.TypeOf(ObservationsBody{}), true, "ObservationsBody")}}}}}, s.observations)

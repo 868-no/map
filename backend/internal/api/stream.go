@@ -37,6 +37,9 @@ func (in *StreamInput) Resolve(huma.Context) []error {
 	return nil
 }
 
+// streamPath is the live stream, which Protect caps per client.
+const streamPath = "/api/v1/stream"
+
 // LaggedReason in a status event: the server dropped events for this client
 // (it was too slow); the client should fetch what it missed.
 const LaggedReason = "lagged"
@@ -80,7 +83,7 @@ type LiveStatus struct {
 
 func (s *Server) registerStream(api huma.API) {
 	sse.Register(api, huma.Operation{
-		OperationID: "stream", Method: http.MethodGet, Path: "/api/v1/stream",
+		OperationID: "stream", Method: http.MethodGet, Path: streamPath,
 		Summary: "Live updates for the rolling window (SSE)", Tags: []string{"live"},
 		Description: "Events: `delta` (new observations, each with its full row), `heartbeat` (every 15 s, current window bounds), " +
 			"`retention` (rows deleted; refetch), `status` (live availability).",
