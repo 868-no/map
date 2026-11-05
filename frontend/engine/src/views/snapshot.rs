@@ -233,7 +233,7 @@ pub fn build_snapshot(rows: &[&Row], i: &Interner, g: &GeoOptions, rules: Rules)
     let mobile: FxSet<u32> = moves.keys().copied().collect();
     let (mut er, mut ctx) = build_edges(rows, &by.neighborinfo, &hops, &known, pos, silent, rules.mqtt_links.then_some(&downlinkers), &moved, rules.signal, mobile);
     if rules.mqtt_links {
-        ctx.downlinkers = downlinkers.clone();
+        ctx.downlinkers = downlinkers;
     }
     // Directional 0-cost evidence on radio links (D-068).
     let hears: FxSet<(u32, u32)> = er.edges.iter().filter(|e| !e.mqtt).map(|e| (e.src_num, e.dst_num)).collect();

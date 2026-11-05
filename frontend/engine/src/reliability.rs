@@ -24,9 +24,6 @@ use crate::graph::Edge;
 use crate::row::Row;
 use crate::util::{map, set, FxMap, FxSet};
 
-/// Packets needed before a share is shown.
-pub const MIN_EXPECTED: usize = 10;
-
 #[derive(Serialize, Clone, Debug, PartialEq)]
 pub struct Relaying {
     /// Packets it received with hops left, where a witness gateway uplinked them.

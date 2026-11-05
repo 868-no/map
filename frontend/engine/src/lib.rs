@@ -114,6 +114,95 @@ fn json<T: serde::Serialize>(v: &T) -> String {
 }
 
 impl Engine {
+    /// A view as JSON (Engine::view_bytes for the page; tests read it as
+    /// text): kind is snapshot, traffic, node, packetlog, route, reach,
+    /// health or link; arg is the node id (node, packetlog, reach), packet key
+    /// (route) or "a|b" node ids (link). "null"
+    /// means the node is neither observed nor referenced in the window.
+    pub fn view(&mut self, kind: &str, start: f64, end: f64, filters: &str, arg: &str) -> Result<String, JsError> {
+        let (start, end) = (start as i64, end as i64);
+        match kind {
+            "snapshot" => Ok(json(&self.build(start, end, filters)?.snapshot)),
+            "traffic" => {
+                self.filter(start, end, filters)?;
+                Ok(json(&build_traffic(&self.rows(), start, bucket_for(end - start), &self.i)))
+            }
+            "node" => {
+                let num = parse_node(arg).ok_or_else(|| err("invalid node id"))?;
+                self.build(start, end, filters)?;
+                let b = &self.built.as_ref().unwrap().1;
+                Ok(json(&build_node_detail(&self.rows(), num, b, &self.i)))
+            }
+            "packetlog" => {
+                let num = parse_node(arg).ok_or_else(|| err("invalid node id"))?;
+                self.build(start, end, filters)?;
+                let b = &self.built.as_ref().unwrap().1;
+                // Its invalid rows too, which the filters always leave out (D-093).
+                let invalid = self.i.get("invalid");
+                let (a, z) = self.store.range(start, end);
+                let mut rows = self.rows();
+                let replies = b.replies.get_or_init(|| packets::ReplyIndex::new(&rows));
+                rows.extend(self.store.rows()[a..z].iter().filter(|r| Some(r.ty) == invalid && r.src == num));
+                Ok(json(&packets::packet_log(&rows, num, &b.ctx, replies, &self.i)))
+            }
+            "route" => {
+                let lp = key64(arg);
+                self.build(start, end, filters)?;
+                let all = self.rows();
+                let rows: Vec<&row::Row> = all.iter().copied().filter(|r| r.lp == lp).collect();
+                // ACKs answering it: their senders received it (D-096).
+                let ack = self.i.get("ack");
+                let acked: Vec<u32> = match rows.first().and_then(|r| r.pid.map(|p| (r.src, p))) {
+                    Some((src, pid)) => {
+                        let mut v: Vec<u32> = all.iter().filter(|r| r.dst == Some(src) && r.routing().is_some_and(|rt| Some(rt.kind) == ack && rt.request == pid)).map(|r| r.src).collect();
+                        v.sort_unstable();
+                        v.dedup();
+                        v
+                    }
+                    None => vec![],
+                };
+                // A traceroute request: its replies record its whole way to the target.
+                let replies: Vec<&row::Row> = match rows.first().filter(|r| r.traceroute().is_some_and(|t| t.valid && !t.is_reply)).and_then(|r| r.pid.map(|p| (r.src, p))) {
+                    Some((src, pid)) => all.iter().copied().filter(|r| r.dst == Some(src) && r.traceroute().is_some_and(|t| t.valid && t.is_reply && t.request == pid)).collect(),
+                    None => vec![],
+                };
+                let b = &self.built.as_ref().unwrap().1;
+                Ok(json(&packets::packet_route(&rows, &b.ctx, &b.roles, &self.i, &acked, &replies)))
+            }
+            "reach" => {
+                // arg: node id, with "|internet" to follow MQTT links too (D-069).
+                let (id, internet) = arg.split_once('|').map_or((arg, false), |(a, b)| (a, b == "internet"));
+                let num = parse_node(id).ok_or_else(|| err("invalid node id"))?;
+                self.build(start, end, filters)?;
+                let b = &self.built.as_ref().unwrap().1;
+                let silent: util::FxSet<u32> = b.roles.iter().filter(|(_, r)| views::is_silent_role(r)).map(|(&n, _)| n).collect();
+                let own: Vec<&row::Row> = self.rows().into_iter().filter(|r| r.src == num).collect();
+                Ok(json(&reach::reach(num, &b.snapshot.edges, &silent, internet, &own)))
+            }
+            "link" => {
+                // arg: "!aaaaaaaa|!bbbbbbbb" (D-105).
+                let (a, b) = arg.split_once('|').and_then(|(a, b)| Some((parse_node(a)?, parse_node(b)?))).ok_or_else(|| err("invalid link"))?;
+                self.build(start, end, filters)?;
+                let built = &self.built.as_ref().unwrap().1;
+                Ok(json(&views::link::link_history(&built.samples, a, b)))
+            }
+            "health" => {
+                self.build(start, end, filters)?;
+                let b = &self.built.as_ref().unwrap().1;
+                let hours = (end - start) as f64 / 3_600_000.0;
+                // Rows that failed verification, which the filters always leave out (D-108).
+                let invalid_ty = self.i.get("invalid");
+                let (lo, hi) = self.store.range(start, end);
+                let invalid: Vec<&row::Row> = self.store.rows()[lo..hi].iter().filter(|r| Some(r.ty) == invalid_ty).collect();
+                let rows = self.rows();
+                let presets = b.presets.get_or_init(|| channels::PresetIndex::new(&rows, &b.hops, &self.i));
+                Ok(json(&health::health(&rows, &invalid, &b.snapshot.nodes, &b.copies, presets, &self.i, hours, &self.regions)))
+            }
+            _ => Err(err(format!("unknown view {kind}"))),
+        }
+    }
+
+
     /// Selects the window's rows passing the filters (Engine::rows),
     /// memoised until the store or the request changes.
     fn filter(&mut self, start: i64, end: i64, filters: &str) -> Result<(), JsError> {
@@ -262,93 +351,6 @@ impl Engine {
     /// Rows in [lo, hi) as the API's JSON array (the persisted copy).
     pub fn export(&self, lo: f64, hi: f64) -> String {
         self.store.export(lo as i64, hi as i64, &self.i)
-    }
-
-    /// A view as JSON: kind is snapshot, traffic, node, packetlog, route, reach,
-    /// health or link; arg is the node id (node, packetlog, reach), packet key
-    /// (route) or "a|b" node ids (link). "null"
-    /// means the node is neither observed nor referenced in the window.
-    pub fn view(&mut self, kind: &str, start: f64, end: f64, filters: &str, arg: &str) -> Result<String, JsError> {
-        let (start, end) = (start as i64, end as i64);
-        match kind {
-            "snapshot" => Ok(json(&self.build(start, end, filters)?.snapshot)),
-            "traffic" => {
-                self.filter(start, end, filters)?;
-                Ok(json(&build_traffic(&self.rows(), start, bucket_for(end - start), &self.i)))
-            }
-            "node" => {
-                let num = parse_node(arg).ok_or_else(|| err("invalid node id"))?;
-                self.build(start, end, filters)?;
-                let b = &self.built.as_ref().unwrap().1;
-                Ok(json(&build_node_detail(&self.rows(), num, b, &self.i)))
-            }
-            "packetlog" => {
-                let num = parse_node(arg).ok_or_else(|| err("invalid node id"))?;
-                self.build(start, end, filters)?;
-                let b = &self.built.as_ref().unwrap().1;
-                // Its invalid rows too, which the filters always leave out (D-093).
-                let invalid = self.i.get("invalid");
-                let (a, z) = self.store.range(start, end);
-                let mut rows = self.rows();
-                let replies = b.replies.get_or_init(|| packets::ReplyIndex::new(&rows));
-                rows.extend(self.store.rows()[a..z].iter().filter(|r| Some(r.ty) == invalid && r.src == num));
-                Ok(json(&packets::packet_log(&rows, num, &b.ctx, replies, &self.i)))
-            }
-            "route" => {
-                let lp = key64(arg);
-                self.build(start, end, filters)?;
-                let all = self.rows();
-                let rows: Vec<&row::Row> = all.iter().copied().filter(|r| r.lp == lp).collect();
-                // ACKs answering it: their senders received it (D-096).
-                let ack = self.i.get("ack");
-                let acked: Vec<u32> = match rows.first().and_then(|r| r.pid.map(|p| (r.src, p))) {
-                    Some((src, pid)) => {
-                        let mut v: Vec<u32> = all.iter().filter(|r| r.dst == Some(src) && r.routing().is_some_and(|rt| Some(rt.kind) == ack && rt.request == pid)).map(|r| r.src).collect();
-                        v.sort_unstable();
-                        v.dedup();
-                        v
-                    }
-                    None => vec![],
-                };
-                // A traceroute request: its replies record its whole way to the target.
-                let replies: Vec<&row::Row> = match rows.first().filter(|r| r.traceroute().is_some_and(|t| t.valid && !t.is_reply)).and_then(|r| r.pid.map(|p| (r.src, p))) {
-                    Some((src, pid)) => all.iter().copied().filter(|r| r.dst == Some(src) && r.traceroute().is_some_and(|t| t.valid && t.is_reply && t.request == pid)).collect(),
-                    None => vec![],
-                };
-                let b = &self.built.as_ref().unwrap().1;
-                Ok(json(&packets::packet_route(&rows, &b.ctx, &b.roles, &self.i, &acked, &replies)))
-            }
-            "reach" => {
-                // arg: node id, with "|internet" to follow MQTT links too (D-069).
-                let (id, internet) = arg.split_once('|').map_or((arg, false), |(a, b)| (a, b == "internet"));
-                let num = parse_node(id).ok_or_else(|| err("invalid node id"))?;
-                self.build(start, end, filters)?;
-                let b = &self.built.as_ref().unwrap().1;
-                let silent: util::FxSet<u32> = b.roles.iter().filter(|(_, r)| views::is_silent_role(r)).map(|(&n, _)| n).collect();
-                let own: Vec<&row::Row> = self.rows().into_iter().filter(|r| r.src == num).collect();
-                Ok(json(&reach::reach(num, &b.snapshot.edges, &silent, internet, &own)))
-            }
-            "link" => {
-                // arg: "!aaaaaaaa|!bbbbbbbb" (D-105).
-                let (a, b) = arg.split_once('|').and_then(|(a, b)| Some((parse_node(a)?, parse_node(b)?))).ok_or_else(|| err("invalid link"))?;
-                self.build(start, end, filters)?;
-                let built = &self.built.as_ref().unwrap().1;
-                Ok(json(&views::link::link_history(&built.samples, a, b)))
-            }
-            "health" => {
-                self.build(start, end, filters)?;
-                let b = &self.built.as_ref().unwrap().1;
-                let hours = (end - start) as f64 / 3_600_000.0;
-                // Rows that failed verification, which the filters always leave out (D-108).
-                let invalid_ty = self.i.get("invalid");
-                let (lo, hi) = self.store.range(start, end);
-                let invalid: Vec<&row::Row> = self.store.rows()[lo..hi].iter().filter(|r| Some(r.ty) == invalid_ty).collect();
-                let rows = self.rows();
-                let presets = b.presets.get_or_init(|| channels::PresetIndex::new(&rows, &b.hops, &self.i));
-                Ok(json(&health::health(&rows, &invalid, &b.snapshot.nodes, &b.copies, presets, &self.i, hours, &self.regions)))
-            }
-            _ => Err(err(format!("unknown view {kind}"))),
-        }
     }
 
     /// Engine::view as UTF-8 bytes (a Uint8Array in JS): the page decodes
