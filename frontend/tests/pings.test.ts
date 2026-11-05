@@ -116,6 +116,30 @@ describe('ping animation', () => {
     expect(pingCount()).toBe(0)
     expect(activePings(100).blips).toHaveLength(0)
   })
+  it("a reply replays the hops of its request's way that live copies did not show, and leaves once it reaches the target", () => {
+    // A traced B. Live, only GW heard the request (from A). B's reply records A -> GW -> B.
+    addTransmission({ key: `lp|${A}`, tx: A, rx: GW, rebroadcast: false, packet: 'aa:4d' }, pos, 0)
+    const replay = { rebroadcast: false, packet: 'aa:4d', replay: true }
+    addTransmission({ ...replay, key: `rqaa:4d|${A}`, tx: A, rx: GW }, pos, 1000) // shown live: skipped
+    addTransmission({ ...replay, key: `rqaa:4d|${GW}`, tx: GW, rx: B, rebroadcast: true }, pos, 1000) // not shown: replayed
+    addTransmission({ key: `rp|${B}`, tx: B, rx: GW, rebroadcast: false, packet: 'bb:1f4', after: 'aa:4d' }, pos, 1000)
+    expect(pingCount()).toBe(3)
+    const centers = (now: number) => activePings(now).rings.map((r) => r.center)
+    expect(centers(1500)).toEqual([pos.get(A)])
+    // GW passes it on once A's ring got there; B answers only once GW's ring reaches it.
+    expect(centers(PING_GROW + 1000)).toEqual([pos.get(A), pos.get(GW)])
+    expect(centers(2 * PING_GROW + 500)).toEqual([pos.get(A), pos.get(GW), pos.get(B)])
+  })
+  it("a replayed hop from a transmitter whose live ring is still on the map grows that ring on", () => {
+    addTransmission({ key: `lp|${A}`, tx: A, rx: GW, rebroadcast: false, packet: 'aa:4d' }, pos, 0)
+    addTransmission({ key: `rqaa:4d|${A}`, tx: A, rx: B, rebroadcast: false, packet: 'aa:4d', replay: true }, pos, 1000)
+    expect(pingCount()).toBe(1) // one ring, now with B too
+    addTransmission({ key: `rp|${B}`, tx: B, rx: GW, rebroadcast: false, packet: 'bb:1f4', after: 'aa:4d' }, pos, 1000)
+    expect(activePings(2000).rings.map((r) => r.center)).toEqual([pos.get(A)]) // B waits for A's ring
+    const grown = activePings(1000 + PING_GROW).rings
+    expect(grown[0].radiusM).toBeGreaterThan(AB)
+    expect(grown.map((r) => r.center)).toEqual([pos.get(A), pos.get(B)])
+  })
   it('a traceroute reply replays its request only if the request was not animated already', () => {
     const live = { key: `lp|${A}`, tx: A, rx: B, rebroadcast: false, packet: 'aa:4d' }
     const replay = { key: `rqaa:4d|${A}`, tx: A, rx: B, rebroadcast: false, packet: 'aa:4d', replay: true }

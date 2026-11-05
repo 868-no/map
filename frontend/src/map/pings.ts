@@ -211,7 +211,7 @@ function addDelivery(t: Transmission, pos: Map<string, LngLat>, now: number): vo
   // Without a way from the engine: one hop straight to the node.
   const there = shown ? undefined : wayOf(t.path?.length ? t.path : [{ a: t.tx, b: t.rx, dashed: false, why: 'delivered' }], pos)
   if (!there && !back) return
-  if (there && t.packet) animated.set(t.packet, { at: now, replay: true })
+  if (there && t.packet) animated.set(t.packet, { at: now, replay: true, hops: new Set() })
   if (deliveries.size >= MAX_PINGS) deliveries.delete(deliveries.keys().next().value!)
   // A packet animated already may still be on its way: the ACK leaves once its pings have arrived.
   deliveries.set(t.key, { there, back, born: now, waitFor: shown && t.packet ? { packet: t.packet, since: now } : undefined })
@@ -292,16 +292,28 @@ function activeDeliveries(now: number): { lines: DeliveryLine[]; arrivals: Flash
 // Packets already animated, live or replayed, by "origin:id" (D-106): a
 // traceroute reply's replay of its request's route is skipped when the
 // request itself was seen travelling, and the other way round.
-const animated = new Map<string, { at: number; replay: boolean }>()
+// hops: the live radio transmissions shown, "tx>rx" ("tx>" with no receiver
+// known), so a replay adds only what they did not show (D-174).
+const animated = new Map<string, { at: number; replay: boolean; hops: Set<string> }>()
 export const REPLAY_DEDUPE_MS = 120_000
 
 /** Add a transmission; a ping still on the map takes the new receiver. */
 export function addTransmission(t: Transmission, pos: Map<string, LngLat>, now = performance.now()): void {
   if (t.delivered) return addDelivery(t, pos, now)
   if (t.packet) {
-    const prior = animated.get(t.packet)
-    if (prior && now - prior.at < REPLAY_DEDUPE_MS && prior.replay !== !!t.replay) return // shown the other way already
-    if (!prior || now - prior.at >= REPLAY_DEDUPE_MS) animated.set(t.packet, { at: now, replay: !!t.replay })
+    let prior = animated.get(t.packet)
+    if (prior && now - prior.at >= REPLAY_DEDUPE_MS) prior = undefined
+    if (prior?.replay && !t.replay) return // shown replayed already: a late live copy adds nothing
+    if (prior && !prior.replay && t.replay && !t.gap) {
+      // Seen travelling live, but live copies end where gateways heard them:
+      // the replay adds only the hops they did not show (D-174). A hop shown
+      // is skipped; one from a transmitter whose live ring is still on the
+      // map joins that ring, which grows on to the new receiver.
+      if (prior.hops.has(`${t.tx}>${t.rx ?? ''}`) || (!t.rx && [...prior.hops].some((h) => h.startsWith(`${t.tx}>`)))) return
+      for (const [k, q] of pings) if (q.packet === t.packet && q.tx === t.tx && !q.gap && !k.startsWith('rq')) return addTransmission({ ...t, key: k, replay: false }, pos, now)
+    }
+    if (!prior) animated.set(t.packet, (prior = { at: now, replay: !!t.replay, hops: new Set() }))
+    if (!t.replay && !t.gap) prior.hops.add(`${t.tx}>${t.rx ?? ''}`)
     if (animated.size > 2000) for (const [k, v] of animated) if (now - v.at >= REPLAY_DEDUPE_MS) animated.delete(k)
   }
   const center = pos.get(t.tx)
@@ -315,11 +327,12 @@ export function addTransmission(t: Transmission, pos: Map<string, LngLat>, now =
     if (t.gap && !(t.rx && pos.get(t.rx))) return
     p = { tx: t.tx, center, born: now, rebroadcast: t.rebroadcast, heard: false, heardAt: 0, receivers: new Map(), from: 0, to: 0, growStart: now, settled: now + PING_GROW, packet: t.packet, gap: t.gap }
     // Who did this transmitter hear the packet from? If that ping is on the
-    // map, start only when its ring arrives here. A traceroute reply starts
-    // only when its request, live or replayed, has reached the target.
+    // map, start only when its ring arrives here (a replayed hop may follow
+    // a live ring, D-174). A traceroute reply starts only when its request,
+    // live or replayed, has reached the target.
     const lp = packetOf(t.key)
     for (const [k, q] of pings) {
-      if ((packetOf(k) === lp || (t.after && q.packet === t.after)) && q.receivers.has(t.tx)) {
+      if ((packetOf(k) === lp || (t.packet && q.packet === t.packet) || (t.after && q.packet === t.after)) && q.receivers.has(t.tx)) {
         p.waitFor = { key: k, rx: t.tx, since: now }
         if (packetOf(k) === lp) break
       }
