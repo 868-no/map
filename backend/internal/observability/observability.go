@@ -10,6 +10,8 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/collectors"
+
+	"github.com/868-no/map/internal/obsrow"
 )
 
 // NewLogger returns a JSON slog logger at the given level.
@@ -84,5 +86,9 @@ func NewMetrics() *Metrics {
 		m.WriterBatches, m.WriterRows, m.WriterErrors, m.WriterLatency, m.ProcessLatency, m.Identities, m.KeyConflicts, m.CacheErrors, m.RetentionRows, m.DayRequests} {
 		f(c)
 	}
+	// Rows served without their metadata, which failed to decode (warned
+	// on powers of two by obsrow).
+	f(prometheus.NewCounterFunc(prometheus.CounterOpts{Name: "meshmap_rows_bad_metadata_total", Help: "Stored rows whose metadata failed to decode, served without it"},
+		func() float64 { return float64(obsrow.BadMetas()) }))
 	return m
 }
