@@ -75,10 +75,10 @@ pub fn parse_node(s: &str) -> Option<u32> {
 /// A packet or reception key as sent by the API (16 hex digits) to a u64.
 /// Anything else (hand-written test keys) is hashed (FNV-1a) consistently.
 pub fn key64(s: &str) -> u64 {
-    if s.len() == 16 {
-        if let Ok(v) = u64::from_str_radix(s, 16) {
-            return v;
-        }
+    if s.len() == 16
+        && let Ok(v) = u64::from_str_radix(s, 16)
+    {
+        return v;
     }
     let mut h: u64 = 0xcbf2_9ce4_8422_2325;
     for b in s.bytes() {

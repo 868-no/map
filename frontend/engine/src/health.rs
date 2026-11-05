@@ -273,12 +273,17 @@ pub fn airtime(copies: &Copies, rows: &[&Row], i: &Interner, hours: f64) -> Airt
     Airtime { packets, transmissions: tx_total, store_forward, by_type: shares(types, total), nodes }
 }
 
+/// A claimed sender's rejected packets (lp), their rejection reasons with
+/// counts, and the gateways that heard them.
+type Claims = (FxSet<u64>, FxMap<u32, usize>, FxSet<u32>);
+
 /// The window's known issues and airtime. `hours`: the window's length;
 /// rates use the span its rows cover when that is shorter. `invalid`: the
 /// window's rows that failed decoding or verification, which the filters
 /// keep out of `rows` (D-093). nodes, copies, presets: the build's (views::Built).
 /// `regions`: the regions' outlines for the topic-root rule (D-161); empty
 /// until the worker has handed them over, and then that rule is skipped.
+#[allow(clippy::too_many_arguments)] // mostly views::Built's parts; a params struct would only repackage them
 pub fn health(rows: &[&Row], invalid: &[&Row], nodes: &[Node], copies: &Copies, presets: &PresetIndex, i: &Interner, hours: f64, regions: &crate::landsdel::Regions) -> Health {
     // Rates over the span the data covers, which can be shorter than the
     // window (the service started later, or was down).
@@ -311,11 +316,13 @@ pub fn health(rows: &[&Row], invalid: &[&Row], nodes: &[Node], copies: &Copies, 
     // Hop limit higher than its packets needed.
     let mut fewest: FxMap<u64, i16> = map();
     for &r in rows {
-        if r.gw.is_some_and(|g| g != r.src) && r.rr != ty::VIA_MQTT && r.rr != ty::NON_RF {
-            if let Some(h) = r.hops().filter(|&h| h >= 0) {
-                let e = fewest.entry(r.lp).or_insert(h);
-                *e = (*e).min(h);
-            }
+        if r.gw.is_some_and(|g| g != r.src)
+            && r.rr != ty::VIA_MQTT
+            && r.rr != ty::NON_RF
+            && let Some(h) = r.hops().filter(|&h| h >= 0)
+        {
+            let e = fewest.entry(r.lp).or_insert(h);
+            *e = (*e).min(h);
         }
     }
     for (&n, pk) in &own {
@@ -378,10 +385,10 @@ pub fn health(rows: &[&Row], invalid: &[&Row], nodes: &[Node], copies: &Copies, 
     let refused = ["ADMIN_PUBLIC_KEY_UNAUTHORIZED", "NOT_AUTHORIZED"].iter().filter_map(|s| i.get(s)).collect::<FxSet<u32>>();
     let mut refusals: FxMap<u32, FxSet<u32>> = map();
     for &r in rows {
-        if let (Some(rt), Some(d)) = (r.routing(), r.dst) {
-            if refused.contains(&rt.error) {
-                refusals.entry(d).or_default().insert(r.src);
-            }
+        if let (Some(rt), Some(d)) = (r.routing(), r.dst)
+            && refused.contains(&rt.error)
+        {
+            refusals.entry(d).or_default().insert(r.src);
         }
     }
     for (n, by) in refusals {
@@ -394,10 +401,10 @@ pub fn health(rows: &[&Row], invalid: &[&Row], nodes: &[Node], copies: &Copies, 
     if let Some(plain) = i.get("plaintext_uplink") {
         let mut gws: FxMap<u32, usize> = map();
         for &r in rows {
-            if r.crypto == plain {
-                if let Some(g) = r.gw {
-                    *gws.entry(g).or_default() += 1;
-                }
+            if r.crypto == plain
+                && let Some(g) = r.gw
+            {
+                *gws.entry(g).or_default() += 1;
             }
         }
         for (g, c) in gws {
@@ -523,10 +530,10 @@ pub fn health(rows: &[&Row], invalid: &[&Row], nodes: &[Node], copies: &Copies, 
     // and are a notice.
     let mut by_key: FxMap<u32, Vec<(u32, bool)>> = map();
     for x in nodes {
-        if let Some(id) = x.identity.as_ref() {
-            if let Some(k) = id.key_num {
-                by_key.entry(k).or_default().push((x.num, id.signature == "verified" && k == x.num));
-            }
+        if let Some(id) = x.identity.as_ref()
+            && let Some(k) = id.key_num
+        {
+            by_key.entry(k).or_default().push((x.num, id.signature == "verified" && k == x.num));
         }
     }
     let span = |n: u32| own.get(&n).map(|m| m.values().fold((i64::MAX, i64::MIN), |(lo, hi), r| (lo.min(r.t), hi.max(r.t))));
@@ -573,7 +580,7 @@ pub fn health(rows: &[&Row], invalid: &[&Row], nodes: &[Node], copies: &Copies, 
     // Possible impersonation (D-108): packets claiming to be from a node whose
     // signature or key does not check out. Decoding failures are not counted.
     let trust = ["sig_invalid", "sig_malformed", "first_contact_invalid", "nodeinfo_key_mismatch", "strict_unverifiable"];
-    let mut claimed: FxMap<u32, (FxSet<u64>, FxMap<u32, usize>, FxSet<u32>)> = map();
+    let mut claimed: FxMap<u32, Claims> = map();
     for &r in invalid {
         let Some(reason) = r.invalid().filter(|&v| trust.contains(&i.s(v))) else { continue };
         let e = claimed.entry(r.src).or_default();

@@ -147,10 +147,10 @@ fn evidence(rows: &[&Row], i: &Interner) -> FxMap<u32, (String, bool)> {
             if r.map_report().is_some_and(|m| m.default_channel && m.preset != 0) && report.get(&r.src).is_none_or(|p| (r.t, r.id) > (p.t, p.id)) {
                 report.insert(r.src, r);
             }
-        } else if r.channel != 0 {
-            if let Some(p) = preset_of(i.s(r.channel)) {
-                *named.entry(r.src).or_insert_with(map).entry(p).or_insert(0) += 1;
-            }
+        } else if r.channel != 0
+            && let Some(p) = preset_of(i.s(r.channel))
+        {
+            *named.entry(r.src).or_insert_with(map).entry(p).or_insert(0) += 1;
         }
     }
     let mut out: FxMap<u32, (String, bool)> = map();
@@ -166,6 +166,9 @@ fn evidence(rows: &[&Row], i: &Interner) -> FxMap<u32, (String, bool)> {
     out
 }
 
+/// Group root -> preset -> the group's members with that evidence, in node order.
+type ByPreset = FxMap<u32, FxMap<String, Vec<u32>>>;
+
 /// The window's radio groups and every node's own preset evidence: the
 /// same for every node, so made once per build (views::Built).
 #[derive(Default)]
@@ -178,8 +181,8 @@ pub struct PresetIndex {
     groups: FxMap<u32, Vec<u32>>,
     /// Every group's members' evidence by root: preset -> members (in node
     /// order), confirmed and named apart.
-    confirmed: FxMap<u32, FxMap<String, Vec<u32>>>,
-    named: FxMap<u32, FxMap<String, Vec<u32>>>,
+    confirmed: ByPreset,
+    named: ByPreset,
 }
 
 impl PresetIndex {
@@ -197,7 +200,7 @@ impl PresetIndex {
             groups.entry(r).or_default().push(n);
         }
         let ev = evidence(rows, i);
-        let (mut confirmed, mut named): (FxMap<u32, FxMap<String, Vec<u32>>>, FxMap<u32, FxMap<String, Vec<u32>>>) = (map(), map());
+        let (mut confirmed, mut named): (ByPreset, ByPreset) = (map(), map());
         for (r, g) in groups.iter_mut() {
             g.sort_unstable();
             for &n in g.iter() {
@@ -235,13 +238,11 @@ pub fn infer(num: u32, ix: &PresetIndex) -> Option<Inferred<'_>> {
     }
     match ix.ev.get(&num) {
         Some((p, true)) => return it(Some(p), "map_report", &[], vec![]),
-        Some((p, false)) => {
-            // Its own hint yields only to confirmed reports of its group (below).
-            if ix.root.get(&num).and_then(|r| ix.confirmed.get(r)).is_none_or(|c| c.is_empty()) {
-                return it(Some(p), "channel_name", &[], vec![]);
-            }
+        // Its own hint yields only to confirmed reports of its group (below).
+        Some((p, false)) if ix.root.get(&num).and_then(|r| ix.confirmed.get(r)).is_none_or(|c| c.is_empty()) => {
+            return it(Some(p), "channel_name", &[], vec![]);
         }
-        None => {}
+        _ => {}
     }
     // Its own evidence is never among its group's: a confirmed node returned
     // above, and a node with a hint is not in the named tally consulted below.

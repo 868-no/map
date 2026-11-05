@@ -207,10 +207,10 @@ impl Store {
         if a == 0 && b == self.rows.len() {
             return (b, self.max_id.unwrap_or(0));
         }
-        if let Some((ma, mb, v, m)) = self.stats_memo.get() {
-            if (ma, mb, v) == (a, b, self.version) {
-                return (b - a, m);
-            }
+        if let Some((ma, mb, v, m)) = self.stats_memo.get()
+            && (ma, mb, v) == (a, b, self.version)
+        {
+            return (b - a, m);
         }
         let m = self.rows[a..b].iter().map(|r| r.id).max().unwrap_or(0);
         self.stats_memo.set(Some((a, b, self.version, m)));

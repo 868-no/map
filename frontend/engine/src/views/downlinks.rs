@@ -2,8 +2,8 @@
 
 use serde::Serialize;
 
-use crate::graph::traceroute_samples;
-use crate::row::{ty, Row};
+use super::TracerouteHops;
+use crate::row::Row;
 use crate::util::{map, set, FxMap, FxSet};
 
 /// Evidence that a node takes packets from an MQTT broker (downlink) and
@@ -34,20 +34,18 @@ fn traceroute_key(r: &Row, is_reply: bool, request: u32) -> (u32, u32, u64) {
 }
 
 /// Probable MQTT downlink per node, from the hop SNRs of the window's
-/// traceroutes (`rows`: callers may pass just those, views::ByType).
-pub fn downlinks(rows: &[&Row]) -> FxMap<u32, Downlink> {
+/// traceroutes (`rows`: callers may pass just those, views::ByType; `hops`:
+/// traceroute_hops of them).
+pub fn downlinks(rows: &[&Row], hops: &TracerouteHops) -> FxMap<u32, Downlink> {
     type Traces = FxSet<(u32, u32, u64)>;
     let mut per: FxMap<u32, (Traces, Traces)> = map();
-    let mut hops = Vec::new();
-    for r in rows {
-        if r.ty != ty::TRACEROUTE {
-            continue;
-        }
-        let Some(t) = r.traceroute().filter(|t| t.valid) else { continue };
+    let mut start = 0;
+    for &(k, end) in &hops.ends {
+        let (r, copy) = (rows[k], &hops.samples[start..end]);
+        start = end;
+        let Some(t) = r.traceroute() else { continue };
         let key = traceroute_key(r, t.is_reply, t.request);
-        hops.clear();
-        traceroute_samples(r.src, r.dst.unwrap_or(0), t.is_reply, &t.route, &t.snr_towards, &t.route_back, &t.snr_back, r.t, &mut hops);
-        for h in &hops {
+        for h in copy {
             let Some(snr) = h.snr.filter(|_| h.dst != 0) else { continue };
             let e = per.entry(h.dst).or_insert_with(|| (set(), set()));
             if snr == 0.0 { e.0.insert(key) } else { e.1.insert(key) };
@@ -64,10 +62,12 @@ pub fn downlinks(rows: &[&Row]) -> FxMap<u32, Downlink> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::row::ty;
     use crate::views::test_rows::pos;
 
     fn downlinks_of(rows: &[Row]) -> FxMap<u32, Downlink> {
-        downlinks(&rows.iter().collect::<Vec<_>>())
+        let rows: Vec<&Row> = rows.iter().collect();
+        downlinks(&rows, &crate::views::traceroute_hops(&rows))
     }
 
     /// A traceroute request 1 -> 2 -> 3 (destination 9), with the SNR each hop received at.

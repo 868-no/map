@@ -596,7 +596,7 @@ fn is_false(b: &bool) -> bool {
 fn is_zero(v: &i32) -> bool {
     *v == 0
 }
-fn is_empty(s: &Cow<'_, str>) -> bool {
+fn is_empty(s: &str) -> bool {
     s.is_empty()
 }
 

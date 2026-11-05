@@ -3,6 +3,7 @@
 # inside the pinned Rust image, so the host needs only Docker.
 #   scripts/wasm.sh            release build + wasm-bindgen
 #   scripts/wasm.sh test       cargo test (native)
+#   scripts/wasm.sh clippy     cargo clippy, warnings as errors
 #   UPDATE_GOLDEN=1 scripts/wasm.sh test   re-record tests/fixtures/mesh-12h/engine.json
 set -euo pipefail
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -25,6 +26,8 @@ docker run --rm -v meshmap-rust-cache:/cache "$image" sh -c "mkdir -p /cache/car
 mkdir -p "$binaryen_dir" # before Docker would create the mount point as root
 case "${1:-build}" in
   test) run "cargo test --release" ;;
+  clippy) run "rustup component add clippy >/dev/null &&
+      cargo clippy --release --all-targets -- -D warnings" ;;
   build)
     if [ ! -x "$binaryen_dir/wasm-opt" ]; then
       mkdir -p "$binaryen_dir"
@@ -43,5 +46,5 @@ case "${1:-build}" in
       /binaryen/wasm-opt -Os --strip-debug --strip-producers \
         /src/frontend/src/engine/pkg/engine_bg.wasm -o /src/frontend/src/engine/pkg/engine_bg.wasm"
     ls -l "$repo/frontend/src/engine/pkg" ;;
-  *) echo "usage: $0 [build|test]" >&2; exit 2 ;;
+  *) echo "usage: $0 [build|test|clippy]" >&2; exit 2 ;;
 esac

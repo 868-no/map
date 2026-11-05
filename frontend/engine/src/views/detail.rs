@@ -206,7 +206,7 @@ pub fn build_node_detail(rows: &[&Row], num: u32, b: &Built, i: &Interner) -> Op
     radio.uplink_topics = crate::radio::uplink_topics(&uplinked, i);
     let mut d = NodeDetail { node: n, positions: vec![], telemetry_series: vec![], environment_series: vec![], node_status: vec![], delivery_by_recipient: vec![], heard_by: vec![], heard: vec![], recent_packets: vec![], truncated: false, radio, delivery: crate::packets::delivery(&mine, num, i) };
     if first == i64::MAX {
-        let Some(&t) = referenced(rows).get(&num) else { return None };
+        let &t = referenced(rows).get(&num)?;
         d.node.status = "referenced";
         d.node.last_referenced = Some(iso(t));
         return Some(d);
@@ -258,7 +258,7 @@ pub fn build_node_detail(rows: &[&Row], num: u32, b: &Built, i: &Interner) -> Op
     d.delivery_by_recipient = delivery_by_recipient(rows, &mine, &own, num, b.replies.get_or_init(|| crate::packets::ReplyIndex::new(rows)), i);
     // Status texts: newest first, each once. Opt-out nodes' texts are never stored (empty).
     let mut texts: Vec<(i64, u32)> = own.iter().filter_map(|r| r.node_status().filter(|&s| !i.s(s).is_empty()).map(|s| (r.t, s))).collect();
-    texts.sort_by(|a, b| b.0.cmp(&a.0));
+    texts.sort_by_key(|a| std::cmp::Reverse(a.0));
     let mut seen_text = set::<u32>();
     d.node_status = texts.into_iter().filter(|(_, s)| seen_text.insert(*s)).take(5).map(|(t, s)| StatusText { status: i.s(s).to_string(), at: iso(t) }).collect();
     d.heard_by = hearings(&mine, |r| r.src == num && r.gw.is_some_and(|g| g != r.src), |r| r.gw.unwrap());
@@ -291,7 +291,7 @@ pub fn build_node_detail(rows: &[&Row], num: u32, b: &Built, i: &Interner) -> Op
             )
         })
         .collect();
-    recent.sort_by(|a, b| b.0.cmp(&a.0));
+    recent.sort_by_key(|a| std::cmp::Reverse(a.0));
     recent.truncate(MAX_PACKETS);
     d.recent_packets = recent.into_iter().map(|(_, p)| p).collect();
     Some(d)

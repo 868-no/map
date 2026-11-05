@@ -227,9 +227,9 @@ pub fn packet_log(rows: &[&Row], num: u32, ctx: &RelayContext, replies: &ReplyIn
     let n_in = inbound.len();
     let mut in_list: Vec<(i64, InboundPacket)> =
         inbound.into_values().map(|r| (r.t, InboundPacket { lp: key_hex(r.lp), at: iso(r.t), origin: node_id(r.src), ty: i.s(r.ty).to_string(), answers: replies.answer(r, &more, i) })).collect();
-    own_list.sort_by(|a, b| b.0.cmp(&a.0));
-    rel_list.sort_by(|a, b| b.0.cmp(&a.0));
-    in_list.sort_by(|a, b| b.0.cmp(&a.0));
+    own_list.sort_by_key(|a| std::cmp::Reverse(a.0));
+    rel_list.sort_by_key(|a| std::cmp::Reverse(a.0));
+    in_list.sort_by_key(|a| std::cmp::Reverse(a.0));
     own_list.truncate(MAX_LOG);
     rel_list.truncate(MAX_LOG);
     in_list.truncate(MAX_LOG);
@@ -260,10 +260,10 @@ impl ReplyIndex {
     pub fn new(rows: &[&Row]) -> Self {
         let mut ix = ReplyIndex { by_request: map(), by_id: map(), rows: rows.len() };
         for (k, &r) in rows.iter().enumerate() {
-            if let (Some(rt), Some(d)) = (r.routing(), r.dst) {
-                if rt.request != 0 {
-                    ix.by_request.entry((rt.request, d)).or_default().push(k as u32);
-                }
+            if let (Some(rt), Some(d)) = (r.routing(), r.dst)
+                && rt.request != 0
+            {
+                ix.by_request.entry((rt.request, d)).or_default().push(k as u32);
             }
             if let Some(p) = r.pid.filter(|&p| p != 0) {
                 ix.by_id.entry((r.src, p)).or_insert(r.lp);
@@ -556,11 +556,15 @@ fn packet_ref(origin: u32, id: u32) -> String {
     format!("{origin:08x}:{id:08x}")
 }
 
+/// A recorded way: each node (None where unknown), with whether the hop into
+/// it crossed the internet.
+pub type Chain = Vec<(Option<u32>, bool)>;
+
 /// The request's whole way as a traceroute reply records it: requester,
 /// route, target (the reply's sender), each node (None where unknown) with
 /// whether the hop into it crossed the internet (exactly 0 dB into a probable
 /// downlinker, D-054). Returns the requester too.
-pub fn recorded_request(r: &Row, ctx: &RelayContext) -> Option<(u32, Vec<(Option<u32>, bool)>)> {
+pub fn recorded_request(r: &Row, ctx: &RelayContext) -> Option<(u32, Chain)> {
     let t = r.traceroute().filter(|t| t.valid && t.is_reply && t.request != 0)?;
     let requester = r.dst.filter(|&d| d != BROADCAST && d != r.src)?;
     let mut chain = vec![(Some(requester), false)];

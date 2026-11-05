@@ -98,10 +98,10 @@ pub fn reach(origin: u32, edges: &[Edge], silent: &FxSet<u32>, internet: bool, o
     }
     let mut hs: FxMap<i16, usize> = map();
     for r in own {
-        if r.src == origin {
-            if let Some(h) = r.hs {
-                *hs.entry(h).or_default() += 1;
-            }
+        if r.src == origin
+            && let Some(h) = r.hs
+        {
+            *hs.entry(h).or_default() += 1;
         }
     }
     let hop_start = hs.into_iter().max_by(|a, b| a.1.cmp(&b.1).then(b.0.cmp(&a.0))).map(|(h, _)| h.clamp(0, MAX_HOPS as i16) as u8);

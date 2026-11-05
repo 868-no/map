@@ -139,7 +139,8 @@ pub fn build_snapshot(rows: &[&Row], i: &Interner, g: &GeoOptions, rules: Rules)
         x.last = x.last.max(last);
     }
     let hops = traceroute_hops(&by.traceroute);
-    let downlinks = downlinks(&by.traceroute);
+    let downlinks = downlinks(&by.traceroute, &hops);
+    let hops = hops.samples;
     for (&n, d) in &downlinks {
         // A node known only from others' traceroutes is named, not heard.
         nodes

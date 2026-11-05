@@ -21,18 +21,25 @@ pub struct EdgeResult {
 
 /// Adjacent segments of every valid traceroute copy, in row order: link
 /// evidence (deduplicated in reduce) and downlink evidence alike.
-pub fn traceroute_hops(rows: &[&Row]) -> Vec<Sample> {
+pub struct TracerouteHops {
+    pub samples: Vec<Sample>,
+    /// Per traceroute copy: its index in the rows, and where its samples end.
+    pub ends: Vec<(usize, usize)>,
+}
+
+pub fn traceroute_hops(rows: &[&Row]) -> TracerouteHops {
     // Only traceroutes count: callers may pass just those (views::ByType).
-    let mut out = Vec::new();
-    for r in rows {
+    let (mut samples, mut ends) = (Vec::new(), Vec::new());
+    for (k, r) in rows.iter().enumerate() {
         if r.ty != ty::TRACEROUTE {
             continue;
         }
         if let Some(t) = r.traceroute().filter(|t| t.valid) {
-            traceroute_samples(r.src, r.dst.unwrap_or(0), t.is_reply, &t.route, &t.snr_towards, &t.route_back, &t.snr_back, r.t, &mut out);
+            traceroute_samples(r.src, r.dst.unwrap_or(0), t.is_reply, &t.route, &t.snr_towards, &t.route_back, &t.snr_back, r.t, &mut samples);
+            ends.push((k, samples.len()));
         }
     }
-    out
+    TracerouteHops { samples, ends }
 }
 
 /// Evidence-backed links. Relay bytes resolve only against known nodes,

@@ -176,10 +176,10 @@ fn medoid(rs: &[&Row]) -> crate::row::Position {
 
 /// Where the agreeing reports put the node, and how sure that is.
 fn narrow(inliers: &[crate::row::Position], mode: &crate::row::Position) -> (f64, f64, f64) {
-    let finest = inliers.iter().map(|p| if p.known { p.bits } else { 32 }).max().unwrap_or(32);
+    let finest = inliers.iter().map(bits).max().unwrap_or(32);
     if finest >= 24 {
         // Precise readings: their mean, as sure as their spread allows.
-        let fine: Vec<_> = inliers.iter().filter(|p| !p.known || p.bits >= 24).collect();
+        let fine: Vec<_> = inliers.iter().filter(|p| bits(p) >= 24).collect();
         let k = fine.len() as f64;
         let (lat, lon) = (fine.iter().map(|p| p.lat).sum::<f64>() / k, fine.iter().map(|p| p.lon).sum::<f64>() / k);
         let rms = (fine.iter().map(|p| distance_m(LatLon { lat, lon }, LatLon { lat: p.lat, lon: p.lon }).powi(2)).sum::<f64>() / k).sqrt();
