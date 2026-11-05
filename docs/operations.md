@@ -37,7 +37,7 @@ The test and image jobs run on GitHub-hosted runners unless the repository varia
 
 - Jobs start containers as on a hosted runner: their published ports are on the runner's `localhost` (the end-to-end stack on 8080, Playwright's `--network host`), and parallel jobs never collide on ports, container names or networks.
 - The work directory is mounted at the same path (`/_work`) in the runner and its daemon, so `docker run -v "$repo":/src` in `scripts/*.sh` finds the checkout.
-- Each daemon keeps its state on a volume of its own: pulled images, the build cache and the toolchains' cache volumes (`meshmap-rust-cache`, `meshmap-go-cache`, `meshmap-node-cache`) stay warm between jobs. Each runner is registered afresh for every job (ephemeral). Before each job a hook (`deploy/runners/job-started.sh`) removes leftover containers, networks, anonymous volumes and untagged images, and trims the build cache to 20 GB, least recently used first. Tagged images and the cache volumes are kept; to start a runner from cold, remove its `docker-N` volume.
+- Each daemon keeps its state on a volume of its own: pulled images, the build cache and the toolchains' cache volumes (`meshmap-rust-cache`, `meshmap-go-cache`, `meshmap-node-cache`) stay warm between jobs. Each runner is registered afresh for every job (ephemeral). Before each job a hook (inline in `compose.yaml`, run by the runner with bash) removes leftover containers, networks, anonymous volumes and untagged images, and trims the build cache to 20 GB, least recently used first. Tagged images and the cache volumes are kept; to start a runner from cold, remove its `docker-N` volume.
 - Only the daemons are privileged; the runners are not, and the daemons listen on a socket shared with their runner alone, not on TCP.
 
 To set it up on a dedicated host (a VM, not one with access to production or other secrets: a job, and so anyone who can push to `main`, controls the daemon):
@@ -47,6 +47,8 @@ cd deploy/runners
 cp .env.example .env   # ACCESS_TOKEN: a fine-grained token for this repository, "Administration: Read and write"
 docker compose up -d
 ```
+
+The stack is `compose.yaml` alone, so it also runs as a Portainer stack from this repository: Add stack → Repository, the repository URL, reference `refs/heads/main`, compose path `deploy/runners/compose.yaml`, and the variables of `.env.example` (at least `ACCESS_TOKEN`) under Environment variables. With automatic updates on, Portainer redeploys it when the file changes on `main`, such as a bumped runner image.
 
 The runners appear under Settings → Actions → Runners as `meshmap-1` … `meshmap-4` (`RUNNER_NAME_PREFIX` per host); then set `RUNNER_LABELS`. Also set Settings → Actions → General → "Require approval for all external contributors". Auto-update is off (each job would otherwise update a fresh runner first): bump the runner image in `compose.yaml` at least monthly, since GitHub refuses runners that are too far behind. Multi-platform images still build arm64 under QEMU unless the host is arm64.
 

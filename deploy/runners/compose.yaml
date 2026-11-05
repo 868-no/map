@@ -15,6 +15,10 @@
 #
 #   cp .env.example .env    # set ACCESS_TOKEN
 #   docker compose up -d
+# The stack is this file alone (the hook is inline below), so it also runs as
+# a Portainer stack from this repository (compose path
+# deploy/runners/compose.yaml, the variables of .env.example set in
+# Portainer).
 #
 # Four runners: the tests workflow runs eight jobs at once (four of them the
 # end-to-end shards); add pairs below for more.
@@ -48,6 +52,24 @@ x-runner: &runner
     RUNNER_WORKDIR: /_work
     DOCKER_HOST: unix:///run/dind/docker.sock
     ACTIONS_RUNNER_HOOK_JOB_STARTED: /hooks/job-started.sh
+  configs:
+    - { source: job-started, target: /hooks/job-started.sh }
+
+# Runs before each job (ACTIONS_RUNNER_HOOK_JOB_STARTED) on the runner's own
+# Docker daemon: clears what an earlier job left behind (it may have been
+# cancelled before cleaning up), while the caches jobs share stay warm:
+# tagged images, named volumes (the toolchains' caches) and the build cache,
+# which is trimmed to 20 GB, least recently used first.
+configs:
+  job-started:
+    content: |
+      #!/bin/sh
+      docker rm -f $$(docker ps -aq) >/dev/null 2>&1
+      docker network prune -f >/dev/null 2>&1
+      docker volume prune -f >/dev/null 2>&1 # anonymous volumes only
+      docker image prune -f >/dev/null 2>&1  # untagged images only (replaced builds)
+      docker builder prune -af --max-used-space 20gb >/dev/null 2>&1
+      exit 0
 
 services:
   dind-1:
@@ -58,7 +80,7 @@ services:
     network_mode: service:dind-1
     depends_on: { dind-1: { condition: service_healthy } }
     environment: { <<: *runner-env, RUNNER_NAME: "${RUNNER_NAME_PREFIX:-meshmap}-1" }
-    volumes: [sock-1:/run/dind, work-1:/_work, ./job-started.sh:/hooks/job-started.sh:ro]
+    volumes: [sock-1:/run/dind, work-1:/_work]
 
   dind-2:
     <<: *dind
@@ -68,7 +90,7 @@ services:
     network_mode: service:dind-2
     depends_on: { dind-2: { condition: service_healthy } }
     environment: { <<: *runner-env, RUNNER_NAME: "${RUNNER_NAME_PREFIX:-meshmap}-2" }
-    volumes: [sock-2:/run/dind, work-2:/_work, ./job-started.sh:/hooks/job-started.sh:ro]
+    volumes: [sock-2:/run/dind, work-2:/_work]
 
   dind-3:
     <<: *dind
@@ -78,7 +100,7 @@ services:
     network_mode: service:dind-3
     depends_on: { dind-3: { condition: service_healthy } }
     environment: { <<: *runner-env, RUNNER_NAME: "${RUNNER_NAME_PREFIX:-meshmap}-3" }
-    volumes: [sock-3:/run/dind, work-3:/_work, ./job-started.sh:/hooks/job-started.sh:ro]
+    volumes: [sock-3:/run/dind, work-3:/_work]
 
   dind-4:
     <<: *dind
@@ -88,7 +110,7 @@ services:
     network_mode: service:dind-4
     depends_on: { dind-4: { condition: service_healthy } }
     environment: { <<: *runner-env, RUNNER_NAME: "${RUNNER_NAME_PREFIX:-meshmap}-4" }
-    volumes: [sock-4:/run/dind, work-4:/_work, ./job-started.sh:/hooks/job-started.sh:ro]
+    volumes: [sock-4:/run/dind, work-4:/_work]
 
 volumes:
   docker-1:
