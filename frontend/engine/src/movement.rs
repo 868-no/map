@@ -49,6 +49,12 @@ pub struct Movement {
     pub track: Vec<TrackPoint>,
 }
 
+/// A position's precision in bits: one shared without a precision (bits 0,
+/// `known` false) counts as full precision, as elsewhere (design §6.10).
+pub fn bits(p: &crate::row::Position) -> u32 {
+    if p.known { p.bits } else { 32 }
+}
+
 /// The distance two positions must exceed to count as a move, for a node
 /// that is `fixed` (its role sits in one place) or not.
 pub fn move_threshold(fixed: bool, a: (f64, u32), b: (f64, u32)) -> f64 {
@@ -128,7 +134,7 @@ pub fn anchors_of(by_node: &FxMap<u32, Vec<&Row>>, fixed: &FxSet<u32>) -> FxMap<
         } else {
             medoid(&rs)
         };
-        let near = |p: &crate::row::Position| distance_m(LatLon { lat: m.lat, lon: m.lon }, LatLon { lat: p.lat, lon: p.lon }) <= move_threshold(fixed, (m.lat, m.bits), (p.lat, p.bits));
+        let near = |p: &crate::row::Position| distance_m(LatLon { lat: m.lat, lon: m.lon }, LatLon { lat: p.lat, lon: p.lon }) <= move_threshold(fixed, (m.lat, bits(&m)), (p.lat, bits(p)));
         let inliers: Vec<crate::row::Position> = rs.iter().map(|r| pos(r)).filter(near).collect();
         // Most reports at that place, and at least two of the latest three: it
         // is home now (a node that has just left is not held back by its past).
@@ -231,16 +237,16 @@ pub fn movements_of(by_node: &FxMap<u32, Vec<&Row>>, anchored: &FxMap<u32, Ancho
         // Judge movement on its finest positions: a node that reports precise
         // Position packets and coarse map reports moves within the coarse
         // cells unseen, and mixing the two inflates the threshold.
-        let finest = (0..=32u32).rev().find(|&b| pts.iter().filter(|r| r.pos.unwrap().bits == b).count() >= 2);
+        let finest = (0..=32u32).rev().find(|&b| pts.iter().filter(|r| bits(&r.pos.unwrap()) == b).count() >= 2);
         let judged: Vec<&Row> = match finest {
-            Some(b) => pts.iter().copied().filter(|r| r.pos.unwrap().bits == b).collect(),
+            Some(b) => pts.iter().copied().filter(|r| bits(&r.pos.unwrap()) == b).collect(),
             None => pts.clone(),
         };
         // A single reading far from the ones either side, which agree with
         // each other, is a GPS spike: an excursion needs two reports.
         let far = |a: &Row, b: &Row| {
             let (p, q) = (a.pos.unwrap(), b.pos.unwrap());
-            distance_m(LatLon { lat: p.lat, lon: p.lon }, LatLon { lat: q.lat, lon: q.lon }) > move_threshold(fixed, (p.lat, p.bits), (q.lat, q.bits))
+            distance_m(LatLon { lat: p.lat, lon: p.lon }, LatLon { lat: q.lat, lon: q.lon }) > move_threshold(fixed, (p.lat, bits(&p)), (q.lat, bits(&q)))
         };
         let judged: Vec<&Row> = (0..judged.len())
             .filter(|&k| k == 0 || k + 1 == judged.len() || !(far(judged[k], judged[k - 1]) && far(judged[k], judged[k + 1]) && !far(judged[k - 1], judged[k + 1])))
@@ -251,7 +257,7 @@ pub fn movements_of(by_node: &FxMap<u32, Vec<&Row>>, anchored: &FxMap<u32, Ancho
         for r in &judged[1..] {
             let b = r.pos.unwrap();
             let d = distance_m(LatLon { lat: reference.lat, lon: reference.lon }, LatLon { lat: b.lat, lon: b.lon });
-            if d > move_threshold(fixed, (reference.lat, reference.bits), (b.lat, b.bits)) {
+            if d > move_threshold(fixed, (reference.lat, bits(&reference)), (b.lat, bits(&b))) {
                 moved_at = Some(r.t);
                 reference = b;
             }
@@ -278,5 +284,20 @@ mod tests {
         assert_eq!(move_threshold(true, (60.0, 32), (60.0, 32)), FIXED_MOVE_M);
         // 13 bits: cells of several kilometres, so jumping to the next one is not a move.
         assert!(move_threshold(false, (63.0, 13), (63.0, 13)) > 7_000.0);
+    }
+
+    #[test]
+    fn positions_without_a_precision_still_move() {
+        // A car sharing positions with no precision (bits 0, unknown) drives
+        // 100 km: bits 0 read as precision would be a whole-earth cell.
+        let at = |id: i64, lat: f64| {
+            let mut r = crate::views::test_rows::pos(id, ty::POSITION, lat, 0, id * 600_000);
+            r.pos.as_mut().unwrap().known = false;
+            r
+        };
+        let rows: Vec<Row> = (0..10).map(|k| at(k + 1, 59.0 + 0.1 * k as f64)).collect();
+        let refs: Vec<&Row> = rows.iter().collect();
+        let m = movements_except(&refs, &map(), &crate::util::set());
+        assert!(m.get(&1).is_some_and(|m| m.moved_at > 0));
     }
 }

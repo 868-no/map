@@ -49,7 +49,9 @@ impl<'s, 'a> Packet<'s, 'a> {
 }
 
 impl Copies {
-    pub fn new(rows: &[&Row], ctx: &RelayContext) -> Self {
+    /// `resolved`: relays already resolved with `ctx`, by row id
+    /// (views::EdgeResult::resolved); other relayed copies resolve here.
+    pub fn new(rows: &[&Row], ctx: &RelayContext, resolved: &FxMap<i64, Option<u32>>) -> Self {
         // Sorting (packet, position) pairs groups the copies with no map or
         // per-packet allocation, in row order within each packet.
         let mut keyed: Vec<(u64, u32)> = Vec::new();
@@ -68,7 +70,10 @@ impl Copies {
             let gw = r.gw.unwrap();
             let sender = match (r.hl, r.heard_from()) {
                 (Some(_), HeardFrom::Direct) => Some(r.src),
-                (Some(_), HeardFrom::Relayed(Some(b))) => ctx.resolve(b, r.src, gw, r.rssi.map(f64::from)).and_then(Result::ok),
+                (Some(_), HeardFrom::Relayed(Some(b))) => match resolved.get(&r.id) {
+                    Some(&n) => n,
+                    None => ctx.resolve(b, r.src, gw, r.rssi.map(f64::from)).and_then(Result::ok),
+                },
                 _ => None,
             };
             c.heard.push((p, sender));

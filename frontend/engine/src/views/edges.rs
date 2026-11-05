@@ -14,6 +14,9 @@ pub struct EdgeResult {
     pub unmatched: usize,
     /// The radio evidence the edges were reduced from, for link history (D-105).
     pub samples: Vec<Sample>,
+    /// The relay each relayed copy here resolved to, by row id, for
+    /// copies::Copies to reuse rather than resolve again.
+    pub resolved: FxMap<i64, Option<u32>>,
 }
 
 /// Adjacent segments of every valid traceroute copy, in row order: link
@@ -26,7 +29,7 @@ pub fn traceroute_hops(rows: &[&Row]) -> Vec<Sample> {
             continue;
         }
         if let Some(t) = r.traceroute().filter(|t| t.valid) {
-            traceroute_samples(r.src, r.dst.unwrap_or(0), t.is_reply, &t.route, &t.snr_towards, &t.route_back, &t.snr_back, r.t, r.lp, &mut out);
+            traceroute_samples(r.src, r.dst.unwrap_or(0), t.is_reply, &t.route, &t.snr_towards, &t.route_back, &t.snr_back, r.t, &mut out);
         }
     }
     out
@@ -79,11 +82,11 @@ pub fn build_edges(rows: &[&Row], neighborinfo: &[&Row], hops: &[Sample], known:
     // C/D. Gateway receptions: zero-hop RF -> source->gateway; relayed with a hint -> resolved after.
     let mut rx = first_per_reception(rows, |r| matches!(r.heard_from(), HeardFrom::Direct | HeardFrom::Relayed(Some(_))) && (r.snr.is_some() || r.rssi.is_some()));
     rx.sort_unstable_by_key(|r| r.id);
-    let mut pending: Vec<(Sample, u8, u32, u32)> = Vec::new();
+    let mut pending: Vec<(Sample, u8, u32, u32, i64)> = Vec::new();
     for r in &rx {
         let s = Sample { src: 0, dst: r.gw.unwrap(), ev: Ev::DirectRf, t: r.t, snr: r.snr, rssi: r.rssi.map(|v| v as f64), key: SKey::Ok(r.ok) };
         match r.heard_from() {
-            HeardFrom::Relayed(Some(b)) => pending.push((s, b, r.src, r.gw.unwrap())),
+            HeardFrom::Relayed(Some(b)) => pending.push((s, b, r.src, r.gw.unwrap(), r.id)),
             _ => samples.push(Sample { src: r.src, ..s }),
         }
     }
@@ -93,8 +96,11 @@ pub fn build_edges(rows: &[&Row], neighborinfo: &[&Row], hops: &[Sample], known:
     ctx.signal_rule = signal_rule;
     ctx.mobile = mobile;
     let (mut ambiguous, mut unmatched) = (0, 0);
-    for (s, hint, origin, gw) in pending {
-        match ctx.resolve_detail(hint, origin, gw, s.rssi) {
+    let mut resolved: FxMap<i64, Option<u32>> = FxMap::with_capacity_and_hasher(pending.len(), Default::default());
+    for (s, hint, origin, gw, id) in pending {
+        let res = ctx.resolve_detail(hint, origin, gw, s.rssi);
+        resolved.insert(id, res.and_then(Result::ok).map(|(n, _)| n));
+        match res {
             // Chosen because it already has a link to the gateway: adds nothing to that link.
             Some(Ok((_, true))) => {}
             Some(Ok((n, false))) => {
@@ -111,5 +117,5 @@ pub fn build_edges(rows: &[&Row], neighborinfo: &[&Row], hops: &[Sample], known:
     let truncated = edges.len() > MAX_EDGES;
     edges.truncate(MAX_EDGES);
     edges.extend(graph::reduce_mqtt(&mqtt));
-    (EdgeResult { edges, truncated, ambiguous, unmatched, samples }, ctx)
+    (EdgeResult { edges, truncated, ambiguous, unmatched, samples, resolved }, ctx)
 }

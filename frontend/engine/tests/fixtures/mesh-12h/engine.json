@@ -3838,14 +3838,14 @@
         "summary": "Sends 11.2 traceroutes per hour"
       },
       {
-        "detail": "7 of 27 traceroutes reached it at exactly 0 dB, the reading of a packet taken from the broker. A downlinking node rebroadcasts far-away packets locally, which draws links that do not exist and wastes airtime.",
+        "detail": "7 of 25 traceroutes reached it at exactly 0 dB, the reading of a packet taken from the broker. A downlinking node rebroadcasts far-away packets locally, which draws links that do not exist and wastes airtime.",
         "kind": "downlink",
         "node": "!538621b2",
         "severity": "warning",
         "summary": "Probably downlinks from MQTT"
       },
       {
-        "detail": "7 of 27 traceroutes reached it at exactly 0 dB, the reading of a packet taken from the broker. A downlinking node rebroadcasts far-away packets locally, which draws links that do not exist and wastes airtime.",
+        "detail": "7 of 26 traceroutes reached it at exactly 0 dB, the reading of a packet taken from the broker. A downlinking node rebroadcasts far-away packets locally, which draws links that do not exist and wastes airtime.",
         "kind": "downlink",
         "node": "!84965cf6",
         "severity": "warning",
@@ -34388,7 +34388,7 @@
         "is_gateway": true,
         "last_seen": "2026-10-31T15:15:04.253Z",
         "mqtt_downlink": {
-          "traceroutes": 27,
+          "traceroutes": 26,
           "zero_snr": 7
         },
         "num": 2224446710,
@@ -34704,7 +34704,7 @@
         "is_gateway": true,
         "last_seen": "2026-10-31T15:15:04.440Z",
         "mqtt_downlink": {
-          "traceroutes": 27,
+          "traceroutes": 25,
           "zero_snr": 7
         },
         "num": 1401299378,

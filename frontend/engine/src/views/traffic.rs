@@ -48,26 +48,27 @@ pub fn build_traffic(rows: &[&Row], start: i64, bucket: i64, i: &Interner) -> Tr
     for r in rows {
         firsts.entry(r.lp).and_modify(|f| {
             f.0 = f.0.min(r.t);
-            if i.s(r.ty) < i.s(f.1) {
+            if r.ty != f.1 && i.s(r.ty) < i.s(f.1) {
                 f.1 = r.ty
             }
         }).or_insert((r.t, r.ty));
         recs.entry(r.ok).and_modify(|t| *t = (*t).min(r.t)).or_insert(r.t);
     }
     let bin = |t: i64| start + (t - start).div_euclid(bucket) * bucket;
-    let mut buckets: std::collections::BTreeMap<i64, (usize, usize, std::collections::BTreeMap<String, usize>)> = Default::default();
+    // Types counted by interned id; named once per bucket at the end.
+    let mut buckets: std::collections::BTreeMap<i64, (usize, usize, FxMap<u32, usize>)> = Default::default();
     for &t in recs.values() {
         buckets.entry(bin(t)).or_default().1 += 1;
     }
     for &(t, typ) in firsts.values() {
         let b = buckets.entry(bin(t)).or_default();
         b.0 += 1;
-        *b.2.entry(i.s(typ).to_string()).or_default() += 1;
+        *b.2.entry(typ).or_default() += 1;
     }
     Traffic {
         bucket: duration_string(bucket),
         packets: firsts.len(),
         receptions: recs.len(),
-        buckets: buckets.into_iter().map(|(k, (p, rx, bt))| Bucket { start: iso(k), packets: p, receptions: rx, by_type: (p > 0).then_some(bt) }).collect(),
+        buckets: buckets.into_iter().map(|(k, (p, rx, bt))| Bucket { start: iso(k), packets: p, receptions: rx, by_type: (p > 0).then(|| bt.into_iter().map(|(typ, n)| (i.s(typ).to_string(), n)).collect()) }).collect(),
     }
 }

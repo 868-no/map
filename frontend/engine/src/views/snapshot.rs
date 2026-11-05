@@ -139,7 +139,7 @@ pub fn build_snapshot(rows: &[&Row], i: &Interner, g: &GeoOptions, rules: Rules)
         x.last = x.last.max(last);
     }
     let hops = traceroute_hops(&by.traceroute);
-    let downlinks = downlinks(&hops);
+    let downlinks = downlinks(&by.traceroute);
     for (&n, d) in &downlinks {
         // A node known only from others' traceroutes is named, not heard.
         nodes
@@ -237,7 +237,7 @@ pub fn build_snapshot(rows: &[&Row], i: &Interner, g: &GeoOptions, rules: Rules)
     // Directional 0-cost evidence on radio links (D-068).
     let hears: FxSet<(u32, u32)> = er.edges.iter().filter(|e| !e.mqtt).map(|e| (e.src_num, e.dst_num)).collect();
     // Every packet's copies, with the transmitter each was heard from: once for both passes below.
-    let copies = crate::copies::Copies::new(rows, &ctx);
+    let copies = crate::copies::Copies::new(rows, &ctx, &er.resolved);
     let mut zc = crate::zerocost::detect(&copies, rows, &hears, &roles);
     for g in crate::copies::multi_uplinkers(rows) {
         if let Some(x) = nodes.get_mut(&g) {

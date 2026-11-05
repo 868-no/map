@@ -251,19 +251,19 @@ pub fn stats(v: &[(i64, f64)], round: bool) -> Stats {
 /// A segment's key is the path up to and including it (with its SNRs), not
 /// the packet: a reply repeats its request's forward route and SNRs, and the
 /// partial copies of one traceroute share prefixes, so each RF hop counts
-/// once however many of those packets and copies report it. `lp` is kept
-/// out of the key on purpose (request and reply have different ones).
+/// once however many of those packets and copies report it. The key
+/// identifies an RF hop, not a traceroute: identical traceroutes repeated
+/// later share it too (downlink detection keys traceroutes itself).
 #[allow(clippy::too_many_arguments)]
-pub fn traceroute_samples(from: u32, to: u32, is_reply: bool, route: &[Hop], snr_t: &[Option<f64>], route_back: &[Hop], snr_b: &[Option<f64>], t: i64, lp: u64, out: &mut Vec<Sample>) {
+pub fn traceroute_samples(from: u32, to: u32, is_reply: bool, route: &[Hop], snr_t: &[Option<f64>], route_back: &[Hop], snr_b: &[Option<f64>], t: i64, out: &mut Vec<Sample>) {
     let (fo, fd) = if is_reply { (to, from) } else { (from, to) };
-    segments(fo, fd, route, snr_t, t, lp, 0, out);
+    segments(fo, fd, route, snr_t, t, 0, out);
     if is_reply {
-        segments(from, to, route_back, snr_b, t, lp, 1, out);
+        segments(from, to, route_back, snr_b, t, 1, out);
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-fn segments(origin: u32, dest: u32, route: &[Hop], snr: &[Option<f64>], t: i64, _lp: u64, dir: u8, out: &mut Vec<Sample>) {
+fn segments(origin: u32, dest: u32, route: &[Hop], snr: &[Option<f64>], t: i64, dir: u8, out: &mut Vec<Sample>) {
     use std::hash::{Hash, Hasher};
     // The path: origin, the route, and dest when it received the packet too.
     let len = route.len() + 1 + usize::from(snr.len() == route.len() + 1);
@@ -323,6 +323,16 @@ pub fn max_distance_m(rssi: f64) -> f64 {
 /// positions, beyond the 0.6 km free space allows (D-136).
 pub const SIGNAL_FLOOR_M: f64 = 15_000.0;
 
+/// The byte firmware puts in `relay_node` for a node: its number's low
+/// byte, except that 0 means "no relay", so a node ending in 0x00 goes by
+/// 0xFF (getLastByteOfNodeNum).
+pub fn last_byte(n: u32) -> u8 {
+    match (n & 0xff) as u8 {
+        0 => 0xff,
+        b => b,
+    }
+}
+
 /// Roles that may relay without spending a hop (Meshtastic's favourite-router "0-cost" rule).
 pub fn zero_cost_role(role: &str) -> bool {
     matches!(role, "ROUTER" | "ROUTER_LATE" | "CLIENT_BASE")
@@ -357,7 +367,7 @@ impl RelayContext {
     pub fn new(known: impl IntoIterator<Item = u32>, pos: FxMap<u32, LatLon>, confirmed: impl IntoIterator<Item = (u32, u32)>, silent: FxSet<u32>) -> Self {
         let mut c = RelayContext { by_byte: vec![Vec::new(); 256], pos, confirmed: set(), silent, max_range_m: MIN_RELAY_RANGE_M, downlinkers: set(), signal_rule: true, mobile: set() };
         for k in known {
-            c.by_byte[(k & 0xff) as usize].push(k);
+            c.by_byte[last_byte(k) as usize].push(k);
         }
         let mut longest: f64 = 0.0;
         for (a, b) in confirmed {
@@ -387,7 +397,7 @@ impl RelayContext {
     /// left), so it crossed the internet before its last radio hop, from the
     /// relay to the gateway. Gateways normally never uplink flagged packets,
     /// so such copies are rare (D-088).
-    pub fn downlinked(&self, r: &crate::row::Row) -> bool {
+    pub fn downlinked(r: &crate::row::Row) -> bool {
         r.rr == crate::row::ty::VIA_MQTT
     }
 
@@ -398,7 +408,7 @@ impl RelayContext {
     /// `rssi`: the gateway's reading of the copy, which the relay transmitted:
     /// a strong one rules out relays too far away to give it (D-136).
     pub fn resolve_detail(&self, hint: u8, origin: u32, gw: u32, rssi: Option<f64>) -> Option<Result<(u32, bool), ()>> {
-        if hint == 0 || hint == (gw & 0xff) as u8 {
+        if hint == 0 || hint == last_byte(gw) {
             return None; // unmatched
         }
         let gp = self.pos.get(&gw);
@@ -409,26 +419,35 @@ impl RelayContext {
             Some(d) if !self.mobile.contains(&k) => self.max_range_m.min(d),
             _ => self.max_range_m,
         };
-        // Called for every relayed copy: candidates are counted, not collected.
-        let cands = self.by_byte.get(hint as usize).map_or(&[][..], |v| v).iter().copied().filter(|&k| {
+        // Called for every relayed copy: one pass, each candidate's distance
+        // measured once, candidates counted rather than collected.
+        let (mut n, mut first) = (0, 0);
+        let (mut n_confirmed, mut first_confirmed) = (0, 0);
+        for &k in self.by_byte.get(hint as usize).map_or(&[][..], |v| v) {
             if k == origin || k == gw || self.silent.contains(&k) {
-                return false;
+                continue;
             }
-            match (self.pos.get(&k), gp) {
-                (Some(&p), Some(&g)) => distance_m(p, g) <= range(k),
-                _ => true,
+            if let (Some(&p), Some(&g)) = (self.pos.get(&k), gp)
+                && distance_m(p, g) > range(k)
+            {
+                continue;
             }
-        });
-        let one = |it: &mut dyn Iterator<Item = u32>| -> Option<Option<u32>> {
-            let first = it.next()?;
-            Some(if it.next().is_none() { Some(first) } else { None })
-        };
-        match one(&mut cands.clone())? {
-            Some(k) => Some(Ok((k, false))),
-            None => match one(&mut cands.filter(|&k| self.confirmed.contains(&pair(k, gw)))) {
-                Some(Some(k)) => Some(Ok((k, true))),
-                _ => Some(Err(())),
-            },
+            n += 1;
+            if n == 1 {
+                first = k;
+            }
+            if self.confirmed.contains(&pair(k, gw)) {
+                n_confirmed += 1;
+                if n_confirmed == 1 {
+                    first_confirmed = k;
+                }
+            }
+        }
+        match (n, n_confirmed) {
+            (0, _) => None,
+            (1, _) => Some(Ok((first, false))),
+            (_, 1) => Some(Ok((first_confirmed, true))),
+            _ => Some(Err(())),
         }
     }
 }
@@ -474,6 +493,18 @@ mod tests {
         assert_eq!(c.resolve(0x42, 5, 0x0000_aa01, None), Some(Ok(0x2222_2242)), "confirmed link breaks the tie");
         let c = ctx(&[0x0000_aa42, 0x1111_1142], &[]);
         assert_eq!(c.resolve(0x42, 1, 0x0000_aa42, None), None, "gateway byte is the gateway");
+    }
+
+    #[test]
+    fn a_node_ending_in_zero_relays_as_byte_ff() {
+        // Firmware's relay_node is 0 for "no relay", so a node whose number
+        // ends in 0x00 goes by 0xFF.
+        assert_eq!((last_byte(0x1234_5600), last_byte(0x1234_56ff), last_byte(0x1234_5642)), (0xff, 0xff, 0x42));
+        let c = ctx(&[0x1234_5600, 0x3333_3333], &[]);
+        assert_eq!(c.resolve(0xff, 1, 0x3333_3333, None), Some(Ok(0x1234_5600)));
+        assert_eq!(c.resolve(0, 1, 0x3333_3333, None), None, "0 is no relay");
+        let c = ctx(&[0x1234_5642, 0x7777_7700], &[]);
+        assert_eq!(c.resolve(0xff, 1, 0x7777_7700, None), None, "0xFF from a gateway ending in 0x00 is the gateway");
     }
 
     #[test]
@@ -528,7 +559,7 @@ mod tests {
     fn traceroute_segments_skip_unknown_hops() {
         let mut out = vec![];
         let route = [Hop { id: 2, unknown: false }, Hop { id: BROADCAST, unknown: true }, Hop { id: 3, unknown: false }];
-        traceroute_samples(1, 9, false, &route, &[Some(1.0), None, Some(2.0), Some(3.0)], &[], &[], 0, 7, &mut out);
+        traceroute_samples(1, 9, false, &route, &[Some(1.0), None, Some(2.0), Some(3.0)], &[], &[], 0, &mut out);
         let segs: Vec<(u32, u32)> = out.iter().map(|s| (s.src, s.dst)).collect();
         assert_eq!(segs, vec![(1, 2), (3, 9)]);
     }
@@ -551,8 +582,8 @@ mod tests {
         // forward route and its SNRs, and adds the way back.
         let route = [Hop { id: 2, unknown: false }];
         let mut out = vec![];
-        traceroute_samples(1, 9, false, &route, &[Some(4.0), Some(6.0)], &[], &[], 0, 100, &mut out);
-        traceroute_samples(9, 1, true, &route, &[Some(4.0), Some(6.0)], &[Hop { id: 2, unknown: false }], &[Some(5.0), Some(3.0)], 0, 200, &mut out);
+        traceroute_samples(1, 9, false, &route, &[Some(4.0), Some(6.0)], &[], &[], 0, &mut out);
+        traceroute_samples(9, 1, true, &route, &[Some(4.0), Some(6.0)], &[Hop { id: 2, unknown: false }], &[Some(5.0), Some(3.0)], 0, &mut out);
         let e = reduce(&out);
         let tr = |a: u32, b: u32| e.iter().find(|x| x.src_num == a && x.dst_num == b).map(|x| x.evidence.traceroute);
         assert_eq!((tr(1, 2), tr(2, 9)), (Some(1), Some(1)), "forward hops once");

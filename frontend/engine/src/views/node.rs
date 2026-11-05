@@ -290,7 +290,7 @@ pub(super) fn fixed_role(role: &str) -> bool {
 /// none either (D-139).
 fn agree(a: &Row, b: &Row, fixed: bool) -> bool {
     let (pa, pb) = (a.pos.unwrap(), b.pos.unwrap());
-    let bits = |p: &RowPos| if p.known { p.bits } else { 32 };
+    let bits = crate::movement::bits;
     distance_m(LatLon { lat: pa.lat, lon: pa.lon }, LatLon { lat: pb.lat, lon: pb.lon }) <= crate::movement::move_threshold(fixed, (pa.lat, bits(&pa)), (pb.lat, bits(&pb)))
 }
 

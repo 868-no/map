@@ -105,8 +105,10 @@ impl Store {
         let append = self.rows.last().is_none_or(|tail| by_time(&fresh[0], tail).is_ge());
         self.rows.extend(fresh);
         if !append {
-            // Rare (an older range being filled in): the engine's merge sort handles the two runs.
-            self.rows.sort_unstable_by(by_time);
+            // An older range filled in, routine since day commits arrive out
+            // of order (D-160): the stable sort finds the two sorted runs and
+            // merges them in linear time, where an unstable sort would not.
+            self.rows.sort_by(by_time);
         }
         self.version += 1;
         n

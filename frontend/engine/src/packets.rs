@@ -3,7 +3,7 @@
 
 use serde::Serialize;
 
-use crate::graph::{zero_cost_role, RelayContext};
+use crate::graph::{last_byte, zero_cost_role, RelayContext};
 use crate::row::{HeardFrom, Interner, Row};
 use crate::util::{iso, key_hex, map, node_id, set, FxMap, FxSet, BROADCAST};
 use crate::views::dest;
@@ -159,10 +159,12 @@ pub fn packet_log(rows: &[&Row], num: u32, ctx: &RelayContext, replies: &ReplyIn
                 e.gateways.insert(g);
             }
         };
-        if let (Some(g), HeardFrom::Relayed(Some(b))) = (r.gw, r.heard_from()) {
-            if g != num && b as u32 == (num & 0xff) && ctx.resolve(b, r.src, g, r.rssi.map(f64::from)) == Some(Ok(num)) {
-                note(false, Some(g));
-            }
+        if let (Some(g), HeardFrom::Relayed(Some(b))) = (r.gw, r.heard_from())
+            && g != num
+            && b == last_byte(num)
+            && ctx.resolve(b, r.src, g, r.rssi.map(f64::from)) == Some(Ok(num))
+        {
+            note(false, Some(g));
         }
         if let Some(t) = r.traceroute().filter(|t| t.valid) {
             let mut hops: &[crate::row::Hop] = if t.is_reply { &t.route_back } else { &t.route };
@@ -196,7 +198,7 @@ pub fn packet_log(rows: &[&Row], num: u32, ctx: &RelayContext, replies: &ReplyIn
                     hops,
                     gateways: others.iter().filter_map(|r| r.gw).collect::<FxSet<u32>>().len(),
                     by_itself: rs.iter().any(|r| r.gw == Some(num)),
-                    downlinked: others.iter().any(|r| ctx.downlinked(r)),
+                    downlinked: others.iter().any(|r| RelayContext::downlinked(r)),
                     receptions: rs.iter().map(|r| r.ok).collect::<FxSet<u64>>().len(),
                     signature: best.to_string(),
                     replies: first.pid.map_or(vec![], |p| replies.replies(p, num, rows, i)),
@@ -451,7 +453,7 @@ pub fn packet_route(rows: &[&Row], ctx: &RelayContext, roles: &FxMap<u32, String
             HeardFrom::Unknown => None,
         };
         match byte.and_then(|b| ctx.resolve(b, origin, gw, r.rssi.map(f64::from))) {
-            Some(Ok(relay)) if ctx.downlinked(r) => {
+            Some(Ok(relay)) if RelayContext::downlinked(r) => {
                 // Taken from MQTT and transmitted with no hops left (D-087).
                 add_seg.push((relay, gw, false, "relay"));
                 add_seg.push((origin, relay, true, "internet"));
@@ -462,7 +464,7 @@ pub fn packet_route(rows: &[&Row], ctx: &RelayContext, roles: &FxMap<u32, String
                 let direct = r.hops() == Some(1) && roles.get(&relay).is_some_and(|ro| !ro.is_empty() && !zero_cost_role(ro));
                 add_seg.push((origin, relay, !direct, if direct { "relay" } else { "gap" }));
             }
-            _ if ctx.downlinked(r) => add_seg.push((origin, gw, true, "internet")),
+            _ if RelayContext::downlinked(r) => add_seg.push((origin, gw, true, "internet")),
             _ => add_seg.push((origin, gw, true, "unknown_relay")),
         }
     }
@@ -823,11 +825,11 @@ mod tests {
         let ro = roles(&[(C, "CLIENT")]);
         // A relayed copy with no hops left is ordinary radio: C heard A itself.
         let plain = relayed(row(A, GW), 0xcc, 1);
-        assert!(!c.downlinked(&plain));
+        assert!(!RelayContext::downlinked(&plain));
         assert_eq!(pairs(&transmissions(&plain, &c, &ro)), vec![(id(A), Some(id(C))), (id(C), Some(id(GW)))]);
         // Flagged via_mqtt: C took it from MQTT, so only its own transmission is radio.
         let flagged = Row { rr: crate::row::ty::VIA_MQTT, ..relayed(row(A, GW), 0xcc, 0) };
-        assert!(c.downlinked(&flagged));
+        assert!(RelayContext::downlinked(&flagged));
         assert_eq!(pairs(&transmissions(&flagged, &c, &ro)), vec![(id(A), None), (id(C), Some(id(GW)))]);
         // With no last hop, nothing radio is proven.
         let bare = Row { rr: crate::row::ty::VIA_MQTT, ..row(A, GW) };

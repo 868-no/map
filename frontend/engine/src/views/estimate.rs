@@ -96,7 +96,7 @@ pub(super) fn estimate(nodes: &mut FxMap<u32, Node>, edges: &[Edge], g: &GeoOpti
 fn ranging(nodes: &FxMap<u32, Node>, edges: &[Edge], anchors: &FxMap<u32, Anchor>, g: &GeoOptions) -> Option<Ranging> {
     let router = |n: u32| nodes.get(&n).and_then(|x| x.identity.as_ref()).is_some_and(|i| i.role == "ROUTER" || i.role == "ROUTER_LATE");
     let mut dirs: FxMap<(u32, u32), [Option<f64>; 2]> = map();
-    for e in edges.iter().filter(|e| !e.mqtt && e.evidence.direct() + e.evidence.neighbor + e.evidence.traceroute > 0) {
+    for e in edges.iter().filter(|e| !e.mqtt && e.evidence.direct() > 0) {
         let (s, d) = (e.src_num, e.dst_num);
         let Some(snr) = e.snr.median else { continue };
         if !anchors.contains_key(&s) || !anchors.contains_key(&d) || !router(s) || !router(d) {
