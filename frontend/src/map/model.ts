@@ -25,6 +25,24 @@ export function nodeName(n: Pick<MeshNode, 'identity'> | undefined, id: string):
   return n?.identity?.long_name || n?.identity?.short_name || id
 }
 
+/** Whether a node matches a search q (trimmed, lower case; empty matches all): its id or either name. */
+export function matchesSearch(n: Pick<MeshNode, 'id' | 'identity'>, q: string): boolean {
+  return !q || n.id.includes(q) || (n.identity?.long_name ?? '').toLowerCase().includes(q) || (n.identity?.short_name ?? '').toLowerCase().includes(q)
+}
+
+const names = new WeakMap<readonly MeshNode[], Map<string, string>>()
+
+/**
+ * Every node's nodeName by id, made once per snapshot's node list and
+ * shared by the panels and the map.
+ */
+export function namesOf(nodes: readonly MeshNode[] | undefined): Map<string, string> {
+  if (!nodes) return new Map()
+  let m = names.get(nodes)
+  if (!m) names.set(nodes, (m = new Map(nodes.map((n) => [n.id, nodeName(n, n.id)]))))
+  return m
+}
+
 /** A node heard within this long before the window's end is online (D-101). */
 export const ONLINE_MS = 3 * 3_600_000
 

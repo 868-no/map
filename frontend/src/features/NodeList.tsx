@@ -1,6 +1,6 @@
 import type { MeshNode, SnapshotView } from '../derive/views'
 import { useStore } from '../state/store'
-import { ageColor, lastHeardAge, nodeName, passesNodeFilters } from '../map/model'
+import { ageColor, lastHeardAge, matchesSearch, nodeName, passesNodeFilters } from '../map/model'
 import { PALETTES } from '../map/palette'
 import { useTheme } from '../theme'
 
@@ -12,8 +12,7 @@ export function NodeList({ snapshot }: { snapshot: SnapshotView | undefined }) {
   const setFilters = useStore((s) => s.setFilters)
   const nodes = snapshot?.nodes ?? []
   const q = search.trim().toLowerCase()
-  const match = (n: MeshNode) =>
-    !q || n.id.includes(q) || (n.identity?.long_name ?? '').toLowerCase().includes(q) || (n.identity?.short_name ?? '').toLowerCase().includes(q)
+  const match = (n: MeshNode) => matchesSearch(n, q)
   const w = snapshot?.meta.window
   const endMs = w ? Date.parse(w.end) : 0, windowMs = w ? endMs - Date.parse(w.start) : 0
   // The same node filters as the map (position, online, role), so the list matches it (D-145).

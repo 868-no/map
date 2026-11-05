@@ -4,13 +4,13 @@ import { useStore } from '../state/store'
 import { formatLocal } from '../lib/time'
 import { ChartGroup, TimeChart, type Band } from '../components/TimeChart'
 import { meanPoints, useWeather, weatherPoints, weatherSite } from '../state/weather'
-import { nodeName } from '../map/model'
+import { namesOf } from '../map/model'
 import { terrainEnd, useTerrainEnabled, useTerrainProfile } from '../state/terrain'
 import { CrossSection, LOS_LABEL, LOS_TITLE } from '../components/CrossSection'
 
 export function EdgePanel({ a, b, mqtt = false, snapshot }: { a: string; b: string; mqtt?: boolean; snapshot: SnapshotView | undefined }) {
   const select = useStore((s) => s.select)
-  const names = new Map((snapshot?.nodes ?? []).map((n) => [n.id, nodeName(n, n.id)]))
+  const names = namesOf(snapshot?.nodes)
   const name = (id: string) => names.get(id) ?? id
   const find = (src: string, dst: string) => (snapshot?.edges ?? []).find((e) => e.src === src && e.dst === dst && !!e.mqtt === mqtt)
   const stats = (e: Edge) => (

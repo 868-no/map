@@ -8,7 +8,7 @@ import { IconLayer, LineLayer, PathLayer, ScatterplotLayer, TextLayer } from '@d
 import type { PathStyleExtensionProps } from '@deck.gl/extensions'
 import type { Layer } from '@deck.gl/core'
 import type { Selection, Toggles } from '../state/store'
-import { ageColor, CONFIDENCE_ALPHA, glyphInk, LINK_WIDTH, MQTT_ARROW, mqttDownlink, mqttUplink, PLANE, type MqttFlow, OPT_OUT_RING, ROUTE_COLOR, TRACE_COLOR, precisionErrorM, roleRadius, type LinkGeom, type PlacedNode } from './model'
+import { ageColor, CONFIDENCE_ALPHA, glyphInk, matchesSearch, LINK_WIDTH, MQTT_ARROW, mqttDownlink, mqttUplink, PLANE, type MqttFlow, OPT_OUT_RING, ROUTE_COLOR, TRACE_COLOR, precisionErrorM, roleRadius, type LinkGeom, type PlacedNode } from './model'
 import { dashExt, dashOffsetExt, UNDER_LABELS, type RGBA } from './deckShared'
 import { labelData, toPixels, type Cluster } from './labels'
 import { stackLevels } from './stacking'
@@ -239,7 +239,7 @@ export function meshLayerBuilder(): (input: MeshLayerInput) => Layer[] {
     // Search and reach both dim the nodes they leave out.
     const matches = (p: PlacedNode) =>
       (!reach || reach.reached.has(p.node.id)) &&
-      (!q || p.node.id.includes(q) || (p.node.identity?.long_name ?? '').toLowerCase().includes(q) || (p.node.identity?.short_name ?? '').toLowerCase().includes(q))
+      matchesSearch(p.node, q)
     const selId = sel?.kind === 'node' ? sel.id : null
     // Stable string keys for updateTriggers: a node selection does not recolour links, nor a link selection nodes.
     const selLink = sel?.kind === 'edge' ? `${sel.src}|${sel.dst}|${!!sel.mqtt}` : ''

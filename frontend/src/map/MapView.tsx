@@ -8,7 +8,7 @@ import type { Capabilities } from '../api/types'
 import type { Edge, SnapshotView } from '../derive/views'
 import { useStore } from '../state/store'
 import { applyStylePaint, loadStyle, registerPMTiles } from './style'
-import { bridgeRoute, positionAt, filterEdges, passesNodeFilters, linkGeometry, placeNodes, visibleLinks, withSelectedLink, type LinkGeom, type PlacedNode } from './model'
+import { bridgeRoute, namesOf, positionAt, filterEdges, passesNodeFilters, linkGeometry, placeNodes, visibleLinks, withSelectedLink, type LinkGeom, type PlacedNode } from './model'
 import { frameArrived, onPingAdded, pingCount } from './pings'
 import { BASEMAP_GROUPS } from './layers'
 import { meshLayerBuilder, type ReachGeom, type RouteGeom } from './meshLayers'
@@ -333,13 +333,8 @@ export default memo(function MapView({ caps, snapshot, onPositions }: Props) {
   // Every edge, before the map's filters: a direction a filter hid is not "no evidence".
   const allEdges = useRef(new Set<string>())
   allEdges.current = useMemo(() => new Set((snapshot?.edges ?? []).map((x) => `${x.src}|${x.dst}|${!!x.mqtt}`)), [snapshot])
-  ;[nameOf.current, shortOf.current] = useMemo(() => {
-    const nodes = snapshot?.nodes ?? []
-    return [
-      new Map(nodes.map((n) => [n.id, n.identity?.long_name || n.identity?.short_name || n.id])),
-      new Map(nodes.map((n) => [n.id, n.identity?.short_name || n.identity?.long_name || n.id])),
-    ]
-  }, [snapshot])
+  nameOf.current = namesOf(snapshot?.nodes)
+  shortOf.current = useMemo(() => new Map((snapshot?.nodes ?? []).map((n) => [n.id, n.identity?.short_name || n.identity?.long_name || n.id])), [snapshot])
   clusterOf.current = useMemo(() => new Map(clusters.flatMap((c) => c.members.map((m) => [m.node.id, c] as const))), [clusters])
   const [hoverCluster, setHoverCluster] = useState<string | null>(null)
   const collapseTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)

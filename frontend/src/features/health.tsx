@@ -1,12 +1,12 @@
 // Mesh health (D-095): the engine's rules for known problems, and its
 // airtime estimate. The Health panel lists every issue in the window; the
 // node panel shows the selected node's.
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import type { HealthView, Issue, NodeAirtime, SnapshotView } from '../derive/views'
 import { useHealth } from '../state/data'
 import { useStore } from '../state/store'
 import { TYPE_LABEL } from './controls'
-import { nodeName } from '../map/model'
+import { namesOf } from '../map/model'
 
 const SEVERITY: Record<Issue['severity'], { label: string; plural: string; icon: string }> = {
   problem: { label: 'problem', plural: 'problems', icon: '⛔' },
@@ -43,12 +43,6 @@ const KIND: Record<string, string> = {
 
 const pct = (x: number) => (x >= 0.1 ? `${Math.round(x * 100)} %` : `${(x * 100).toFixed(1)} %`)
 const typeName = (t: string) => TYPE_LABEL[t] ?? t
-
-function nameMap(snapshot: SnapshotView | undefined): Map<string, string> {
-  const m = new Map<string, string>()
-  for (const n of snapshot?.nodes ?? []) m.set(n.id, nodeName(n, n.id)) // the same names as Details and the node list
-  return m
-}
 
 function IssueLine({ i, name }: { i: Issue; name?: (id: string) => string }) {
   const select = useStore((s) => s.select)
@@ -93,7 +87,7 @@ const AIRTIME_NOTE =
 export function HealthPanel({ snapshot }: { snapshot: SnapshotView | undefined }) {
   const h = useHealth()
   const select = useStore((s) => s.select)
-  const names = useMemo(() => nameMap(snapshot), [snapshot])
+  const names = namesOf(snapshot?.nodes) // the same names as Details and the node list
   const name = (id: string) => names.get(id) ?? id
   if (h.isLoading || !h.data) return <div className="panel muted">Checking the mesh…</div>
   const { issues, airtime } = h.data as HealthView

@@ -4,7 +4,7 @@ import { ViewError, type SnapshotView } from '../../derive/views'
 import { useNodeDetail } from '../../state/data'
 import { nodeLink, useStore, type DetailTab } from '../../state/store'
 import { relativeAge } from '../../lib/time'
-import { isOnline, nodeName } from '../../map/model'
+import { isOnline, namesOf } from '../../map/model'
 import { linkNeighbours } from './sort'
 import { OverviewTab } from './Overview'
 import { TelemetryTab } from './Telemetry'
@@ -17,7 +17,7 @@ export function NodePanel({ id, snapshot }: { id: string; snapshot: SnapshotView
   const tab = useStore((s) => s.detailTab)
   const snapNode = (snapshot?.nodes ?? []).find((n) => n.id === id)
   const now = snapshot ? Date.parse(snapshot.meta.window.end) : Date.now()
-  const names = useMemo(() => new Map((snapshot?.nodes ?? []).map((n) => [n.id, nodeName(n, n.id)])), [snapshot])
+  const names = namesOf(snapshot?.nodes)
   const neighbours = useMemo(() => linkNeighbours(snapshot?.edges ?? [], id, names), [snapshot, id, names])
   if (isLoading) return <div className="panel">Loading {id}…</div>
   if (error) return <div className="panel">{error instanceof ViewError && error.kind === 'not_found' ? `No data for ${id} in the selected window.` : `Details for ${id} could not be built right now (${error.message}). They will load again with the next update.`}</div>
