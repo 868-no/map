@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/868-no/map/internal/ingest"
@@ -174,7 +175,7 @@ func InsertBatch(ctx context.Context, pool *pgxpool.Pool, obs []*ingest.Observat
 		return nil, err
 	}
 	ids, err := insertBatch(ctx, pool, obs, rows)
-	if err != nil && strings.Contains(err.Error(), "no partition of relation") {
+	if noPartition(err) {
 		// A month this process remembered is gone (dropped elsewhere):
 		// re-check the catalog and try once more.
 		forgetPartitions()
@@ -183,7 +184,17 @@ func InsertBatch(ctx context.Context, pool *pgxpool.Pool, obs []*ingest.Observat
 		}
 		ids, err = insertBatch(ctx, pool, obs, rows)
 	}
+	if noPartition(err) {
+		err = fmt.Errorf("%w: %w", ingest.ErrNoPartition, err)
+	}
 	return ids, err
+}
+
+// noPartition reports whether Postgres refused a row for want of a
+// partition: a check violation (23514), told from others by its message.
+func noPartition(err error) bool {
+	var pe *pgconn.PgError
+	return errors.As(err, &pe) && pe.Code == "23514" && strings.Contains(pe.Message, "no partition of relation")
 }
 
 func insertBatch(ctx context.Context, pool *pgxpool.Pool, obs []*ingest.Observation, rows [][]any) ([]int64, error) {

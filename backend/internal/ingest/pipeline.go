@@ -17,8 +17,13 @@ import (
 	"github.com/868-no/map/internal/security"
 )
 
+// ErrNoPartition marks an insert refused because no partition holds a row:
+// a schema gap partition upkeep closes, so the batch is retried.
+var ErrNoPartition = errors.New("no partition for the row")
+
 // Sink persists batches (storage package, adapted in cmd).
 type Sink interface {
+	// InsertBatch's error wraps ErrNoPartition when a partition is missing.
 	InsertBatch(ctx context.Context, obs []*Observation) ([]int64, error)
 	// RecentObservation returns the row id of a recently stored observation.
 	RecentObservation(ctx context.Context, key [16]byte, since time.Time) (int64, bool, error)
@@ -524,12 +529,12 @@ func (p *Pipeline) isolate1(rows []*Observation, timeout time.Duration) (refused
 
 // permanent reports whether a write failed on the data rather than on the
 // database: SQLSTATE class 22 (data exception, e.g. NUL in text) or 23
-// (integrity). "No partition" is also class 23 but is a schema gap that
-// partition upkeep closes, so it stays retryable. The SQLSTATE is read via
-// an interface so this package does not depend on the driver.
+// (integrity). A missing partition is also class 23 but stays retryable
+// (ErrNoPartition). The SQLSTATE is read via an interface so this package
+// does not depend on the driver.
 func permanent(err error) bool {
 	var se interface{ SQLState() string }
-	if !errors.As(err, &se) || strings.Contains(err.Error(), "no partition of relation") {
+	if !errors.As(err, &se) || errors.Is(err, ErrNoPartition) {
 		return false
 	}
 	c := se.SQLState()

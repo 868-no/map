@@ -39,6 +39,31 @@ func TestInsertBatchRetryStoresOnce(t *testing.T) {
 	}
 }
 
+// A month's partition this process created and remembers is dropped
+// elsewhere: the insert is refused for want of a partition, recognised as
+// such, and stored after the catalog is checked again.
+func TestInsertBatchRecreatesADroppedPartition(t *testing.T) {
+	pool := freshDB(t)
+	f := newFixture(t, pool)
+	ctx := context.Background()
+	at := time.Now().UTC().Add(-time.Minute)
+	obs := func(src uint32) []*ingest.Observation {
+		return []*ingest.Observation{f.observation(at, src, 0x2001, &pb.Data{Portnum: pb.PortNum_TEXT_MESSAGE_APP, Payload: []byte("a")}, nil)}
+	}
+	if _, err := storage.InsertBatch(ctx, pool, obs(0x1001)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `DROP TABLE `+storage.PartitionName(at)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := storage.InsertBatch(ctx, pool, obs(0x1002)); err != nil {
+		t.Fatalf("insert after the partition was dropped: %v", err)
+	}
+	if n := count(t, pool, `SELECT count(*) FROM packet_log`); n != 1 {
+		t.Fatalf("%d rows, want 1", n)
+	}
+}
+
 // D-056: a schema-1 table (plain, identity id) becomes the partitioned
 // table at startup, keeping ids, one row per reception, and the sequence.
 func TestMigrateSchema1(t *testing.T) {

@@ -405,7 +405,7 @@ func TestFlushDropsRowsTheDatabaseRefuses(t *testing.T) {
 		t.Fatalf("stored %d rows after the database recovered, want 4", whole.count())
 	}
 	// Transient and partition errors stay retryable.
-	if permanent(errors.New("db down")) || permanent(sqlStateErr("08006")) || permanent(fmt.Errorf("no partition of relation \"packet_log\" found for row: %w", sqlStateErr("23514"))) {
+	if permanent(errors.New("db down")) || permanent(sqlStateErr("08006")) || permanent(fmt.Errorf("%w: %w", ErrNoPartition, sqlStateErr("23514"))) {
 		t.Fatal("transient error classed as permanent")
 	}
 	if !permanent(sqlStateErr("23502")) {
