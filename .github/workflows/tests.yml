@@ -7,6 +7,10 @@
 # mesh on a local broker, plus two days of seeded history. The basemap is not
 # built here (it takes GBs and an hour), so tests that need real map labels
 # skip themselves (MESHMAP_NO_BASEMAP); run them against a full deployment.
+# Runners: GitHub-hosted, unless the repository variable RUNNER_LABELS names
+# self-hosted ones (a JSON list, e.g. ["self-hosted","meshmap"]; see
+# deploy/runners). Pull requests, which may come from forks, always run on
+# GitHub's; so does the deploy job.
 name: tests
 
 on:
@@ -26,9 +30,13 @@ concurrency:
 jobs:
   backend:
     name: backend (vet, format, unit)
-    runs-on: ubuntu-24.04
+    runs-on: ${{ github.event_name != 'pull_request' && vars.RUNNER_LABELS && fromJSON(vars.RUNNER_LABELS) || 'ubuntu-24.04' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/toolchain-cache
+        with:
+          name: go
+          hash: ${{ hashFiles('backend/go.sum', 'scripts/go.sh') }}
       - run: scripts/go.sh go vet ./...
       - name: gofmt
         run: |
@@ -39,24 +47,36 @@ jobs:
 
   integration:
     name: backend integration (Postgres, Redis, Mosquitto)
-    runs-on: ubuntu-24.04
+    runs-on: ${{ github.event_name != 'pull_request' && vars.RUNNER_LABELS && fromJSON(vars.RUNNER_LABELS) || 'ubuntu-24.04' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/toolchain-cache
+        with:
+          name: go-integration
+          hash: ${{ hashFiles('backend/go.sum', 'scripts/go.sh') }}
       - run: scripts/integration.sh
 
   engine:
     name: engine (Rust tests, golden fixture)
-    runs-on: ubuntu-24.04
+    runs-on: ${{ github.event_name != 'pull_request' && vars.RUNNER_LABELS && fromJSON(vars.RUNNER_LABELS) || 'ubuntu-24.04' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/toolchain-cache
+        with:
+          name: engine
+          hash: ${{ hashFiles('frontend/engine/Cargo.lock', 'scripts/wasm.sh') }}
       - run: scripts/wasm.sh test
       - run: scripts/wasm.sh clippy
 
   frontend:
     name: frontend (types, lint, unit, build)
-    runs-on: ubuntu-24.04
+    runs-on: ${{ github.event_name != 'pull_request' && vars.RUNNER_LABELS && fromJSON(vars.RUNNER_LABELS) || 'ubuntu-24.04' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/toolchain-cache
+        with:
+          name: frontend
+          hash: ${{ hashFiles('frontend/engine/Cargo.lock', 'scripts/wasm.sh', 'frontend/package-lock.json', 'scripts/node.sh') }}
       - name: build the WebAssembly engine
         run: scripts/wasm.sh
       - run: scripts/node.sh npm ci --no-audit --no-fund
@@ -72,7 +92,7 @@ jobs:
     # time: two at once starve the page, and the map takes clicks for long
     # presses.
     name: end-to-end ${{ matrix.shard }}/4 (demo stack, Playwright)
-    runs-on: ubuntu-24.04
+    runs-on: ${{ github.event_name != 'pull_request' && vars.RUNNER_LABELS && fromJSON(vars.RUNNER_LABELS) || 'ubuntu-24.04' }}
     timeout-minutes: 45
     strategy:
       fail-fast: false
@@ -80,6 +100,10 @@ jobs:
         shard: [1, 2, 3, 4]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/toolchain-cache
+        with:
+          name: e2e
+          hash: ${{ hashFiles('frontend/package-lock.json') }}
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       - run: printf 'POSTGRES_PASSWORD=ci\nDEMO_MODE=true\nE2E_HOOKS=true\nDEMO_RATE=10\n' > .env
       # The stack's images from compose.yaml, with layers cached between runs.
@@ -111,7 +135,10 @@ jobs:
       - name: Playwright
         # One retry: a few tests time animations and live traffic on a shared runner.
         run: |
+          # npm's cache: the toolchain cache's directory, else (self-hosted) node.sh's volume.
+          npm_cache="${MESHMAP_CACHE:+$MESHMAP_CACHE/node}"
           docker run --rm --network host --ipc=host -e MESHMAP_NO_BASEMAP=1 -v "$PWD":/src -w /src/frontend \
+            -v "${npm_cache:-meshmap-node-cache}":/cache -e npm_config_cache=/cache/npm \
             mcr.microsoft.com/playwright:v1.64.1-noble sh -c 'npm ci --no-audit --no-fund && npx playwright test --retries 1 --workers 1 --shard=${{ matrix.shard }}/4'
       - name: stack logs
         if: failure()

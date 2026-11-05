@@ -25,9 +25,30 @@ Env values are visible to anyone who can run `docker inspect` on the host; use t
 
 ### Continuous integration
 
-`.github/workflows/tests.yml` runs on every pull request and push: Go vet, gofmt and unit tests; the integration tests (throwaway Postgres, Redis and Mosquitto); the engine's Rust tests (including the golden fixture); the frontend's type check, lint, unit tests and production build; and the end-to-end tests (Playwright, in four parallel shards, each against its own demo stack: the simulated mesh on a local broker plus two days of seeded history). It uses the same Docker-wrapped toolchains as local development (`scripts/*.sh`). The basemap is not built in CI, so end-to-end tests that need real map labels skip themselves there; run them against a full deployment.
+`.github/workflows/tests.yml` runs on every pull request and push: Go vet, gofmt and unit tests; the integration tests (throwaway Postgres, Redis and Mosquitto); the engine's Rust tests (including the golden fixture); the frontend's type check, lint, unit tests and production build; and the end-to-end tests (Playwright, in four parallel shards, each against its own demo stack: the simulated mesh on a local broker plus two days of seeded history). It uses the same Docker-wrapped toolchains as local development (`scripts/*.sh`). Their caches (Go's build and module caches, npm's, Cargo's registry and target directory with wasm-bindgen, and wasm-opt) live in Docker volumes, or with `MESHMAP_CACHE` set in directories under it: on GitHub-hosted runners `.github/actions/toolchain-cache` sets it and saves those directories with `actions/cache`, one cache per job, keyed by its lock files and scripts and restored from the job's previous cache when they change. Self-hosted runners keep the volumes instead and skip it. GitHub keeps 10 GB of caches per repository, evicting the least recently used; the image builds' layer caches share that space. The basemap is not built in CI, so end-to-end tests that need real map labels skip themselves there; run them against a full deployment.
 
 The `deploy` job runs on pushes to `main` only, after the images job has published the images: it calls the production Portainer stack's webhook, which pulls them and recreates the stack, one deploy at a time in push order. The webhook URL is its only credential, kept in the `DEPLOY_WEBHOOK_URL` repository secret; without it the job fails and nothing is deployed.
+
+### Self-hosted runners
+
+The test and image jobs run on GitHub-hosted runners unless the repository variable `RUNNER_LABELS` (Settings → Secrets and variables → Actions → Variables) names self-hosted ones as a JSON list, e.g. `["self-hosted","meshmap"]`. Even then, **pull requests always run on GitHub's**: the repository is public, and a pull request from a fork runs its own code, which must never reach a machine of ours. So does the `deploy` job. Pushes, tags and manual runs take the self-hosted runners; with none online they queue, and clearing the variable sends them back to GitHub's.
+
+`deploy/runners/compose.yaml` runs four runners, each with a Docker daemon of its own (Docker-in-Docker) whose network namespace it shares:
+
+- Jobs start containers as on a hosted runner: their published ports are on the runner's `localhost` (the end-to-end stack on 8080, Playwright's `--network host`), and parallel jobs never collide on ports, container names or networks.
+- The work directory is mounted at the same path (`/_work`) in the runner and its daemon, so `docker run -v "$repo":/src` in `scripts/*.sh` finds the checkout.
+- Each daemon keeps its state on a volume of its own: pulled images, the build cache and the toolchains' cache volumes (`meshmap-rust-cache`, `meshmap-go-cache`, `meshmap-node-cache`) stay warm between jobs. Each runner is registered afresh for every job (ephemeral). Before each job a hook (`deploy/runners/job-started.sh`) removes leftover containers, networks, anonymous volumes and untagged images, and trims the build cache to 20 GB, least recently used first. Tagged images and the cache volumes are kept; to start a runner from cold, remove its `docker-N` volume.
+- Only the daemons are privileged; the runners are not, and the daemons listen on a socket shared with their runner alone, not on TCP.
+
+To set it up on a dedicated host (a VM, not one with access to production or other secrets: a job, and so anyone who can push to `main`, controls the daemon):
+
+```sh
+cd deploy/runners
+cp .env.example .env   # ACCESS_TOKEN: a fine-grained token for this repository, "Administration: Read and write"
+docker compose up -d
+```
+
+The runners appear under Settings → Actions → Runners as `meshmap-1` … `meshmap-4` (`RUNNER_NAME_PREFIX` per host); then set `RUNNER_LABELS`. Also set Settings → Actions → General → "Require approval for all external contributors". Auto-update is off (each job would otherwise update a fresh runner first): bump the runner image in `compose.yaml` at least monthly, since GitHub refuses runners that are too far behind. Multi-platform images still build arm64 under QEMU unless the host is arm64.
 
 ### Published images
 

@@ -1,0 +1,105 @@
+# Self-hosted GitHub Actions runners for this repository, for trusted runs
+# only: the workflows send pushes, tags and manual runs here, and pull
+# requests (which may come from forks) to GitHub-hosted runners. See
+# docs/operations.md, "Self-hosted runners".
+#
+# Each runner has a Docker daemon of its own (Docker-in-Docker), whose
+# network namespace it shares: a job's containers publish their ports on the
+# runner's localhost, as on a hosted runner, and parallel jobs never collide
+# on ports, container names or networks. Jobs mount their checkout into
+# containers by path (scripts/*.sh), so the work directory is mounted at the
+# same path in the runner and in its daemon. Each daemon keeps its state:
+# pulled images, the build cache and the toolchains' cache volumes stay warm
+# across jobs, while every runner is registered afresh for each job
+# (ephemeral). A hook clears what the last job left behind.
+#
+#   cp .env.example .env    # set ACCESS_TOKEN
+#   docker compose up -d
+#
+# Four runners: the tests workflow runs eight jobs at once (four of them the
+# end-to-end shards); add pairs below for more.
+name: meshmap-runners
+
+x-dind: &dind
+  image: docker:29.9.2-dind
+  privileged: true # Docker-in-Docker needs it; the runner itself is not privileged
+  restart: unless-stopped
+  # A Unix socket on a volume shared with its runner only: no TCP port.
+  command: ["dockerd", "--host=unix:///run/dind/docker.sock"]
+  healthcheck:
+    test: ["CMD", "docker", "-H", "unix:///run/dind/docker.sock", "info"]
+    interval: 5s
+    timeout: 5s
+    retries: 30
+    start_period: 10s
+
+x-runner: &runner
+  image: myoung34/github-runner:2.338.2-ubuntu-noble
+  restart: unless-stopped
+  stop_grace_period: 30s # time to deregister
+  environment: &runner-env
+    RUNNER_SCOPE: repo
+    REPO_URL: ${REPO_URL:-https://github.com/868-no/map}
+    ACCESS_TOKEN: ${ACCESS_TOKEN:?set ACCESS_TOKEN in .env}
+    LABELS: ${RUNNER_LABELS:-meshmap}
+    EPHEMERAL: "true"
+    # Pinned: bump the image instead (GitHub refuses runners a month out of date).
+    DISABLE_AUTO_UPDATE: "true"
+    RUNNER_WORKDIR: /_work
+    DOCKER_HOST: unix:///run/dind/docker.sock
+    ACTIONS_RUNNER_HOOK_JOB_STARTED: /hooks/job-started.sh
+
+services:
+  dind-1:
+    <<: *dind
+    volumes: [docker-1:/var/lib/docker, sock-1:/run/dind, work-1:/_work]
+  runner-1:
+    <<: *runner
+    network_mode: service:dind-1
+    depends_on: { dind-1: { condition: service_healthy } }
+    environment: { <<: *runner-env, RUNNER_NAME: "${RUNNER_NAME_PREFIX:-meshmap}-1" }
+    volumes: [sock-1:/run/dind, work-1:/_work, ./job-started.sh:/hooks/job-started.sh:ro]
+
+  dind-2:
+    <<: *dind
+    volumes: [docker-2:/var/lib/docker, sock-2:/run/dind, work-2:/_work]
+  runner-2:
+    <<: *runner
+    network_mode: service:dind-2
+    depends_on: { dind-2: { condition: service_healthy } }
+    environment: { <<: *runner-env, RUNNER_NAME: "${RUNNER_NAME_PREFIX:-meshmap}-2" }
+    volumes: [sock-2:/run/dind, work-2:/_work, ./job-started.sh:/hooks/job-started.sh:ro]
+
+  dind-3:
+    <<: *dind
+    volumes: [docker-3:/var/lib/docker, sock-3:/run/dind, work-3:/_work]
+  runner-3:
+    <<: *runner
+    network_mode: service:dind-3
+    depends_on: { dind-3: { condition: service_healthy } }
+    environment: { <<: *runner-env, RUNNER_NAME: "${RUNNER_NAME_PREFIX:-meshmap}-3" }
+    volumes: [sock-3:/run/dind, work-3:/_work, ./job-started.sh:/hooks/job-started.sh:ro]
+
+  dind-4:
+    <<: *dind
+    volumes: [docker-4:/var/lib/docker, sock-4:/run/dind, work-4:/_work]
+  runner-4:
+    <<: *runner
+    network_mode: service:dind-4
+    depends_on: { dind-4: { condition: service_healthy } }
+    environment: { <<: *runner-env, RUNNER_NAME: "${RUNNER_NAME_PREFIX:-meshmap}-4" }
+    volumes: [sock-4:/run/dind, work-4:/_work, ./job-started.sh:/hooks/job-started.sh:ro]
+
+volumes:
+  docker-1:
+  sock-1:
+  work-1:
+  docker-2:
+  sock-2:
+  work-2:
+  docker-3:
+  sock-3:
+  work-3:
+  docker-4:
+  sock-4:
+  work-4:
