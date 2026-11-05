@@ -13,7 +13,11 @@ pub const HOUR_MS: i64 = 3_600_000;
 
 #[derive(Default)]
 pub struct Store {
-    pub rows: Vec<Row>,
+    // Rows are buf[start..]: trimming advances start, and the dropped prefix
+    // is compacted away only once it is large, so a sync that trims a few
+    // minutes of rows does not move every row kept (Store::rows).
+    buf: Vec<Row>,
+    start: usize,
     ids: FxSet<i64>,
     staged: FxMap<u32, Vec<Row>>,
     next_batch: u32,
@@ -60,6 +64,11 @@ fn by_time(a: &Row, b: &Row) -> std::cmp::Ordering {
 }
 
 impl Store {
+    /// The rows held, ordered by (observed_at, id).
+    pub fn rows(&self) -> &[Row] {
+        &self.buf[self.start..]
+    }
+
     /// Parses one /observations page into a staged batch (batch 0 starts a new one).
     pub fn stage(&mut self, text: &str, batch: u32, i: &mut Interner) -> Result<PageMeta, String> {
         let page: JPage = serde_json::from_str(text).map_err(|e| format!("invalid page: {e}"))?;
@@ -102,13 +111,13 @@ impl Store {
         }
         let n = fresh.len();
         self.max_id = fresh.iter().map(|r| r.id).chain(self.max_id).max();
-        let append = self.rows.last().is_none_or(|tail| by_time(&fresh[0], tail).is_ge());
-        self.rows.extend(fresh);
+        let append = self.rows().last().is_none_or(|tail| by_time(&fresh[0], tail).is_ge());
+        self.buf.extend(fresh);
         if !append {
             // An older range filled in, routine since day commits arrive out
             // of order (D-160): the stable sort finds the two sorted runs and
             // merges them in linear time, where an unstable sort would not.
-            self.rows.sort_by(by_time);
+            self.buf[self.start..].sort_by(by_time);
         }
         self.version += 1;
         n
@@ -117,7 +126,8 @@ impl Store {
     /// Drops every committed row. Staged batches belong to fetches in flight
     /// (a fresh start commits the batch it just fetched), so they stay.
     pub fn reset(&mut self) {
-        self.rows.clear();
+        self.buf = Vec::new();
+        self.start = 0;
         self.ids.clear();
         self.dirty.clear();
         self.max_id = None;
@@ -125,7 +135,7 @@ impl Store {
     }
 
     fn lower_bound(&self, t: i64) -> usize {
-        self.rows.partition_point(|r| r.t < t)
+        self.rows().partition_point(|r| r.t < t)
     }
 
     /// Indices [from, to) into rows of observed_at in [start, end).
@@ -137,7 +147,7 @@ impl Store {
     /// Rows with observed_at in [start, end).
     pub fn slice(&self, start: i64, end: i64) -> &[Row] {
         let (a, b) = self.range(start, end);
-        &self.rows[a..b]
+        &self.rows()[a..b]
     }
 
     pub fn trim_before(&mut self, t: i64) {
@@ -145,15 +155,32 @@ impl Store {
         if k == 0 {
             return;
         }
+        let (a, b) = (self.start, self.start + k);
         let mut newest_gone = false;
-        for r in self.rows.drain(..k) {
+        for r in &self.buf[a..b] {
             self.ids.remove(&r.id);
             newest_gone |= Some(r.id) == self.max_id;
         }
+        self.start = b;
+        // Moving the kept rows down costs as much as the rows kept: done
+        // once the dropped prefix is as large, it stays linear overall.
+        if self.start >= self.buf.len() - self.start {
+            self.buf.drain(..self.start);
+            self.start = 0;
+            self.shrink();
+        }
         if newest_gone {
-            self.max_id = self.rows.iter().map(|r| r.id).max();
+            self.max_id = self.rows().iter().map(|r| r.id).max();
         }
         self.version += 1;
+    }
+
+    /// Returns memory to the allocator once the rows use under half of it
+    /// (after a large trim, or the row cap).
+    fn shrink(&mut self) {
+        if self.buf.capacity() > 2 * self.buf.len() {
+            self.buf.shrink_to_fit();
+        }
     }
 
     /// Keeps only [lo, hi) (the row cap), in place: no copy of the kept
@@ -161,25 +188,29 @@ impl Store {
     /// as changed, as after starting over with them.
     pub fn keep_only(&mut self, lo: i64, hi: i64) {
         let (a, b) = self.range(lo, hi);
-        self.rows.truncate(b);
-        self.rows.drain(..a);
+        self.buf.truncate(self.start + b);
+        self.buf.drain(..self.start + a);
+        self.start = 0;
+        self.shrink();
         self.ids.clear();
-        self.ids.extend(self.rows.iter().map(|r| r.id));
+        self.ids.extend(self.buf.iter().map(|r| r.id));
         self.dirty.clear();
-        self.dirty.extend(self.rows.iter().map(|r| r.t.div_euclid(HOUR_MS) * HOUR_MS));
-        self.max_id = self.rows.iter().map(|r| r.id).max();
+        self.dirty.extend(self.buf.iter().map(|r| r.t.div_euclid(HOUR_MS) * HOUR_MS));
+        self.max_id = self.buf.iter().map(|r| r.id).max();
         self.version += 1;
     }
 
     /// Calls `f` on every interned id held, committed or staged (Interner::retain).
     pub fn for_each_id(&mut self, mut f: impl FnMut(&mut u32)) {
-        for r in self.rows.iter_mut().chain(self.staged.values_mut().flatten()) {
+        // Only rows held: the trimmed prefix is never read again.
+        let start = self.start;
+        for r in self.buf[start..].iter_mut().chain(self.staged.values_mut().flatten()) {
             r.for_each_id(&mut f);
         }
     }
 
     pub fn newest_t(&self) -> i64 {
-        self.rows.last().map_or(0, |r| r.t)
+        self.rows().last().map_or(0, |r| r.t)
     }
 
     /// Hours that gained rows since the last call (persisted as chunks).
@@ -204,7 +235,7 @@ impl Store {
         if a == b {
             return (0, 0);
         }
-        if a == 0 && b == self.rows.len() {
+        if a == 0 && b == self.rows().len() {
             return (b, self.max_id.unwrap_or(0));
         }
         if let Some((ma, mb, v, m)) = self.stats_memo.get()
@@ -212,7 +243,7 @@ impl Store {
         {
             return (b - a, m);
         }
-        let m = self.rows[a..b].iter().map(|r| r.id).max().unwrap_or(0);
+        let m = self.rows()[a..b].iter().map(|r| r.id).max().unwrap_or(0);
         self.stats_memo.set(Some((a, b, self.version, m)));
         (b - a, m)
     }
@@ -233,16 +264,16 @@ mod tests {
         let page = format!(r#"{{"window":{{"start":"a","end":"b","rolling":true}},"generation":"g","more":true,"next_cursor":"c","rows":[{},{}]}}"#, row(2, 20), row(1, 10));
         let m = s.stage(&page, 0, &mut i).unwrap();
         assert_eq!((m.rows, m.more, m.next_cursor.as_deref()), (2, true, Some("c")));
-        assert_eq!(s.rows.len(), 0, "staged, not committed");
+        assert_eq!(s.rows().len(), 0, "staged, not committed");
         assert_eq!(s.commit(m.batch), 2);
-        assert_eq!(s.rows.iter().map(|r| r.id).collect::<Vec<_>>(), vec![1, 2]);
+        assert_eq!(s.rows().iter().map(|r| r.id).collect::<Vec<_>>(), vec![1, 2]);
         assert_eq!(s.add_json(&format!("[{},{}]", row(2, 20), row(3, 30)), 0, &mut i).unwrap(), 1, "duplicate ignored");
         assert_eq!(s.add_json(&format!("[{}]", row(4, 5)), 0, &mut i).unwrap(), 1, "older row sorted in");
-        assert_eq!(s.rows.iter().map(|r| r.id).collect::<Vec<_>>(), vec![4, 1, 2, 3]);
+        assert_eq!(s.rows().iter().map(|r| r.id).collect::<Vec<_>>(), vec![4, 1, 2, 3]);
         assert_eq!(s.add_json(&format!("[{}]", row(5, 1)), 10, &mut i).unwrap(), 0, "before lo");
         assert_eq!(s.slice(10, 30).len(), 2);
         s.trim_before(20);
-        assert_eq!(s.rows.len(), 2);
+        assert_eq!(s.rows().len(), 2);
         assert_eq!(s.add_json(&format!("[{}]", row(1, 10)), 0, &mut i).unwrap(), 1, "trimmed ids may return");
         // Starting over keeps a batch staged by the fetch that caused it.
         let m = s.stage(&page, 0, &mut i).unwrap();
@@ -275,6 +306,30 @@ mod tests {
     }
 
     #[test]
+    fn small_trims_keep_order_dedupe_and_ranges() {
+        let mut i = Interner::default();
+        let mut s = Store::default();
+        let ids = |s: &Store| s.rows().iter().map(|r| r.id).collect::<Vec<_>>();
+        s.add_json(&format!("[{}]", (1..=10).map(|k| row(k, k * 10)).collect::<Vec<_>>().join(",")), 0, &mut i).unwrap();
+        s.trim_before(15); // drops 1 row of 10: kept in place behind the offset
+        assert_eq!(ids(&s), (2..=10).collect::<Vec<_>>());
+        assert_eq!(s.add_json(&format!("[{}]", row(1, 10)), 0, &mut i).unwrap(), 1, "a trimmed id may return");
+        s.trim_before(15);
+        // Out of order: sorted among the rows held, not the trimmed ones.
+        s.add_json(&format!("[{},{}]", row(11, 25), row(12, 200)), 0, &mut i).unwrap();
+        assert_eq!(ids(&s), vec![2, 11, 3, 4, 5, 6, 7, 8, 9, 10, 12]);
+        assert_eq!(s.slice(25, 41).iter().map(|r| r.id).collect::<Vec<_>>(), vec![11, 3, 4]);
+        assert_eq!(s.stats(0, 1000), (11, 12));
+        s.trim_before(65); // over half dropped: compacted
+        assert_eq!(ids(&s), vec![7, 8, 9, 10, 12]);
+        s.trim_before(75);
+        s.keep_only(80, 100); // the cap, with an offset
+        assert_eq!(ids(&s), vec![8, 9]);
+        assert_eq!(s.stats(0, 1000), (2, 9));
+        assert_eq!(s.add_json(&format!("[{}]", row(8, 80)), 0, &mut i).unwrap(), 0, "kept ids still deduplicate");
+    }
+
+    #[test]
     fn export_round_trips() {
         let mut i = Interner::default();
         let mut s = Store::default();
@@ -283,6 +338,6 @@ mod tests {
         let text = s.export(0, HOUR_MS, &i);
         let mut t = Store::default();
         assert_eq!(t.add_json(&text, 0, &mut i).unwrap(), 1);
-        assert_eq!(t.rows[0], s.rows[0]);
+        assert_eq!(t.rows()[0], s.rows()[0]);
     }
 }

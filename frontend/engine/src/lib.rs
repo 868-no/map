@@ -122,7 +122,7 @@ impl Engine {
             let f: Filters = serde_json::from_str(filters).map_err(err)?;
             let keep = filter_fn(&f, &self.i);
             let (a, b) = self.store.range(start, end);
-            let idx = (a..b).filter(|&k| keep(&self.store.rows[k])).map(|k| k as u32).collect();
+            let idx = (a..b).filter(|&k| keep(&self.store.rows()[k])).map(|k| k as u32).collect();
             self.rows = Some((Key { start, end, filters: filters.to_string(), version }, idx));
         }
         Ok(())
@@ -147,7 +147,7 @@ impl Engine {
 
     /// The rows selected by the last Engine::filter.
     fn rows(&self) -> Vec<&row::Row> {
-        self.rows.as_ref().map_or(vec![], |(_, idx)| idx.iter().map(|&k| &self.store.rows[k as usize]).collect())
+        self.rows.as_ref().map_or(vec![], |(_, idx)| idx.iter().map(|&k| &self.store.rows()[k as usize]).collect())
     }
 
     /// The snapshot (and relay context) for a window and filters, memoised
@@ -248,7 +248,7 @@ impl Engine {
         self.store.newest_t() as f64
     }
     pub fn count(&self) -> u32 {
-        self.store.rows.len() as u32
+        self.store.rows().len() as u32
     }
     /// "<rows>.<newest id>" in [start, end): changes whenever the window's data does.
     pub fn revision(&self, start: f64, end: f64) -> String {
@@ -291,7 +291,7 @@ impl Engine {
                 let (a, z) = self.store.range(start, end);
                 let mut rows = self.rows();
                 let replies = b.replies.get_or_init(|| packets::ReplyIndex::new(&rows));
-                rows.extend(self.store.rows[a..z].iter().filter(|r| Some(r.ty) == invalid && r.src == num));
+                rows.extend(self.store.rows()[a..z].iter().filter(|r| Some(r.ty) == invalid && r.src == num));
                 Ok(json(&packets::packet_log(&rows, num, &b.ctx, replies, &self.i)))
             }
             "route" => {
@@ -342,7 +342,7 @@ impl Engine {
                 // Rows that failed verification, which the filters always leave out (D-108).
                 let invalid_ty = self.i.get("invalid");
                 let (lo, hi) = self.store.range(start, end);
-                let invalid: Vec<&row::Row> = self.store.rows[lo..hi].iter().filter(|r| Some(r.ty) == invalid_ty).collect();
+                let invalid: Vec<&row::Row> = self.store.rows()[lo..hi].iter().filter(|r| Some(r.ty) == invalid_ty).collect();
                 let rows = self.rows();
                 let presets = b.presets.get_or_init(|| channels::PresetIndex::new(&rows, &b.hops, &self.i));
                 Ok(json(&health::health(&rows, &invalid, &b.snapshot.nodes, &b.copies, presets, &self.i, hours, &self.regions)))
