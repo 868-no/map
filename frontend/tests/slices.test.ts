@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { Abandoned, cursorMs, DAY_MS, dayName, limiter, planDays, rangeEnd, requestedRange, settleFirst, sliceBounds } from '../src/derive/slices'
+import { Abandoned, abandonable, cursorMs, DAY_MS, dayName, limiter, planDays, rangeEnd, requestedRange, settleFirst, sliceBounds } from '../src/derive/slices'
 
 describe('range fetch arithmetic', () => {
   it('reads a cursor as the millisecond it starts at', () => {
@@ -122,5 +122,21 @@ describe('a failing range', () => {
     let failed = false
     expect(await settleFirst([async () => 1, async () => 2], () => (failed = true))).toBeNull()
     expect(failed).toBe(false)
+  })
+
+  it('does not make a request that was waiting for its slot when the range failed', async () => {
+    let failed = false
+    const run = abandonable(limiter(1), () => failed)
+    const made: string[] = []
+    const first = run(async () => {
+      made.push('first')
+      await tick()
+      failed = true
+      throw new Error('502')
+    })
+    const queued = run(async () => made.push('queued'))
+    await expect(first).rejects.toThrow('502')
+    await expect(queued).rejects.toBeInstanceOf(Abandoned)
+    expect(made).toEqual(['first'])
   })
 })

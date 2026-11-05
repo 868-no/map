@@ -177,7 +177,10 @@ export default function App() {
           {empty && <div className="banner">No observed data for this interval.</div>}
           {counts?.nodes_truncated && <div className="banner">Large network: showing the most active nodes.</div>}
           {snap.data?.edges_truncated && <div className="banner">Showing the best-supported links only.</div>}
-          {notice && <button type="button" className="banner" aria-live="polite" onClick={() => setNotice(null)}>{notice} (click to dismiss)</button>}
+          {/* Always mounted, so screen readers announce a notice inserted into it. */}
+          <div className="banner-live" role="status">
+            {notice && <button type="button" className="banner" onClick={() => setNotice(null)}>{notice} (click to dismiss)</button>}
+          </div>
         </div>
       </main>
     </div>

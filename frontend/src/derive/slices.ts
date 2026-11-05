@@ -100,6 +100,18 @@ export function limiter(n: number): <T>(f: () => Promise<T>) => Promise<T> {
 export class Abandoned extends Error {}
 
 /**
+ * Wraps a limiter so that a request still waiting for its slot when the range
+ * has failed throws Abandoned instead of being made.
+ */
+export function abandonable(run: <T>(f: () => Promise<T>) => Promise<T>, failed: () => boolean): <T>(f: () => Promise<T>) => Promise<T> {
+  return (f) =>
+    run(() => {
+      if (failed()) throw new Abandoned('observations: range abandoned')
+      return f()
+    })
+}
+
+/**
  * Runs a range's tasks together and waits for all of them. The first task to
  * fail calls onFail (the others then stop at their next page, with Abandoned);
  * resolves to that first real failure in time, or null when all succeeded.

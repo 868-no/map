@@ -17,7 +17,9 @@
 		Permissions-Policy "geolocation=(), camera=(), microphone=()"
 		# MapLibre runs its workers from blob: URLs. 'wasm-unsafe-eval' allows compiling
 		# the mesh engine (WebAssembly) and nothing else: JavaScript eval stays blocked.
-		Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; child-src blob:; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; connect-src 'self'; font-src 'self'; frame-ancestors 'none'; base-uri 'self'"
+		# CSP_CONNECT_EXTRA (empty by default) adds sources to connect-src, e.g. the
+		# host of an online TileJSON basemap (MAP_TILE_SOURCE; see docs/basemap.md).
+		Content-Security-Policy "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self' blob:; child-src blob:; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; connect-src 'self' {$CSP_CONNECT_EXTRA:}; font-src 'self'; frame-ancestors 'none'; base-uri 'self'"
 		-Server
 	}
 

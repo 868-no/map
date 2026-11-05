@@ -159,6 +159,7 @@ body.resizing { cursor: ew-resize; user-select: none; }
 .banner { pointer-events: auto; align-self: flex-start; background: var(--overlay-strong); border: 1px solid var(--line); border-left: 3px solid var(--accent); box-shadow: var(--elev-float); padding: 6px 10px; border-radius: 4px; font-size: 13px; }
 .banner.error { border-left-color: var(--err); }
 .banner.hist { border-left-color: var(--orange); }
+.banner-live { display: flex; flex-direction: column; } /* the notice's live region: empty, it takes no room */
 button.banner { color: var(--text); text-align: left; border-color: var(--line); border-left-color: var(--accent); } /* a dismissable notice looks like the others */
 
 .main:not(.panel-closed) .banners { right: calc(var(--rail) + var(--dock) + 4 * var(--gap)); }

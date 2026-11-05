@@ -11,7 +11,7 @@ import regionsUrl from '../assets/regions.geojson?url'
 import { gunzip, openPersistence, type Persistence, type Source } from './persist'
 import { RowStore, type Backend, type Fetched, type Synced, type WindowReq } from './rowStore'
 import { debounce, rebuildDelay } from './debounce'
-import { Abandoned, cursorMs, DAY_MS, dayName, limiter, planDays, rangeEnd, requestedRange, settleFirst, sliceBounds } from './slices'
+import { Abandoned, abandonable, cursorMs, DAY_MS, dayName, limiter, planDays, rangeEnd, requestedRange, settleFirst, sliceBounds } from './slices'
 import type { Request, Response, Transmission, ViewRequest } from './protocol'
 import { ViewError, type ViewMeta } from './views'
 import { ViewMemo } from './memo'
@@ -108,7 +108,11 @@ async function fetchText(url: string): Promise<string> {
  * from before the window: views are built from the window only.
  */
 async function fetchRange(params: URLSearchParams, retry = true): Promise<Fetched<number>> {
-  const run = limiter(PARALLEL)
+  // A failed request fails the range: the others stop before their next
+  // request (even one still waiting for a slot) or at their next page, and the
+  // batch is discarded, so no staged rows are stranded in the engine.
+  let failed = false
+  const run = abandonable(limiter(PARALLEL), () => failed)
   const page = (extra: Record<string, string>) => {
     const p = new URLSearchParams(params)
     for (const [k, v] of Object.entries(extra)) p.set(k, v)
@@ -123,9 +127,6 @@ async function fetchRange(params: URLSearchParams, retry = true): Promise<Fetche
   const tail: Record<string, string> = days.length ? { since: iso(days[days.length - 1] + DAY_MS) } : {}
   const first = JSON.parse(engine.stage(await page(tail), 0)) as Meta
   const batch = first.batch
-  // A failed request fails the range: the others stop at their next page,
-  // and the batch is discarded, so no staged rows are stranded in the engine.
-  let failed = false
   const stage = (text: string) => {
     if (failed) throw new Abandoned('observations: range abandoned')
     return JSON.parse(engine.stage(text, batch)) as Meta

@@ -21,7 +21,7 @@ An interactive map, in light and dark themes, for observing Meshtastic mesh netw
 - **Nothing heard is dropped:** encrypted direct messages and channels without a key are kept as headers only, packets that fail verification are kept out of the map, and old rows are decoded again when the decoder improves (D-091, D-093, D-107).
 - **Crypto:** AES-CTR and firmware 2.8.1+ AES-CCM channels, firmware-compatible XEdDSA verification with trust-on-first-use, and per-packet status (`verified`, `unsigned`, `unverifiable`, `not-applicable`). Verified against real firmware 2.8 traffic.
 - **Tool rail and themes:** every control sits on a floating, resizable tool rail panel (Nodes, Details, Health, Trends, Period, Filters, Layers, Legend, Settings) beside a header island with the live indicator and counters (D-066, D-082, D-097). The map remembers where you left it. The theme follows the browser by default (Auto); viewers can pick Light or Dark under Settings.
-- **Privacy:** no accounts, cookies, analytics or third-party requests; a [privacy policy](frontend/public/privacy.html) at `/privacy.html` fills in the deployment's operator, contact and retention from the API.
+- **Privacy:** no accounts, cookies, analytics or third-party requests (unless an online basemap is configured); a [privacy policy](frontend/public/privacy.html) at `/privacy.html` fills in the deployment's operator, contact and retention from the API.
 - **Installable and offline-capable:** add it to a phone's home screen; without a connection it opens with the last data it received (map tiles are not stored offline).
 - **Self-hosted:** Docker Compose, a self-hosted PMTiles basemap with switchable layers (roads, borders and city and country names on by default; local place names, peaks, road names and water names off) and an optional regions layer that splits Norway into Nord-Norge, Trøndelag, Vestlandet, Østlandet and Sørlandet. The only outside services it uses at runtime are the basemap service's OpenStreetMap downloads when it builds and, unless turned off, MET Norway's weather archive (`thredds.met.no`, `WEATHER_ENABLED`) and Kartverket's terrain heights (Geonorge, `TERRAIN_ENABLED`), which the backend queries.
 
@@ -55,7 +55,7 @@ Channel PSKs are symmetric channel keys, not node public keys. Secrets live in `
 
 ## Map tiles
 
-The default is a self-hosted PMTiles archive, built on first start (and refreshed monthly) by the `basemap` service and served by the `web` service. To use an online OpenMapTiles-schema provider instead, set `MAP_TILE_SOURCE` to a TileJSON URL. See [docs/basemap.md](docs/basemap.md).
+The default is a self-hosted PMTiles archive, built on first start (and refreshed monthly) by the `basemap` service and served by the `web` service. To use an online OpenMapTiles-schema provider instead, set `MAP_TILE_SOURCE` to a TileJSON URL and allow its host with `CSP_CONNECT_EXTRA` on the `web` service; visitors' browsers then contact that tile host. See [docs/basemap.md](docs/basemap.md).
 
 ## Tests
 

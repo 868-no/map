@@ -35,6 +35,10 @@ Re-run the script to refresh OSM data; the archive is replaced atomically. Peak 
 
 Set `MAP_TILE_SOURCE` to a TileJSON URL serving the OpenMapTiles schema, e.g. `https://tiles.openfreemap.org/planet` (no key). Glyphs and the style are still served locally. Check the provider's terms for public deployments.
 
+The browser fetches the TileJSON and the tiles itself, which the default CSP (`connect-src 'self'`) blocks. Allow the provider's host by setting `CSP_CONNECT_EXTRA` in the `web` service's environment (it is not passed by default), e.g. `CSP_CONNECT_EXTRA=https://tiles.openfreemap.org`; it is appended to `connect-src` and may list several space-separated sources, including any other host the TileJSON's `tiles` URLs point to (D-167).
+
+Privacy: visitors' browsers then contact the tile host directly, which receives their IP addresses and the map areas they view. The privacy policy page says so when the tile source is remote.
+
 ## Glyphs
 
 Noto Sans Regular and Bold glyph ranges from the OpenMapTiles fonts release v2.0 (SIL Open Font License), downloaded and checksum-verified when the `web` image is built. Each text layer uses a single font: the static glyph server cannot combine font stacks.
