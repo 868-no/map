@@ -56,6 +56,36 @@ describe('ping animation', () => {
     addTransmission({ key: `80|${A}|delivered`, tx: A, rx: C, rebroadcast: false, delivered: true, path: [{ a: A, b: C, dashed: true, why: 'delivered' }] }, pos, 0)
     expect(pingCount()).toBe(0)
   })
+  const ack = { key: `81|${A}|delivered`, tx: A, rx: B, rebroadcast: false, delivered: true, packet: 'aa:51', path: [{ a: A, b: B, dashed: true, why: 'delivered' }], back: [{ a: B, b: GW, dashed: false, why: 'direct' }, { a: GW, b: A, dashed: true, why: 'delivered' }] }
+  it("then the ACK travels its own way back, leaving once the packet has arrived", () => {
+    addTransmission(ack, pos, 0)
+    const there = deliveryTravel(1), back = deliveryTravel(2)
+    expect(activePings(there - 100).deliveries.map((d) => d.leg)).toEqual(['there'])
+    const returning = activePings(there + 50)
+    expect(returning.deliveries.map((d) => [d.leg, d.style])).toEqual([['there', 'delivered'], ['back', 'solid']])
+    expect(returning.arrivals.map((f) => f.pos)).toEqual([pos.get(B)])
+    const home = activePings(there + back + 100)
+    expect(home.deliveries.map((d) => [d.leg, d.to, d.progress])).toEqual([['there', pos.get(B), 1], ['back', pos.get(GW), 1], ['back', pos.get(A), 1]])
+    expect(home.arrivals.map((f) => f.pos)).toEqual([pos.get(A)])
+  })
+  it('a packet already animated does not travel again: only the ACK goes back', () => {
+    addTransmission({ key: `lp|${A}`, tx: A, rx: GW, rebroadcast: false, packet: 'aa:51' }, pos, 0)
+    addTransmission(ack, pos, 1000)
+    const now = activePings(1050).deliveries
+    expect(now.map((d) => [d.leg, d.from])).toEqual([['back', pos.get(B)]])
+    // And the delivery's own way there counts as animating it: a late live copy pings no more.
+    clearPings()
+    addTransmission(ack, pos, 0)
+    addTransmission({ key: `lp|${A}`, tx: A, rx: GW, rebroadcast: false, packet: 'aa:51' }, pos, 500)
+    expect(pingCount()).toBe(1)
+  })
+  it("a later copy of the ACK updates its way back until that way has started", () => {
+    addTransmission({ ...ack, back: [{ a: B, b: A, dashed: true, why: 'delivered' }] }, pos, 0)
+    addTransmission(ack, pos, 500)
+    expect(activePings(deliveryTravel(1) + 50).deliveries.filter((d) => d.leg === 'back').map((d) => d.to)).toEqual([pos.get(GW)])
+    addTransmission({ ...ack, back: [{ a: B, b: A, dashed: true, why: 'delivered' }] }, pos, deliveryTravel(1) + 100)
+    expect(activePings(deliveryTravel(1) + 150).deliveries.filter((d) => d.leg === 'back').map((d) => d.to)).toEqual([pos.get(GW)])
+  })
   it('a traceroute reply replays its request only if the request was not animated already', () => {
     const live = { key: `lp|${A}`, tx: A, rx: B, rebroadcast: false, packet: 'aa:4d' }
     const replay = { key: `rqaa:4d|${A}`, tx: A, rx: B, rebroadcast: false, packet: 'aa:4d', replay: true }

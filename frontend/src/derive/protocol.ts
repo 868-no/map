@@ -52,10 +52,11 @@ export interface Transmission {
   rebroadcast: boolean
   strength?: number // 0..1 signal measured at rx, when rx is the reporting gateway
   delivered?: boolean // not radio: an ACK proving rx received tx's packet (D-096)
-  packet?: string // "origin:id" of the packet transmitted (D-106)
+  packet?: string // "origin:id" of the packet transmitted (D-106); for a delivery, the packet the ACK answers (D-172)
   replay?: boolean // reconstructed from a traceroute reply: skipped if that packet was already animated (D-106)
   after?: string // a traceroute reply: the request ("origin:id") whose way to the target is drawn first
-  path?: { a: string; b: string; dashed: boolean; why: string }[] // a delivery: the packet's way from tx to rx, dashed where unknown (D-172)
+  path?: { a: string; b: string; dashed: boolean; why: string }[] // a delivery: the answered packet's way from tx to rx, dashed where unknown (D-172)
+  back?: { a: string; b: string; dashed: boolean; why: string }[] // a delivery: the ACK's way back from rx to tx, dashed where unknown (D-172)
 }
 
 export type Response =

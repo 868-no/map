@@ -537,7 +537,8 @@ pub struct Transmission {
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub delivered: bool,
     /// The packet transmitted, as "origin:id" (hex): ties a replayed route to
-    /// the live packet it describes (D-106).
+    /// the live packet it describes (D-106). For a delivery, the packet the
+    /// ACK answers (D-172).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub packet: Option<String>,
     /// Reconstructed after the fact (a traceroute reply's record of its
@@ -555,6 +556,10 @@ pub struct Transmission {
     /// is not known (D-172).
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub path: Vec<RouteSegment>,
+    /// A delivery: the way the ACK took back from the acknowledging node to
+    /// the sender, dashed where a part is not known (D-172).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub back: Vec<RouteSegment>,
 }
 
 fn packet_ref(origin: u32, id: u32) -> String {
@@ -606,6 +611,7 @@ pub fn forward_route(r: &Row, ctx: &RelayContext) -> Vec<Transmission> {
             replay: true,
             after: None,
             path: vec![],
+            back: vec![],
         });
     }
     out
@@ -614,14 +620,18 @@ pub fn forward_route(r: &Row, ctx: &RelayContext) -> Vec<Transmission> {
 /// An ACK proves its sender received the packet it answers: the original
 /// sender (the ACK's destination) reached it (D-096). `ack`: the interned
 /// "ack" kind. `original`: the in-window rows of the packet it answers, whose
-/// routing graph gives the way it took to the acknowledging node (D-172).
-pub fn delivery_ping(r: &Row, ack: Option<u32>, original: &[&Row], ctx: &RelayContext, roles: &FxMap<u32, String>, i: &Interner) -> Option<Transmission> {
+/// routing graph gives the way it took to the acknowledging node; `copies`:
+/// the ACK's own copies (this one included), whose graph gives the way it
+/// took back to the sender (D-172).
+pub fn delivery_ping(r: &Row, ack: Option<u32>, original: &[&Row], copies: &[&Row], ctx: &RelayContext, roles: &FxMap<u32, String>, i: &Interner) -> Option<Transmission> {
     let rt = r.routing().filter(|rt| Some(rt.kind) == ack && rt.request != 0)?;
     let sender = r.dst.filter(|&d| d != r.src && d != u32::MAX)?;
     let (from, to) = (node_id(sender), node_id(r.src));
     let segments = if original.is_empty() { vec![] } else { packet_route(original, ctx, roles, i, &[], &[]).segments };
     let path = delivery_path(&segments, &from, &to);
-    Some(Transmission { key: format!("{:08x}|{from}|delivered", rt.request), tx: from, rx: Some(to), rebroadcast: false, strength: None, delivered: true, packet: None, replay: false, after: None, path })
+    let segments = if copies.is_empty() { vec![] } else { packet_route(copies, ctx, roles, i, &[], &[]).segments };
+    let back = delivery_path(&segments, &to, &from);
+    Some(Transmission { key: format!("{:08x}|{from}|delivered", rt.request), tx: from, rx: Some(to), rebroadcast: false, strength: None, delivered: true, packet: Some(packet_ref(sender, rt.request)), replay: false, after: None, path, back })
 }
 
 /// The way a packet took from its origin to one node, through its routing
@@ -698,11 +708,11 @@ pub fn transmissions(r: &Row, ctx: &RelayContext, roles: &FxMap<u32, String>) ->
                 continue;
             }
             let rx = chain.get(k + 1).and_then(|c| c.0);
-            out.push(Transmission { key: key(tx), tx: node_id(tx), rx: rx.map(node_id), rebroadcast: k > 0, strength: rx.filter(|&x| Some(x) == r.gw).and(strength), delivered: false, packet: r.pid.map(|p| packet_ref(r.src, p)), replay: false, after: after.clone(), path: vec![] });
+            out.push(Transmission { key: key(tx), tx: node_id(tx), rx: rx.map(node_id), rebroadcast: k > 0, strength: rx.filter(|&x| Some(x) == r.gw).and(strength), delivered: false, packet: r.pid.map(|p| packet_ref(r.src, p)), replay: false, after: after.clone(), path: vec![], back: vec![] });
         }
         return out;
     }
-    let first = |rx: Option<u32>, s: Option<f64>| Transmission { key: key(r.src), tx: node_id(r.src), rx: rx.map(node_id), rebroadcast: false, strength: s, delivered: false, packet: r.pid.map(|p| packet_ref(r.src, p)), replay: false, after: None, path: vec![] };
+    let first = |rx: Option<u32>, s: Option<f64>| Transmission { key: key(r.src), tx: node_id(r.src), rx: rx.map(node_id), rebroadcast: false, strength: s, delivered: false, packet: r.pid.map(|p| packet_ref(r.src, p)), replay: false, after: None, path: vec![], back: vec![] };
     let Some(gw) = r.gw else { return vec![first(None, None)] };
     let (byte, downlinked) = match r.heard_from() {
         HeardFrom::Direct => return vec![first(Some(gw), strength)],
@@ -719,7 +729,7 @@ pub fn transmissions(r: &Row, ctx: &RelayContext, roles: &FxMap<u32, String>) ->
     let heard_origin = !downlinked && r.hops() == Some(1) && roles.get(&relay).is_some_and(|ro| !ro.is_empty() && !zero_cost_role(ro));
     vec![
         first(heard_origin.then_some(relay), None),
-        Transmission { key: key(relay), tx: node_id(relay), rx: Some(node_id(gw)), rebroadcast: true, strength, delivered: false, packet: r.pid.map(|p| packet_ref(r.src, p)), replay: false, after: None, path: vec![] },
+        Transmission { key: key(relay), tx: node_id(relay), rx: Some(node_id(gw)), rebroadcast: true, strength, delivered: false, packet: r.pid.map(|p| packet_ref(r.src, p)), replay: false, after: None, path: vec![], back: vec![] },
     ]
 }
 
@@ -932,10 +942,10 @@ mod tests {
         let (routing, ack, err) = (it.id("routing"), it.id("ack"), it.id("error"));
         let answer = |kind: u32| Row { ty: routing, dst: Some(A), detail: Some(Box::new(Detail::Routing(Routing { kind, error: 0, request: 77 }))), ..row(C, GW) };
         let c = ctx(&[A, C, GW], &[]);
-        let d = delivery_ping(&answer(ack), Some(ack), &[], &c, &map(), &it).unwrap();
+        let d = delivery_ping(&answer(ack), Some(ack), &[], &[], &c, &map(), &it).unwrap();
         assert_eq!((d.tx.as_str(), d.rx.as_deref(), d.delivered), (id(A).as_str(), Some(id(C).as_str()), true));
-        assert_eq!(delivery_ping(&answer(err), Some(ack), &[], &c, &map(), &it), None, "an error is no delivery");
-        assert_eq!(delivery_ping(&row(A, GW), Some(ack), &[], &c, &map(), &it), None, "not a routing packet");
+        assert_eq!(delivery_ping(&answer(err), Some(ack), &[], &[], &c, &map(), &it), None, "an error is no delivery");
+        assert_eq!(delivery_ping(&row(A, GW), Some(ack), &[], &[], &c, &map(), &it), None, "not a routing packet");
         // The route of the answered packet gains a dashed "delivered" segment to the acker.
         let msg = Row { pid: Some(77), dst: Some(C), dr: true, ..row(A, GW) };
         let route = packet_route(&[&msg], &ctx(&[A, C, GW], &[]), &map(), &it, &[C], &[]);
@@ -951,7 +961,7 @@ mod tests {
         // A's DM 77 to C2, acknowledged by C2, which is no gateway.
         let answer = Row { ty: routing, dst: Some(A), detail: Some(Box::new(Detail::Routing(Routing { kind: ack, error: 0, request: 77 }))), ..row(C2, GW) };
         let seg = |s: &RouteSegment| (s.a.clone(), s.b.clone(), s.dashed, s.why);
-        let path = |original: &[&Row], c: &RelayContext| delivery_ping(&answer, Some(ack), original, c, &map(), &it).unwrap().path.iter().map(seg).collect::<Vec<_>>();
+        let path = |original: &[&Row], c: &RelayContext| delivery_ping(&answer, Some(ack), original, &[], c, &map(), &it).unwrap().path.iter().map(seg).collect::<Vec<_>>();
         // No copy of the DM: where C2 heard it from is unknown, one dashed hop from A.
         let unknown = vec![(id(A), id(C2), true, "delivered")];
         assert_eq!(path(&[], &ctx(&[A, C, C2, GW], &[])), unknown);
@@ -961,6 +971,23 @@ mod tests {
         // A traceroute-like record through C to C2: the known hops, in order.
         let traced = Row { pid: Some(77), dst: Some(C2), ..traceroute(row(A, C2), &[Some(C)]) };
         assert_eq!(path(&[&traced], &ctx(&[A, C, C2, GW], &[])), vec![(id(A), id(C), false, "traceroute"), (id(C), id(C2), false, "traceroute")]);
+    }
+
+    #[test]
+    fn a_delivery_returns_along_the_acks_own_way() {
+        use crate::row::{Interner, Routing};
+        let mut it = Interner::default();
+        let (routing, ack) = (it.id("routing"), it.id("ack"));
+        let c = ctx(&[A, C, C2, GW], &[]);
+        // C2's ACK to A, heard by GW straight from C2: from GW on, the way to A is not known.
+        let answer = Row { ty: routing, dst: Some(A), detail: Some(Box::new(Detail::Routing(Routing { kind: ack, error: 0, request: 77 }))), ..hops(row(C2, GW), 0) };
+        let d = delivery_ping(&answer, Some(ack), &[], &[&answer], &c, &map(), &it).unwrap();
+        assert_eq!(d.back, vec![RouteSegment { a: id(C2), b: id(A), dashed: true, why: "delivered", leg: None }], "GW is no stop on the way to A");
+        assert_eq!(d.packet.as_deref(), Some("000000aa:0000004d"), "names the packet it answers");
+        // Heard by A itself, a gateway, straight from C2: the way back is known.
+        let at_a = Row { ty: routing, dst: Some(A), detail: Some(Box::new(Detail::Routing(Routing { kind: ack, error: 0, request: 77 }))), ..hops(row(C2, A), 0) };
+        let d = delivery_ping(&at_a, Some(ack), &[], &[&answer, &at_a], &c, &map(), &it).unwrap();
+        assert_eq!(d.back.iter().map(|s| (s.a.clone(), s.b.clone(), s.dashed)).collect::<Vec<_>>(), vec![(id(C2), id(A), false)]);
     }
 
     #[test]

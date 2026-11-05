@@ -125,15 +125,19 @@ export function onPingAdded(fn: () => void): () => void {
 //
 // An ACK proves its sender received the packet it answers. It is drawn as a
 // line travelling the packet's way from the original sender to that node, as
-// the packet's routing graph shows it: solid where a hop is known, dashed
-// where it is not (the whole way, when where that node heard the packet from
-// is not known), ending in a flash where it arrived. Unlike a radio ping it
-// draws no ring.
+// the packet's routing graph shows it, then the ACK's way back to the sender,
+// as the ACK's graph shows it: solid where a hop is known, dashed where it is
+// not (the whole way, when where a node heard the packet from is not known).
+// Each end flashes as a line reaches it. A packet already animated, live or
+// replayed, travels no second time: only the ACK's way back is drawn. Unlike
+// a radio ping it draws no ring.
 
 /** How a delivery's hop is drawn, as in a packet's routing graph. */
 export type DeliveryStyle = 'solid' | 'dashed' | 'delivered' | 'internet'
+type Hop = { a: string; b: string; dashed: boolean; why: string }
 // nodes and hops: the whole way; pos and styles: its placed nodes, as last drawn.
-interface Delivery { nodes: string[]; hops: DeliveryStyle[]; pos: LngLat[]; styles: DeliveryStyle[]; born: number }
+interface Way { nodes: string[]; hops: DeliveryStyle[]; pos: LngLat[]; styles: DeliveryStyle[] }
+interface Delivery { there?: Way; back?: Way; born: number }
 export const DELIVERY_TRAVEL = 2000 // ms, for one hop
 const DELIVERY_TRAVEL_MAX = 5000 // ms, however many hops
 const DELIVERY_LINGER = 3000 // ms
@@ -142,18 +146,19 @@ const deliveries = new Map<string, Delivery>()
 
 /** Travel time of a delivery over `hops` hops: longer ways take a little longer. */
 export const deliveryTravel = (hops: number) => Math.min(DELIVERY_TRAVEL * (1 + 0.4 * Math.max(hops - 1, 0)), DELIVERY_TRAVEL_MAX)
+const travelOf = (w?: Way) => (w ? deliveryTravel(w.pos.length - 1) : 0)
 
 /** One hop of a delivery line: `tip` is how far it has travelled. */
-export interface DeliveryLine { from: LngLat; to: LngLat; tip: LngLat; progress: number; alpha: number; style: DeliveryStyle }
+export interface DeliveryLine { from: LngLat; to: LngLat; tip: LngLat; progress: number; alpha: number; style: DeliveryStyle; leg: 'there' | 'back' }
 
 function styleOf(seg: { dashed: boolean; why: string }): DeliveryStyle {
   return seg.why === 'internet' ? 'internet' : !seg.dashed ? 'solid' : seg.why === 'delivered' ? 'delivered' : 'dashed'
 }
 
 /**
- * The placed nodes of a delivery's way and the style of each hop between
- * them. An unplaced node is bridged, dashed, as routes are; undefined when
- * either end is not placed.
+ * The placed nodes of a way and the style of each hop between them. An
+ * unplaced node is bridged, dashed, as routes are; undefined when either
+ * end is not placed.
  */
 function placeWay(nodes: string[], hops: DeliveryStyle[], pos: Map<string, LngLat>): { pos: LngLat[]; styles: DeliveryStyle[] } | undefined {
   if (!pos.get(nodes[0]) || !pos.get(nodes[nodes.length - 1])) return undefined
@@ -176,37 +181,76 @@ function placeWay(nodes: string[], hops: DeliveryStyle[], pos: Map<string, LngLa
   return { pos: out, styles }
 }
 
+function wayOf(path: Hop[] | undefined, pos: Map<string, LngLat>): Way | undefined {
+  if (!path?.length) return undefined
+  const nodes = [path[0].a, ...path.map((x) => x.b)], hops = path.map(styleOf)
+  const placed = placeWay(nodes, hops, pos)
+  return placed && { nodes, hops, ...placed }
+}
+
 function addDelivery(t: Transmission, pos: Map<string, LngLat>, now: number): void {
-  if (!t.rx || deliveries.has(t.key)) return
+  if (!t.rx) return
+  const back = wayOf(t.back, pos)
+  const cur = deliveries.get(t.key)
+  if (cur) {
+    // Another copy of the ACK: its graph has grown, so take the way back
+    // it now shows, unless that way has started.
+    if (back && now - cur.born < travelOf(cur.there)) cur.back = back
+    return
+  }
   const s = seen.get(t.key)
   if (s !== undefined && now - s < SEEN_TTL) return
+  // The packet answered travels only if it has not been animated already.
+  const prior = t.packet ? animated.get(t.packet) : undefined
+  const shown = prior !== undefined && now - prior.at < REPLAY_DEDUPE_MS
   // Without a way from the engine: one hop straight to the node.
-  const path = t.path?.length ? t.path : [{ a: t.tx, b: t.rx, dashed: false, why: 'delivered' }]
-  const nodes = [path[0].a, ...path.map((x) => x.b)], hops = path.map(styleOf)
-  const way = placeWay(nodes, hops, pos)
-  if (!way) return
+  const there = shown ? undefined : wayOf(t.path?.length ? t.path : [{ a: t.tx, b: t.rx, dashed: false, why: 'delivered' }], pos)
+  if (!there && !back) return
+  if (there && t.packet) animated.set(t.packet, { at: now, replay: true })
   if (deliveries.size >= MAX_PINGS) deliveries.delete(deliveries.keys().next().value!)
-  deliveries.set(t.key, { nodes, hops, ...way, born: now })
+  deliveries.set(t.key, { there, back, born: now })
   added.forEach((fn) => fn())
+}
+
+/** Moves a way onto the current markers; false when either end is no longer drawn. */
+function followWay(w: Way | undefined): boolean {
+  if (!w || !drawn.size) return true
+  const placed = placeWay(w.nodes, w.hops, drawn)
+  if (!placed) return false
+  w.pos = placed.pos
+  w.styles = placed.styles
+  return true
+}
+
+/** A way's hops `elapsed` ms into its travel (none before it starts). */
+function wayLines(w: Way, elapsed: number, alpha: number, leg: DeliveryLine['leg'], out: DeliveryLine[]): void {
+  if (elapsed < 0) return
+  const travel = travelOf(w), hops = w.pos.length - 1
+  // The head moves along the whole way at one pace: each hop takes its share of the travel by length.
+  const lengths = w.pos.slice(1).map((p, i) => Math.max(distanceM(w.pos[i], p), 1))
+  const total = lengths.reduce((a, b) => a + b, 0)
+  let left = ease(Math.min(elapsed / travel, 1)) * total
+  for (let i = 0; i < hops; i++) {
+    const progress = i === hops - 1 && elapsed >= travel ? 1 : Math.min(Math.max(left / lengths[i], 0), 1)
+    left -= lengths[i]
+    if (progress <= 0 && i > 0) break
+    out.push({ from: w.pos[i], to: w.pos[i + 1], tip: along(w.pos[i], w.pos[i + 1], progress), progress, alpha, style: w.styles[i], leg })
+  }
 }
 
 function activeDeliveries(now: number): { lines: DeliveryLine[]; arrivals: Flash[] } {
   const lines: DeliveryLine[] = [], arrivals: Flash[] = []
+  const flash = (pos: LngLat, since: number) => {
+    if (since >= 0 && since < FLASH * 1.5) arrivals.push({ pos, alpha: Math.round(255 * (1 - since / (FLASH * 1.5))), scale: since / (FLASH * 1.5), rebroadcast: false })
+  }
   for (const [k, d] of deliveries) {
     const age = now - d.born
-    if (drawn.size) {
-      const way = placeWay(d.nodes, d.hops, drawn)
-      if (!way) {
-        deliveries.delete(k)
-        continue
-      }
-      d.pos = way.pos
-      d.styles = way.styles
+    if (!followWay(d.there) || !followWay(d.back)) {
+      deliveries.delete(k)
+      continue
     }
-    const { pos, styles } = d
-    const hops = pos.length - 1
-    const travel = deliveryTravel(hops)
-    const end = travel + DELIVERY_LINGER + DELIVERY_FADE
+    const there = travelOf(d.there), back = travelOf(d.back)
+    const end = there + back + DELIVERY_LINGER + DELIVERY_FADE
     if (age >= end) {
       deliveries.delete(k)
       seen.set(k, now)
@@ -214,18 +258,15 @@ function activeDeliveries(now: number): { lines: DeliveryLine[]; arrivals: Flash
     }
     const fadeStart = end - DELIVERY_FADE
     const alpha = Math.round(255 * (age < fadeStart ? 1 : 1 - (age - fadeStart) / DELIVERY_FADE))
-    // The head moves along the whole way at one pace: each hop takes its share of the travel by length.
-    const lengths = pos.slice(1).map((p, i) => Math.max(distanceM(pos[i], p), 1))
-    const total = lengths.reduce((a, b) => a + b, 0)
-    let left = ease(Math.min(age / travel, 1)) * total
-    for (let i = 0; i < hops; i++) {
-      const progress = i === hops - 1 && age >= travel ? 1 : Math.min(Math.max(left / lengths[i], 0), 1)
-      left -= lengths[i]
-      if (progress <= 0 && i > 0) break
-      lines.push({ from: pos[i], to: pos[i + 1], tip: along(pos[i], pos[i + 1], progress), progress, alpha, style: styles[i] })
+    if (d.there) {
+      wayLines(d.there, age, alpha, 'there', lines)
+      flash(d.there.pos[d.there.pos.length - 1], age - there)
     }
-    const since = age - travel
-    if (since >= 0 && since < FLASH * 1.5) arrivals.push({ pos: pos[hops], alpha: Math.round(255 * (1 - since / (FLASH * 1.5))), scale: since / (FLASH * 1.5), rebroadcast: false })
+    // The ACK leaves once the packet has reached its node.
+    if (d.back) {
+      wayLines(d.back, age - there, alpha, 'back', lines)
+      flash(d.back.pos[d.back.pos.length - 1], age - there - back)
+    }
   }
   return { lines, arrivals }
 }
