@@ -5,6 +5,7 @@ package integration
 import (
 	"context"
 	"crypto/ed25519"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -821,5 +822,89 @@ func TestRedecodeLeavesStrippedRowsAlone(t *testing.T) {
 	}
 	if n := count(t, pool, `SELECT count(*) FROM packet_log WHERE decode_version <> $1`, ingest.DecodeVersion); n != 0 {
 		t.Fatalf("%d stripped rows not marked as checked", n)
+	}
+}
+
+// D-166: a fully decoded row that today's keys, policy or identities would
+// read less of keeps its decoding; decoder improvements are still applied.
+func TestRedecodeNeverDowngrades(t *testing.T) {
+	pool := freshDB(t)
+	f := newFixture(t, pool)
+	ctx := context.Background()
+	// A signed position from a node whose key is known: verified.
+	k := testutil.NewXKey(1)
+	signer := k.NodeNum()
+	id, err := security.NewIdentity(signer, k.X25519Pub)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.ids[signer] = id
+	la, lo := int32(63.0*1e7), int32(10.4*1e7)
+	pos, _ := proto.Marshal(&pb.Position{LatitudeI: &la, LongitudeI: &lo, PrecisionBits: 32})
+	f.store(base.Add(time.Hour), signer, gw1, &pb.Data{Portnum: pb.PortNum_POSITION_APP, Payload: pos}, &k)
+	// A text on a private channel whose key was configured then.
+	secret := make([]byte, 32)
+	secret[0] = 9
+	withPrivate, err := security.NewKeyring([]security.ChannelConfig{{Name: "LongFast", PSKs: []string{"AQ=="}}, {Name: "Private", PSKs: []string{base64.StdEncoding.EncodeToString(secret)}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	gw := protocol.NodeID(gw1)
+	ct, _ := security.EncryptCTR(secret, nodeA, 7002, []byte{8, 1, 18, 2, 'h', 'i'})
+	env, _ := proto.Marshal(&pb.ServiceEnvelope{Packet: &pb.MeshPacket{From: nodeA, To: protocol.Broadcast, Id: 7002, Channel: uint32(security.ChannelHash("Private", secret, security.ModeCTR)),
+		PayloadVariant: &pb.MeshPacket_Encrypted{Encrypted: ct}, HopStart: 3, HopLimit: 3}, ChannelId: "Private", GatewayId: gw})
+	obs, err := ingest.Process(ingest.RawMessage{BrokerID: "it", Topic: "msh/EU_868/2/e/Private/" + gw, Payload: env, ObservedAt: base.Add(time.Hour)},
+		ingest.Options{Keyring: withPrivate, Identities: fixtureIDs(f.ids), KeyBudget: 4})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := storage.InsertBatch(ctx, pool, []*ingest.Observation{&obs}); err != nil {
+		t.Fatal(err)
+	}
+	// A node status the previous decoder stored as "other": an improvement.
+	st, _ := proto.Marshal(&pb.StatusMessage{Status: "On the hill"})
+	f.store(base.Add(2*time.Hour), nodeB, gw1, &pb.Data{Portnum: pb.PortNum_NODE_STATUS_APP, Payload: st}, nil)
+
+	type row struct {
+		Type, Sig, Meta string
+		Env             []byte
+	}
+	read := func(q string, args ...any) row {
+		t.Helper()
+		var r row
+		if err := pool.QueryRow(ctx, `SELECT packet_type, signature_status, decoded_metadata::text, envelope_bytes FROM packet_log WHERE `+q, args...).Scan(&r.Type, &r.Sig, &r.Meta, &r.Env); err != nil {
+			t.Fatal(err)
+		}
+		return r
+	}
+	signed, private := read(`source_node_id = $1`, int64(signer)), read(`packet_id = 7002`)
+	if signed.Type != "position" || signed.Sig != "verified" || private.Type == "encrypted" || private.Type == "invalid" {
+		t.Fatalf("stored as %+v / %+v", signed, private)
+	}
+	// The private key is removed and the signer's key aged out; then the
+	// policy also turns strict. Neither run may lose what the rows hold.
+	for _, policy := range []security.Policy{security.PolicyBalanced, security.PolicyStrict} {
+		if _, err := pool.Exec(ctx, `UPDATE packet_log SET decode_version = 2`); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := pool.Exec(ctx, `UPDATE packet_log SET packet_type = 'other', decoded_metadata = '{"other": {"port_name": "NODE_STATUS_APP"}}' WHERE source_node_id = $1`, int64(nodeB)); err != nil {
+			t.Fatal(err)
+		}
+		o := ingest.Options{Keyring: f.kr, Identities: fixtureIDs{}, Policy: policy, KeyBudget: 4}
+		if n, err := storage.Redecode(ctx, pool, o, quiet); err != nil || n != 1 {
+			t.Fatalf("policy %d: redecode changed %d rows (%v), want only the improved one", policy, n, err)
+		}
+		if got := read(`source_node_id = $1`, int64(signer)); !reflect.DeepEqual(got, signed) {
+			t.Fatalf("policy %d: signed row downgraded: %+v -> %+v", policy, signed, got)
+		}
+		if got := read(`packet_id = 7002`); !reflect.DeepEqual(got, private) {
+			t.Fatalf("policy %d: private row downgraded: %+v -> %+v", policy, private, got)
+		}
+		if got := read(`source_node_id = $1`, int64(nodeB)); got.Type != "node_status" {
+			t.Fatalf("policy %d: improvement not applied: %+v", policy, got)
+		}
+		if n := count(t, pool, `SELECT count(*) FROM packet_log WHERE decode_version <> $1`, ingest.DecodeVersion); n != 0 {
+			t.Fatalf("policy %d: %d rows not marked as checked", policy, n)
+		}
 	}
 }

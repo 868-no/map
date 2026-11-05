@@ -196,7 +196,7 @@ func (sim *Simulator) flood(src int, to, id uint32, d *pb.Data, channel string, 
 		}
 		mp := base()
 		mp.HopLimit = hopStart - uint32(h.depth-1)
-		mp.RelayNode = sim.S.Nodes[h.prev].Num & 0xff
+		mp.RelayNode = relayByte(sim.S.Nodes[h.prev].Num)
 		mp.RxSnr = h.link.SNR
 		rssi := h.link.RSSI
 		mp.RxRssi = &rssi
@@ -357,7 +357,7 @@ func (sim *Simulator) copyAt(at, prev int, src *Node, to, id uint32, d *pb.Data,
 	rssi := int32(-100)
 	now := uint32(time.Now().Unix())
 	mp := &pb.MeshPacket{From: src.Num, To: to, Id: id, Channel: uint32(security.ChannelHash(PublicChannel, security.DefaultPSK[:], security.ModeCTR)),
-		HopStart: 3, HopLimit: 3 - (depth - 1), RelayNode: sim.S.Nodes[prev].Num & 0xff, RxSnr: float32(sim.linkSNR(prev, at)) / 4, RxRssi: &rssi, RxTime: &now,
+		HopStart: 3, HopLimit: 3 - (depth - 1), RelayNode: relayByte(sim.S.Nodes[prev].Num), RxSnr: float32(sim.linkSNR(prev, at)) / 4, RxRssi: &rssi, RxTime: &now,
 		PayloadVariant: &pb.MeshPacket_Encrypted{Encrypted: ct}, TransportMechanism: pb.MeshPacket_TRANSPORT_LORA}
 	b, _ := proto.Marshal(&pb.ServiceEnvelope{Packet: mp, ChannelId: PublicChannel, GatewayId: protocol.NodeID(gw.Num)})
 	return []Message{{Topic: sim.topic(PublicChannel, gw), Payload: b, Note: "traceroute request copy"}}
@@ -397,4 +397,13 @@ func (sim *Simulator) pkiDM() []Message {
 		PayloadVariant: &pb.MeshPacket_Encrypted{Encrypted: ct}}
 	env, _ := proto.Marshal(&pb.ServiceEnvelope{Packet: mp, ChannelId: "PKI", GatewayId: protocol.NodeID(gw.Num)})
 	return []Message{{Topic: TopicRoot + "/2/e/PKI/" + protocol.NodeID(gw.Num), Payload: env, Note: "PKI DM (header only)"}}
+}
+
+// relayByte is a node's relay_node byte as firmware sends it
+// (getLastByteOfNodeNum): its low byte, or 0xff when that is 0.
+func relayByte(num uint32) uint32 {
+	if b := num & 0xff; b != 0 {
+		return b
+	}
+	return 0xff
 }

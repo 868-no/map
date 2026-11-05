@@ -158,6 +158,70 @@ func TestPipelineDedupeAndRetry(t *testing.T) {
 	<-done
 }
 
+type flakyDedupe struct {
+	mu            sync.Mutex
+	down          bool
+	lookups, mark int
+}
+
+func (d *flakyDedupe) LookupObservations(_ context.Context, keys [][16]byte) ([]int64, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.lookups++
+	if d.down {
+		return nil, errors.New("redis timeout")
+	}
+	return make([]int64, len(keys)), nil
+}
+
+func (d *flakyDedupe) MarkObservations(context.Context, [][16]byte, []int64) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.mark++
+	if d.down {
+		return errors.New("redis timeout")
+	}
+	return nil
+}
+
+func (d *flakyDedupe) calls() (int, int) { d.mu.Lock(); defer d.mu.Unlock(); return d.lookups, d.mark }
+
+// D-166: after a Redis error, dedupe skips Redis for a while (the database
+// answers) instead of paying a timeout per message, and resumes afterwards.
+func TestPipelineDedupeBackoff(t *testing.T) {
+	sink, dd := &memSink{}, &flakyDedupe{down: true}
+	p := New(Config{QueueSize: 100, Workers: 1, BatchSize: 10, FlushEvery: 5 * time.Millisecond, ProcessOpts: opts(t, longFast)},
+		sink, dd, nil, &promoted{}, observability.NewMetrics(), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() { p.Run(ctx); close(done) }()
+	send := func(id uint32) {
+		pk := pkt{from: 0x11111111, id: id, to: 0xffffffff, gw: "!aabbccdd", data: posData(t), hopStart: 3, hopLimit: 3, snr: 5, rssi: -80}
+		p.Submit(msg(topicLF, envelope(t, pk, security.DefaultPSK[:], security.ModeCTR, "LongFast")))
+	}
+	for id := uint32(1); id <= 20; id++ {
+		send(id)
+	}
+	send(1) // a duplicate is still caught, by the in-process set
+	waitFor(t, func() bool { return sink.count() == 20 })
+	time.Sleep(30 * time.Millisecond)
+	if l, m := dd.calls(); l != 1 || m != 0 || sink.count() != 20 {
+		t.Fatalf("during the outage: %d lookups, %d marks, %d rows; want 1, 0, 20", l, m, sink.count())
+	}
+	// The backoff ends and Redis is back: it is used again.
+	dd.mu.Lock()
+	dd.down = false
+	dd.mu.Unlock()
+	p.dedupeRetryAt.Store(0)
+	send(21)
+	waitFor(t, func() bool { _, m := dd.calls(); return m == 1 })
+	if l, _ := dd.calls(); l != 2 || p.dedupeDown.Load() {
+		t.Fatalf("after the outage: %d lookups, down %v", l, p.dedupeDown.Load())
+	}
+	cancel()
+	<-done
+}
+
 // A copy from another broker long after commit extends the row's also_via
 // by primary key; a same-broker replay changes nothing.
 func TestPipelineLateCrossBrokerProvenance(t *testing.T) {

@@ -61,7 +61,7 @@ func EnsurePartitions(ctx context.Context, db execer, from, to time.Time) error 
 	for _, m := range missing {
 		// One statement per month: the transaction-scoped lock is taken in
 		// the same implicit transaction as the CREATE.
-		_, err := db.Exec(ctx, fmt.Sprintf(`SELECT pg_advisory_xact_lock(hashtext('meshmap:partitions'));
+		err := execDDL(ctx, db, fmt.Sprintf(`SELECT pg_advisory_xact_lock(hashtext('meshmap:partitions'));
 			CREATE TABLE IF NOT EXISTS %s PARTITION OF packet_log
 			FOR VALUES FROM ('%s') TO ('%s') WITH (fillfactor = 90)`,
 			PartitionName(m), m.Format(time.RFC3339), m.AddDate(0, 1, 0).Format(time.RFC3339)))
@@ -99,10 +99,37 @@ func Partitions(ctx context.Context, db execer) ([]time.Time, error) {
 	return out, nil
 }
 
-// DropPartition removes a whole month, returning how many rows it held.
+// Partition DDL takes ACCESS EXCLUSIVE on packet_log. Queued behind a long
+// read it would hold up every insert queued behind it, so it waits at most
+// lockTimeout and is tried again a few times before failing (D-166).
+const (
+	lockTimeout  = "5s"
+	ddlAttempts  = 3
+	ddlRetryWait = 2 * time.Second
+)
+
+// execDDL runs statements in one implicit transaction under lockTimeout,
+// retrying a lock wait that timed out (SQLSTATE 55P03).
+func execDDL(ctx context.Context, db execer, sql string) error {
+	for attempt := 1; ; attempt++ {
+		_, err := db.Exec(ctx, `SET LOCAL lock_timeout = '`+lockTimeout+`'; `+sql)
+		var pe *pgconn.PgError
+		if err == nil || attempt == ddlAttempts || !errors.As(err, &pe) || pe.Code != "55P03" {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(ddlRetryWait):
+		}
+	}
+}
+
+// DropPartition removes a whole month, returning about how many rows it held
+// (the planner's estimate: counting them would read the whole month).
 func DropPartition(ctx context.Context, db execer, m time.Time) (int64, error) {
 	var n int64
-	rows, err := db.Query(ctx, fmt.Sprintf(`SELECT count(*) FROM %s`, PartitionName(m)))
+	rows, err := db.Query(ctx, `SELECT GREATEST(reltuples, 0)::bigint FROM pg_class WHERE oid = to_regclass($1)`, PartitionName(m))
 	if err != nil {
 		return 0, err
 	}
@@ -116,7 +143,7 @@ func DropPartition(ctx context.Context, db execer, m time.Time) (int64, error) {
 	if err := rows.Err(); err != nil {
 		return 0, err
 	}
-	if _, err := db.Exec(ctx, fmt.Sprintf(`DROP TABLE IF EXISTS %s`, PartitionName(m))); err != nil {
+	if err := execDDL(ctx, db, `DROP TABLE IF EXISTS `+PartitionName(m)); err != nil {
 		return 0, err
 	}
 	known.Delete(m)

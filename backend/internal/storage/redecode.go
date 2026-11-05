@@ -10,6 +10,7 @@ import (
 
 	"github.com/868-no/map/internal/ingest"
 	"github.com/868-no/map/internal/protocol/ports"
+	"github.com/868-no/map/internal/security"
 )
 
 // Redecode re-runs ingest on the stored envelopes of rows decoded by an older
@@ -21,7 +22,10 @@ import (
 // encoding so the backfill rebuilds it. A row the current decoder would
 // reject, or whose envelope was stripped at ingest (it cannot decode to more
 // than it holds), keeps its decoding: only its channel name and topic root
-// are cleaned as ingest now cleans them, and it is marked as checked. Nothing
+// are cleaned as ingest now cleans them, and it is marked as checked. So
+// does a fully decoded row that today's keys, signature policy or identities
+// would read less of (header-only, invalid, or verified no longer; D-166):
+// re-decoding brings decoder improvements, never a removed key's loss. Nothing
 // stored is ever dropped, and identities are never promoted from old rows.
 // Rows another worker holds (the encoding backfill locks batches too) are
 // waited for, not skipped: a skipped row would keep its old decoding until
@@ -29,13 +33,18 @@ import (
 func Redecode(ctx context.Context, pool *pgxpool.Pool, o ingest.Options, log *slog.Logger) (int, error) {
 	const batch = 500
 	below := int64(1) << 62
-	total := 0
+	total, held := 0, 0
+	defer func() {
+		if held > 0 {
+			log.Info("re-decoding kept rows the current keys or policy read less of", "rows", held, "decode_version", ingest.DecodeVersion)
+		}
+	}()
 	for {
-		n, last, err := redecodeBatch(ctx, pool, o, below, batch)
+		n, h, last, err := redecodeBatch(ctx, pool, o, below, batch)
 		if err != nil {
 			return total, err
 		}
-		total += n
+		total, held = total+n, held+h
 		if last == 0 {
 			break
 		}
@@ -52,20 +61,20 @@ func Redecode(ctx context.Context, pool *pgxpool.Pool, o ingest.Options, log *sl
 	return total, nil
 }
 
-func redecodeBatch(ctx context.Context, pool *pgxpool.Pool, o ingest.Options, below int64, limit int) (changed int, last int64, err error) {
+func redecodeBatch(ctx context.Context, pool *pgxpool.Pool, o ingest.Options, below int64, limit int) (changed, held int, last int64, err error) {
 	tx, err := pool.Begin(ctx)
 	if err != nil {
-		return 0, 0, err
+		return 0, 0, 0, err
 	}
 	defer tx.Rollback(context.WithoutCancel(ctx)) //nolint:errcheck
 	rows, err := tx.Query(ctx, `SELECT id, observed_at, broker_id, mqtt_topic, envelope_bytes, decoded_metadata->'also_via',
 		  packet_type, COALESCE(decoded_metadata->>'crypto', ''), COALESCE(decoded_metadata->>'invalid', ''),
 		  COALESCE((decoded_metadata->>'not_ok_to_mqtt')::boolean, false), COALESCE((decoded_metadata->>'imported')::boolean, false),
-		  channel_name, decoded_metadata->>'topic_root'
+		  channel_name, decoded_metadata->>'topic_root', signature_status
 		FROM packet_log WHERE id < $1 AND `+staleDecodePred+` -- served by the partial index
 		ORDER BY id DESC LIMIT $2 FOR UPDATE`, below, limit)
 	if err != nil {
-		return 0, 0, err
+		return 0, 0, 0, err
 	}
 	var (
 		ids, kept               []int64
@@ -92,10 +101,11 @@ func redecodeBatch(ctx context.Context, pool *pgxpool.Pool, o ingest.Options, be
 			imp    bool
 			ch     *string
 			root   *string
+			sig    string
 		)
-		if err := rows.Scan(&id, &at, &broker, &topic, &env, &also, &ty, &crypto, &inval, &notOK, &imp, &ch, &root); err != nil {
+		if err := rows.Scan(&id, &at, &broker, &topic, &env, &also, &ty, &crypto, &inval, &notOK, &imp, &ch, &root, &sig); err != nil {
 			rows.Close()
-			return 0, 0, err
+			return 0, 0, 0, err
 		}
 		seen++
 		last = id
@@ -119,6 +129,11 @@ func redecodeBatch(ctx context.Context, pool *pgxpool.Pool, o ingest.Options, be
 			keep()
 			continue
 		}
+		if lessThan(obs, sig) {
+			keep()
+			held++
+			continue
+		}
 		if len(also) > 0 && string(also) != "null" {
 			_ = json.Unmarshal(also, &obs.Meta.AlsoVia)
 		}
@@ -126,24 +141,24 @@ func redecodeBatch(ctx context.Context, pool *pgxpool.Pool, o ingest.Options, be
 		meta, err := json.Marshal(obs.Meta)
 		if err != nil {
 			rows.Close()
-			return 0, 0, err
+			return 0, 0, 0, err
 		}
 		ids, ats, types, ports, sigs = append(ids, id), append(ats, at), append(types, obs.PacketType), append(ports, obs.Portnum), append(sigs, string(obs.SignatureStatus))
 		metas, envs, chs = append(metas, string(meta)), append(envs, obs.EnvelopeBytes), append(chs, obs.Channel)
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
-		return 0, 0, err
+		return 0, 0, 0, err
 	}
 	if seen == 0 {
-		return 0, 0, nil
+		return 0, 0, 0, nil
 	}
 	if len(ids) > 0 {
 		if _, err := tx.Exec(ctx, `UPDATE packet_log p SET packet_type = u.ty, portnum = u.port, signature_status = u.sig,
 			decoded_metadata = u.meta::jsonb, envelope_bytes = u.env, channel_name = NULLIF(u.ch, ''), decode_version = $9, obs_row = NULL, obs_row_version = NULL
 			FROM unnest($1::bigint[], $2::timestamptz[], $3::text[], $4::int[], $5::text[], $6::text[], $7::bytea[], $8::text[]) AS u(id, at, ty, port, sig, meta, env, ch)
 			WHERE p.id = u.id AND p.observed_at = u.at`, ids, ats, types, ports, sigs, metas, envs, chs, ingest.DecodeVersion); err != nil {
-			return 0, 0, err
+			return 0, 0, 0, err
 		}
 	}
 	if len(kept) > 0 {
@@ -154,10 +169,22 @@ func redecodeBatch(ctx context.Context, pool *pgxpool.Pool, o ingest.Options, be
 			  obs_row_version = CASE WHEN u.changed THEN NULL ELSE p.obs_row_version END
 			FROM unnest($1::bigint[], $2::timestamptz[], $3::text[], $4::text[], $5::bool[]) AS u(id, at, ch, root, changed)
 			WHERE p.id = u.id AND p.observed_at = u.at`, kept, keptAts, keptChs, keptRoots, keptChanged, ingest.DecodeVersion); err != nil {
-			return 0, 0, err
+			return 0, 0, 0, err
 		}
 	}
-	return len(ids), last, tx.Commit(ctx)
+	return len(ids), held, last, tx.Commit(ctx)
+}
+
+// lessThan reports whether a new decoding of a fully decoded row holds less
+// than the stored one (D-166): header-only or invalid because a key was
+// removed, the signature policy turned strict or a signer's key aged out, or
+// no longer verified. Opt-out stripping (D-093) is not a loss: it is applied.
+func lessThan(obs ingest.Observation, storedSig string) bool {
+	switch {
+	case obs.Meta.Crypto == ingest.CryptoPKI, obs.Meta.Crypto == ingest.CryptoUnreadable, obs.Meta.Invalid != "":
+		return true
+	}
+	return storedSig == string(security.SigVerified) && obs.SignatureStatus != security.SigVerified
 }
 
 // stripped reports whether a row's stored envelope had its payload zeroed at

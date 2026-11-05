@@ -31,7 +31,7 @@ const (
 type Status struct {
 	LastRun     time.Time `json:"last_run"`
 	Cutoff      time.Time `json:"cutoff"`
-	DeletedRows int64     `json:"deleted_rows"`
+	DeletedRows int64     `json:"deleted_rows"` // dropped months by estimate (D-166)
 	TableBytes  int64     `json:"table_bytes"`
 	DurationMS  int64     `json:"duration_ms"`
 }

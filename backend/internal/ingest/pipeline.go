@@ -97,6 +97,10 @@ type Pipeline struct {
 	degraded atomic.Bool  // writer currently failing
 	lastOK   atomic.Int64
 
+	dedupeWait    time.Duration // dedupeBackoff; shorter in tests
+	dedupeRetryAt atomic.Int64  // UnixNano before which Redis dedupe is skipped
+	dedupeDown    atomic.Bool   // an outage was logged
+
 	gapMu sync.Mutex
 	gaps  []Gap
 }
@@ -131,6 +135,8 @@ func New(cfg Config, sink Sink, dedupe Dedupe, pub Publisher, promote Promoter, 
 		inflight: map[[16]byte]string{},
 		alsoVia:  map[[16]byte][]string{},
 		pending:  map[int64][]string{},
+
+		dedupeWait: dedupeBackoff,
 	}
 }
 
@@ -312,11 +318,13 @@ func (p *Pipeline) committed(o Observation) (int64, bool) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	if p.dedupe != nil {
+	if p.dedupeUp(now) {
 		ids, err := p.dedupe.LookupObservations(ctx, [][16]byte{k})
 		if err == nil {
+			p.dedupeOK()
 			return ids[0], ids[0] != 0
 		}
+		p.dedupeFailed(now, err)
 		p.m.CacheErrors.WithLabelValues("dedupe_check").Inc()
 	}
 	id, found, err := p.sink.RecentObservation(ctx, k, o.ObservedAt.Add(-p.cfg.DedupeTTL))
@@ -324,6 +332,28 @@ func (p *Pipeline) committed(o Observation) (int64, bool) {
 		return 0, false // prefer a possible duplicate (collapsed at query time) over data loss
 	}
 	return id, found
+}
+
+// After a Redis error the dedupe index is left alone for dedupeBackoff: an
+// unreachable Redis would otherwise cost every message a timeout. The
+// in-process set and the database answer meanwhile (D-166).
+const dedupeBackoff = 30 * time.Second
+
+func (p *Pipeline) dedupeUp(now time.Time) bool {
+	return p.dedupe != nil && now.UnixNano() >= p.dedupeRetryAt.Load()
+}
+
+func (p *Pipeline) dedupeFailed(now time.Time, err error) {
+	p.dedupeRetryAt.Store(now.Add(p.dedupeWait).UnixNano())
+	if p.dedupeDown.CompareAndSwap(false, true) {
+		p.log.Warn("dedupe cache unavailable; checking the database instead", "err", err, "retry_every", p.dedupeWait)
+	}
+}
+
+func (p *Pipeline) dedupeOK() {
+	if p.dedupeDown.CompareAndSwap(true, false) {
+		p.log.Info("dedupe cache available again")
+	}
 }
 
 func (p *Pipeline) writer() {
@@ -560,8 +590,9 @@ func (p *Pipeline) afterCommit(obs []*Observation, ids []int64) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	if p.dedupe != nil {
+	if now := time.Now(); p.dedupeUp(now) {
 		if err := p.dedupe.MarkObservations(ctx, keys, ids); err != nil {
+			p.dedupeFailed(now, err)
 			p.m.CacheErrors.WithLabelValues("dedupe_mark").Inc()
 		}
 	}

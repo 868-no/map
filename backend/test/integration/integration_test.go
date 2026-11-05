@@ -319,6 +319,10 @@ func TestRetention(t *testing.T) {
 	if _, err := pool.Exec(ctx, insert, march, 1, 500); err != nil {
 		t.Fatal(err)
 	}
+	// A dropped month is counted by the planner's estimate (D-166).
+	if _, err := pool.Exec(ctx, `ANALYZE packet_log_p202603`); err != nil {
+		t.Fatal(err)
+	}
 	ins := func(at time.Time) {
 		if _, err := pool.Exec(ctx, insert, at, 0, 0); err != nil {
 			t.Fatal(err)

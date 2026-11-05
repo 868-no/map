@@ -73,3 +73,9 @@ func TestSimulatorThroughIngest(t *testing.T) {
 		t.Error("no identities learned")
 	}
 }
+
+func TestRelayByteMatchesFirmware(t *testing.T) {
+	if relayByte(0x12345678) != 0x78 || relayByte(0x12345600) != 0xff {
+		t.Fatal("relay byte must be the low byte, 0xff for a zero low byte")
+	}
+}
