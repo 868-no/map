@@ -355,6 +355,14 @@ test('opens on Norway, fits the data once it loads, and clicking empty map clear
   await openPanel(page)
   await page.locator('.node-row').first().click()
   await expect(page.locator('.node-panel')).toBeVisible()
+  // Selecting flies to the node (zoom ≥ 10) once it is placed and the panel is
+  // open: let that finish, or it can start after the jump below and bring the
+  // node back under the click.
+  type Cam = { map: { getZoom: () => number; isMoving: () => boolean } }
+  await expect.poll(() => page.evaluate(() => {
+    const m = (window as unknown as { __meshmap: Cam }).__meshmap.map
+    return m.getZoom() >= 10 && !m.isMoving()
+  }), { timeout: 15_000 }).toBe(true)
   await page.evaluate(() => (window as unknown as { __meshmap: { map: { jumpTo: (o: object) => void } } }).__meshmap.map.jumpTo({ center: [3.0, 66.0], zoom: 8 })) // open Norwegian Sea
   await page.waitForTimeout(500)
   const box = (await page.locator('.map').boundingBox())!
