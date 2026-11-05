@@ -13,7 +13,13 @@ impl Hasher for Fx {
         self.0
     }
     fn write(&mut self, bytes: &[u8]) {
-        for &b in bytes {
+        // Eight bytes at a time, as rustc's FxHasher: strings (interned on
+        // every row added) hash in an eighth of the steps.
+        let (words, rest) = bytes.as_chunks::<8>();
+        for w in words {
+            self.add(u64::from_le_bytes(*w));
+        }
+        for &b in rest {
             self.add(b as u64);
         }
     }
