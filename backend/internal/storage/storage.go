@@ -388,3 +388,10 @@ func LatestAnnouncedKey(ctx context.Context, pool *pgxpool.Pool, node uint32) (A
 
 // ErrNotFound is returned by single-row lookups with no result.
 var ErrNotFound = errors.New("not found")
+
+// ObservedRange is the oldest and newest observed_at retained (nil when
+// the log is empty): an index probe at each end of every partition.
+func ObservedRange(ctx context.Context, pool *pgxpool.Pool) (oldest, newest *time.Time, err error) {
+	err = pool.QueryRow(ctx, `SELECT min(observed_at), max(observed_at) FROM packet_log`).Scan(&oldest, &newest)
+	return oldest, newest, err
+}

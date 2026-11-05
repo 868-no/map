@@ -135,7 +135,8 @@ func (s *Server) retention(ctx context.Context, _ *struct{}) (*RetentionOutput, 
 	b := s.Bounds()
 	out := RetentionBody{Now: b.Now, ConfiguredCutoff: b.Cutoff, RetentionMonths: s.Env.RetentionMonths}
 	// Whole-table bounds are operational metadata, not mesh-derived state.
-	if err := s.Pool.QueryRow(ctx, `SELECT min(observed_at), max(observed_at) FROM packet_log`).Scan(&out.EarliestObservation, &out.LatestObservation); err != nil {
+	var err error
+	if out.EarliestObservation, out.LatestObservation, err = storage.ObservedRange(ctx, s.Pool); err != nil {
 		return nil, err
 	}
 	hist, err := s.rowsDB().History(ctx)
