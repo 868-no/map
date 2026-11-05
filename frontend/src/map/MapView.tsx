@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import * as maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { MapboxOverlay } from '@deck.gl/mapbox'
@@ -97,7 +97,11 @@ interface Props {
 // tested first (D-146).
 const PICK_RADIUS = 6
 
-export default function MapView({ caps, snapshot, onPositions }: Props) {
+/**
+ * Memoised: its props change with the snapshot, while the app around it
+ * re-renders on every fetch state of each live rebuild.
+ */
+export default memo(function MapView({ caps, snapshot, onPositions }: Props) {
   const container = useRef<HTMLDivElement>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
   const startView = useRef<{ center: maplibregl.LngLat; zoom: number } | null>(null) // the view the map opened on
@@ -511,4 +515,4 @@ export default function MapView({ caps, snapshot, onPositions }: Props) {
       <MapTooltip />
     </div>
   )
-}
+})

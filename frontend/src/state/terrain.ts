@@ -104,9 +104,10 @@ export function routerLinks(snap: SnapshotView | undefined): RouterLink[] {
  */
 export function useTerrainClasses(snap: SnapshotView | undefined) {
   const caps = useCapabilities()
-  const links = routerLinks(snap)
+  // Per snapshot, not per render: the host re-renders on every fetch state.
+  const links = useMemo(() => routerLinks(snap), [snap])
   // The same links ask once, whatever else the snapshot changed.
-  const key = JSON.stringify(links.map((l) => [l.a, l.b, l.ea, l.eb]))
+  const key = useMemo(() => JSON.stringify(links.map((l) => [l.a, l.b, l.ea, l.eb])), [links])
   const q = useQuery({
     queryKey: ['terrain-classes', key],
     enabled: !!caps.data?.features.terrain && links.length > 0,
@@ -125,8 +126,9 @@ export function useTerrainClasses(snap: SnapshotView | undefined) {
     const parsed = JSON.parse(key) as [string, string][]
     return parsed.flatMap(([a, b], i) => (got[i] && got[i].class !== 'unknown' ? [{ a, b, class: got[i].class }] : []))
   }, [q.data, key])
-  const sent = useMemo(() => (classes ? JSON.stringify(classes) : null), [classes])
+  // classes changes only with the answer or the links asked about (key is a
+  // string), so the engine is sent each set of classes once.
   useEffect(() => {
-    if (sent) sendTerrain(JSON.parse(sent))
-  }, [sent])
+    if (classes) sendTerrain(classes)
+  }, [classes])
 }
