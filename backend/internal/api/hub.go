@@ -8,7 +8,6 @@ import (
 	"sync/atomic"
 
 	"github.com/868-no/map/internal/cache"
-	"github.com/868-no/map/internal/ingest"
 	"github.com/868-no/map/internal/maintenance"
 )
 
@@ -38,19 +37,18 @@ func NewHub(available bool) *Hub {
 }
 
 // PublishLive implements ingest.Publisher.
-func (h *Hub) PublishLive(_ context.Context, events []ingest.LiveEvent) {
-	h.publishEvents(events)
+func (h *Hub) PublishLive(_ context.Context, batch json.RawMessage) {
+	h.publishBatch(batch)
 }
 
-// publishEvents encodes a delta once; each subscriber only writes the bytes.
-func (h *Hub) publishEvents(events []ingest.LiveEvent) {
-	if len(events) == 0 {
+// publishBatch wraps an encoded event array as a delta, once; each
+// subscriber only writes the bytes.
+func (h *Hub) publishBatch(batch []byte) {
+	if len(batch) == 0 {
 		return
 	}
-	b, err := json.Marshal(LiveDelta{Events: events})
-	if err != nil {
-		return
-	}
+	b := make([]byte, 0, len(batch)+len(`{"events":}`))
+	b = append(append(append(b, `{"events":`...), batch...), '}')
 	h.broadcast(hubMsg{delta: b})
 }
 
@@ -126,9 +124,9 @@ func (h *Hub) FeedFromRedis(ctx context.Context, c *cache.Client, live bool, log
 		Message: func(channel, payload string) {
 			switch channel {
 			case cache.LiveChannel:
-				var evs []ingest.LiveEvent
-				if json.Unmarshal([]byte(payload), &evs) == nil {
-					h.publishEvents(evs)
+				// The pipeline's own encoding: only checked, never decoded.
+				if b := []byte(payload); len(b) > 0 && b[0] == '[' && json.Valid(b) {
+					h.publishBatch(b)
 				}
 			case maintenance.RetentionChannel:
 				var st maintenance.Status

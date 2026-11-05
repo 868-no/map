@@ -19,7 +19,8 @@ func TestHubEncodesOnceAndFlagsDrops(t *testing.T) {
 	defer unsubFast()
 	slow, slowSub, unsubSlow := h.subscribe()
 	defer unsubSlow()
-	ev := []ingest.LiveEvent{{ID: 7, T: time.UnixMilli(1_800_000_000_000).UTC(), Row: &obsrow.ObsRow{ID: 7, Source: 1, Type: "text"}}}
+	row, _ := json.Marshal(obsrow.ObsRow{ID: 7, Source: 1, Type: "text"})
+	ev, _ := json.Marshal([]ingest.LiveEvent{{ID: 7, T: time.UnixMilli(1_800_000_000_000).UTC(), Row: row}})
 	h.PublishLive(context.Background(), ev)
 	a, b := <-fast, <-slow
 	if string(a.delta) != string(b.delta) || len(a.delta) == 0 {

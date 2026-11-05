@@ -6,7 +6,6 @@ package storage
 import (
 	"context"
 	_ "embed"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"hash/crc32"
@@ -133,11 +132,7 @@ func nullStr(s string) any {
 
 // Row converts an observation to COPY values.
 func Row(o *ingest.Observation) ([]any, error) {
-	meta, err := json.Marshal(o.Meta)
-	if err != nil {
-		return nil, err
-	}
-	tail, err := obsrow.EncodeTail(ingest.RowOf(o, 0, meta))
+	meta, tail, err := o.Encoded()
 	if err != nil {
 		return nil, err
 	}

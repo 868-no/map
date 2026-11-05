@@ -9,8 +9,8 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/sse"
 
-	"github.com/868-no/map/internal/ingest"
 	"github.com/868-no/map/internal/maintenance"
+	"github.com/868-no/map/internal/obsrow"
 )
 
 // HeartbeatEvery is the SSE heartbeat interval.
@@ -41,10 +41,18 @@ func (in *StreamInput) Resolve(huma.Context) []error {
 // (it was too slow); the client should fetch what it missed.
 const LaggedReason = "lagged"
 
+// LiveEvent announces an accepted observation (ingest.LiveEvent, whose row
+// travels pre-encoded; this is its documented form).
+type LiveEvent struct {
+	ID  int64         `json:"id"`
+	T   time.Time     `json:"t"`
+	Row obsrow.ObsRow `json:"row"`
+}
+
 // LiveDelta carries newly accepted receptions.
 type LiveDelta struct {
-	Events []ingest.LiveEvent `json:"events"`
-	raw    json.RawMessage    // already encoded by the hub: written as-is
+	Events []LiveEvent     `json:"events"`
+	raw    json.RawMessage // already encoded by the hub: written as-is
 }
 
 // MarshalJSON writes the hub's encoding when there is one, so a delta is

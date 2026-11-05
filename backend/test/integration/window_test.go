@@ -542,7 +542,10 @@ func TestLiveRowMatchesStoredRow(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		b, _ := json.Marshal(ingest.LiveRow(&obs, id))
+		b, err := ingest.LiveRow(&obs, id)
+		if err != nil {
+			t.Fatal(err)
+		}
 		live[id] = string(b)
 	}
 	rows.Close()

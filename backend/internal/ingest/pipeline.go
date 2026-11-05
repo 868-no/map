@@ -2,6 +2,7 @@ package ingest
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"runtime"
@@ -12,7 +13,6 @@ import (
 	"time"
 
 	"github.com/868-no/map/internal/observability"
-	"github.com/868-no/map/internal/obsrow"
 	"github.com/868-no/map/internal/protocol"
 	"github.com/868-no/map/internal/security"
 )
@@ -36,8 +36,9 @@ type Dedupe interface {
 }
 
 // Publisher fans out live events (Redis pub/sub or in-process). May be nil.
+// batch is a JSON array of LiveEvent, encoded once for every sink.
 type Publisher interface {
-	PublishLive(ctx context.Context, events []LiveEvent)
+	PublishLive(ctx context.Context, batch json.RawMessage)
 }
 
 // Promoter records identities after their rows commit.
@@ -48,10 +49,11 @@ type Promoter interface {
 // LiveEvent announces an accepted observation to SSE clients: its row id,
 // observed_at and the full compact row, identical to what /observations
 // returns (D-033, D-041). Never payload bytes or envelope data.
+// Row is the encoded ObsRow; the API documents it as one.
 type LiveEvent struct {
-	ID  int64          `json:"id"`
-	T   time.Time      `json:"t"`
-	Row *obsrow.ObsRow `json:"row"`
+	ID  int64           `json:"id"`
+	T   time.Time       `json:"t"`
+	Row json.RawMessage `json:"row"`
 }
 
 // Config sizes the pipeline.
@@ -304,6 +306,7 @@ func (p *Pipeline) takeAlsoVia(batch []*Observation) {
 	for _, o := range batch {
 		if v := p.alsoVia[o.ObservationKey]; len(v) > 0 {
 			o.Meta.AlsoVia = append([]string(nil), v...)
+			o.meta, o.tail = nil, nil // encode again with it
 		}
 	}
 }
@@ -580,8 +583,8 @@ func (p *Pipeline) afterCommit(obs []*Observation, ids []int64) {
 			id.Since, id.RowID = o.ObservedAt, ids[i]
 			p.promote.Promote(id)
 		}
-		if ev := toLive(o, ids[i]); ev.Row != nil {
-			events = append(events, ev)
+		if row, err := LiveRow(o, ids[i]); err == nil {
+			events = append(events, LiveEvent{ID: ids[i], T: o.ObservedAt, Row: row})
 		} else {
 			// Stored, but not encodable for the stream: browsers get it from
 			// their next sync rather than a row-less event.
@@ -596,11 +599,9 @@ func (p *Pipeline) afterCommit(obs []*Observation, ids []int64) {
 			p.m.CacheErrors.WithLabelValues("dedupe_mark").Inc()
 		}
 	}
-	if p.pub != nil {
-		p.pub.PublishLive(ctx, events)
+	if p.pub != nil && len(events) > 0 {
+		if b, err := json.Marshal(events); err == nil {
+			p.pub.PublishLive(ctx, b)
+		}
 	}
-}
-
-func toLive(o *Observation, id int64) LiveEvent {
-	return LiveEvent{ID: id, T: o.ObservedAt, Row: LiveRow(o, id)}
 }

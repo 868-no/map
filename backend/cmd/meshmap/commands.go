@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -458,9 +459,9 @@ func waitFor(wg *sync.WaitGroup, d time.Duration) {
 // multiPublisher fans live events to several sinks (in-process hub, Redis).
 type multiPublisher []ingest.Publisher
 
-func (m multiPublisher) PublishLive(ctx context.Context, evs []ingest.LiveEvent) {
+func (m multiPublisher) PublishLive(ctx context.Context, batch json.RawMessage) {
 	for _, p := range m {
-		p.PublishLive(ctx, evs)
+		p.PublishLive(ctx, batch)
 	}
 }
 

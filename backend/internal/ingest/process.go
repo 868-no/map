@@ -126,6 +126,8 @@ type Observation struct {
 
 	// Promote carries a new authoritative identity to record after commit.
 	Promote *security.Identity
+
+	meta, tail []byte // Encoded's result, until Meta changes
 }
 
 // Options configures Process.

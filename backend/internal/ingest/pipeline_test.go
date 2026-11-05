@@ -2,6 +2,7 @@ package ingest
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/868-no/map/internal/observability"
+	"github.com/868-no/map/internal/obsrow"
 	"github.com/868-no/map/internal/security"
 )
 
@@ -285,9 +287,17 @@ func TestPipelinePromotesAfterCommit(t *testing.T) {
 
 func TestLiveEventCarriesTheRow(t *testing.T) {
 	o := &Observation{Source: 7, PacketType: "position", ObservedAt: time.UnixMilli(1_800_000_000_123)}
-	e := toLive(o, 42)
-	if e.ID != 42 || e.Row == nil || e.Row.ID != 42 || e.Row.Source != 7 || e.Row.T != 1_800_000_000_123 || e.Row.Type != "position" {
-		t.Fatalf("live event %+v row %+v", e, e.Row)
+	raw, err := LiveRow(o, 42)
+	var r obsrow.ObsRow
+	if err == nil {
+		err = json.Unmarshal(raw, &r)
+	}
+	if err != nil || r.ID != 42 || r.Source != 7 || r.T != 1_800_000_000_123 || r.Type != "position" {
+		t.Fatalf("live row %s: %v", raw, err)
+	}
+	// Byte for byte the stored encoding completed with the id (D-046).
+	if want, _ := json.Marshal(RowOf(o, 42, o.meta)); string(raw) != string(want) {
+		t.Fatalf("live row %s, want %s", raw, want)
 	}
 }
 
