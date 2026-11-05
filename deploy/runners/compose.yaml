@@ -3,6 +3,13 @@
 # requests (which may come from forks) to GitHub-hosted runners. See
 # docs/operations.md, "Self-hosted runners".
 #
+# Just-in-time runners: the controller alone holds the token that registers
+# runners. For each slot it asks GitHub for a single-use configuration and
+# hands it over on a volume shared with that slot's runner alone; the runner
+# deletes it, runs one job and exits, and the next configuration is issued
+# only once GitHub has removed that runner. Jobs never see the token, nor
+# another runner's configuration.
+#
 # Each runner has a Docker daemon of its own (Docker-in-Docker), whose
 # network namespace it shares: a job's containers publish their ports on the
 # runner's localhost, as on a hosted runner, and parallel jobs never collide
@@ -10,19 +17,115 @@
 # containers by path (scripts/*.sh), so the work directory is mounted at the
 # same path in the runner and in its daemon. Each daemon keeps its state:
 # pulled images, the build cache and the toolchains' cache volumes stay warm
-# across jobs, while every runner is registered afresh for each job
-# (ephemeral). A hook clears what the last job left behind.
+# across jobs. A hook clears what the last job left behind.
 #
 #   cp .env.example .env    # set ACCESS_TOKEN
 #   docker compose up -d
-# The stack is this file alone (the hook is inline below), so it also runs as
-# a Portainer stack from this repository (compose path
-# deploy/runners/compose.yaml, the variables of .env.example set in
-# Portainer).
+#
+# The stack is this file alone, so it also runs as a Portainer stack from
+# this repository (compose path deploy/runners/compose.yaml, the variables of
+# .env.example set in Portainer).
 #
 # Four runners: the tests workflow runs eight jobs at once (four of them the
-# end-to-end shards); add pairs below for more.
+# end-to-end shards); for more, add pairs below and raise RUNNERS.
 name: meshmap-runners
+
+configs:
+  # Runs before each job (ACTIONS_RUNNER_HOOK_JOB_STARTED) on the runner's
+  # own Docker daemon: clears what an earlier job left behind (it may have
+  # been cancelled before cleaning up), while the caches jobs share stay
+  # warm: tagged images, named volumes (the toolchains' caches) and the build
+  # cache, trimmed to 20 GB, least recently used first.
+  job-started:
+    content: |
+      #!/bin/sh
+      docker rm -f $$(docker ps -aq) >/dev/null 2>&1
+      docker network prune -f >/dev/null 2>&1
+      docker volume prune -f >/dev/null 2>&1 # anonymous volumes only
+      docker image prune -f >/dev/null 2>&1  # untagged images only (replaced builds)
+      docker builder prune -af --max-used-space 20gb >/dev/null 2>&1
+      exit 0
+
+  # Hands each runner slot a single-use just-in-time configuration. Slot N's
+  # runner waits for /jit-N/config, deletes it and runs one job. A new
+  # configuration is written only once GitHub has removed the slot's last
+  # runner (an ephemeral runner is removed when its job ends), so a job never
+  # sees the next one. A runner that took its configuration but never came
+  # online is deleted and replaced.
+  controller:
+    content: |
+      #!/bin/sh
+      set -u
+      api="https://api.github.com/repos/$${REPO#https://github.com/}/actions/runners"
+      prefix=$${RUNNER_NAME_PREFIX:-meshmap}
+      stuck=$${STUCK_AFTER:-180} # seconds a runner may stay offline after taking its configuration
+
+      log() { echo "$$(date -u +%FT%TZ) $$*"; }
+
+      # req METHOD URL [BODY]: sets $$code and $$body.
+      call() {
+        curl -sS -w '\n%{http_code}' -H "Authorization: Bearer $$ACCESS_TOKEN" \
+          -H 'Accept: application/vnd.github+json' -H 'X-GitHub-Api-Version: 2022-11-28' "$$@" 2>&1
+      }
+      req() {
+        if [ -n "$${3:-}" ]; then out=$$(call -X "$$1" -H 'Content-Type: application/json' --data "$$3" "$$2")
+        else out=$$(call -X "$$1" "$$2"); fi
+        code=$$(printf '%s' "$$out" | tail -n1)
+        body=$$(printf '%s' "$$out" | sed '$$d')
+      }
+
+      # Runners of ours left from before (state lost, or a configuration
+      # never taken): offline and idle, and not the current runner of a slot.
+      cleanup() {
+        req GET "$$api?per_page=100"
+        [ "$$code" = 200 ] || { log "listing runners: HTTP $$code"; return; }
+        current=$$(cat /state/*.id 2>/dev/null)
+        printf '%s' "$$body" | jq -r --arg p "$$prefix-" '.runners[] | select((.name | startswith($$p)) and .status == "offline" and (.busy | not)) | "\(.id) \(.name)"' |
+          while read -r id name; do
+            echo "$$current" | grep -qx "$$id" && continue
+            req DELETE "$$api/$$id"
+            log "removed stale runner $$name ($$id): HTTP $$code"
+          done
+      }
+
+      slot() {
+        n=$$1 file=/jit-$$1/config idf=/state/$$1.id takenf=/state/$$1.taken
+        [ -s "$$file" ] && return # not taken yet
+        id=$$(cat "$$idf" 2>/dev/null)
+        if [ -n "$$id" ]; then
+          now=$$(date +%s)
+          [ -s "$$takenf" ] || echo "$$now" >"$$takenf"
+          req GET "$$api/$$id"
+          case $$code in
+            200)
+              [ "$$(printf '%s' "$$body" | jq -r '.status == "online" or .busy')" = true ] && return
+              [ $$((now - $$(cat "$$takenf"))) -lt "$$stuck" ] && return
+              req DELETE "$$api/$$id"
+              log "slot $$n: runner $$id offline since it took its configuration, removed: HTTP $$code"
+              ;;
+            404) ;; # its job is done
+            *) log "slot $$n: runner $$id: HTTP $$code"; return ;;
+          esac
+          rm -f "$$idf" "$$takenf"
+        fi
+        name="$$prefix-$$n-$$(date +%s)"
+        req POST "$$api/generate-jitconfig" "$$(jq -nc --arg name "$$name" --argjson labels "$$labels" '{name: $$name, runner_group_id: 1, labels: $$labels, work_folder: "/_work"}')"
+        if [ "$$code" != 201 ]; then
+          log "slot $$n: generate-jitconfig: HTTP $$code $$(printf '%s' "$$body" | jq -r '.message? // empty' 2>/dev/null)"
+          return
+        fi
+        printf '%s' "$$body" | jq -r .runner.id >"$$idf"
+        printf '%s' "$$body" | jq -r .encoded_jit_config >"$$file.tmp" && mv "$$file.tmp" "$$file"
+        log "slot $$n: configured $$name ($$(cat "$$idf"))"
+      }
+
+      apk add --no-cache -q curl jq || exit 1
+      labels=$$(printf '%s' "self-hosted,$${RUNNER_LABELS:-meshmap}" | jq -Rc 'split(",") | map(select(length > 0))')
+      cleanup
+      while :; do
+        for n in $$(seq 1 "$${RUNNERS:-4}"); do slot "$$n"; done
+        sleep 10
+      done
 
 x-dind: &dind
   image: docker:29.9.2-dind
@@ -37,41 +140,42 @@ x-dind: &dind
     retries: 30
     start_period: 10s
 
+# The runner image for its tools (git, Docker CLI, Compose, Buildx, curl,
+# python3, jq), started with a just-in-time configuration instead of its own
+# token-based registration. Bump it at least monthly: GitHub refuses runners
+# that are too far behind.
 x-runner: &runner
   image: myoung34/github-runner:2.338.2-ubuntu-noble
   restart: unless-stopped
-  stop_grace_period: 30s # time to deregister
-  environment: &runner-env
-    RUNNER_SCOPE: repo
-    REPO_URL: ${REPO_URL:-https://github.com/868-no/map}
-    ACCESS_TOKEN: ${ACCESS_TOKEN:?set ACCESS_TOKEN in .env}
-    LABELS: ${RUNNER_LABELS:-meshmap}
-    EPHEMERAL: "true"
-    # Pinned: bump the image instead (GitHub refuses runners a month out of date).
-    DISABLE_AUTO_UPDATE: "true"
-    RUNNER_WORKDIR: /_work
+  environment:
+    RUNNER_ALLOW_RUNASROOT: "1"
     DOCKER_HOST: unix:///run/dind/docker.sock
     ACTIONS_RUNNER_HOOK_JOB_STARTED: /hooks/job-started.sh
   configs:
     - { source: job-started, target: /hooks/job-started.sh }
-
-# Runs before each job (ACTIONS_RUNNER_HOOK_JOB_STARTED) on the runner's own
-# Docker daemon: clears what an earlier job left behind (it may have been
-# cancelled before cleaning up), while the caches jobs share stay warm:
-# tagged images, named volumes (the toolchains' caches) and the build cache,
-# which is trimmed to 20 GB, least recently used first.
-configs:
-  job-started:
-    content: |
-      #!/bin/sh
-      docker rm -f $$(docker ps -aq) >/dev/null 2>&1
-      docker network prune -f >/dev/null 2>&1
-      docker volume prune -f >/dev/null 2>&1 # anonymous volumes only
-      docker image prune -f >/dev/null 2>&1  # untagged images only (replaced builds)
-      docker builder prune -af --max-used-space 20gb >/dev/null 2>&1
-      exit 0
+  entrypoint: ["/bin/bash", "-c"]
+  command:
+    - |
+      until [ -s /jit/config ]; do sleep 2; done
+      jit=$$(cat /jit/config)
+      rm -f /jit/config
+      exec /actions-runner/run.sh --jitconfig "$$jit"
 
 services:
+  controller:
+    image: alpine:3.24.3
+    restart: unless-stopped
+    environment:
+      ACCESS_TOKEN: ${ACCESS_TOKEN:?set ACCESS_TOKEN in .env}
+      REPO: ${REPO_URL:-https://github.com/868-no/map}
+      RUNNER_LABELS: ${RUNNER_LABELS:-meshmap}
+      RUNNER_NAME_PREFIX: ${RUNNER_NAME_PREFIX:-meshmap}
+      RUNNERS: "4"
+    configs:
+      - { source: controller, target: /controller.sh }
+    command: ["sh", "/controller.sh"]
+    volumes: [state:/state, jit-1:/jit-1, jit-2:/jit-2, jit-3:/jit-3, jit-4:/jit-4]
+
   dind-1:
     <<: *dind
     volumes: [docker-1:/var/lib/docker, sock-1:/run/dind, work-1:/_work]
@@ -79,8 +183,7 @@ services:
     <<: *runner
     network_mode: service:dind-1
     depends_on: { dind-1: { condition: service_healthy } }
-    environment: { <<: *runner-env, RUNNER_NAME: "${RUNNER_NAME_PREFIX:-meshmap}-1" }
-    volumes: [sock-1:/run/dind, work-1:/_work]
+    volumes: [sock-1:/run/dind, work-1:/_work, jit-1:/jit]
 
   dind-2:
     <<: *dind
@@ -89,8 +192,7 @@ services:
     <<: *runner
     network_mode: service:dind-2
     depends_on: { dind-2: { condition: service_healthy } }
-    environment: { <<: *runner-env, RUNNER_NAME: "${RUNNER_NAME_PREFIX:-meshmap}-2" }
-    volumes: [sock-2:/run/dind, work-2:/_work]
+    volumes: [sock-2:/run/dind, work-2:/_work, jit-2:/jit]
 
   dind-3:
     <<: *dind
@@ -99,8 +201,7 @@ services:
     <<: *runner
     network_mode: service:dind-3
     depends_on: { dind-3: { condition: service_healthy } }
-    environment: { <<: *runner-env, RUNNER_NAME: "${RUNNER_NAME_PREFIX:-meshmap}-3" }
-    volumes: [sock-3:/run/dind, work-3:/_work]
+    volumes: [sock-3:/run/dind, work-3:/_work, jit-3:/jit]
 
   dind-4:
     <<: *dind
@@ -109,19 +210,23 @@ services:
     <<: *runner
     network_mode: service:dind-4
     depends_on: { dind-4: { condition: service_healthy } }
-    environment: { <<: *runner-env, RUNNER_NAME: "${RUNNER_NAME_PREFIX:-meshmap}-4" }
-    volumes: [sock-4:/run/dind, work-4:/_work]
+    volumes: [sock-4:/run/dind, work-4:/_work, jit-4:/jit]
 
 volumes:
+  state:
   docker-1:
   sock-1:
   work-1:
+  jit-1:
   docker-2:
   sock-2:
   work-2:
+  jit-2:
   docker-3:
   sock-3:
   work-3:
+  jit-3:
   docker-4:
   sock-4:
   work-4:
+  jit-4:
