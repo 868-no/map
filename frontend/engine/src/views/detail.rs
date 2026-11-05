@@ -269,31 +269,26 @@ pub fn build_node_detail(rows: &[&Row], num: u32, b: &Built, i: &Interner) -> Op
     for &r in &own {
         pk.entry(r.lp).or_default().push(r);
     }
-    let min_str = |v: &mut dyn Iterator<Item = u32>| -> Option<String> { v.filter(|&x| x != 0).map(|x| i.s(x).to_string()).filter(|s| !s.is_empty()).min() };
-    let mut recent: Vec<(i64, PacketSummary)> = pk
-        .into_values()
-        .map(|rs| {
-            let at = rs.iter().map(|r| r.t).min().unwrap();
-            let to = rs.iter().filter_map(|r| r.dst).min();
-            (
-                at,
-                PacketSummary {
-                    at: iso(at),
-                    ty: min_str(&mut rs.iter().map(|r| r.ty)).unwrap_or_default(),
-                    packet_id: rs.iter().filter_map(|r| r.pid).min().unwrap_or(0),
-                    to: dest(to),
-                    channel: min_str(&mut rs.iter().map(|r| r.channel)),
-                    signature: min_str(&mut rs.iter().map(|r| r.sig)).unwrap_or_default(),
-                    crypto: min_str(&mut rs.iter().map(|r| r.crypto)).unwrap_or_default(),
-                    receptions: rs.iter().map(|r| r.ok).collect::<FxSet<u64>>().len(),
-                    bytes: rs.iter().map(|r| r.bytes).min().unwrap_or(0),
-                },
-            )
-        })
-        .collect();
+    // The least non-empty string among the copies, compared without copying.
+    let min_str = |v: &mut dyn Iterator<Item = u32>| -> Option<String> { v.filter(|&x| x != 0).map(|x| i.s(x)).filter(|s| !s.is_empty()).min().map(str::to_string) };
+    // The newest MAX_PACKETS, chosen before their summaries are built.
+    let mut recent: Vec<(i64, Vec<&Row>)> = pk.into_values().map(|rs| (rs.iter().map(|r| r.t).min().unwrap(), rs)).collect();
     recent.sort_by_key(|a| std::cmp::Reverse(a.0));
     recent.truncate(MAX_PACKETS);
-    d.recent_packets = recent.into_iter().map(|(_, p)| p).collect();
+    d.recent_packets = recent
+        .into_iter()
+        .map(|(at, rs)| PacketSummary {
+            at: iso(at),
+            ty: min_str(&mut rs.iter().map(|r| r.ty)).unwrap_or_default(),
+            packet_id: rs.iter().filter_map(|r| r.pid).min().unwrap_or(0),
+            to: dest(rs.iter().filter_map(|r| r.dst).min()),
+            channel: min_str(&mut rs.iter().map(|r| r.channel)),
+            signature: min_str(&mut rs.iter().map(|r| r.sig)).unwrap_or_default(),
+            crypto: min_str(&mut rs.iter().map(|r| r.crypto)).unwrap_or_default(),
+            receptions: rs.iter().map(|r| r.ok).collect::<FxSet<u64>>().len(),
+            bytes: rs.iter().map(|r| r.bytes).min().unwrap_or(0),
+        })
+        .collect();
     Some(d)
 }
 

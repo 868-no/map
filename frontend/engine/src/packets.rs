@@ -178,8 +178,18 @@ pub fn packet_log(rows: &[&Row], num: u32, ctx: &RelayContext, replies: &ReplyIn
     }
     let n_own = own.len();
     let n_rel = relayed.len();
-    let mut own_list: Vec<(i64, OwnPacket)> = own
-        .into_values()
+    let n_in = inbound.len();
+    // The newest MAX_LOG of each, chosen before their entries (strings,
+    // replies) are built.
+    fn newest<T>(mut v: Vec<(i64, T)>) -> impl Iterator<Item = T> {
+        v.sort_by_key(|a| std::cmp::Reverse(a.0));
+        v.truncate(MAX_LOG);
+        v.into_iter().map(|x| x.1)
+    }
+    let own = newest(own.into_values().map(|rs| (rs.iter().map(|r| r.t).min().unwrap(), rs)).collect());
+    let relayed = newest(relayed.into_values().map(|e| (e.first, e)).collect());
+    let inbound = newest(inbound.into_values().map(|r| (r.t, r)).collect());
+    let own_list: Vec<OwnPacket> = own
         .map(|rs| {
             let first = rs.iter().copied().reduce(|a, b| if b.t < a.t { b } else { a }).unwrap();
             use crate::row::ty;
@@ -187,9 +197,7 @@ pub fn packet_log(rows: &[&Row], num: u32, ctx: &RelayContext, replies: &ReplyIn
             let radio = |r: &&&Row| r.rr != ty::VIA_MQTT && r.rr != ty::NON_RF;
             let hops = others.iter().filter(radio).filter_map(|r| r.hops()).min();
             let best = rs.iter().map(|r| r.sig).max_by_key(|&s| i.sig_rank(s)).map_or("unsigned", |s| i.s(s));
-            (
-                first.t,
-                OwnPacket {
+            OwnPacket {
                     lp: key_hex(first.lp),
                     at: iso(first.t),
                     ty: i.s(first.ty).to_string(),
@@ -205,12 +213,10 @@ pub fn packet_log(rows: &[&Row], num: u32, ctx: &RelayContext, replies: &ReplyIn
                     answers: replies.answer(first, &more, i),
                     in_response_to: in_response_to(first).map(node_id),
                     invalid: first.invalid().map(|v| i.s(v).to_string()),
-                },
-            )
+            }
         })
         .collect();
-    let mut rel_list: Vec<(i64, RelayedPacket)> = relayed
-        .into_values()
+    let rel_list: Vec<RelayedPacket> = relayed
         .map(|e| {
             let mut gws: Vec<u32> = e.gateways.into_iter().collect();
             gws.sort_unstable();
@@ -221,22 +227,14 @@ pub fn packet_log(rows: &[&Row], num: u32, ctx: &RelayContext, replies: &ReplyIn
             if e.route {
                 evidence.push("traceroute");
             }
-            (e.first, RelayedPacket { lp: key_hex(e.row.lp), at: iso(e.first), origin: node_id(e.row.src), ty: i.s(e.row.ty).to_string(), to: dest(e.row.dst), evidence, gateways: gws.into_iter().map(node_id).collect() })
+            RelayedPacket { lp: key_hex(e.row.lp), at: iso(e.first), origin: node_id(e.row.src), ty: i.s(e.row.ty).to_string(), to: dest(e.row.dst), evidence, gateways: gws.into_iter().map(node_id).collect() }
         })
         .collect();
-    let n_in = inbound.len();
-    let mut in_list: Vec<(i64, InboundPacket)> =
-        inbound.into_values().map(|r| (r.t, InboundPacket { lp: key_hex(r.lp), at: iso(r.t), origin: node_id(r.src), ty: i.s(r.ty).to_string(), answers: replies.answer(r, &more, i) })).collect();
-    own_list.sort_by_key(|a| std::cmp::Reverse(a.0));
-    rel_list.sort_by_key(|a| std::cmp::Reverse(a.0));
-    in_list.sort_by_key(|a| std::cmp::Reverse(a.0));
-    own_list.truncate(MAX_LOG);
-    rel_list.truncate(MAX_LOG);
-    in_list.truncate(MAX_LOG);
+    let in_list: Vec<InboundPacket> = inbound.map(|r| InboundPacket { lp: key_hex(r.lp), at: iso(r.t), origin: node_id(r.src), ty: i.s(r.ty).to_string(), answers: replies.answer(r, &more, i) }).collect();
     PacketLog {
-        own: own_list.into_iter().map(|x| x.1).collect(),
-        relayed: rel_list.into_iter().map(|x| x.1).collect(),
-        inbound: in_list.into_iter().map(|x| x.1).collect(),
+        own: own_list,
+        relayed: rel_list,
+        inbound: in_list,
         truncated: n_own > MAX_LOG || n_rel > MAX_LOG || n_in > MAX_LOG,
     }
 }
