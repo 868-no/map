@@ -25,13 +25,25 @@
 	# (see docs/operations.md). Nothing is imported when none exist.
 	import /etc/caddy/auth/*.caddy
 
+	# Upstreams (D-157). One `meshmap serve` answers everything by default.
+	# A split deployment (deploy/stack.swarm.yaml) sets API_UPSTREAM to the
+	# `serve --no-ingest` replicas and FETCH_UPSTREAM to the single ingesting
+	# process, which alone fetches weather and terrain upstream and alone
+	# knows the brokers' state: those routes, the capabilities that report
+	# them, and health go there.
 	handle /api/* {
-		reverse_proxy backend:8000 {
-			flush_interval -1 # SSE
+		@fetch path /api/v1/weather /api/v1/terrain /api/v1/terrain/* /api/v1/capabilities
+		handle @fetch {
+			reverse_proxy {$FETCH_UPSTREAM:backend:8000}
+		}
+		handle {
+			reverse_proxy {$API_UPSTREAM:backend:8000} {
+				flush_interval -1 # SSE
+			}
 		}
 	}
 	handle /health/* {
-		reverse_proxy backend:8000
+		reverse_proxy {$FETCH_UPSTREAM:backend:8000}
 	}
 	# Tiles: cached by the browser's HTTP cache (range requests, ETag), never
 	# by the service worker. A rebuilt basemap changes the ETag.

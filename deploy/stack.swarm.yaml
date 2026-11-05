@@ -1,0 +1,209 @@
+# 868.no Map: production on Docker Swarm, with the HTTP API scaled out (D-157).
+# Same images and configuration as compose.production.yaml, split into:
+#
+#   ingest   `meshmap serve`: MQTT ingest, plus the only process that fetches
+#            weather (MET) and terrain (Geonorge) upstream and knows broker
+#            state. Exactly ONE replica: the broker client_id is fixed, and two
+#            would keep disconnecting each other.
+#   backend  `meshmap serve --no-ingest`: the HTTP API, API_REPLICAS replicas
+#            (default 2), weather and terrain fetching off; live rows arrive
+#            over Redis pub/sub.
+#   web      Caddy: sends /api/v1/weather, /api/v1/terrain*, /api/v1/capabilities
+#            and /health/* to FETCH_UPSTREAM (ingest), the rest of /api/* to
+#            API_UPSTREAM (backend), see web/Caddyfile.
+#
+#   docker stack deploy -c deploy/stack.swarm.yaml meshmap     (or a Portainer stack)
+#
+# Values written ${LIKE_THIS} come from the stack's environment (Portainer's
+# env panel, or `export` before `docker stack deploy`). See docs/operations.md,
+# "Scaling horizontally (Swarm)", for what scales, connection budgeting and
+# the limits that become per replica.
+#
+# Swarm ignores `restart:` and `depends_on:`; services restart through
+# deploy.restart_policy and the backend waits for the database by itself.
+version: "3.8"
+
+x-backend-env: &backend-env
+  POSTGRES_HOST: postgres
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+  REDIS_URL: redis://redis:6379/0
+  DEMO_MODE: "false"
+  # Map defaults and windows (see backend/internal/config/config.go for all options)
+  DEFAULT_MAP_LAT: "63.43"
+  DEFAULT_MAP_LON: "10.40"
+  DEFAULT_MAP_ZOOM: "7"
+  RETENTION_MONTHS: "6"
+  # Shown in the privacy policy (/privacy.html).
+  OPERATOR_NAME: ${OPERATOR_NAME:-}
+  OPERATOR_CONTACT: ${OPERATOR_CONTACT:-}
+  # Connections per process: the ingest process opens both pools, each API
+  # replica only DB_API_CONNS. Keep the total under Postgres max_connections
+  # (docs/operations.md).
+  DB_API_CONNS: ${DB_API_CONNS:-12}
+  DB_INGEST_CONNS: ${DB_INGEST_CONNS:-6}
+  # Weather (D-133) and terrain (D-143): fetched by the ingest service only.
+  WEATHER_ENABLED: ${WEATHER_ENABLED:-true}
+  TERRAIN_ENABLED: ${TERRAIN_ENABLED:-true}
+  # Brokers and channel keys: the same YAML as config/examples/*.yaml.
+  MQTT_BROKERS: |
+    brokers:
+      - id: no868
+        host: mqtt.868.no
+        port: 1883
+        protocol: v5
+        tls: { enabled: false }
+        username: ${MQTT_USERNAME:?set MQTT_USERNAME}
+        password: ${MQTT_PASSWORD:?set MQTT_PASSWORD}
+        client_id: meshmap-ingest-1
+        topics:
+          - { filter: "msh/#", qos: 0 }
+        accept_retained: false
+  CHANNEL_KEYS: |
+    channels:
+      - { name: LongFast, broker_ids: ["*"], mode: ctr, psks: ["AQ=="] }
+      - { name: NarrowFast, broker_ids: ["*"], mode: ctr, psks: ["AQ=="] }
+
+x-healthcheck: &backend-healthcheck
+  test: ["CMD", "/usr/local/bin/meshmap", "healthcheck"]
+  interval: 10s
+  timeout: 5s
+  start_period: 30s
+  retries: 6
+
+x-restart: &restart
+  restart_policy:
+    condition: any
+    delay: 5s
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: meshmap
+      POSTGRES_USER: meshmap
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+    # max_connections: 100 (the default) fits ingest (18) + maintenance (2) +
+    # up to 5 API replicas (12 each, plus one more during a rolling update).
+    command: [postgres, -c, max_connections=100, -c, shared_buffers=512MB, -c, effective_cache_size=2GB,
+              -c, work_mem=32MB, -c, maintenance_work_mem=256MB, -c, max_wal_size=2GB, -c, random_page_cost=1.1]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U meshmap -d meshmap"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    stop_grace_period: 60s
+    deploy:
+      <<: *restart
+      replicas: 1
+      # Never two servers on one data directory.
+      update_config: { order: stop-first }
+      # With per-node volumes instead of NFS, pin it to the node holding the data:
+      # placement: { constraints: ["node.hostname == DB_NODE"] }
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    deploy:
+      <<: *restart
+      replicas: 1
+
+  # MQTT ingest + weather/terrain fetching + /health. Exactly one.
+  ingest:
+    image: ghcr.io/868-no/map-backend:${MESHMAP_TAG:-latest}
+    command: ["serve"]
+    environment: *backend-env
+    healthcheck: *backend-healthcheck
+    # Drains MQTT, flushes the writer and finishes requests on SIGTERM.
+    stop_grace_period: 30s
+    deploy:
+      <<: *restart
+      replicas: 1
+      # Stop the old task before starting the new one: two would share the
+      # broker client_id and kick each other off.
+      update_config: { order: stop-first, failure_action: rollback }
+
+  # The HTTP API, scaled out. Weather and terrain off: only ingest fetches.
+  backend:
+    image: ghcr.io/868-no/map-backend:${MESHMAP_TAG:-latest}
+    command: ["serve", "--no-ingest"]
+    environment:
+      <<: *backend-env
+      WEATHER_ENABLED: "false"
+      TERRAIN_ENABLED: "false"
+    healthcheck: *backend-healthcheck
+    stop_grace_period: 20s
+    deploy:
+      <<: *restart
+      replicas: ${API_REPLICAS:-2}
+      update_config: { order: start-first, parallelism: 1, delay: 10s, failure_action: rollback }
+
+  maintenance:
+    image: ghcr.io/868-no/map-backend:${MESHMAP_TAG:-latest}
+    command: ["maintenance"]
+    environment: *backend-env
+    deploy:
+      <<: *restart
+      replicas: 1
+
+  web:
+    image: ghcr.io/868-no/map-web:${MESHMAP_TAG:-latest}
+    environment:
+      API_UPSTREAM: backend:8000
+      FETCH_UPSTREAM: ingest:8000
+    ports:
+      - "8080:80" # the reverse proxy's upstream (Swarm ingress: any node)
+    volumes:
+      - basemap:/srv/tiles:ro
+    # To reach web from a tunnel/proxy container on an external overlay
+    # network instead of a published port, drop `ports` and add:
+    # networks: [default, edge]
+    deploy:
+      <<: *restart
+      replicas: 2
+      update_config: { order: start-first, parallelism: 1 }
+
+  # Builds the basemap into the shared volume; see compose.production.yaml.
+  basemap:
+    image: ghcr.io/868-no/map-basemap:${MESHMAP_TAG:-latest}
+    environment:
+      BASEMAP_AREA: norway
+      BASEMAP_BOUNDS: world
+      BASEMAP_MAX_AGE_DAYS: "30"
+      PLANETILER_HEAP: 8g
+    volumes:
+      - basemap:/data
+    deploy:
+      <<: *restart
+      replicas: 1
+      update_config: { order: stop-first }
+
+# networks:
+#   edge:
+#     external: true
+#     name: EDGE_NETWORK   # the overlay the tunnel/proxy container is on
+
+# A named volume in Swarm is created on whichever node a task lands, one per
+# node. pgdata must be the same data wherever postgres runs, and basemap is
+# written by `basemap` and read by every `web` replica, so both are NFS
+# volumes here (fill in the server and export paths), or else pin the
+# services to one node with placement constraints.
+volumes:
+  pgdata:
+    driver: local
+    driver_opts:
+      type: nfs
+      o: addr=${NFS_SERVER:?set NFS_SERVER},nfsvers=4.1,rw,hard
+      device: ":${NFS_PGDATA_PATH:-/export/meshmap/pgdata}"
+  basemap:
+    driver: local
+    driver_opts:
+      type: nfs
+      o: addr=${NFS_SERVER:?set NFS_SERVER},nfsvers=4.1,rw,hard
+      device: ":${NFS_BASEMAP_PATH:-/export/meshmap/basemap}"

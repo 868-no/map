@@ -78,6 +78,29 @@ Serve the map over HTTPS: browsers only enable the service worker (offline use) 
 
 `web` honours `X-Forwarded-For` only from private-range peers. The backend trusts `TRUSTED_PROXIES` (default: private ranges), so per-client rate limits see real client addresses.
 
+## Scaling horizontally (Swarm)
+
+[`deploy/stack.swarm.yaml`](../deploy/stack.swarm.yaml) is `compose.production.yaml` split for Docker Swarm (`docker stack deploy -c deploy/stack.swarm.yaml meshmap`, or a Portainer stack) so the HTTP API can run as several replicas (D-157):
+
+| Service | Command | Replicas | Why |
+| --- | --- | --- | --- |
+| `ingest` | `serve` | exactly 1, `stop-first` | MQTT ingest: the broker `client_id` is fixed, so two would disconnect each other, and two subscribers would only duplicate work. It is also the only process that fetches weather (MET's MEPS archive answers 429 to a second concurrent request) and terrain (Geonorge should see one client), runs their warmers, and knows broker state for `/health/ready`. |
+| `backend` | `serve --no-ingest` | `API_REPLICAS` (default 2), `start-first` | The API. `WEATHER_ENABLED=false`, `TERRAIN_ENABLED=false`; live rows arrive over Redis pub/sub, so Redis is required. Page cursors are stateless, so any replica answers any page. |
+| `web` | Caddy | 2 | Stateless. |
+| `postgres`, `redis`, `maintenance`, `basemap` | | 1 each | `maintenance` takes an advisory lock anyway; Postgres is `stop-first` so two servers never share the data directory. |
+
+**Routing.** `web/Caddyfile` reads two upstreams from the environment: `FETCH_UPSTREAM` gets `/api/v1/weather`, `/api/v1/terrain` and `/api/v1/terrain/*`, `/api/v1/capabilities` (a replica with weather and terrain off would report them off) and `/health/*`; `API_UPSTREAM` gets the rest of `/api/*`, the live stream included (flushed for SSE). Both default to `backend:8000`, so a single `serve` (the dev `compose.yaml`, CI, `compose.production.yaml`) behaves as before. The stack sets `API_UPSTREAM=backend:8000` and `FETCH_UPSTREAM=ingest:8000`; Swarm's service address spreads connections over the replicas.
+
+**Volumes.** A named volume in Swarm lives on whichever node the task runs on. `pgdata` must follow `postgres`, and `basemap` is written by `basemap` and read by every `web` replica, so the stack declares both as NFS volumes (`NFS_SERVER`, `NFS_PGDATA_PATH`, `NFS_BASEMAP_PATH`); alternatively pin those services to one node with placement constraints. Swarm ignores `restart:` and `depends_on:`: the stack uses `deploy.restart_policy`, and the backend waits for the database by itself.
+
+**Edge.** The stack publishes `web` on port 8080 through the ingress mesh. To reach it from a tunnel or proxy container on an existing overlay network instead, drop `ports` and attach `web` to that network (the commented `edge` network in the file).
+
+**Connection budget.** Postgres is the shared limit. The ingest process opens `DB_API_CONNS + DB_INGEST_CONNS` (default 12 + 6 = 18), each API replica only `DB_API_CONNS` (12), maintenance 2. With the default `max_connections=100` (3 reserved for superusers), 18 + 2 + 12 × (replicas + 1 for the extra task during a `start-first` update) must stay under 97: at most 5 replicas at the defaults. For more, lower `DB_API_CONNS` (keeping `API_READ_SLOTS ≤ DB_API_CONNS − 2`) or raise `max_connections` (each connection costs Postgres memory). More replicas add HTTP and encoding capacity, not database capacity: the `/observations` reads run in Postgres.
+
+**Limits become per replica.** Every per-visitor limit is kept in process memory: the request rate (`API_RATE_PER_SECOND`, `API_RATE_BURST`), live streams (`API_STREAMS_PER_CLIENT`, `API_STREAMS_TOTAL`), `/observations` read slots (`API_READS_PER_CLIENT`, `API_READ_SLOTS`) and the weather and terrain turns. With N replicas a visitor whose connections land on different replicas gets up to N times as much; weather and terrain turns stay single because one process serves them. Lower the per-client values if that matters.
+
+**Other per-process work.** Each replica runs at start the stored-row-encoding backfill (`FOR UPDATE SKIP LOCKED`, so replicas share the work rather than repeat it) and `InitSchema` (serialised by an advisory lock). Trend summaries are kept per process, so each replica scans the log once on its first `/trends` request after a start and refreshes on its own; the identity index lives only in `ingest`, so restart `ingest` (not the replicas) after an import or restore. Metrics on `:9100` are per task.
+
 ## Access control
 
 Public by default. For basic auth, create `deploy/caddy-auth/basic.caddy` (see the README there) and restart `web`. `compose.production.yaml` does not mount that directory; add a volume for `/etc/caddy/auth` to `web` there if you need it.

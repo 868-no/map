@@ -39,13 +39,16 @@ This page shows the components and where the code lives. The rules the system fo
 │               + derivation Web Worker running │
 │               the WebAssembly engine (D-040): │
 │               rows in IndexedDB, live via SSE │
-│  /api, /health → backend:8000 (SSE flushed)   │
+│  /api, /health → backend:8000 (SSE flushed;   │
+│    split upstreams in a scaled stack, D-157)  │
 │  /tiles       self-hosted PMTiles (ranges)    │
 │  /fonts, /styles  glyphs, dark + light styles │
 └───────────────────────────────────────────────┘
 ```
 
 Compose network: only `web` publishes a port. `backend:9100` serves Prometheus metrics inside the network. The `basemap` service builds `basemap.pmtiles` into the volume `web` serves `/tiles` from ([basemap.md](basemap.md)). The `demo` profile adds `mosquitto` (compose network only) and `demo-publisher`.
+
+Scaled out (`deploy/stack.swarm.yaml`, D-157), the one process above becomes two services: `ingest` (`meshmap serve`, exactly one: MQTT ingest, the weather and terrain fetching and warming, broker health) and `backend` (`meshmap serve --no-ingest`, several replicas: the API, weather and terrain off, live rows over Redis pub/sub). `web` sends `/api/v1/weather`, `/api/v1/terrain*`, `/api/v1/capabilities` and `/health/*` to `FETCH_UPSTREAM` and the rest of `/api/*` to `API_UPSTREAM`; both default to `backend:8000`. See [operations.md](operations.md#scaling-horizontally-swarm).
 
 ## Data model
 
