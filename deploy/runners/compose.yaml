@@ -39,7 +39,10 @@ configs:
   job-started:
     content: |
       #!/bin/sh
-      docker rm -f $$(docker ps -aq) >/dev/null 2>&1
+      # The runner runs it with bash -e, and a failing hook fails the job:
+      # nothing here may stop it.
+      set +e
+      docker ps -aq | xargs -r docker rm -f >/dev/null 2>&1
       docker network prune -f >/dev/null 2>&1
       docker volume prune -f >/dev/null 2>&1 # anonymous volumes only
       docker image prune -f >/dev/null 2>&1  # untagged images only (replaced builds)
