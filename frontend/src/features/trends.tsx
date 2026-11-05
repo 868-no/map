@@ -21,7 +21,7 @@ function useTrends(bucket: Bucket) {
   return useQuery({
     queryKey: ['trends', bucket, TZ],
     queryFn: ({ signal }) => getJSON<Trends>('/api/v1/trends', new URLSearchParams({ bucket, tz: TZ }), signal),
-    staleTime: 5 * 60_000,
+    staleTime: 15 * 60_000, // as long as the response may be cached (max-age)
   })
 }
 
