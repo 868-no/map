@@ -7,6 +7,7 @@ pub mod channels;
 pub mod copies;
 pub mod geo;
 pub mod health;
+pub mod landsdel;
 pub mod movement;
 pub mod graph;
 pub mod packets;
@@ -89,6 +90,8 @@ pub struct Engine {
     rows: Option<(Key, Vec<u32>)>,
     /// Interned strings at which to drop those no row holds any more (compact).
     compact_at: usize,
+    /// The regions' outlines for health (D-161), empty until set_regions.
+    regions: landsdel::Regions,
 }
 
 /// Interned strings below which the interner is never compacted.
@@ -96,7 +99,7 @@ const COMPACT_MIN: usize = 4096;
 
 impl Default for Engine {
     fn default() -> Self {
-        Engine { i: Interner::default(), store: Store::default(), geo: GeoOptions::default(), rules: Rules::default(), built: None, rows: None, compact_at: COMPACT_MIN }
+        Engine { i: Interner::default(), store: Store::default(), geo: GeoOptions::default(), rules: Rules::default(), built: None, rows: None, compact_at: COMPACT_MIN, regions: landsdel::Regions::default() }
     }
 }
 
@@ -179,6 +182,13 @@ impl Engine {
         }
         self.rules = Rules { silent: o.silent_rule, mqtt_links: o.mqtt_links, moves: o.move_rule, signal: o.signal_rule };
         self.built = None;
+        Ok(())
+    }
+
+    /// The regions' outlines (the map's Regions layer GeoJSON) for the
+    /// health rule on gateways' topic roots (D-161). Replaces the last set.
+    pub fn set_regions(&mut self, geojson: &str) -> Result<(), JsError> {
+        self.regions = landsdel::Regions::parse(geojson).map_err(err)?;
         Ok(())
     }
 
@@ -333,7 +343,7 @@ impl Engine {
                 let invalid: Vec<&row::Row> = self.store.rows[lo..hi].iter().filter(|r| Some(r.ty) == invalid_ty).collect();
                 let rows = self.rows();
                 let presets = b.presets.get_or_init(|| channels::PresetIndex::new(&rows, &b.hops, &self.i));
-                Ok(json(&health::health(&rows, &invalid, &b.snapshot.nodes, &b.copies, presets, &self.i, hours)))
+                Ok(json(&health::health(&rows, &invalid, &b.snapshot.nodes, &b.copies, presets, &self.i, hours, &self.regions)))
             }
             _ => Err(err(format!("unknown view {kind}"))),
         }

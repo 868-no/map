@@ -6,6 +6,8 @@
 import init, { Engine } from '../engine/pkg/engine.js'
 // Content-hashed in builds: names this engine build for the saved row copy (D-102).
 import engineUrl from '../engine/pkg/engine_bg.wasm?url'
+// The map's Regions layer outlines (content-hashed), for health's topic-root rule (D-161).
+import regionsUrl from '../assets/regions.geojson?url'
 import { gunzip, openPersistence, type Persistence, type Source } from './persist'
 import { RowStore, type Backend, type Fetched, type Synced, type WindowReq } from './rowStore'
 import { debounce, rebuildDelay } from './debounce'
@@ -359,6 +361,40 @@ function remember(key: string, revision: string, make: () => Uint8Array): Uint8A
   memoChars += v.length
   return v
 }
+
+/** Drops memoised views of one kind, so they are built again. */
+function forget(kind: string) {
+  for (const [k, x] of memo) {
+    if (k.split('|')[4] === kind) {
+      memo.delete(k)
+      memoChars -= x.length
+    }
+  }
+}
+
+// The regions' outlines are fetched once, from the same file the map's
+// Regions layer uses (HTTP-cached, content-hashed), not built into the
+// engine. Health judges gateways' topic roots only once they are in; until
+// then, or if every attempt fails, that one rule is skipped (D-161).
+async function loadRegions() {
+  for (let attempt = 0; attempt < 4; attempt++) {
+    try {
+      const res = await fetch(regionsUrl)
+      if (!res.ok) throw new Error(`regions: HTTP ${res.status}`)
+      const text = await res.text()
+      await started
+      engine.set_regions(text)
+      forget('health')
+      self.postMessage({ type: 'changed' } satisfies Response)
+      return
+    } catch (err) {
+      if (fatal(err)) return
+      if (attempt === 3) console.warn('regions not loaded: topic roots go unchecked', err)
+      else await new Promise((r) => setTimeout(r, 5000 * 2 ** attempt))
+    }
+  }
+}
+void loadRegions()
 
 const NULL = [110, 117, 108, 108] // "null"
 const isNull = (b: Uint8Array) => b.length === 4 && NULL.every((c, k) => b[k] === c)

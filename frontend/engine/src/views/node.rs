@@ -177,7 +177,7 @@ impl Node {
         self.airborne = self.position.as_ref().and_then(|p| p.alt).is_some_and(|a| a > crate::movement::AIRBORNE_M);
     }
 
-    pub(super) fn new(n: u32) -> Self {
+    pub(crate) fn new(n: u32) -> Self {
         Node {
             id: node_id(n), num: n, status: "observed", identity: None, position: None, stale_position: None, telemetry: None, first_seen: None, last_seen: None, last_referenced: None, own_uplinks: 0,
             packets: 0, receptions: 0, gateway_receptions: 0, is_gateway: false, multi_uplink: false, signatures: Signatures::default(), brokers: None,

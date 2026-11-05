@@ -23,6 +23,8 @@ const KIND: Record<string, string> = {
   channel_busy: 'Busy channel',
   airtime_limit: 'Near the duty-cycle limit',
   downlink: 'MQTT downlink',
+  moving_gateway: 'Moving MQTT gateway',
+  topic_region: 'Topic root and region differ',
   preset: 'Different preset than the mesh',
   isolated: 'Not reported by other gateways',
   hop_limit: 'Hop limit higher than needed',
