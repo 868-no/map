@@ -411,3 +411,28 @@ func TestGustFailureOnOldHourIsRetried(t *testing.T) {
 		t.Fatalf("after the archive recovered: %+v", hs)
 	}
 }
+
+// Only hours neither valid in memory nor queued are looked up in the store:
+// a queued one was looked up when queued and stays queued until in memory.
+func TestUnknownSkipsQueued(t *testing.T) {
+	now := time.Date(2026, 11, 3, 15, 30, 0, 0, time.UTC)
+	c := New("http://127.0.0.1:0", "")
+	cell := Cell{1, 1}
+	var ks []key
+	for h := range 5 {
+		ks = append(ks, key{cell, now.Unix()/3600 - 10 + int64(h)})
+	}
+	c.queued[ks[0]] = inUrgent
+	c.queued[ks[4]] = inBackground
+	c.cache[ks[2]] = entry{expires: now.Add(time.Minute)}
+	c.cache[ks[3]] = entry{expires: now.Add(-time.Minute)} // outdated
+	if lo, hi, ok := c.unknown(ks, now); !ok || lo != ks[1] || hi != ks[3] {
+		t.Fatalf("unknown [%v, %v] %v, want [%v, %v]", lo, hi, ok, ks[1], ks[3])
+	}
+	c.cache[ks[1]] = entry{}
+	delete(c.cache, ks[3])
+	c.queued[ks[3]] = inBackground
+	if _, _, ok := c.unknown(ks, now); ok {
+		t.Fatal("every hour is cached or queued")
+	}
+}

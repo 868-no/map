@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -71,6 +72,79 @@ func TestWeatherStore(t *testing.T) {
 	}
 	if _, inc := client().Series(ctx, cell, start, end); !inc {
 		t.Fatal("an old row was served as complete")
+	}
+}
+
+// A queued hour is not looked up in the store again while it waits (it was
+// not there when queued); a stored row never replaces a still-valid hour in
+// memory, such as one whose gust request failed and was deliberately not
+// stored, so that hour is not fetched again on every poll.
+func TestWeatherStoreLookups(t *testing.T) {
+	pool := freshDB(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	now := time.Date(2026, 11, 3, 12, 30, 0, 0, time.UTC)
+	cell := weather.Cell{X: 662, Y: 1159}
+	store := func(at time.Time, version int) {
+		t.Helper()
+		if _, err := pool.Exec(ctx, `INSERT INTO weather_hour (cell_x, cell_y, valid_at, temp_c, gust_ms, fetched_at, version)
+			VALUES ($1, $2, $3, 1, 2, $4, $5) ON CONFLICT (cell_x, cell_y, valid_at) DO UPDATE SET version = EXCLUDED.version`,
+			cell.X, cell.Y, at, now, version); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Queued (no worker runs), then stored by someone else: not looked up.
+	a := time.Date(2026, 11, 1, 10, 0, 0, 0, time.UTC)
+	idle := weather.New("http://127.0.0.1:0", "test")
+	idle.Now, idle.Store = func() time.Time { return now }, &weather.Store{Pool: pool}
+	if _, inc := idle.Series(ctx, cell, a, a.Add(time.Hour)); !inc {
+		t.Fatal("an unknown hour is complete")
+	}
+	store(a, 2)
+	if _, inc := idle.Series(ctx, cell, a, a.Add(time.Hour)); !inc {
+		t.Fatal("a queued hour was looked up in the store again")
+	}
+
+	// The archive's gusts fail: hour b is kept in memory, not stored. The
+	// store holds an older row for it (an older version: due again).
+	var bHits atomic.Int32
+	b := time.Date(2026, 11, 1, 14, 0, 0, 0, time.UTC)
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/meps25epsarchive/") {
+			http.Error(w, "busy", http.StatusBadGateway)
+			return
+		}
+		if strings.Contains(r.URL.Path, b.Format("20060102T15Z")) {
+			bHits.Add(1)
+		}
+		fmt.Fprint(w, "air_temperature_2m.air_temperature_2m[1][1][1]\n[0][0], 270.65\n\nprecipitation_amount.precipitation_amount[1][1][1]\n[0][0], 0.3\n")
+	}))
+	defer up.Close()
+	store(b, 1)
+	c := weather.New(up.URL, "test")
+	c.Now, c.Interval, c.Store = func() time.Time { return now }, time.Millisecond, &weather.Store{Pool: pool}
+	go c.Run(ctx)
+	fill := func(start, end time.Time) {
+		t.Helper()
+		for i := 0; ; i++ {
+			if _, inc := c.Series(ctx, cell, start, end); !inc {
+				return
+			}
+			if i > 400 {
+				t.Fatal("never complete")
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+	}
+	fill(b, b.Add(time.Hour))
+	if bHits.Load() != 1 {
+		t.Fatalf("hour b fetched %d times", bHits.Load())
+	}
+	// A wider range reads the store again (for the hours around b): b's old
+	// row must not replace what memory holds.
+	fill(b.Add(-time.Hour), b.Add(2*time.Hour))
+	if bHits.Load() != 1 {
+		t.Fatalf("hour b fetched again (%d) after its old stored row replaced it in memory", bHits.Load())
 	}
 }
 

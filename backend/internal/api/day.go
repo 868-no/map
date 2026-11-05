@@ -41,9 +41,12 @@ const (
 	dayTTL         = 8 * 24 * time.Hour // Redis keeps a day this long: rolling windows reach back 8 days; older days are rebuilt when asked
 	dayMaxBytes    = 64 << 20           // largest compressed day built in memory; larger days stream uncached
 	dayMaxRedis    = 16 << 20           // largest compressed day stored in Redis
-	dayLockTTL     = time.Minute        // one replica builds a day; a crashed builder's lock lapses after this
 	dayBuildLimit  = 2 * time.Minute    // a build outlives the request that started it, not by more than this
-	immutableCC    = "public, max-age=31536000, immutable"
+	// One replica builds a day; a crashed builder's lock lapses after this.
+	// The build's deadline starts before the lock is taken, so a lock this
+	// long outlives every build it guards.
+	dayLockTTL  = dayBuildLimit
+	immutableCC = "public, max-age=31536000, immutable"
 )
 
 // How long a replica waits for another's build before building its own, and
@@ -206,38 +209,19 @@ func (s *Server) observationsDay(ctx context.Context, in *DayInput) (*DayOutput,
 		}}, nil
 	}
 	head := ObservationsBody{Window: WindowEcho{Start: p.day.Start, End: p.day.End}, Since: p.rows.Start, Until: p.rows.End, Generation: gen}
-	var res *dayResult
-	switch key := "meshmap:obsday:" + gen + ":" + in.Date; {
-	case final:
-		res, err = s.sharedDay(ctx, db, p, head, st, key)
-	default:
+	if !final {
+		// Not final by the clock (today, the retention edge) or importing:
+		// nothing to share, so nothing is held whole; streamed as read.
 		s.dayCount("uncached")
-		res, err = s.buildDay(ctx, db, p, head, st, false)
+		return s.streamDay(ctx, db, p, head, gz)
 	}
+	res, err := s.sharedDay(ctx, db, p, head, st, "meshmap:obsday:"+gen+":"+in.Date)
 	if err != nil {
 		return nil, err
 	}
 	if res.tooLarge {
 		// Too large to hold: written from the database like a page.
-		release, err := s.acquire(ctx)
-		if err != nil {
-			return nil, err
-		}
-		src, err := db.Rows(ctx, p.rows)
-		if err != nil {
-			release()
-			return nil, err
-		}
-		return &DayOutput{Body: func(hc huma.Context) {
-			defer release()
-			defer src.Close()
-			dayHeaders(hc, false, "")
-			head.Now = s.now()
-			if err := writeObservations(hc.BodyWriter(), head, src, nil); err != nil {
-				s.Log.Warn("day stream aborted", "err", err)
-				panic(http.ErrAbortHandler)
-			}
-		}}, nil
+		return s.streamDay(ctx, db, p, head, gz)
 	}
 	return &DayOutput{Body: func(hc huma.Context) {
 		dayHeaders(hc, res.immutable, tag)
@@ -250,6 +234,42 @@ func (s *Server) observationsDay(ctx context.Context, in *DayInput) (*DayOutput,
 		zr, err := gzip.NewReader(bytes.NewReader(res.gz))
 		if err == nil {
 			_, err = io.Copy(hc.BodyWriter(), zr)
+		}
+		if err != nil {
+			s.Log.Warn("day stream aborted", "err", err)
+			panic(http.ErrAbortHandler)
+		}
+	}}, nil
+}
+
+// streamDay writes a day's rows from the database as they are read, never
+// held whole, compressed on the fly when the client takes gzip. Errors up to
+// the first row still get a proper status; later ones cut the response.
+func (s *Server) streamDay(ctx context.Context, db rowsDB, p dayPlan, head ObservationsBody, gz bool) (*DayOutput, error) {
+	release, err := s.acquire(ctx)
+	if err != nil {
+		return nil, err
+	}
+	src, err := db.Rows(ctx, p.rows)
+	if err != nil {
+		release()
+		return nil, err
+	}
+	return &DayOutput{Body: func(hc huma.Context) {
+		defer release()
+		defer src.Close()
+		dayHeaders(hc, false, "")
+		head.Now = s.now()
+		var dst io.Writer = hc.BodyWriter()
+		var zw *gzip.Writer
+		if gz {
+			hc.SetHeader("Content-Encoding", "gzip")
+			zw = gzip.NewWriter(dst)
+			dst = zw
+		}
+		err := writeObservations(dst, head, src, nil)
+		if err == nil && zw != nil {
+			err = zw.Close()
 		}
 		if err != nil {
 			s.Log.Warn("day stream aborted", "err", err)
@@ -338,7 +358,7 @@ func (s *Server) fillDay(ctx context.Context, db rowsDB, p dayPlan, head Observa
 		}
 	}
 	s.dayCount("built")
-	res, err := s.buildDay(ctx, db, p, head, st, true)
+	res, err := s.buildDay(ctx, db, p, head, st)
 	if err != nil || !res.immutable || res.tooLarge || s.DayCache == nil || len(res.gz) > dayMaxRedis {
 		return res, err
 	}
@@ -363,21 +383,19 @@ func (b *cappedBuffer) Write(p []byte) (int, error) {
 	return b.Buffer.Write(p)
 }
 
-// buildDay reads a day from the database into a compressed body, under a
-// heavy-read slot. It is immutable when it may be: the day was final by the
-// clock (checkFinal), had no row awaiting a new decoding, the writer was
-// past it, and no import started or ended while it was read (D-159).
-func (s *Server) buildDay(ctx context.Context, db rowsDB, p dayPlan, head ObservationsBody, st storage.HistoryState, checkFinal bool) (*dayResult, error) {
+// buildDay reads a day final by the clock from the database into a
+// compressed body, under a heavy-read slot. It is immutable when it may be:
+// the day had no row awaiting a new decoding, the writer was past it, and no
+// import started or ended while it was read (D-159).
+func (s *Server) buildDay(ctx context.Context, db rowsDB, p dayPlan, head ObservationsBody, st storage.HistoryState) (*dayResult, error) {
 	release, err := s.acquire(ctx)
 	if err != nil {
 		return nil, err
 	}
 	defer release()
-	immutable := false
-	if checkFinal {
-		if immutable, err = db.DaySettled(ctx, p.day, p.after); err != nil {
-			return nil, err
-		}
+	immutable, err := db.DaySettled(ctx, p.day, p.after)
+	if err != nil {
+		return nil, err
 	}
 	src, err := db.Rows(ctx, p.rows)
 	if err != nil {
@@ -429,9 +447,11 @@ func etagMatch(header, gen, date string) bool {
 	return false
 }
 
-// acceptsGzip reports whether Accept-Encoding allows gzip (or any coding,
-// "*"), without q=0.
+// acceptsGzip reports whether Accept-Encoding allows gzip, without q=0: by
+// naming it, or else by "*" (any coding not named). A gzip named with q=0
+// is refused whatever "*" says (RFC 9110 §12.5.3).
 func acceptsGzip(header string) bool {
+	named, star := false, false
 	for part := range strings.SplitSeq(header, ",") {
 		coding, params, _ := strings.Cut(strings.TrimSpace(part), ";")
 		coding = strings.ToLower(strings.TrimSpace(coding))
@@ -446,9 +466,14 @@ func acceptsGzip(header string) bool {
 				}
 			}
 		}
-		if q > 0 {
+		switch {
+		case coding != "*" && q > 0:
 			return true
+		case coding != "*":
+			named = true
+		default:
+			star = star || q > 0
 		}
 	}
-	return false
+	return star && !named
 }

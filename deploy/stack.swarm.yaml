@@ -52,8 +52,9 @@ x-backend-env: &backend-env
         port: 1883
         protocol: v5
         tls: { enabled: false }
-        username: ${MQTT_USERNAME:?set MQTT_USERNAME}
-        password: ${MQTT_PASSWORD:?set MQTT_PASSWORD}
+        # Quoted, so a # or a leading * & { @ survives YAML (double any ' in them).
+        username: '${MQTT_USERNAME:?set MQTT_USERNAME}'
+        password: '${MQTT_PASSWORD:?set MQTT_PASSWORD}'
         client_id: meshmap-ingest-1
         topics:
           - { filter: "msh/#", qos: 0 }
@@ -63,8 +64,11 @@ x-backend-env: &backend-env
       - { name: LongFast, broker_ids: ["*"], mode: ctr, psks: ["AQ=="] }
       - { name: NarrowFast, broker_ids: ["*"], mode: ctr, psks: ["AQ=="] }
 
+# Liveness, not readiness: Swarm replaces an unhealthy task, and a database
+# outage must not restart ingest (its queue absorbs the outage) nor churn
+# the API replicas. See docs/operations.md, "Data loss windows".
 x-healthcheck: &backend-healthcheck
-  test: ["CMD", "/usr/local/bin/meshmap", "healthcheck"]
+  test: ["CMD", "/usr/local/bin/meshmap", "healthcheck", "--live"]
   interval: 10s
   timeout: 5s
   start_period: 30s

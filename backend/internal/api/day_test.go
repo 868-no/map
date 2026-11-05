@@ -64,6 +64,8 @@ func TestPlanDay(t *testing.T) {
 func TestAcceptsGzipAndETags(t *testing.T) {
 	for h, want := range map[string]bool{
 		"": false, "gzip": true, "br, gzip;q=0.5": true, "gzip;q=0": false, "identity": false, "*": true, "zstd, GZIP": true, "gzip; q=0.000": false,
+		// gzip named with q=0 is refused, whatever "*" allows, in either order.
+		"gzip;q=0, *": false, "*, gzip;q=0": false, "*;q=0": false, "identity, *;q=0.5": true, "*;q=0, gzip": true,
 	} {
 		if acceptsGzip(h) != want {
 			t.Errorf("acceptsGzip(%q) != %v", h, want)
@@ -305,6 +307,57 @@ func TestDayNotFinalIsNotCached(t *testing.T) {
 		if blobs.sets != 0 || (c.db.settledQs.Load() > 0) != c.checked {
 			t.Errorf("%s: stored %d, settled checks %d", c.name, blobs.sets, c.db.settledQs.Load())
 		}
+	}
+}
+
+// A day not final by the clock is streamed as read, in either encoding, with
+// the body a build in memory would have held.
+func TestDayNotFinalStreams(t *testing.T) {
+	db := &fakeRows{settled: true, rows: []string{`{"i":1,"t":1}`, `{"i":2,"t":2}`, `{"i":3,"t":3}`}}
+	s, h := dayServer(t, db, newBlobs())
+	gen, today := s.generation(0), testNow.Format(time.DateOnly)
+	b := s.Bounds()
+	p, err := planDay(testNow.Truncate(24*time.Hour), b.Now, b.Cutoff)
+	if err != nil || p.final {
+		t.Fatalf("plan %+v %v", p, err)
+	}
+	head := ObservationsBody{Window: WindowEcho{Start: p.day.Start, End: p.day.End}, Since: p.rows.Start, Until: p.rows.End, Generation: gen}
+	built, err := s.buildDay(context.Background(), db, p, head, storage.HistoryState{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	zr, err := gzip.NewReader(bytes.NewReader(built.gz))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, _ := io.ReadAll(zr)
+	for _, enc := range []string{"gzip", ""} {
+		w := getDay(h, today, gen, map[string]string{"Accept-Encoding": enc})
+		if w.Code != 200 || w.Header().Get("Cache-Control") != "no-store" || w.Header().Get("ETag") != "" ||
+			w.Header().Get("Content-Encoding") != enc || w.Header().Get("Content-Length") != "" {
+			t.Fatalf("%q: got %d %v", enc, w.Code, w.Header())
+		}
+		got := w.Body.Bytes()
+		if enc == "gzip" {
+			zr, err := gzip.NewReader(w.Body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, _ = io.ReadAll(zr)
+		}
+		if !bytes.Equal(got, want) {
+			t.Fatalf("%q: streamed %s\nbuilt %s", enc, got, want)
+		}
+	}
+	if db.settledQs.Load() != 1 { // only the build above asked
+		t.Fatalf("settled checks %d", db.settledQs.Load())
+	}
+}
+
+// A crashed builder's lock lapses, but never while a live build still runs.
+func TestDayLockOutlivesBuild(t *testing.T) {
+	if lock, build := dayLockTTL, dayBuildLimit; lock < build {
+		t.Fatalf("lock %s < build limit %s", lock, build)
 	}
 }
 

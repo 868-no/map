@@ -56,12 +56,19 @@ func lerp(a, b Point, f float64) Point {
 // Points are every point a cross section from a to b needs heights for:
 // both ends, then the path every StepM.
 func Points(a, b Point) []Point {
-	out := []Point{a, b}
+	out := make([]Point, 0, steps(a, b)+1)
+	eachPoint(a, b, func(p Point) { out = append(out, p) })
+	return out
+}
+
+// eachPoint calls f with each of Points(a, b), in order, without holding them.
+func eachPoint(a, b Point, f func(Point)) {
+	f(a)
+	f(b)
 	n := steps(a, b)
 	for i := 1; i < n; i++ {
-		out = append(out, lerp(a, b, float64(i)/float64(n)))
+		f(lerp(a, b, float64(i)/float64(n)))
 	}
-	return out
 }
 
 func steps(a, b Point) int { return max(2, int(Distance(a, b)/StepM)) }

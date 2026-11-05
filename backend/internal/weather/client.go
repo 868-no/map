@@ -201,18 +201,24 @@ func (c *Client) series(ctx context.Context, client string, cell Cell, start, en
 	if len(ks) == 0 {
 		return nil, false
 	}
-	if c.Store != nil && c.uncached(ks, now) {
-		rows, err := c.Store.load(ctx, cell, ks[0].t(), ks[len(ks)-1].t().Add(time.Hour))
+	if lo, hi, ok := c.unknown(ks, now); ok && c.Store != nil {
+		rows, err := c.Store.load(ctx, cell, lo.t(), hi.t().Add(time.Hour))
 		if err != nil {
 			c.warn("weather store read failed", err)
 		}
 		c.mu.Lock()
 		for _, r := range rows {
+			k := key{cell, r.h.T.Unix() / 3600}
+			if e, ok := c.cache[k]; ok && e.valid(now) {
+				// Memory is as new as the store or newer, and may hold what
+				// was deliberately not stored (an hour whose gust failed).
+				continue
+			}
 			exp := expiry(r.h, r.fetched, r.missing)
 			if r.old {
 				exp = r.fetched // already due: lacks what this version fetches
 			}
-			c.put(key{cell, r.h.T.Unix() / 3600}, entry{r.h, r.missing, exp})
+			c.put(k, entry{r.h, r.missing, exp})
 		}
 		c.mu.Unlock()
 	}
@@ -297,16 +303,22 @@ func (c *Client) pending() int {
 	return c.nUrgent + len(c.background)
 }
 
-// uncached reports whether any hour is missing from memory or outdated there.
-func (c *Client) uncached(ks []key, now time.Time) bool {
+// unknown is the first and last of ks (in order) missing from memory or
+// outdated there and not queued; ok false when there are none. A queued hour
+// was looked up in the store when it was queued and stays queued until it is
+// in memory (Run): browsers re-polling do not look it up again.
+func (c *Client) unknown(ks []key, now time.Time) (lo, hi key, ok bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	for _, k := range ks {
-		if e, ok := c.cache[k]; !ok || !e.valid(now) {
-			return true
+		if e, cached := c.cache[k]; (!cached || !e.valid(now)) && c.queued[k] == 0 {
+			if !ok {
+				lo, ok = k, true
+			}
+			hi = k
 		}
 	}
-	return false
+	return lo, hi, ok
 }
 
 func (c *Client) warn(msg string, err error) {

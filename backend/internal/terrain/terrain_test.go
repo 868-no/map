@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"math"
+	"runtime"
 	"testing"
 )
 
@@ -199,5 +200,65 @@ func TestPutEvictsOldest(t *testing.T) {
 	}
 	if _, ok := c.cache[Key{Lat: maxEntries - 1}]; !ok {
 		t.Fatal("newest dropped")
+	}
+}
+
+// LinksFor queues what HeightsFor of every link's Points would, and refuses
+// links needing more than MaxPoints distinct points without holding them
+// all: 400 links of about 290 km are some 580 000 points (9 MB as Points,
+// more while gathered); it gives up at MaxPoints keys.
+func TestLinksFor(t *testing.T) {
+	ctx := context.Background()
+	links := [][2]Point{{{63.0, 10.0}, {63.1, 10.0}}, {{63.0, 10.0}, {63.0, 10.2}}, {{63.1, 10.0}, {63.0, 10.0}}}
+	var pts []Point
+	for _, l := range links {
+		pts = append(pts, Points(l[0], l[1])...)
+	}
+	a, b := New("http://unused.invalid", "test"), New("http://unused.invalid", "test")
+	if _, inc, err := a.LinksFor(ctx, "v", links); err != nil || !inc {
+		t.Fatalf("LinksFor: %v %v", inc, err)
+	}
+	if _, _, err := b.HeightsFor(ctx, "v", pts); err != nil {
+		t.Fatal(err)
+	}
+	if a.Waiting() != b.Waiting() || a.Waiting() != len(dedupe(pts)) {
+		t.Fatalf("queued %d, HeightsFor %d", a.Waiting(), b.Waiting())
+	}
+	for i := range a.urgent["v"] {
+		if a.urgent["v"][i] != b.urgent["v"][i] {
+			t.Fatalf("order differs at %d", i)
+		}
+	}
+
+	long := make([][2]Point, 400)
+	for i := range long {
+		lon := 8 + float64(i)*0.01
+		long[i] = [2]Point{{60.0, lon}, {62.6, lon}}
+	}
+	c := New("http://unused.invalid", "test")
+	var before, after runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&before)
+	_, _, err := c.LinksFor(ctx, "huge", long)
+	runtime.ReadMemStats(&after)
+	if !errors.Is(err, ErrTooManyPoints) || c.Waiting() != 0 {
+		t.Fatalf("over MaxPoints: %v, waiting %d", err, c.Waiting())
+	}
+	if n := after.TotalAlloc - before.TotalAlloc; n > 10<<20 {
+		t.Fatalf("allocated %.1f MB before refusing", float64(n)/(1<<20))
+	} else {
+		t.Logf("allocated %.1f MB before refusing", float64(n)/(1<<20))
+	}
+}
+
+// A point waiting to be fetched is not looked up again (it was not in the
+// store when queued, and leaves the queue only once stored).
+func TestUnknownSkipsQueued(t *testing.T) {
+	c := New("http://unused.invalid", "test")
+	p, q, r := Key{1, 1}, Key{2, 2}, Key{3, 3}
+	c.queueBackground([]Key{p})
+	c.cache[r] = Height{}
+	if got := c.unknown([]Key{p, q, r}); len(got) != 1 || got[0] != q {
+		t.Fatalf("unknown %v, want only %v", got, q)
 	}
 }

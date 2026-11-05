@@ -14,24 +14,42 @@ import (
 // without a shell or curl.
 func healthcheckCmd() *cobra.Command {
 	var addr string
+	var live bool
 	cmd := &cobra.Command{
 		Use:   "healthcheck",
-		Short: "Exit 0 when /health/ready answers (for container health checks)",
+		Short: "Exit 0 when /health/ready (with --live: /health/live) answers (for container health checks)",
+		Long: "Exit 0 when /health/ready answers 200: the database, schema and ingest are fine.\n" +
+			"With --live, when /health/live does: the process serves HTTP, whatever its backends.\n" +
+			"Swarm replaces a task that turns unhealthy, so the deploy files use --live: a database\n" +
+			"outage must not restart the ingest process, whose queue is what absorbs it.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			c := http.Client{Timeout: 4 * time.Second}
-			resp, err := c.Get("http://" + addr + "/health/ready")
-			if err != nil {
-				return err
-			}
-			defer resp.Body.Close()
-			if resp.StatusCode != http.StatusOK {
-				return fmt.Errorf("not ready: HTTP %d", resp.StatusCode)
-			}
-			return nil
+			return probeHealth(addr, live)
 		},
 	}
 	cmd.Flags().StringVar(&addr, "addr", probeAddr(os.Getenv("HTTP_ADDR")), "backend HTTP address (default from HTTP_ADDR)")
+	cmd.Flags().BoolVar(&live, "live", false, "probe /health/live (process up) instead of /health/ready")
 	return cmd
+}
+
+// healthPath is the endpoint a probe asks.
+func healthPath(live bool) string {
+	if live {
+		return "/health/live"
+	}
+	return "/health/ready"
+}
+
+func probeHealth(addr string, live bool) error {
+	c := http.Client{Timeout: 4 * time.Second}
+	resp, err := c.Get("http://" + addr + healthPath(live))
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("%s: HTTP %d", healthPath(live), resp.StatusCode)
+	}
+	return nil
 }
 
 // probeAddr is where to reach a server listening on listen (HTTP_ADDR,

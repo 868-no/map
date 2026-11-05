@@ -5,6 +5,7 @@ package integration
 import (
 	"context"
 	"encoding/json"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"sync/atomic"
@@ -70,6 +71,33 @@ func TestInfraPositions(t *testing.T) {
 	}
 	if n := got[2]; n.Node != 5 || n.Lat != 63.34 {
 		t.Fatalf("node 5 (newest position): %+v", n)
+	}
+}
+
+// A point waiting to be fetched is not looked up in the store again on each
+// re-poll; one not queued is.
+func TestTerrainQueuedNotLookedUp(t *testing.T) {
+	pool := freshDB(t)
+	ctx := context.Background()
+	c := terrain.New("http://127.0.0.1:0", "test") // not running: its queue only fills
+	c.Store = &terrain.Store{Pool: pool}
+	p, q := terrain.Point{Lat: 63.0, Lon: 10.0}, terrain.Point{Lat: 63.5, Lon: 10.5}
+	if _, inc := c.Heights(ctx, []terrain.Point{p}); !inc {
+		t.Fatal("an unknown point is complete")
+	}
+	for _, pt := range []terrain.Point{p, q} {
+		if _, err := pool.Exec(ctx, `INSERT INTO terrain_height (lat_k, lon_k, z) VALUES ($1, $2, 100)`,
+			int32(math.Round(pt.Lat/0.0005)), int32(math.Round(pt.Lon/0.0005))); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, inc := c.Heights(ctx, []terrain.Point{p}); !inc {
+		t.Fatal("a queued point was looked up in the store again")
+	}
+	if h, inc := c.Heights(ctx, []terrain.Point{q}); inc {
+		t.Fatal("a stored point not queued was not looked up")
+	} else if z, ok := h(q); !ok || z != 100 {
+		t.Fatalf("stored height %v %v", z, ok)
 	}
 }
 

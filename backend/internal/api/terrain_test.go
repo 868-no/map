@@ -8,6 +8,7 @@ import (
 	"math"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -154,6 +155,28 @@ func TestTerrainClassesRejectsBadNumbers(t *testing.T) {
 	rec := httptest.NewRecorder()
 	mux.ServeHTTP(rec, r)
 	if rec.Code < 400 || rec.Code >= 500 || s.Terrain.Waiting() != 0 {
+		t.Fatalf("%d %s, waiting %d", rec.Code, rec.Body.String(), s.Terrain.Waiting())
+	}
+}
+
+// Links needing more than terrain.MaxPoints points are refused with 422 and
+// queue nothing; a link abroad among them still counts for nothing.
+func TestTerrainClassesTooManyPoints(t *testing.T) {
+	s := &Server{Log: slog.Default(), Now: time.Now}
+	s.Terrain = terrain.New("http://unused.invalid", "test")
+	mux := http.NewServeMux()
+	s.NewHandler(mux)
+	links := []TerrainLink{{Lat1: 48.85, Lon1: 2.35, Lat2: 48.9, Lon2: 2.4}}
+	for i := range maxTerrainLinks - 1 {
+		lon := 8 + float64(i)*0.01
+		links = append(links, TerrainLink{Lat1: 60, Lon1: lon, Lat2: 62.6, Lon2: lon})
+	}
+	body, _ := json.Marshal(map[string]any{"links": links})
+	r := httptest.NewRequest(http.MethodPost, "/api/v1/terrain/classes", bytes.NewReader(body))
+	r.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, r)
+	if rec.Code != 422 || !strings.Contains(rec.Body.String(), "more than 120000 terrain points") || s.Terrain.Waiting() != 0 {
 		t.Fatalf("%d %s, waiting %d", rec.Code, rec.Body.String(), s.Terrain.Waiting())
 	}
 }

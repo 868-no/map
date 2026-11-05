@@ -36,8 +36,9 @@ x-backend-env: &backend-env
         port: 1883
         protocol: v5
         tls: { enabled: false }
-        username: ${MQTT_USERNAME:?set MQTT_USERNAME}
-        password: ${MQTT_PASSWORD:?set MQTT_PASSWORD}
+        # Quoted, so a # or a leading * & { @ survives YAML (double any ' in them).
+        username: '${MQTT_USERNAME:?set MQTT_USERNAME}'
+        password: '${MQTT_PASSWORD:?set MQTT_PASSWORD}'
         client_id: meshmap-ingest-1
         topics:
           - { filter: "msh/#", qos: 0 }
@@ -86,8 +87,12 @@ services:
   backend:
     <<: *backend
     command: ["serve"]
+    # Time to drain MQTT input and flush the writer on shutdown (default 10 s).
+    stop_grace_period: 30s
     healthcheck:
-      test: ["CMD", "/usr/local/bin/meshmap", "healthcheck"]
+      # Liveness: a database outage must not mark the ingesting process
+      # unhealthy (docs/operations.md, "Data loss windows").
+      test: ["CMD", "/usr/local/bin/meshmap", "healthcheck", "--live"]
       interval: 10s
       timeout: 5s
       start_period: 20s

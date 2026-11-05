@@ -1,7 +1,9 @@
 package api
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"strings"
 	"testing"
@@ -20,6 +22,20 @@ func TestInternalErrorsAreNotSent(t *testing.T) {
 	e = huma.NewError(400, "bad start", errors.New("start: not RFC 3339"))
 	if m := e.(*huma.ErrorModel); !strings.Contains(errDetails(m), "RFC 3339") {
 		t.Fatalf("400 lost its detail: %+v", m)
+	}
+}
+
+// A request whose client went away (its context canceled, possibly wrapped
+// by the driver) is answered 499 and not logged as an error; a deadline is.
+func TestClientGoneIsNotAnError(t *testing.T) {
+	hideInternalErrors(slog.New(slog.DiscardHandler))
+	for _, err := range []error{context.Canceled, fmt.Errorf("query: %w", context.Canceled)} {
+		if s := huma.NewError(500, "unexpected error occurred", err).GetStatus(); s != statusClientClosed {
+			t.Errorf("%v: status %d", err, s)
+		}
+	}
+	if s := huma.NewError(500, "unexpected error occurred", context.DeadlineExceeded).GetStatus(); s != 500 {
+		t.Errorf("deadline: status %d", s)
 	}
 }
 

@@ -165,12 +165,22 @@ func (s *Server) acquire(ctx context.Context) (func(), error) {
 // the underlying errors (database, driver, SQL) are logged instead of sent.
 var publicErrors sync.Once
 
+// statusClientClosed is nginx's 499: the client closed the connection
+// before the answer; what access logs and metrics record instead of a 500.
+const statusClientClosed = 499
+
 func hideInternalErrors(log *slog.Logger) {
 	publicErrors.Do(func() {
 		orig := huma.NewError
 		huma.NewError = func(status int, msg string, errs ...error) huma.StatusError {
 			if status >= 500 && len(errs) > 0 {
-				log.Error("api error", "status", status, "msg", msg, "err", errors.Join(errs...))
+				err := errors.Join(errs...)
+				if errors.Is(err, context.Canceled) {
+					// The client went away (its request's context ended):
+					// not a fault, and nobody reads the answer.
+					return orig(statusClientClosed, "client closed request")
+				}
+				log.Error("api error", "status", status, "msg", msg, "err", err)
 				return orig(status, msg)
 			}
 			return orig(status, msg, errs...)

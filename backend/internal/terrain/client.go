@@ -134,7 +134,43 @@ func (c *Client) HeightsFor(ctx context.Context, client string, pts []Point) (Lo
 	if len(keys) > MaxPoints {
 		return Lookup{}, false, ErrTooManyPoints
 	}
-	missing := c.uncached(keys)
+	return c.lookup(ctx, client, keys)
+}
+
+// LinksFor is HeightsFor for the cross sections of links (Points of each
+// pair of ends). Their distinct grid points are gathered link by link and
+// the lookup is refused as soon as they pass MaxPoints, so a request for
+// far more holds no more than that many at any time.
+func (c *Client) LinksFor(ctx context.Context, client string, links [][2]Point) (Lookup, bool, error) {
+	n := 0
+	for _, l := range links {
+		n += steps(l[0], l[1]) + 1 // len(Points(l[0], l[1]))
+	}
+	n = min(n, MaxPoints+1) // one more shows there are too many
+	seen := make(map[Key]struct{}, n)
+	keys := make([]Key, 0, n)
+	for _, l := range links {
+		eachPoint(l[0], l[1], func(p Point) {
+			k := keyOf(p)
+			if _, dup := seen[k]; dup || len(keys) > MaxPoints {
+				return
+			}
+			seen[k] = struct{}{}
+			keys = append(keys, k)
+		})
+		if len(keys) > MaxPoints {
+			return Lookup{}, false, ErrTooManyPoints
+		}
+	}
+	return c.lookup(ctx, client, keys)
+}
+
+// lookup is HeightsFor of distinct keys.
+func (c *Client) lookup(ctx context.Context, client string, keys []Key) (Lookup, bool, error) {
+	// A point waiting to be fetched was not in the store when it was queued,
+	// and stays queued until it is stored (Run): not looked up again while
+	// browsers re-poll.
+	missing := c.unknown(keys)
 	if len(missing) > 0 && c.Store != nil {
 		got, err := c.Store.load(ctx, missing)
 		if err != nil {
@@ -202,6 +238,20 @@ func (c *Client) uncached(keys []Key) []Key {
 	var out []Key
 	for _, k := range keys {
 		if _, ok := c.cache[k]; !ok {
+			out = append(out, k)
+		}
+	}
+	return out
+}
+
+// unknown is the keys neither in memory nor queued: those the store may
+// hold.
+func (c *Client) unknown(keys []Key) []Key {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	var out []Key
+	for _, k := range keys {
+		if _, ok := c.cache[k]; !ok && c.queued[k] == 0 {
 			out = append(out, k)
 		}
 	}

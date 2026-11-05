@@ -131,7 +131,9 @@ func (s *Server) terrainClasses(ctx context.Context, in *TerrainClassesInput) (*
 	// One lookup for every link's points: nearby links share most of them.
 	// A link abroad or too long is not looked up and stays unknown: the page
 	// sends every router link, wherever its ends are.
-	var pts []terrain.Point
+	// Their points are gathered without holding them all: up to 400 links of
+	// 300 km would be 600 000.
+	var looked [][2]terrain.Point
 	ends := make([][2]terrain.End, len(in.Body.Links))
 	ok := make([]bool, len(in.Body.Links))
 	for i, l := range in.Body.Links {
@@ -141,10 +143,10 @@ func (s *Server) terrainClasses(ctx context.Context, in *TerrainClassesInput) (*
 		}
 		ends[i], ok[i] = [2]terrain.End{a, b}, bad == ""
 		if ok[i] {
-			pts = append(pts, terrain.Points(a.Point, b.Point)...)
+			looked = append(looked, [2]terrain.Point{a.Point, b.Point})
 		}
 	}
-	heights, incomplete, err := s.Terrain.HeightsFor(ctx, clientOf(ctx), pts)
+	heights, incomplete, err := s.Terrain.LinksFor(ctx, clientOf(ctx), looked)
 	if errors.Is(err, terrain.ErrTooManyPoints) {
 		return nil, huma.Error422UnprocessableEntity(fmt.Sprintf("the links need more than %d terrain points; ask for fewer or shorter links", terrain.MaxPoints))
 	} else if err != nil {
