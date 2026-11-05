@@ -116,7 +116,7 @@ pub fn anchors_of(by_node: &FxMap<u32, Vec<&Row>>, fixed: &FxSet<u32>) -> FxMap<
         if rs.len() < ANCHOR_MIN_REPORTS {
             continue;
         }
-        let pos = |r: &Row| r.pos.unwrap();
+        let pos = |r: &Row| r.pos().unwrap();
         // The most reported place, and the reports near it.
         let mut count: FxMap<(u64, u64, u32), usize> = map();
         for r in &rs {
@@ -154,7 +154,7 @@ pub fn anchors_of(by_node: &FxMap<u32, Vec<&Row>>, fixed: &FxSet<u32>) -> FxMap<
 
 /// The report with the least summed distance to the others (the newest 200).
 fn medoid(rs: &[&Row]) -> crate::row::Position {
-    let ps: Vec<crate::row::Position> = rs.iter().rev().take(200).map(|r| r.pos.unwrap()).collect();
+    let ps: Vec<crate::row::Position> = rs.iter().rev().take(200).map(|r| r.pos().unwrap()).collect();
     // A fixed node's reports lie within a few hundred metres: a flat frame
     // (degrees of latitude, and of longitude shrunk to them at the reports'
     // mean latitude) ranks the sums as haversine does, without the trig per
@@ -226,9 +226,9 @@ pub fn movements_of(by_node: &FxMap<u32, Vec<&Row>>, anchored: &FxMap<u32, Ancho
         // One point per distinct place, in order (copies from several gateways collapse).
         let mut pts: Vec<&Row> = Vec::new();
         for &r in rs {
-            let p = r.pos.unwrap();
+            let p = r.pos().unwrap();
             if pts.last().is_none_or(|l| {
-                let q = l.pos.unwrap();
+                let q = l.pos().unwrap();
                 q.lat != p.lat || q.lon != p.lon
             }) {
                 pts.push(r);
@@ -237,15 +237,15 @@ pub fn movements_of(by_node: &FxMap<u32, Vec<&Row>>, anchored: &FxMap<u32, Ancho
         // Judge movement on its finest positions: a node that reports precise
         // Position packets and coarse map reports moves within the coarse
         // cells unseen, and mixing the two inflates the threshold.
-        let finest = (0..=32u32).rev().find(|&b| pts.iter().filter(|r| bits(&r.pos.unwrap()) == b).count() >= 2);
+        let finest = (0..=32u32).rev().find(|&b| pts.iter().filter(|r| bits(&r.pos().unwrap()) == b).count() >= 2);
         let judged: Vec<&Row> = match finest {
-            Some(b) => pts.iter().copied().filter(|r| bits(&r.pos.unwrap()) == b).collect(),
+            Some(b) => pts.iter().copied().filter(|r| bits(&r.pos().unwrap()) == b).collect(),
             None => pts.clone(),
         };
         // A single reading far from the ones either side, which agree with
         // each other, is a GPS spike: an excursion needs two reports.
         let far = |a: &Row, b: &Row| {
-            let (p, q) = (a.pos.unwrap(), b.pos.unwrap());
+            let (p, q) = (a.pos().unwrap(), b.pos().unwrap());
             distance_m(LatLon { lat: p.lat, lon: p.lon }, LatLon { lat: q.lat, lon: q.lon }) > move_threshold(fixed, (p.lat, bits(&p)), (q.lat, bits(&q)))
         };
         let judged: Vec<&Row> = (0..judged.len())
@@ -253,9 +253,9 @@ pub fn movements_of(by_node: &FxMap<u32, Vec<&Row>>, anchored: &FxMap<u32, Ancho
             .map(|k| judged[k])
             .collect();
         let mut moved_at = None;
-        let mut reference = judged[0].pos.unwrap();
+        let mut reference = judged[0].pos().unwrap();
         for r in &judged[1..] {
-            let b = r.pos.unwrap();
+            let b = r.pos().unwrap();
             let d = distance_m(LatLon { lat: reference.lat, lon: reference.lon }, LatLon { lat: b.lat, lon: b.lon });
             if d > move_threshold(fixed, (reference.lat, bits(&reference)), (b.lat, bits(&b))) {
                 moved_at = Some(r.t);
@@ -265,7 +265,7 @@ pub fn movements_of(by_node: &FxMap<u32, Vec<&Row>>, anchored: &FxMap<u32, Ancho
         if let Some(moved_at) = moved_at {
             let skip = pts.len().saturating_sub(MAX_TRACK);
             let track = pts[skip..].iter().map(|r| {
-                let p = r.pos.unwrap();
+                let p = r.pos().unwrap();
                 TrackPoint { lat: p.lat, lon: p.lon, alt: p.alt, at: iso(r.t) }
             }).collect();
             out.insert(n, Movement { moved_at, track });

@@ -170,7 +170,7 @@ pub fn build_snapshot(rows: &[&Row], i: &Interner, g: &GeoOptions, rules: Rules)
     for (n, r) in fresh {
         let x = nodes.entry(n).or_insert_with(|| Node::new(n));
         x.position = Some(position_of(r, i));
-        x.pos = r.pos;
+        x.pos = r.pos();
     }
     for (n, r) in stale {
         nodes.entry(n).or_insert_with(|| Node::new(n)).stale_position = Some(position_of(r, i));

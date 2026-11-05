@@ -250,7 +250,9 @@ pub struct Row {
     pub nk: bool, // sent without OK-to-MQTT, uplinked by another gateway
     pub wa: bool, // the sender asked for an acknowledgement (D-109)
     pub topic: u32, // MQTT topic root, 0 = unknown
-    pub pos: Option<Position>,
+    /// Boxed: most rows have no position, and a row inline would grow by
+    /// 24 bytes (750k rows held, §9). Read it with Row::pos.
+    pub pos: Option<Box<Position>>,
     pub detail: Option<Box<Detail>>,
 }
 
@@ -274,6 +276,11 @@ pub enum HeardFrom {
 }
 
 impl Row {
+    /// The reported position, if any.
+    pub fn pos(&self) -> Option<Position> {
+        self.pos.as_deref().copied()
+    }
+
     pub fn hops(&self) -> Option<i16> {
         Some(self.hs? - self.hl?)
     }
@@ -676,7 +683,7 @@ impl JRow<'_> {
             nk: self.nk,
             wa: self.wa,
             topic: self.tp.map_or(0, |t| i.id(&t)),
-            pos: self.po.map(|p| Position { lat: p.lat, lon: p.lon, alt: p.alt, bits: p.precision_bits, known: p.precision_known }),
+            pos: self.po.map(|p| Box::new(Position { lat: p.lat, lon: p.lon, alt: p.alt, bits: p.precision_bits, known: p.precision_known })),
             detail: detail.map(Box::new),
         }
     }
@@ -691,7 +698,7 @@ pub fn to_json<'a>(r: &Row, i: &'a Interner) -> JRow<'a> {
         i: r.id, t: r.t, b: s(r.broker), g: r.gw, s: r.src, d: r.dst, p: r.pid, c: opt(r.channel), y: s(r.ty),
         l: Cow::Owned(key_hex(r.lp)), o: Cow::Owned(key_hex(r.ok)), sn: r.snr, rs: r.rssi, hs: r.hs, hl: r.hl, r: r.relay,
         sg: s(r.sig), dr: r.dr, rr: opt(r.rr), cr: opt(r.crypto), by: r.bytes, nk: r.nk, wa: r.wa, tp: opt(r.topic),
-        ni: None, po: r.pos.map(|p| JPo { lat: p.lat, lon: p.lon, alt: p.alt, precision_bits: p.bits, precision_known: p.known }),
+        ni: None, po: r.pos().map(|p| JPo { lat: p.lat, lon: p.lon, alt: p.alt, precision_bits: p.bits, precision_known: p.known }),
         te: None, nb: None, tr: None, mr: None, rt: None, iv: None, ns: None, sf: None,
     };
     match r.detail.as_deref() {

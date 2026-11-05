@@ -243,7 +243,7 @@ pub(super) fn identity_of_report(r: &Row, i: &Interner) -> Identity {
 }
 
 pub(super) fn position_of(r: &Row, i: &Interner) -> Position {
-    let p = r.pos.unwrap();
+    let p = r.pos().unwrap();
     Position { lat: p.lat, lon: p.lon, alt: p.alt, precision_bits: p.bits, precision_known: p.known, signature: i.s(r.sig).to_string(), observed_at: iso(r.t), source: i.s(r.ty).to_string() }
 }
 
@@ -258,7 +258,7 @@ pub(super) fn telemetry_of(r: &Row) -> Telemetry {
 /// precision cannot be compared, so the newer one wins too.
 pub fn choose_position<'a>(a: &'a Row, b: &'a Row) -> &'a Row {
     let (newer_, older) = if newer(a, b) { (b, a) } else { (a, b) };
-    let (pa, pb) = (a.pos.unwrap(), b.pos.unwrap());
+    let (pa, pb) = (a.pos().unwrap(), b.pos().unwrap());
     if !pa.known || !pb.known {
         return newer_;
     }
@@ -266,7 +266,7 @@ pub fn choose_position<'a>(a: &'a Row, b: &'a Row) -> &'a Row {
     if d > precision_error_m(pa.bits, pa.lat) + precision_error_m(pb.bits, pb.lat) {
         return newer_;
     }
-    if older.pos.unwrap().bits > newer_.pos.unwrap().bits { older } else { newer_ }
+    if older.pos().unwrap().bits > newer_.pos().unwrap().bits { older } else { newer_ }
 }
 
 /// A reported position older than this before the window's latest
@@ -289,7 +289,7 @@ pub(super) fn fixed_role(role: &str) -> bool {
 /// move (D-073), so GPS noise is no move, and a fixed node's unstable GPS
 /// none either (D-139).
 fn agree(a: &Row, b: &Row, fixed: bool) -> bool {
-    let (pa, pb) = (a.pos.unwrap(), b.pos.unwrap());
+    let (pa, pb) = (a.pos().unwrap(), b.pos().unwrap());
     let bits = crate::movement::bits;
     distance_m(LatLon { lat: pa.lat, lon: pa.lon }, LatLon { lat: pb.lat, lon: pb.lon }) <= crate::movement::move_threshold(fixed, (pa.lat, bits(&pa)), (pb.lat, bits(&pb)))
 }

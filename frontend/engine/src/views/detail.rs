@@ -236,7 +236,7 @@ pub fn build_node_detail(rows: &[&Row], num: u32, b: &Built, i: &Interner) -> Op
     d.positions = per_packet(&is_position, &mut truncated)
         .into_iter()
         .map(|r| {
-            let p = r.pos.unwrap();
+            let p = r.pos().unwrap();
             PositionSample { at: iso(r.t), lat: p.lat, lon: p.lon, precision_bits: p.bits, precision_known: p.known, signature: i.s(r.sig).to_string() }
         })
         .collect();
