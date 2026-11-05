@@ -8,16 +8,18 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/868-no/map/internal/maintenance"
 )
 
 // Readiness probes are unthrottled: within ReadyTTL they reuse one backend
 // check, and concurrent probes share it. Liveness never checks backends.
 func TestReadyCachesBackendChecks(t *testing.T) {
 	var calls atomic.Int32
-	h := &Health{Started: time.Now(), probe: func(context.Context) []probe {
+	h := &Health{Started: time.Now(), probe: func(context.Context) ([]probe, *maintenance.Status) {
 		calls.Add(1)
 		time.Sleep(20 * time.Millisecond)
-		return []probe{{"database", check{Detail: "unreachable"}, true}}
+		return []probe{{"database", check{Detail: "unreachable"}, true}}, nil
 	}}
 	mux := http.NewServeMux()
 	h.Register(mux, nil, false)

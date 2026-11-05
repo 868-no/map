@@ -36,9 +36,9 @@ type Health struct {
 	Ingest  IngestStatus
 	Started time.Time
 
-	// probe checks the backends; nil means the database and Redis (tests
-	// replace it).
-	probe    func(context.Context) []probe
+	// probe checks the backends and reads the last maintenance status; nil
+	// means the database and Redis (tests replace it).
+	probe    func(context.Context) ([]probe, *maintenance.Status)
 	mu       sync.Mutex
 	probedAt time.Time
 	probed   []probe
@@ -73,8 +73,7 @@ func (h *Health) live(w http.ResponseWriter, _ *http.Request) {
 
 // backends checks the database, schema and Redis, and reads the last
 // maintenance status.
-func (h *Health) backends(ctx context.Context) []probe {
-	var out []probe
+func (h *Health) backends(ctx context.Context) (out []probe, maint *maintenance.Status) {
 	if err := h.Pool.Ping(ctx); err != nil {
 		out = append(out, probe{"database", check{Detail: "unreachable"}, true})
 	} else if err := storage.CheckSchema(ctx, h.Pool); err != nil {
@@ -82,7 +81,6 @@ func (h *Health) backends(ctx context.Context) []probe {
 	} else {
 		out = append(out, probe{"database", check{OK: true}, true}, probe{"schema", check{OK: true, Detail: storage.SchemaVersion}, true})
 	}
-	h.maint = nil
 	if h.Cache == nil {
 		out = append(out, probe{"cache", check{Detail: "not configured; dedupe uses the database"}, false})
 	} else if err := h.Cache.Ping(ctx); err != nil {
@@ -90,10 +88,10 @@ func (h *Health) backends(ctx context.Context) []probe {
 	} else {
 		out = append(out, probe{"cache", check{OK: true}, false})
 		if st, err := maintenance.LastStatus(ctx, h.Cache); err == nil {
-			h.maint = st
+			maint = st
 		}
 	}
-	return out
+	return out, maint
 }
 
 // cachedProbes returns the backend checks, at most ReadyTTL old. Concurrent
@@ -110,7 +108,8 @@ func (h *Health) cachedProbes() ([]probe, *maintenance.Status) {
 		if run == nil {
 			run = h.backends
 		}
-		h.probed, h.probedAt = run(ctx), time.Now()
+		h.probed, h.maint = run(ctx)
+		h.probedAt = time.Now()
 	}
 	return h.probed, h.maint
 }
