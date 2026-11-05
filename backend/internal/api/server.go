@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"reflect"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -59,6 +60,8 @@ type Server struct {
 
 	db         rowsDB // the database as the day endpoint reads it; nil: Pool
 	dayFlight  singleflight.Group
+	dayLarge   sync.Map     // keys of final days too large to build (noteLargeDay)
+	dayLargeN  atomic.Int32 // entries in dayLarge, to bound it
 	heavy      chan struct{}
 	closing    chan struct{}
 	trendsMemo trendsCache

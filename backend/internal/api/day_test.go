@@ -546,3 +546,23 @@ func TestDayHeavyPath(t *testing.T) {
 		}
 	}
 }
+
+// A day too large to build is streamed, and later requests stream it at
+// once instead of building (and discarding) it again.
+func TestDayTooLargeStreamsWithoutRebuilding(t *testing.T) {
+	defer func(m int) { dayMaxBytes = m }(dayMaxBytes)
+	dayMaxBytes = 16
+	db := &fakeRows{settled: true, rows: []string{`{"i":1,"t":1}`, `{"i":2,"t":2}`}}
+	s, h := dayServer(t, db, newBlobs())
+	gen := s.generation(0)
+	for i := range 3 {
+		w := getDay(h, testDay, gen, map[string]string{"Accept-Encoding": "gzip"})
+		if _, rows := dayBody(t, w); w.Code != 200 || len(rows) != 2 || w.Header().Get("Cache-Control") != "no-store" {
+			t.Fatalf("request %d: got %d, rows %s, %v", i, w.Code, rows, w.Header())
+		}
+	}
+	// One build that gave up, then a stream per request: 1 + 3 reads, one settled query.
+	if r, q := db.reads.Load(), db.settledQs.Load(); r != 4 || q != 1 {
+		t.Fatalf("database reads %d, settled queries %d", r, q)
+	}
+}

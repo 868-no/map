@@ -50,7 +50,7 @@ type Metrics struct {
 	KeyConflicts      prometheus.Counter
 	CacheErrors       *prometheus.CounterVec // op
 	RetentionRows     prometheus.Counter
-	DayRequests       *prometheus.CounterVec // result: not_modified, hit, waited, built, uncached
+	DayRequests       *prometheus.CounterVec // result: not_modified, hit, waited, built, uncached, large
 }
 
 // NewMetrics registers all metrics on a fresh registry.

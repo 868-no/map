@@ -41,8 +41,6 @@ const (
 	// writer committed everything observed before it (D-159).
 	writerEvidence = 15 * time.Minute
 	dayTTL         = 8 * 24 * time.Hour // Redis keeps a day this long: rolling windows reach back 8 days; older days are rebuilt when asked
-	dayMaxBytes    = 64 << 20           // largest compressed day built in memory; larger days stream uncached
-	dayMaxRedis    = 16 << 20           // largest compressed day stored in Redis
 	dayBuildLimit  = 2 * time.Minute    // a build outlives the request that started it, not by more than this
 	// One replica builds a day; a crashed builder's lock lapses after this.
 	// The build's deadline starts before the lock is taken, so a lock this
@@ -53,6 +51,13 @@ const (
 	// real 6.1 MB day level 9 took 0.8 s for 598 KB (gzip: 808 KB); level 10
 	// took 9 s for 502 KB, too long to hold a read slot.
 	brQuality = 9
+)
+
+// The largest compressed day built in memory (larger days stream uncached)
+// and the largest stored in Redis (variables for tests).
+var (
+	dayMaxBytes = 64 << 20
+	dayMaxRedis = 16 << 20
 )
 
 // How long a replica waits for another's build before building its own, and
@@ -230,12 +235,21 @@ func (s *Server) observationsDay(ctx context.Context, in *DayInput) (*DayOutput,
 		s.dayCount("uncached")
 		return s.streamDay(ctx, db, p, head, gz)
 	}
-	res, err := s.sharedDay(ctx, db, p, head, st, "meshmap:obsday:"+gen+":"+in.Date, br)
+	key := "meshmap:obsday:" + gen + ":" + in.Date
+	if _, large := s.dayLarge.Load(key); large {
+		// Built once already and found too large to hold: a build would
+		// only be thrown away again.
+		s.dayCount("large")
+		return s.streamDay(ctx, db, p, head, gz)
+	}
+	res, err := s.sharedDay(ctx, db, p, head, st, key, br)
 	if err != nil {
 		return nil, err
 	}
 	if res.tooLarge {
-		// Too large to hold: written from the database like a page.
+		// Too large to hold: written from the database like a page, from
+		// now on without trying to build it first.
+		s.noteLargeDay(key)
 		return s.streamDay(ctx, db, p, head, gz)
 	}
 	// br before gzip; a copy stored without br goes out as gzip.
@@ -263,6 +277,18 @@ func (s *Server) observationsDay(ctx context.Context, in *DayInput) (*DayOutput,
 			panic(http.ErrAbortHandler)
 		}
 	}}, nil
+}
+
+// noteLargeDay remembers a final day whose build outgrew dayMaxBytes, so
+// this process streams it from then on instead of building (and discarding)
+// it per request. Bounded: a process sees few such days, but each
+// generation renames them.
+func (s *Server) noteLargeDay(key string) {
+	if s.dayLargeN.Add(1) > 1024 {
+		s.dayLarge.Clear()
+		s.dayLargeN.Store(0)
+	}
+	s.dayLarge.Store(key, struct{}{})
 }
 
 // streamDay writes a day's rows from the database as they are read, never
