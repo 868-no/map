@@ -350,9 +350,11 @@ export default memo(function MapView({ caps, snapshot, onPositions }: Props) {
   // The builder keeps each layer's data array while its inputs are unchanged.
   const [buildMeshLayers] = useState(meshLayerBuilder)
   const regions = useRegions(toggles.regions)
+  const { uncertainty, trails, labels } = toggles
+  const layerToggles = useMemo(() => ({ uncertainty, trails, labels }), [uncertainty, trails, labels])
   const baseLayers = useMemo(
-    () => buildMeshLayers({ placed, links: shownLinks, selection, search, toggles, zoom, clusters, exploded, route, routeGhosts, palette, regions, reach }),
-    [buildMeshLayers, placed, shownLinks, selection, search, toggles, zoom, clusters, exploded, route, routeGhosts, palette, regions, reach],
+    () => buildMeshLayers({ placed, links: shownLinks, selection, search, toggles: layerToggles, zoom, clusters, exploded, route, routeGhosts, palette, regions, reach }),
+    [buildMeshLayers, placed, shownLinks, selection, search, layerToggles, zoom, clusters, exploded, route, routeGhosts, palette, regions, reach],
   )
 
   // The mesh layers change only with data, filters and selection; the

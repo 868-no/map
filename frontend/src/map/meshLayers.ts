@@ -22,7 +22,7 @@ export interface MeshLayerInput {
   links: LinkGeom[] // already filtered for level of detail / selection
   selection: Selection
   search: string
-  toggles: Toggles
+  toggles: Pick<Toggles, 'uncertainty' | 'trails' | 'labels'> // only those it reads, so others rebuild nothing
   zoom: number
   clusters: Cluster[] // label clusters at this zoom
   exploded: Set<string> // cluster ids shown fanned out
