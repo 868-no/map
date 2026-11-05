@@ -4,7 +4,7 @@
 import { useEffect, useRef, useState, type RefObject } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { subscribeLive } from '../api/client'
-import { noteServerTime } from '../lib/serverClock'
+import { noteServerTime, serverNow } from '../lib/serverClock'
 import type { ObsRow } from '../api/types'
 import { onTransmissions, sendLiveRows } from '../derive/client'
 import { addTransmission, clearPings, painting, PING_MAX_AGE_MS, pingWanted, type Transmission } from '../map/pings'
@@ -78,10 +78,8 @@ export function useLiveStream(positions: RefObject<Map<string, [number, number]>
     const params = apiParams({ win, filters: defaultFilters })
     let lastRefresh = Date.now() // the views were just loaded
     let wasLive = true
-    let clockOffset = 0 // server time minus local time, from heartbeats
     const unsub = subscribeLive(params, {
       onHeartbeat: (h) => {
-        clockOffset = Date.parse(h.now) - Date.now()
         noteServerTime(h.now)
         // Every row arrives over the stream; this sync only fills gaps the
         // stream might have left (and slides an idle window), once a minute.
@@ -93,7 +91,9 @@ export function useLiveStream(positions: RefObject<Map<string, [number, number]>
       onDelta: (events) => {
         const rows = events.flatMap((e) => (e.row ? [e.row] : []))
         const f = filtersRef.current
-        const now = Date.now() + clockOffset
+        // By the server's clock, which a thawing tab's backlog of stale
+        // heartbeats does not set back (D-176).
+        const now = serverNow()
         // Pings: radio traffic only (not a node's own map report), passing the
         // filters, recent, and only while someone is watching: the tab is
         // visible (D-034, D-048); whether it is being painted is decided when
