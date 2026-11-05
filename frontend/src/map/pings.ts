@@ -121,28 +121,72 @@ export function onPingAdded(fn: () => void): () => void {
   return () => added.delete(fn)
 }
 
-// ---- deliveries (D-096) ----
+// ---- deliveries (D-096, D-172) ----
 //
-// An ACK proves its sender received the packet it answers, by whatever path.
-// It is drawn as a line travelling from the original sender to that node,
-// unlike a radio ping, ending in a flash where it arrived.
+// An ACK proves its sender received the packet it answers. It is drawn as a
+// line travelling the packet's way from the original sender to that node, as
+// the packet's routing graph shows it: solid where a hop is known, dashed
+// where it is not (the whole way, when where that node heard the packet from
+// is not known), ending in a flash where it arrived. Unlike a radio ping it
+// draws no ring.
 
-interface Delivery { from: string; to: string; fromPos: LngLat; toPos: LngLat; born: number }
-export const DELIVERY_TRAVEL = 2000 // ms
+/** How a delivery's hop is drawn, as in a packet's routing graph. */
+export type DeliveryStyle = 'solid' | 'dashed' | 'delivered' | 'internet'
+// nodes and hops: the whole way; pos and styles: its placed nodes, as last drawn.
+interface Delivery { nodes: string[]; hops: DeliveryStyle[]; pos: LngLat[]; styles: DeliveryStyle[]; born: number }
+export const DELIVERY_TRAVEL = 2000 // ms, for one hop
+const DELIVERY_TRAVEL_MAX = 5000 // ms, however many hops
 const DELIVERY_LINGER = 3000 // ms
 const DELIVERY_FADE = 1500 // ms
 const deliveries = new Map<string, Delivery>()
 
-/** A delivery line: `tip` is how far it has travelled. */
-export interface DeliveryLine { from: LngLat; to: LngLat; tip: LngLat; progress: number; alpha: number }
+/** Travel time of a delivery over `hops` hops: longer ways take a little longer. */
+export const deliveryTravel = (hops: number) => Math.min(DELIVERY_TRAVEL * (1 + 0.4 * Math.max(hops - 1, 0)), DELIVERY_TRAVEL_MAX)
+
+/** One hop of a delivery line: `tip` is how far it has travelled. */
+export interface DeliveryLine { from: LngLat; to: LngLat; tip: LngLat; progress: number; alpha: number; style: DeliveryStyle }
+
+function styleOf(seg: { dashed: boolean; why: string }): DeliveryStyle {
+  return seg.why === 'internet' ? 'internet' : !seg.dashed ? 'solid' : seg.why === 'delivered' ? 'delivered' : 'dashed'
+}
+
+/**
+ * The placed nodes of a delivery's way and the style of each hop between
+ * them. An unplaced node is bridged, dashed, as routes are; undefined when
+ * either end is not placed.
+ */
+function placeWay(nodes: string[], hops: DeliveryStyle[], pos: Map<string, LngLat>): { pos: LngLat[]; styles: DeliveryStyle[] } | undefined {
+  if (!pos.get(nodes[0]) || !pos.get(nodes[nodes.length - 1])) return undefined
+  const out: LngLat[] = [], styles: DeliveryStyle[] = []
+  let skipped = false
+  nodes.forEach((n, k) => {
+    const p = pos.get(n)
+    if (!p) {
+      if (k > 0) skipped = true
+      return
+    }
+    if (k === 0) out.push(p)
+    else {
+      out.push(p)
+      const own = hops[k - 1]
+      styles.push(skipped && own === 'solid' ? 'dashed' : own)
+      skipped = false
+    }
+  })
+  return { pos: out, styles }
+}
 
 function addDelivery(t: Transmission, pos: Map<string, LngLat>, now: number): void {
-  const from = pos.get(t.tx), to = t.rx ? pos.get(t.rx) : undefined
-  if (!from || !to || !t.rx || deliveries.has(t.key)) return
+  if (!t.rx || deliveries.has(t.key)) return
   const s = seen.get(t.key)
   if (s !== undefined && now - s < SEEN_TTL) return
+  // Without a way from the engine: one hop straight to the node.
+  const path = t.path?.length ? t.path : [{ a: t.tx, b: t.rx, dashed: false, why: 'delivered' }]
+  const nodes = [path[0].a, ...path.map((x) => x.b)], hops = path.map(styleOf)
+  const way = placeWay(nodes, hops, pos)
+  if (!way) return
   if (deliveries.size >= MAX_PINGS) deliveries.delete(deliveries.keys().next().value!)
-  deliveries.set(t.key, { from: t.tx, to: t.rx, fromPos: from, toPos: to, born: now })
+  deliveries.set(t.key, { nodes, hops, ...way, born: now })
   added.forEach((fn) => fn())
 }
 
@@ -150,27 +194,38 @@ function activeDeliveries(now: number): { lines: DeliveryLine[]; arrivals: Flash
   const lines: DeliveryLine[] = [], arrivals: Flash[] = []
   for (const [k, d] of deliveries) {
     const age = now - d.born
-    const end = DELIVERY_TRAVEL + DELIVERY_LINGER + DELIVERY_FADE
+    if (drawn.size) {
+      const way = placeWay(d.nodes, d.hops, drawn)
+      if (!way) {
+        deliveries.delete(k)
+        continue
+      }
+      d.pos = way.pos
+      d.styles = way.styles
+    }
+    const { pos, styles } = d
+    const hops = pos.length - 1
+    const travel = deliveryTravel(hops)
+    const end = travel + DELIVERY_LINGER + DELIVERY_FADE
     if (age >= end) {
       deliveries.delete(k)
       seen.set(k, now)
       continue
     }
-    if (drawn.size) {
-      const a = drawn.get(d.from), b = drawn.get(d.to)
-      if (!a || !b) {
-        deliveries.delete(k)
-        continue
-      }
-      d.fromPos = a
-      d.toPos = b
-    }
-    const progress = ease(Math.min(age / DELIVERY_TRAVEL, 1))
     const fadeStart = end - DELIVERY_FADE
     const alpha = Math.round(255 * (age < fadeStart ? 1 : 1 - (age - fadeStart) / DELIVERY_FADE))
-    lines.push({ from: d.fromPos, to: d.toPos, tip: along(d.fromPos, d.toPos, progress), progress, alpha })
-    const since = age - DELIVERY_TRAVEL
-    if (since >= 0 && since < FLASH * 1.5) arrivals.push({ pos: d.toPos, alpha: Math.round(255 * (1 - since / (FLASH * 1.5))), scale: since / (FLASH * 1.5), rebroadcast: false })
+    // The head moves along the whole way at one pace: each hop takes its share of the travel by length.
+    const lengths = pos.slice(1).map((p, i) => Math.max(distanceM(pos[i], p), 1))
+    const total = lengths.reduce((a, b) => a + b, 0)
+    let left = ease(Math.min(age / travel, 1)) * total
+    for (let i = 0; i < hops; i++) {
+      const progress = i === hops - 1 && age >= travel ? 1 : Math.min(Math.max(left / lengths[i], 0), 1)
+      left -= lengths[i]
+      if (progress <= 0 && i > 0) break
+      lines.push({ from: pos[i], to: pos[i + 1], tip: along(pos[i], pos[i + 1], progress), progress, alpha, style: styles[i] })
+    }
+    const since = age - travel
+    if (since >= 0 && since < FLASH * 1.5) arrivals.push({ pos: pos[hops], alpha: Math.round(255 * (1 - since / (FLASH * 1.5))), scale: since / (FLASH * 1.5), rebroadcast: false })
   }
   return { lines, arrivals }
 }

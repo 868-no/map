@@ -96,6 +96,8 @@ pub struct Engine {
 
 /// Interned strings below which the interner is never compacted.
 const COMPACT_MIN: usize = 4096;
+/// How far back an ACK looks for the copies of the packet it answers (D-172).
+const ACK_LOOKBACK_MS: i64 = 15 * 60 * 1000;
 
 impl Default for Engine {
     fn default() -> Self {
@@ -375,7 +377,13 @@ impl Engine {
                 // reply's own pings can wait for it to reach the target.
                 let mut t = packets::forward_route(r, &b.ctx);
                 t.extend(packets::transmissions(r, &b.ctx, &b.roles));
-                t.extend(packets::delivery_ping(r, ack));
+                // The answered packet's copies from the last quarter of an
+                // hour: its routing graph gives the way it took (D-172).
+                if let Some(rt) = r.routing().filter(|rt| Some(rt.kind) == ack && rt.request != 0) {
+                    let sender = r.dst.unwrap_or(u32::MAX);
+                    let original: Vec<&row::Row> = self.store.slice(r.t - ACK_LOOKBACK_MS, r.t + 1).iter().filter(|o| o.src == sender && o.pid == Some(rt.request) && Some(o.ty) != invalid).collect();
+                    t.extend(packets::delivery_ping(r, ack, &original, &b.ctx, &b.roles, &self.i));
+                }
                 t
             })
             .collect();

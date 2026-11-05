@@ -207,7 +207,7 @@ export function Legend({ snapshot }: { snapshot: SnapshotView | undefined }) {
       <ul>
         <li><span className="ping origin" /> First broadcast, centred on the originating node</li>
         <li><span className="ping relay" /> Rebroadcast, centred on the relay (resolved from the last-hop byte)</li>
-        <li><span className="ln delivered" /> Delivery: an ACK just confirmed that a node received another's packet; a line travels from the sender to it, and it flashes twice. Not radio: the path may have had several hops.</li>
+        <li><span className="ln delivered" /> Delivery: an ACK just confirmed that a node received another's packet; a line travels the packet's way from the sender to it, and it flashes twice. Solid where a hop is known, dashed where not: straight from the sender when where the node heard it from is not known.</li>
         <li>The ring grows until it encloses every node known to have heard that transmission directly, and a bright line travels along the link to each of them; each one flashes as the ring and its line reach it. A small blip means no direct receiver is known yet.</li>
       </ul>
       <h3>Signatures</h3>

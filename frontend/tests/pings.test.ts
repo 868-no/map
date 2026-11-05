@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { activePings as rawPings, addTransmission, BLIP_LIFE, RING_BANDS, ringProfile, clearPings, distanceM, metresPerPixel, MIN_RING_PX, PING_COLLECT, PING_FADE, PING_GROW, PING_LINGER, DELIVERY_TRAVEL, pingCount } from '../src/map/pings'
+import { activePings as rawPings, addTransmission, BLIP_LIFE, RING_BANDS, ringProfile, clearPings, distanceM, metresPerPixel, MIN_RING_PX, PING_COLLECT, PING_FADE, PING_GROW, PING_LINGER, DELIVERY_TRAVEL, deliveryTravel, pingCount } from '../src/map/pings'
 
 // Attribution (which transmissions a reception proves) lives in the engine
 // and is tested there (frontend/engine/src/packets.rs); these are the animation's.
@@ -33,6 +33,28 @@ describe('ping animation', () => {
     addTransmission({ key: `77|${A}|delivered`, tx: A, rx: B, rebroadcast: false, delivered: true }, pos, DELIVERY_TRAVEL + 200)
     expect(pingCount()).toBe(1)
     expect(activePings(60_000).deliveries).toHaveLength(0)
+  })
+  it("an ACK's delivery travels the packet's way hop by hop, dashed where a hop is not known", () => {
+    const path = [{ a: A, b: GW, dashed: false, why: 'relay' }, { a: GW, b: B, dashed: true, why: 'gap' }]
+    addTransmission({ key: `78|${A}|delivered`, tx: A, rx: B, rebroadcast: false, delivered: true, path }, pos, 0)
+    const travel = deliveryTravel(2)
+    expect(travel).toBeGreaterThan(DELIVERY_TRAVEL)
+    // Early on only the first hop has started.
+    const early = activePings(50).deliveries
+    expect(early.map((d) => d.style)).toEqual(['solid'])
+    expect(early[0].from).toEqual(pos.get(A))
+    const done = activePings(travel + 100)
+    expect(done.deliveries.map((d) => [d.from, d.to, d.style, d.progress])).toEqual([[pos.get(A), pos.get(GW), 'solid', 1], [pos.get(GW), pos.get(B), 'dashed', 1]])
+    expect(done.arrivals).toHaveLength(1)
+    expect(done.arrivals[0].pos).toEqual(pos.get(B))
+  })
+  it('a delivery bridges an unplaced node dashed, and needs both ends placed', () => {
+    const path = [{ a: A, b: C, dashed: false, why: 'relay' }, { a: C, b: B, dashed: false, why: 'relay' }]
+    addTransmission({ key: `79|${A}|delivered`, tx: A, rx: B, rebroadcast: false, delivered: true, path }, pos, 0)
+    expect(activePings(DELIVERY_TRAVEL + 100).deliveries.map((d) => [d.from, d.to, d.style])).toEqual([[pos.get(A), pos.get(B), 'dashed']])
+    clearPings()
+    addTransmission({ key: `80|${A}|delivered`, tx: A, rx: C, rebroadcast: false, delivered: true, path: [{ a: A, b: C, dashed: true, why: 'delivered' }] }, pos, 0)
+    expect(pingCount()).toBe(0)
   })
   it('a traceroute reply replays its request only if the request was not animated already', () => {
     const live = { key: `lp|${A}`, tx: A, rx: B, rebroadcast: false, packet: 'aa:4d' }

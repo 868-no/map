@@ -55,6 +55,7 @@ export interface Transmission {
   packet?: string // "origin:id" of the packet transmitted (D-106)
   replay?: boolean // reconstructed from a traceroute reply: skipped if that packet was already animated (D-106)
   after?: string // a traceroute reply: the request ("origin:id") whose way to the target is drawn first
+  path?: { a: string; b: string; dashed: boolean; why: string }[] // a delivery: the packet's way from tx to rx, dashed where unknown (D-172)
 }
 
 export type Response =
