@@ -14,15 +14,27 @@ bindgen="0.2.129" # must equal the wasm-bindgen crate version in Cargo.toml
 # release is fetched on the host, checked and cached outside the repo.
 binaryen="version_133"
 binaryen_sha256="2dc9c7813f5375db93d96ead4b78222fcc3e2677bbb832297af4797782a37489" # binaryen-version_133-x86_64-linux.tar.gz
-binaryen_dir="${XDG_CACHE_HOME:-$HOME/.cache}/meshmap/binaryen-$binaryen"
+# The cache: a named volume, or with MESHMAP_CACHE a directory under it
+# (CI saves and restores it between runs on GitHub-hosted runners).
+if [ -n "${MESHMAP_CACHE:-}" ]; then
+  cache="$MESHMAP_CACHE/rust"
+  binaryen_dir="$MESHMAP_CACHE/binaryen-$binaryen"
+else
+  cache=meshmap-rust-cache
+  binaryen_dir="${XDG_CACHE_HOME:-$HOME/.cache}/meshmap/binaryen-$binaryen"
+fi
 tty_flag=()
 [ -t 1 ] && tty_flag=(-t)
 run() {
   docker run --rm "${tty_flag[@]}" -u "$(id -u):$(id -g)" \
     -e CARGO_HOME=/cache/cargo -e CARGO_TARGET_DIR=/cache/target -e HOME=/tmp -e UPDATE_GOLDEN="${UPDATE_GOLDEN:-}" \
-    -v meshmap-rust-cache:/cache -v "$repo":/src -v "$binaryen_dir":/binaryen:ro -w /src/frontend/engine "$image" sh -c "$1"
+    -v "$cache":/cache -v "$repo":/src -v "$binaryen_dir":/binaryen:ro -w /src/frontend/engine "$image" sh -c "$1"
 }
-docker run --rm -v meshmap-rust-cache:/cache "$image" sh -c "mkdir -p /cache/cargo /cache/target && chown -R $(id -u):$(id -g) /cache"
+if [ -n "${MESHMAP_CACHE:-}" ]; then
+  mkdir -p "$cache/cargo" "$cache/target"
+else
+  docker run --rm -v "$cache":/cache "$image" sh -c "mkdir -p /cache/cargo /cache/target && chown -R $(id -u):$(id -g) /cache"
+fi
 mkdir -p "$binaryen_dir" # before Docker would create the mount point as root
 case "${1:-build}" in
   test) run "cargo test --release" ;;

@@ -1,0 +1,28 @@
+# The toolchains' caches between runs on GitHub-hosted runners. scripts/*.sh
+# keep the Go, npm and Rust caches (and wasm-opt) in Docker volumes; with
+# MESHMAP_CACHE set they use directories under it instead, which this action
+# restores and, when the key missed, saves at the end of the job. Self-hosted
+# runners keep their Docker volumes between jobs (deploy/runners) and skip it.
+name: toolchain cache
+description: Restore and save scripts/*.sh toolchain caches on GitHub-hosted runners
+inputs:
+  name:
+    description: The job's cache (one per job, as each builds different things)
+    required: true
+  hash:
+    description: A hash of what the cache depends on (lock files, the scripts pinning the images)
+    required: true
+runs:
+  using: composite
+  steps:
+    - if: runner.environment == 'github-hosted'
+      shell: bash
+      run: echo "MESHMAP_CACHE=$HOME/.cache/meshmap-ci" >> "$GITHUB_ENV"
+    # An older cache of the same job is restored when the hash changed:
+    # most of it (dependencies) still applies.
+    - if: runner.environment == 'github-hosted'
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.cache/meshmap-ci
+        key: toolchain-${{ inputs.name }}-${{ runner.os }}-${{ runner.arch }}-${{ inputs.hash }}
+        restore-keys: toolchain-${{ inputs.name }}-${{ runner.os }}-${{ runner.arch }}-
