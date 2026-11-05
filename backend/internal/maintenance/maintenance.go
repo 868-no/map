@@ -153,10 +153,14 @@ func (r *Runner) publish(ctx context.Context, st Status) {
 	b, _ := json.Marshal(st)
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
 	defer cancel()
-	if err := r.Cache.R.Set(ctx, cache.MaintStatusKey, b, 0).Err(); err != nil {
+	if err := r.Cache.SetBlob(ctx, cache.MaintStatusKey, b, 0); err != nil {
 		r.Log.Warn("status store failed", "err", err)
 	}
-	_ = r.Cache.Publish(ctx, RetentionChannel, b)
+	// Lost, open browsers keep rows retention removed until their next
+	// sync, and serve processes their identities until the next reload.
+	if err := r.Cache.Publish(ctx, RetentionChannel, b); err != nil {
+		r.Log.Warn("retention notice not published", "err", err)
+	}
 }
 
 // LastStatus reads the shared status (nil if unknown).
@@ -166,8 +170,8 @@ func LastStatus(ctx context.Context, c *cache.Client) (*Status, error) {
 	}
 	ctx, cancel := context.WithTimeout(ctx, time.Second)
 	defer cancel()
-	b, err := c.R.Get(ctx, cache.MaintStatusKey).Bytes()
-	if err != nil {
+	b, err := c.GetBlob(ctx, cache.MaintStatusKey)
+	if err != nil || b == nil {
 		return nil, err
 	}
 	var st Status
