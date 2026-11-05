@@ -176,7 +176,7 @@ func (d *flakyDedupe) LookupObservations(_ context.Context, keys [][16]byte) ([]
 	return make([]int64, len(keys)), nil
 }
 
-func (d *flakyDedupe) MarkObservations(context.Context, [][16]byte, []int64) error {
+func (d *flakyDedupe) MarkObservations(context.Context, [][16]byte, []int64, time.Duration) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.mark++

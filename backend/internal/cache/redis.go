@@ -15,7 +15,6 @@ import (
 const (
 	LiveChannel    = "meshmap:live"
 	obsPrefix      = "meshmap:obs:"
-	ObservationTTL = 15 * time.Minute
 	opTimeout      = 250 * time.Millisecond
 	MaintStatusKey = "meshmap:maint:status"
 )
@@ -76,13 +75,13 @@ func (c *Client) LookupObservations(ctx context.Context, keys [][16]byte) ([]int
 }
 
 // MarkObservations records committed observation keys with their row ids
-// (after commit only).
-func (c *Client) MarkObservations(ctx context.Context, keys [][16]byte, ids []int64) error {
+// (after commit only), for the dedupe window ttl.
+func (c *Client) MarkObservations(ctx context.Context, keys [][16]byte, ids []int64, ttl time.Duration) error {
 	ctx, cancel := ctxT(ctx)
 	defer cancel()
 	pipe := c.R.Pipeline()
 	for i, k := range keys {
-		pipe.Set(ctx, obsPrefix+string(k[:]), ids[i], ObservationTTL)
+		pipe.Set(ctx, obsPrefix+string(k[:]), ids[i], ttl)
 	}
 	_, err := pipe.Exec(ctx)
 	return err

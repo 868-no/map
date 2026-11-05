@@ -32,7 +32,7 @@ type Sink interface {
 type Dedupe interface {
 	// LookupObservations returns the row id per key, 0 when not seen.
 	LookupObservations(ctx context.Context, keys [][16]byte) ([]int64, error)
-	MarkObservations(ctx context.Context, keys [][16]byte, ids []int64) error
+	MarkObservations(ctx context.Context, keys [][16]byte, ids []int64, ttl time.Duration) error
 }
 
 // Publisher fans out live events (Redis pub/sub or in-process). May be nil.
@@ -56,13 +56,17 @@ type LiveEvent struct {
 	Row json.RawMessage `json:"row"`
 }
 
+// DedupeWindow: the same reception uploaded again within it (a QoS retry,
+// a reconnect, another broker) is one reception.
+const DedupeWindow = 15 * time.Minute
+
 // Config sizes the pipeline.
 type Config struct {
 	QueueSize  int
 	Workers    int
 	BatchSize  int
 	FlushEvery time.Duration
-	DedupeTTL  time.Duration
+	DedupeTTL  time.Duration // default DedupeWindow
 	// DrainTimeout bounds how long a shutdown keeps retrying a failing
 	// write; rows still unwritten then are counted as a gap.
 	DrainTimeout time.Duration
@@ -127,7 +131,7 @@ func New(cfg Config, sink Sink, dedupe Dedupe, pub Publisher, promote Promoter, 
 		cfg.DrainTimeout = 10 * time.Second
 	}
 	if cfg.DedupeTTL <= 0 {
-		cfg.DedupeTTL = 15 * time.Minute
+		cfg.DedupeTTL = DedupeWindow
 	}
 	return &Pipeline{
 		cfg: cfg, sink: sink, dedupe: dedupe, pub: pub, promote: promote, m: m, log: log,
@@ -594,7 +598,7 @@ func (p *Pipeline) afterCommit(obs []*Observation, ids []int64) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	if now := time.Now(); p.dedupeUp(now) {
-		if err := p.dedupe.MarkObservations(ctx, keys, ids); err != nil {
+		if err := p.dedupe.MarkObservations(ctx, keys, ids, p.cfg.DedupeTTL); err != nil {
 			p.dedupeFailed(now, err)
 			p.m.CacheErrors.WithLabelValues("dedupe_mark").Inc()
 		}

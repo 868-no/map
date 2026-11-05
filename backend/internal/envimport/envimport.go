@@ -104,9 +104,9 @@ type Importer struct {
 	pending   []*ingest.Observation
 }
 
-// dedupeWindow matches the live pipeline's: the same upload delivered twice
+// dedupeWindow is the live pipeline's: the same upload delivered twice
 // (a QoS retry, a reconnect) within it is one reception.
-const dedupeWindow = 15 * time.Minute
+const dedupeWindow = ingest.DedupeWindow
 
 // Run reads CSV lines (receive time, payload hex) until EOF.
 func (im *Importer) Run(ctx context.Context, in io.Reader) (err error) {
