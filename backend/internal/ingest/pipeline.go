@@ -416,17 +416,23 @@ func (p *Pipeline) flush(batch []*Observation) {
 		}
 		p.m.WriterErrors.Inc()
 		if permanent(err) {
-			// The database refuses the rows themselves (hostile input it
-			// cannot hold): retrying cannot help and would stall ingest.
-			// Halve the batch until the bad rows stand alone, then drop them.
-			if len(uniq) == 1 {
-				p.reject(uniq[0], err)
-				return
+			// The database refuses rows (hostile input it cannot hold):
+			// retrying cannot help and would stall ingest. Halve the batch
+			// until the bad rows stand alone and drop those, keeping the rest.
+			// When it refuses every row of a batch of several, the cause is
+			// the database rather than the data (a schema out of step during
+			// a deploy): keep the rows and retry, as for any outage.
+			refused, again := p.isolate(uniq, timeout)
+			if len(uniq) == 1 || len(refused) < len(uniq) {
+				for _, o := range refused {
+					p.reject(o, err)
+				}
+				if len(again) == 0 {
+					return
+				}
+				uniq = again // stored or dropped the rest; retry what failed transiently
+				continue
 			}
-			h := len(uniq) / 2
-			p.flush(uniq[:h])
-			p.flush(uniq[h:])
-			return
 		}
 		p.degraded.Store(true)
 		wait := backoff
@@ -444,6 +450,39 @@ func (p *Pipeline) flush(batch []*Observation) {
 		time.Sleep(wait)
 		backoff = min(backoff*2, 30*time.Second)
 	}
+}
+
+// isolate inserts rows the database refused as a batch, halving until the
+// rows it refuses stand alone. It commits what it can and returns the rows
+// refused on their own, and those whose insert failed for another reason.
+func (p *Pipeline) isolate(rows []*Observation, timeout time.Duration) (refused, again []*Observation) {
+	if len(rows) > 1 {
+		h := len(rows) / 2
+		r1, a1 := p.isolate1(rows[:h], timeout)
+		r2, a2 := p.isolate1(rows[h:], timeout)
+		return append(r1, r2...), append(a1, a2...)
+	}
+	return p.isolate1(rows, timeout)
+}
+
+// isolate1 tries one insert of rows, recursing through isolate when the
+// database refuses it.
+func (p *Pipeline) isolate1(rows []*Observation, timeout time.Duration) (refused, again []*Observation) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ids, err := p.sink.InsertBatch(ctx, rows)
+	cancel()
+	switch {
+	case err == nil:
+		p.m.WriterBatches.Inc()
+		p.m.WriterRows.Add(float64(len(rows)))
+		p.afterCommit(rows, ids)
+		return nil, nil
+	case !permanent(err):
+		return nil, rows
+	case len(rows) == 1:
+		return rows, nil
+	}
+	return p.isolate(rows, timeout)
 }
 
 // permanent reports whether a write failed on the data rather than on the

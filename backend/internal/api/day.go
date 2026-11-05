@@ -261,6 +261,14 @@ func (s *Server) streamDay(ctx context.Context, db rowsDB, p dayPlan, head Obser
 		dayHeaders(hc, false, "")
 		head.Now = s.now()
 		var dst io.Writer = hc.BodyWriter()
+		if rw, ok := dst.(http.ResponseWriter); ok {
+			// The read slot and the database connection are held for as long
+			// as the client takes: one that stops reading for stallLimit ends
+			// the stream and frees them.
+			rc := http.NewResponseController(rw)
+			defer func() { _ = rc.SetWriteDeadline(time.Time{}) }() // the connection may serve another request
+			dst = stallWriter{dst, rc}
+		}
 		var zw *gzip.Writer
 		if gz {
 			hc.SetHeader("Content-Encoding", "gzip")
@@ -276,6 +284,22 @@ func (s *Server) streamDay(ctx context.Context, db rowsDB, p dayPlan, head Obser
 			panic(http.ErrAbortHandler)
 		}
 	}}, nil
+}
+
+// stallLimit is how long one write of a streamed day may wait on the client.
+const stallLimit = 30 * time.Second
+
+// stallWriter moves the connection's write deadline stallLimit ahead before
+// each write, so a slow client still gets the whole day but a stalled one
+// does not hold the stream open.
+type stallWriter struct {
+	w  io.Writer
+	rc *http.ResponseController
+}
+
+func (s stallWriter) Write(b []byte) (int, error) {
+	_ = s.rc.SetWriteDeadline(time.Now().Add(stallLimit)) // unsupported: no limit, as before
+	return s.w.Write(b)
 }
 
 func dayHeaders(hc huma.Context, immutable bool, etag string) {

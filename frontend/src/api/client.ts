@@ -12,6 +12,12 @@ export async function getJSON<T>(path: string, params?: URLSearchParams, signal?
   return readJSON<T>(await fetch(url, { signal, headers: { Accept: 'application/json' } }))
 }
 
+/** GET a JSON endpoint, telling whether the service worker answered from its offline copy. */
+export async function getJSONFresh<T>(path: string, signal?: AbortSignal): Promise<{ body: T; offline: boolean }> {
+  const res = await fetch(path, { signal, headers: { Accept: 'application/json' } })
+  return { body: await readJSON<T>(res), offline: res.headers.get('x-meshmap-offline') === '1' }
+}
+
 /** POST a JSON body to an endpoint that only reads (no state changes). */
 export async function postJSON<T>(path: string, body: unknown, signal?: AbortSignal): Promise<T> {
   return readJSON<T>(await fetch(path, { method: 'POST', signal, headers: { Accept: 'application/json', 'Content-Type': 'application/json' }, body: JSON.stringify(body) }))

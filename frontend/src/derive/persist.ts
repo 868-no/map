@@ -105,6 +105,9 @@ function open(): Promise<IDBDatabase> {
     const timer = setTimeout(() => fail(new Error('indexedDB open timed out')), OPEN_TIMEOUT_MS)
     req.onblocked = () => fail(new Error('indexedDB open blocked'))
     req.onupgradeneeded = (e) => {
+      // Not blocked: an upgrade is under way, which a slow phone may take a
+      // while to finish, so the timeout no longer applies.
+      clearTimeout(timer)
       const db = req.result
       if (e.oldVersion < 2) {
         // A format change starts over: the old meta described the old rows.
@@ -184,7 +187,7 @@ export async function openPersistence(engine: string): Promise<Persistence | nul
         // Written by another engine build: drop it all, so no old chunk is read again later.
         const w = db.transaction(['chunks', 'deltas', 'meta'], 'readwrite')
         for (const store of ['chunks', 'deltas', 'meta']) w.objectStore(store).clear()
-        w.oncomplete = w.onerror = () => resolve(empty)
+        w.oncomplete = w.onerror = w.onabort = () => resolve(empty)
         return
       }
       for (const h of chunkKeys.result as number[]) stored.set(h, 0)

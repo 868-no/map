@@ -309,6 +309,27 @@ func TestFlushDropsRowsTheDatabaseRefuses(t *testing.T) {
 	if sink.attempts > 20 {
 		t.Fatalf("%d insert attempts for 9 rows", sink.attempts)
 	}
+	// A batch the database refuses whole is its fault, not the data's (a
+	// schema out of step): the rows are kept and retried, not dropped.
+	whole := &memSink{}
+	whole.refuse = func(*Observation) bool { return whole.attempts < 8 } // called under whole.mu
+	q, _ := newTestPipeline(t, whole, 10)
+	rows := make([]*Observation, 4)
+	for i := range rows {
+		rows[i] = &Observation{Topic: "ok", BrokerID: "a", ObservedAt: time.Now()}
+		rows[i].ObservationKey[0] = byte(100 + i)
+		q.inflight[rows[i].ObservationKey] = "a"
+	}
+	done = make(chan struct{})
+	go func() { q.flush(rows); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("a wholly refused batch was never stored")
+	}
+	if whole.count() != 4 {
+		t.Fatalf("stored %d rows after the database recovered, want 4", whole.count())
+	}
 	// Transient and partition errors stay retryable.
 	if permanent(errors.New("db down")) || permanent(sqlStateErr("08006")) || permanent(fmt.Errorf("no partition of relation \"packet_log\" found for row: %w", sqlStateErr("23514"))) {
 		t.Fatal("transient error classed as permanent")

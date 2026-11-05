@@ -1,6 +1,6 @@
 import { keepPreviousData, useQuery, type Query } from '@tanstack/react-query'
 import { useMemo } from 'react'
-import { getJSON } from '../api/client'
+import { getJSON, getJSONFresh } from '../api/client'
 import type { Capabilities, Retention } from '../api/types'
 import type { HealthView, LinkHistory, NodeView, PacketLog, PacketRoute, ReachView, SnapshotView, TrafficView, ViewMeta } from '../derive/views'
 import { apiParams, useStore } from './store'
@@ -30,8 +30,9 @@ export function useRetention() {
   return useQuery({
     queryKey: ['retention'],
     queryFn: async ({ signal }) => {
-      const r = await getJSON<Retention>('/api/v1/retention', undefined, signal)
-      noteServerTime(r.now) // window ends follow the server's clock
+      const { body: r, offline } = await getJSONFresh<Retention>('/api/v1/retention', signal)
+      // Window ends follow the server's clock; an offline copy's time is old.
+      if (!offline) noteServerTime(r.now)
       return r
     },
     refetchInterval: 300_000,
