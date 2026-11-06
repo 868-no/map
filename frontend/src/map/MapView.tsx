@@ -242,7 +242,8 @@ export default memo(function MapView({ caps, snapshot, onPositions }: Props) {
     }
   }, [ready, toggles.basemap])
 
-  const windowEnd = snapshot ? Date.parse(snapshot.meta.window.end) : Date.now()
+  // 0 before data arrives: Date.now() would change on every render and re-run placement.
+  const windowEnd = snapshot ? Date.parse(snapshot.meta.window.end) : 0
   const windowMs = snapshot ? Date.parse(snapshot.meta.window.end) - Date.parse(snapshot.meta.window.start) : 1
 
   // Placement and links apart: a link toggle or edge filter must not move

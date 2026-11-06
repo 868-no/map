@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import type { SnapshotView } from '../derive/views'
 import { defaultFilters, useStore, type Confidence, type Filters } from '../state/store'
 import { ageMs, MQTT_ARROW, roleRadius, type MqttFlow } from '../map/model'
@@ -74,9 +75,10 @@ export function LayersPanel() {
 export function FilterPanel({ snapshot }: { snapshot: SnapshotView | undefined }) {
   const f = useStore((s) => s.filters)
   const set = useStore((s) => s.setFilters)
-  const brokers = [...new Set((snapshot?.nodes ?? []).flatMap((n) => n.brokers ?? []))].sort()
+  const brokers = useMemo(() => [...new Set((snapshot?.nodes ?? []).flatMap((n) => n.brokers ?? []))].sort(), [snapshot])
   // Roles present in the window, plus any selected one that is not (so it can still be toggled off).
-  const roles = [...new Set([...(snapshot?.nodes ?? []).flatMap((x) => (x.identity?.role ? [x.identity.role] : [])), ...f.roles])].sort()
+  const present = useMemo(() => (snapshot?.nodes ?? []).flatMap((x) => (x.identity?.role ? [x.identity.role] : [])), [snapshot])
+  const roles = useMemo(() => [...new Set([...present, ...f.roles])].sort(), [present, f.roles])
   const n = activeFilters(f)
   return (
     <div className="panel">
