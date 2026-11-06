@@ -506,7 +506,9 @@ func (p *Pipeline) isolate(rows []*Observation, timeout time.Duration) (refused,
 		h := len(rows) / 2
 		r1, a1 := p.isolate1(rows[:h], timeout)
 		r2, a2 := p.isolate1(rows[h:], timeout)
-		return append(r1, r2...), append(a1, a2...)
+		// Into new slices: r1 and a1 may be rows[:h] itself, whose spare
+		// capacity is rows[h:], where r2 and a2 still point.
+		return slices.Concat(r1, r2), slices.Concat(a1, a2)
 	}
 	return p.isolate1(rows, timeout)
 }

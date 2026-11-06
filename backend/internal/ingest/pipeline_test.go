@@ -413,3 +413,43 @@ func TestFlushDropsRowsTheDatabaseRefuses(t *testing.T) {
 		t.Fatal("integrity error classed as transient")
 	}
 }
+
+// isolateSink refuses any batch holding a "bad" row, and fails a lone
+// "flaky" row for a transient reason.
+type isolateSink struct{ memSink }
+
+func (s *isolateSink) InsertBatch(ctx context.Context, obs []*Observation) ([]int64, error) {
+	for _, o := range obs {
+		if o.Topic == "bad" {
+			return nil, fmt.Errorf("copy: %w", sqlStateErr("22021"))
+		}
+	}
+	if len(obs) == 1 && obs[0].Topic == "flaky" {
+		return nil, errors.New("db down")
+	}
+	return s.memSink.InsertBatch(ctx, obs)
+}
+
+// Halving a refused batch keeps each row in exactly one outcome: the halves'
+// results share the batch's array, and joining them must not overwrite one
+// with the other (a row lost there stays claimed forever).
+func TestIsolateKeepsEveryRow(t *testing.T) {
+	p, _ := newTestPipeline(t, &memSink{}, 10)
+	p.sink = &isolateSink{}
+	topics := []string{"bad", "bad", "flaky", "bad"}
+	batch := make([]*Observation, len(topics), 16) // spare capacity, as the writer's batch has
+	for i, top := range topics {
+		batch[i] = &Observation{Topic: top, BrokerID: "a", ObservedAt: time.Now()}
+		batch[i].ObservationKey[0] = byte(i)
+	}
+	refused, again := p.isolate(batch, time.Second)
+	keys := func(os []*Observation) (out []byte) {
+		for _, o := range os {
+			out = append(out, o.ObservationKey[0])
+		}
+		return out
+	}
+	if !slices.Equal(keys(refused), []byte{0, 1, 3}) || !slices.Equal(keys(again), []byte{2}) {
+		t.Fatalf("refused %v, again %v; want [0 1 3], [2]", keys(refused), keys(again))
+	}
+}
