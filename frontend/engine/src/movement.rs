@@ -92,8 +92,10 @@ fn err_m(p: &crate::row::Position) -> f64 {
 }
 
 /// Each node's position reports (Position packets and map reports with a
-/// position) in time order: the input of `anchors_of` and `movements_of`,
-/// grouped once for both.
+/// position), one per packet at its first copy, in time order: the input of
+/// `anchors_of` and `movements_of`, grouped once for both. A late copy (a
+/// gateway uplinking an old packet again) stays at its packet's time, not
+/// its own, so it never reads as a return to an old place (D-180).
 pub fn positions_by_node<'a>(rows: &[&'a Row]) -> FxMap<u32, Vec<&'a Row>> {
     let mut by_node: FxMap<u32, Vec<&Row>> = map();
     for &r in rows {
@@ -103,6 +105,8 @@ pub fn positions_by_node<'a>(rows: &[&'a Row]) -> FxMap<u32, Vec<&'a Row>> {
     }
     for rs in by_node.values_mut() {
         rs.sort_unstable_by_key(|r| (r.t, r.id));
+        let mut seen = crate::util::set();
+        rs.retain(|r| seen.insert(r.lp));
     }
     by_node
 }
@@ -115,17 +119,14 @@ pub fn anchors(rows: &[&Row], fixed: &FxSet<u32>) -> FxMap<u32, Anchor> {
 /// Anchored nodes among grouped position reports (`positions_by_node`).
 pub fn anchors_of(by_node: &FxMap<u32, Vec<&Row>>, fixed: &FxSet<u32>) -> FxMap<u32, Anchor> {
     let mut out = map();
-    for (&n, all) in by_node {
-        // One report per packet, however many gateways heard it.
-        let mut seen = crate::util::set();
-        let rs: Vec<&Row> = all.iter().copied().filter(|r| seen.insert(r.lp)).collect();
+    for (&n, rs) in by_node {
         if rs.len() < ANCHOR_MIN_REPORTS {
             continue;
         }
         let pos = |r: &Row| r.pos().unwrap();
         // The most reported place, and the reports near it.
         let mut count: FxMap<(u64, u64, u32), usize> = map();
-        for r in &rs {
+        for r in rs {
             let p = pos(r);
             *count.entry((p.lat.to_bits(), p.lon.to_bits(), p.bits)).or_default() += 1;
         }
@@ -138,7 +139,7 @@ pub fn anchors_of(by_node: &FxMap<u32, Vec<&Row>>, fixed: &FxSet<u32>) -> FxMap<
         let m = if repeats >= 2 || !fixed {
             rs.iter().map(|r| pos(r)).find(|p| (p.lat.to_bits(), p.lon.to_bits(), p.bits) == mode).unwrap()
         } else {
-            medoid(&rs)
+            medoid(rs)
         };
         let near = |p: &crate::row::Position| distance_m(LatLon { lat: m.lat, lon: m.lon }, LatLon { lat: p.lat, lon: p.lon }) <= move_threshold(fixed, (m.lat, bits(&m)), (p.lat, bits(p)));
         let inliers: Vec<crate::row::Position> = rs.iter().map(|r| pos(r)).filter(near).collect();
@@ -309,8 +310,6 @@ fn track(pts: &[&Row]) -> Vec<TrackPoint> {
 /// the radio heard before then, it heard elsewhere. One far report alone
 /// stays a GPS spike.
 fn arrival(rs: &[&Row], a: &Anchor, fixed: bool) -> Option<Movement> {
-    let mut seen = crate::util::set();
-    let reports: Vec<&Row> = rs.iter().copied().filter(|r| seen.insert(r.lp)).collect();
     let home = LatLon { lat: a.lat, lon: a.lon };
     let base = if fixed { FIXED_MOVE_M } else { MOVE_M };
     let far = |r: &Row| {
@@ -318,7 +317,7 @@ fn arrival(rs: &[&Row], a: &Anchor, fixed: bool) -> Option<Movement> {
         distance_m(home, LatLon { lat: p.lat, lon: p.lon }) > TRIP_FACTOR * (base + PRECISION_SLACK * (a.radius_m + err_m(&p)))
     };
     let (mut run, mut trip_end) = (0, None);
-    for (k, r) in reports.iter().enumerate() {
+    for (k, r) in rs.iter().enumerate() {
         if far(r) {
             run += 1;
             if run >= 2 {
@@ -328,7 +327,7 @@ fn arrival(rs: &[&Row], a: &Anchor, fixed: bool) -> Option<Movement> {
             run = 0;
         }
     }
-    let moved_at = reports.get(trip_end? + 1)?.t;
+    let moved_at = rs.get(trip_end? + 1)?.t;
     Some(Movement { moved_at, track: track(&distinct_places(rs)), settled: true })
 }
 
