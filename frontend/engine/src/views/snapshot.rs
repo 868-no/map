@@ -114,7 +114,7 @@ fn silent_nodes(roles: &FxMap<u32, String>, nodeinfo: &[&Row], mapreport: &[&Row
 /// Time-isolated nodes, links and counts. rows: in-window and filtered.
 /// Engine rules added after the server views were recorded (D-041); each can
 /// be switched off to compare with them.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Rules {
     pub silent: bool,     // roles that never rebroadcast are no relay candidates
     pub mqtt_links: bool, // 0 dB traceroute hops are MQTT links, not radio (D-055)

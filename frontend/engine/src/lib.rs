@@ -39,42 +39,40 @@ struct GeoSettings {
 }
 
 #[derive(Deserialize)]
+/// Every field is optional: what an update leaves out keeps its current
+/// value (the rules start on, the node limit at MAX_NODES).
 struct Options {
     #[serde(default)]
     geo: Option<GeoSettings>,
     /// Exclude nodes whose role never rebroadcasts (CLIENT_MUTE) from relay
     /// candidates (default on; off only to compare with the old server views).
-    #[serde(default = "yes")]
-    silent_rule: bool,
+    #[serde(default)]
+    silent_rule: Option<bool>,
     /// Traceroute hops at exactly 0 dB as MQTT links (default on; off only to
     /// compare with the old server views).
-    #[serde(default = "yes")]
-    mqtt_links: bool,
+    #[serde(default)]
+    mqtt_links: Option<bool>,
     /// Drop link evidence from before a node's latest move (default on; off
     /// only to compare with the old server views) (D-073).
-    #[serde(default = "yes")]
-    move_rule: bool,
+    #[serde(default)]
+    move_rule: Option<bool>,
     /// Rule out relays too far away for the signal a gateway measured
     /// (default on; off only to compare with the old server views) (D-136).
-    #[serde(default = "yes")]
-    signal_rule: bool,
+    #[serde(default)]
+    signal_rule: Option<bool>,
     /// Bound relay range by links seen more than once between nodes that
     /// did not move (default on; off only to compare with the old server
     /// views) (D-177).
-    #[serde(default = "yes")]
-    range_rule: bool,
+    #[serde(default)]
+    range_rule: Option<bool>,
     /// Count the originator as a relay candidate for its own byte (default
     /// on; off only to compare with the old server views) (D-179).
-    #[serde(default = "yes")]
-    origin_rule: bool,
+    #[serde(default)]
+    origin_rule: Option<bool>,
     /// Nodes the snapshot keeps, the most active first (default MAX_NODES,
     /// D-182). Kept until set again, so options without it leave it alone.
     #[serde(default)]
     max_nodes: Option<usize>,
-}
-
-fn yes() -> bool {
-    true
 }
 
 /// A view request's window and filters at one store version (memo key).
@@ -276,9 +274,10 @@ impl Engine {
         Engine::default()
     }
 
-    /// {geo: capabilities.geolocation, silent_rule?: bool, mqtt_links?: bool, move_rule?: bool, signal_rule?: bool, max_nodes?: number}
+    /// {geo?: capabilities.geolocation, silent_rule?, mqtt_links?, move_rule?, signal_rule?, range_rule?, origin_rule?: bool, max_nodes?: number}
     pub fn set_options(&mut self, options: &str) -> Result<(), JsError> {
         let o: Options = serde_json::from_str(options).map_err(err)?;
+        let geo_changed = o.geo.is_some();
         if let Some(g) = o.geo {
             self.geo = GeoOptions {
                 enabled: g.enabled,
@@ -288,9 +287,21 @@ impl Engine {
                 terrain: std::mem::take(&mut self.geo.terrain),
             };
         }
-        let max_nodes = o.max_nodes.map_or(self.rules.max_nodes, |n| n.max(1));
-        self.rules = Rules { silent: o.silent_rule, mqtt_links: o.mqtt_links, moves: o.move_rule, signal: o.signal_rule, range: o.range_rule, origin: o.origin_rule, max_nodes };
-        self.built = None;
+        let r = self.rules;
+        let rules = Rules {
+            silent: o.silent_rule.unwrap_or(r.silent),
+            mqtt_links: o.mqtt_links.unwrap_or(r.mqtt_links),
+            moves: o.move_rule.unwrap_or(r.moves),
+            signal: o.signal_rule.unwrap_or(r.signal),
+            range: o.range_rule.unwrap_or(r.range),
+            origin: o.origin_rule.unwrap_or(r.origin),
+            max_nodes: o.max_nodes.map_or(r.max_nodes, |n| n.max(1)),
+        };
+        // Views are rebuilt only for what changed: new geolocation settings, or other rules.
+        if geo_changed || rules != r {
+            self.rules = rules;
+            self.built = None;
+        }
         Ok(())
     }
 
@@ -454,5 +465,14 @@ mod tests {
         let v: Vec<serde_json::Value> = serde_json::from_str(&e.export(0.0, f64::MAX)).unwrap();
         assert_eq!(v.iter().map(|r| r["y"].as_str().unwrap()).collect::<Vec<_>>(), vec!["nodeinfo", "telemetry", "routing"]);
         assert_eq!(v[2]["rt"]["error"], "re");
+    }
+
+    #[test]
+    fn an_options_update_keeps_what_it_leaves_out() {
+        let mut e = Engine::new();
+        e.set_options(r#"{"signal_rule": false}"#).unwrap();
+        e.set_options(r#"{"max_nodes": 10}"#).unwrap();
+        assert!(!e.rules.signal, "the signal rule stays off");
+        assert_eq!(e.rules.max_nodes, 10);
     }
 }
