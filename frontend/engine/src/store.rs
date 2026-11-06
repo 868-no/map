@@ -157,17 +157,21 @@ impl Store {
         }
         let (a, b) = (self.start, self.start + k);
         let mut newest_gone = false;
-        for r in &self.buf[a..b] {
+        for r in &mut self.buf[a..b] {
             self.ids.remove(&r.id);
             newest_gone |= Some(r.id) == self.max_id;
+            // What a dropped row owns goes now; only its fixed part waits
+            // for the compaction below.
+            r.detail = None;
+            r.pos = None;
         }
         self.start = b;
         // Moving the kept rows down costs as much as the rows kept: done
-        // once the dropped prefix is as large, it stays linear overall.
-        if self.start >= self.buf.len() - self.start {
+        // once the dropped prefix is a quarter of the vector, it stays
+        // linear overall and holds at most a third more than the rows kept.
+        if 4 * self.start >= self.buf.len() {
             self.buf.drain(..self.start);
             self.start = 0;
-            self.shrink();
         }
         if newest_gone {
             self.max_id = self.rows().iter().map(|r| r.id).max();
@@ -176,7 +180,8 @@ impl Store {
     }
 
     /// Returns memory to the allocator once the rows use under half of it
-    /// (after a large trim, or the row cap).
+    /// (after the row cap). Not after a trim: the rows it keeps grow back
+    /// into the room as new ones arrive.
     fn shrink(&mut self) {
         if self.buf.capacity() > 2 * self.buf.len() {
             self.buf.shrink_to_fit();
