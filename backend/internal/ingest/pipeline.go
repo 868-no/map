@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -61,6 +62,30 @@ type LiveEvent struct {
 	Row json.RawMessage `json:"row"`
 }
 
+// EncodeLiveBatch writes events as a JSON array, as json.Marshal would but
+// with each already-encoded row copied as-is rather than re-compacted.
+func EncodeLiveBatch(events []LiveEvent) json.RawMessage {
+	n := 2
+	for _, e := range events {
+		n += len(e.Row) + 64
+	}
+	b := make([]byte, 0, n)
+	b = append(b, '[')
+	for i, e := range events {
+		if i > 0 {
+			b = append(b, ',')
+		}
+		b = append(b, `{"id":`...)
+		b = strconv.AppendInt(b, e.ID, 10)
+		b = append(b, `,"t":"`...)
+		b = e.T.AppendFormat(b, time.RFC3339Nano)
+		b = append(b, `","row":`...)
+		b = append(b, e.Row...)
+		b = append(b, '}')
+	}
+	return append(b, ']')
+}
+
 // DedupeWindow: the same reception uploaded again within it (a QoS retry,
 // a reconnect, another broker) is one reception.
 const DedupeWindow = 15 * time.Minute
@@ -71,7 +96,6 @@ type Config struct {
 	Workers    int
 	BatchSize  int
 	FlushEvery time.Duration
-	DedupeTTL  time.Duration // default DedupeWindow
 	// DrainTimeout bounds how long a shutdown keeps retrying a failing
 	// write; rows still unwritten then are counted as a gap.
 	DrainTimeout time.Duration
@@ -134,14 +158,11 @@ func New(cfg Config, sink Sink, dedupe Dedupe, pub Publisher, promote Promoter, 
 	if cfg.DrainTimeout <= 0 {
 		cfg.DrainTimeout = 10 * time.Second
 	}
-	if cfg.DedupeTTL <= 0 {
-		cfg.DedupeTTL = DedupeWindow
-	}
 	return &Pipeline{
 		cfg: cfg, sink: sink, dedupe: dedupe, pub: pub, promote: promote, m: m, log: log,
 		queue:    make(chan RawMessage, cfg.QueueSize),
 		toWriter: make(chan *Observation, cfg.BatchSize*2),
-		recent:   newTTLSet(cfg.DedupeTTL, 200_000),
+		recent:   newTTLSet(DedupeWindow, 200_000),
 		inflight: map[[16]byte]string{},
 		alsoVia:  map[[16]byte][]string{},
 		pending:  map[int64][]string{},
@@ -338,7 +359,7 @@ func (p *Pipeline) committed(o Observation) (int64, bool) {
 		p.dedupeFailed(now, err)
 		p.m.CacheErrors.WithLabelValues("dedupe_check").Inc()
 	}
-	id, found, err := p.sink.RecentObservation(ctx, k, o.ObservedAt.Add(-p.cfg.DedupeTTL))
+	id, found, err := p.sink.RecentObservation(ctx, k, o.ObservedAt.Add(-DedupeWindow))
 	if err != nil {
 		return 0, false // prefer a possible duplicate (collapsed at query time) over data loss
 	}
@@ -410,7 +431,7 @@ func (p *Pipeline) flushProvenance() {
 	defer cancel()
 	// Rows reach here through the dedupe lookup, so they are at most one
 	// dedupe window old; the margin covers queueing and clock skew.
-	n, err := p.sink.AddAlsoVia(ctx, work, time.Now().Add(-p.cfg.DedupeTTL-24*time.Hour))
+	n, err := p.sink.AddAlsoVia(ctx, work, time.Now().Add(-DedupeWindow-24*time.Hour))
 	if err != nil {
 		p.m.ProvenanceUpdates.WithLabelValues("failed").Add(float64(len(work)))
 		p.log.Warn("broker provenance update failed", "rows", len(work), "err", err)
@@ -610,14 +631,12 @@ func (p *Pipeline) afterCommit(obs []*Observation, ids []int64) {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	if now := time.Now(); p.dedupeUp(now) {
-		if err := p.dedupe.MarkObservations(ctx, keys, ids, p.cfg.DedupeTTL); err != nil {
+		if err := p.dedupe.MarkObservations(ctx, keys, ids, DedupeWindow); err != nil {
 			p.dedupeFailed(now, err)
 			p.m.CacheErrors.WithLabelValues("dedupe_mark").Inc()
 		}
 	}
 	if p.pub != nil && len(events) > 0 {
-		if b, err := json.Marshal(events); err == nil {
-			p.pub.PublishLive(ctx, b)
-		}
+		p.pub.PublishLive(ctx, EncodeLiveBatch(events))
 	}
 }
