@@ -500,12 +500,6 @@ func logicalKey(p *pb.MeshPacket, channel string, d *pb.Data) [16]byte {
 // only byte-identical re-deliveries (bridges, second brokers, QoS retries)
 // collide.
 func observationKey(o Observation, gw uint32, d *pb.Data) [16]byte {
-	opt := func(present bool, b []byte) []byte {
-		if !present {
-			return nil
-		}
-		return b
-	}
 	var rxt, snr, rssi []byte
 	if o.RxTime != nil {
 		rxt = u32(uint32(o.RxTime.Unix()))
@@ -525,5 +519,5 @@ func observationKey(o Observation, gw uint32, d *pb.Data) [16]byte {
 		relay = []byte{byte(*o.RelayHint)}
 	}
 	ph := sha256.Sum256(d.GetPayload())
-	return h16([]byte("ob1"), o.LogicalKey[:], u32(gw), opt(rxt != nil, rxt), opt(snr != nil, snr), opt(rssi != nil, rssi), hops, relay, ph[:])
+	return h16([]byte("ob1"), o.LogicalKey[:], u32(gw), rxt, snr, rssi, hops, relay, ph[:])
 }

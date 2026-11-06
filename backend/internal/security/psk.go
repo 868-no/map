@@ -63,9 +63,6 @@ func (k Key) Bytes() []byte { return k.bytes }
 // Unencrypted reports whether the PSK shorthand selected "no encryption".
 func (k Key) Unencrypted() bool { return k.bytes == nil }
 
-// Hash is the firmware channel hash: a one-byte key-selection hint only.
-func (k Key) Hash() uint8 { return k.hash }
-
 func (k Key) String() string { return fmt.Sprintf("key(%s,%s)", k.Label, k.Mode) }
 
 // GoString keeps %#v from printing key material.
