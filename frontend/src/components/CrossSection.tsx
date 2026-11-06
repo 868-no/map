@@ -1,7 +1,7 @@
 // A link's cross section (D-143): the terrain between its ends, raised by the
 // earth's curvature, the straight line between the antennas and the first
 // Fresnel zone around it. Hovering a point marks it on the map's line.
-import { useEffect, useRef, useState, type PointerEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type PointerEvent } from 'react'
 import type { TerrainProfile, TerrainSample } from '../api/types'
 import { useStore } from '../state/store'
 
@@ -15,6 +15,9 @@ export const LOS_TITLE: Record<string, string> = {
   blocked: 'Terrain cuts the straight line between the antennas',
   unknown: 'The terrain model does not cover enough of the path',
 }
+
+/** Terrain height plus the earth's bulge; null where the model has none. */
+const terrain = (q: TerrainSample) => (q.ground == null ? null : q.ground + q.bulge)
 
 const km = (m: number) => (m >= 10_000 ? `${(m / 1000).toFixed(0)} km` : `${(m / 1000).toFixed(1)} km`)
 
@@ -43,27 +46,32 @@ export function CrossSection({ profile, nameA, nameB }: { profile: TerrainProfil
     marked.current = null
     if (useStore.getState().probe) setProbe(null)
   }, [profile, setProbe])
-  const pts = points(profile)
-  if (pts.length < 3) return null
-  const terrain = (q: TerrainSample) => (q.ground == null ? null : q.ground + q.bulge)
-  const ys = pts.flatMap((q) => [q.line + q.fresnel, q.line - q.fresnel, ...(terrain(q) == null ? [] : [terrain(q)!])])
-  let y0 = Math.min(...ys), y1 = Math.max(...ys)
-  const pad = Math.max(5, (y1 - y0) * 0.06)
-  y0 -= pad
-  y1 += pad
-  const L = profile.length_m || 1
-  const sx = (d: number) => (d / L) * W
-  const sy = (v: number) => H - ((v - y0) / (y1 - y0)) * H
-  // Terrain as filled runs, broken where the model has no height.
-  const runs: TerrainSample[][] = [[]]
-  for (const q of pts) {
-    if (terrain(q) != null) runs[runs.length - 1].push(q)
-    else if (runs[runs.length - 1].length) runs.push([])
-  }
-  const ground = runs.filter((r) => r.length > 1).map((r) => `M${sx(r[0].d)},${H} ` + r.map((q) => `L${sx(q.d)},${sy(terrain(q)!)}`).join(' ') + ` L${sx(r[r.length - 1].d)},${H} Z`)
-  const zone = `M${pts.map((q) => `${sx(q.d)},${sy(q.line + q.fresnel)}`).join(' L')} L${[...pts].reverse().map((q) => `${sx(q.d)},${sy(q.line - q.fresnel)}`).join(' L')} Z`
-  const zone60 = `M${pts.map((q) => `${sx(q.d)},${sy(q.line - 0.6 * q.fresnel)}`).join(' L')}`
-  const line = `M${sx(0)},${sy(pts[0].line)} L${sx(L)},${sy(pts[pts.length - 1].line)}`
+  // The drawing depends on the profile alone: hovering re-renders only the readout and cursor.
+  const geom = useMemo(() => {
+    const pts = points(profile)
+    if (pts.length < 3) return null
+    const ys = pts.flatMap((q) => [q.line + q.fresnel, q.line - q.fresnel, ...(terrain(q) == null ? [] : [terrain(q)!])])
+    let y0 = Math.min(...ys), y1 = Math.max(...ys)
+    const pad = Math.max(5, (y1 - y0) * 0.06)
+    y0 -= pad
+    y1 += pad
+    const L = profile.length_m || 1
+    const sx = (d: number) => (d / L) * W
+    const sy = (v: number) => H - ((v - y0) / (y1 - y0)) * H
+    // Terrain as filled runs, broken where the model has no height.
+    const runs: TerrainSample[][] = [[]]
+    for (const q of pts) {
+      if (terrain(q) != null) runs[runs.length - 1].push(q)
+      else if (runs[runs.length - 1].length) runs.push([])
+    }
+    const ground = runs.filter((r) => r.length > 1).map((r) => `M${sx(r[0].d)},${H} ` + r.map((q) => `L${sx(q.d)},${sy(terrain(q)!)}`).join(' ') + ` L${sx(r[r.length - 1].d)},${H} Z`)
+    const zone = `M${pts.map((q) => `${sx(q.d)},${sy(q.line + q.fresnel)}`).join(' L')} L${[...pts].reverse().map((q) => `${sx(q.d)},${sy(q.line - q.fresnel)}`).join(' L')} Z`
+    const zone60 = `M${pts.map((q) => `${sx(q.d)},${sy(q.line - 0.6 * q.fresnel)}`).join(' L')}`
+    const line = `M${sx(0)},${sy(pts[0].line)} L${sx(L)},${sy(pts[pts.length - 1].line)}`
+    return { pts, y0, y1, L, sx, ground, zone, zone60, line }
+  }, [profile])
+  if (!geom) return null
+  const { pts, y0, y1, L, sx, ground, zone, zone60, line } = geom
 
   const onMove = (e: PointerEvent<HTMLDivElement>) => {
     const r = box.current!.getBoundingClientRect()
