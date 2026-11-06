@@ -10,7 +10,7 @@ import { UNDER_LABELS, type RGBA } from './deckShared'
 import type { MapPalette } from './palette'
 import { REGION_LABELS, REGION_LABEL_MAX_ZOOM, type RegionCollection, type RegionFeature, type RegionId } from './regionData'
 
-export { REGION_LABELS, type RegionCollection, type RegionId } from './regionData'
+export type { RegionCollection } from './regionData'
 
 // Outer rings run counter-clockwise (RFC 7946, as scripts/regions.sh writes
 // them), so a negative offset puts each outline inside its own region:

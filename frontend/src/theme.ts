@@ -26,7 +26,7 @@ export function useTheme(): Theme {
 }
 
 /** Background per theme (matches --bg in index.css): browser UI colour. */
-export const THEME_BG: Record<Theme, string> = { dark: '#0e1116', light: '#f6f7f9' }
+const THEME_BG: Record<Theme, string> = { dark: '#0e1116', light: '#f6f7f9' }
 
 export function applyTheme(t: Theme): void {
   document.documentElement.dataset.theme = t

@@ -28,14 +28,14 @@ export const DAY_MS = 86_400_000
  * SettleMargin, D-159): only then is it fetched whole from
  * /observations/day, which every visitor shares through HTTP caches (D-158).
  */
-export const SETTLE_MS = 30 * 60_000
+const SETTLE_MS = 30 * 60_000
 /**
  * The first day of a range is fetched whole, and trimmed by the window, when
  * at least this much of it is needed; less goes through the paged endpoint.
  * A whole day comes from a cache, so the extra rows cost transfer, not the
  * database; for a sliver of a day the paged read is cheaper all round.
  */
-export const PARTIAL_DAY_MIN_MS = 6 * 3_600_000
+const PARTIAL_DAY_MIN_MS = 6 * 3_600_000
 
 /** The UTC day of ms as YYYY-MM-DD (the day endpoint's path). */
 export function dayName(ms: number): string {

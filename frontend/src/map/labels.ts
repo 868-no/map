@@ -19,7 +19,7 @@ export function fromPixels(x: number, y: number, zoom: number): [number, number]
   return [lon, lat]
 }
 
-export const labelText = (p: PlacedNode) => p.node.identity?.short_name || p.node.id.slice(-4)
+const labelText = (p: PlacedNode) => p.node.identity?.short_name || p.node.id.slice(-4)
 
 /** Approximate rendered label box (18 px system font, outline included). */
 const LABEL_H = 22

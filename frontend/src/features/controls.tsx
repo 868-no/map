@@ -19,7 +19,7 @@ const TYPE_TIP: Record<string, string> = {
 const EVIDENCE: [string, string][] = [['neighbor', 'NeighborInfo'], ['traceroute', 'Traceroute'], ['direct_rf', 'Heard directly by a gateway'], ['relay_hint', 'Guessed from relay byte']]
 
 /** Meshtastic device roles in plain words (the raw enum is the fallback). */
-export const ROLE_LABEL: Record<string, string> = {
+const ROLE_LABEL: Record<string, string> = {
   CLIENT: 'Client', CLIENT_MUTE: 'Client (mute)', CLIENT_HIDDEN: 'Client (hidden)', CLIENT_BASE: 'Client base',
   ROUTER: 'Router', ROUTER_LATE: 'Router (late)', ROUTER_CLIENT: 'Router/client', REPEATER: 'Repeater',
   TRACKER: 'Tracker', SENSOR: 'Sensor', TAK: 'TAK', TAK_TRACKER: 'TAK tracker', LOST_AND_FOUND: 'Lost and found',

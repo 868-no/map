@@ -295,7 +295,7 @@ function activeDeliveries(now: number): { lines: DeliveryLine[]; arrivals: Flash
 // hops: the live radio transmissions shown, "tx>rx" ("tx>" with no receiver
 // known), so a replay adds only what they did not show (D-174).
 const animated = new Map<string, { at: number; replay: boolean; hops: Set<string> }>()
-export const REPLAY_DEDUPE_MS = 120_000
+const REPLAY_DEDUPE_MS = 120_000
 
 /** Add a transmission; a ping still on the map takes the new receiver. */
 export function addTransmission(t: Transmission, pos: Map<string, LngLat>, now = performance.now()): void {
@@ -431,7 +431,7 @@ export const mercY = (lat: number) => Math.log(Math.tan(Math.PI / 4 + (lat * Mat
 const latOf = (y: number) => (360 / Math.PI) * Math.atan(Math.exp(y)) - 90
 
 /** The point `f` of the way from a to b on screen (Web Mercator). */
-export function along(a: LngLat, b: LngLat, f: number): LngLat {
+function along(a: LngLat, b: LngLat, f: number): LngLat {
   return [a[0] + (b[0] - a[0]) * f, latOf(mercY(a[1]) + (mercY(b[1]) - mercY(a[1])) * f)]
 }
 

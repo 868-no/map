@@ -18,7 +18,7 @@ export interface PlacedNode {
  * longer ones logarithmically (D-087). With a 3-day window the ramp's stops
  * fall at about 0, 35 min, 3.3 h, 16 h and 72 h, instead of 18 h apart.
  */
-export const AGE_TAU_MS = 10 * 60_000
+const AGE_TAU_MS = 10 * 60_000
 
 /** A node's display name: long name, else short name, else its id. */
 export function nodeName(n: Pick<MeshNode, 'identity'> | undefined, id: string): string {

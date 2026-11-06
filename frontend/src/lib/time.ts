@@ -4,7 +4,7 @@
 // The viewer's zone, resolved once: building a formatter to ask costs as
 // much as the formatting it serves, and every default argument below asks.
 let zone: string | undefined
-export const localZone = (): string => (zone ??= Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC')
+const localZone = (): string => (zone ??= Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC')
 
 const MIN = 60_000
 const pad = (n: number, w = 2) => String(n).padStart(w, '0')

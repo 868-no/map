@@ -8,9 +8,9 @@
 /** Re-fetch this much before the end of what we hold: rows may commit slightly after their observed_at. */
 export const OVERLAP_MS = 2 * 60_000
 /** Rows older than this before the newest requested window end are dropped. */
-export const KEEP_MS = 8 * 24 * 3_600_000
+const KEEP_MS = 8 * 24 * 3_600_000
 /** Hard cap on rows held; beyond it the store keeps only the requested window. */
-export const MAX_ROWS = 750_000
+const MAX_ROWS = 750_000
 
 export type WindowReq = { live: true; durationH: number } | { live: false; start: string; end: string }
 

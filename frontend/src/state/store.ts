@@ -54,7 +54,7 @@ export interface WindowState {
  * and the longest window it serves. Until they arrive these are the server's
  * own defaults, but no view is requested before then (`limitsReady`).
  */
-export const windowLimits = { defaultH: 72, maxH: 168 }
+const windowLimits = { defaultH: 72, maxH: 168 }
 
 interface Store {
   win: WindowState

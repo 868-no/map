@@ -44,7 +44,7 @@ export function useRetention() {
 }
 
 /** Current API params plus a stable identity for "same window, rolling forward". */
-export function useWindowParams() {
+function useWindowParams() {
   const win = useStore((s) => s.win)
   const filters = useStore((s) => s.filters)
   const epoch = useLiveEpoch((s) => s.epoch)

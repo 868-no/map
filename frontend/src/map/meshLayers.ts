@@ -114,7 +114,7 @@ function arrowIcons() {
 }
 
 /** Remembers the last result; recomputes only when an argument changes identity. */
-export function memoLast<A extends unknown[], R>(fn: (...a: A) => R): (...a: A) => R {
+function memoLast<A extends unknown[], R>(fn: (...a: A) => R): (...a: A) => R {
   let last: A | undefined
   let out: R
   return (...a: A) => {

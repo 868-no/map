@@ -11,7 +11,7 @@ import { formatLocal, formatShort, fromLocalInput, isAmbiguousLocal, toLocalInpu
 const H = 3600_000
 
 
-export function clampWindow(startMs: number, endMs: number, minMs: number, maxMs: number, maxDurMs: number, minDurMs = H): [number, number] {
+function clampWindow(startMs: number, endMs: number, minMs: number, maxMs: number, maxDurMs: number, minDurMs = H): [number, number] {
   let s = Math.max(startMs, minMs), e = Math.min(endMs, maxMs)
   if (e - s > maxDurMs) s = e - maxDurMs
   if (e - s < minDurMs) {

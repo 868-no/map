@@ -20,7 +20,7 @@ const MAX_DEFERRED = 50
  * Mirrors the channel, broker and type part of the engine's filter_fn
  * (frontend/engine/src/views/filters.rs); keep the two in step.
  */
-export function passes(r: ObsRow, f: Filters): boolean {
+function passes(r: ObsRow, f: Filters): boolean {
   return (!f.channels.length || (r.c != null && f.channels.includes(r.c))) && (!f.brokers.length || f.brokers.includes(r.b)) && (!f.types.length || f.types.includes(r.y))
 }
 

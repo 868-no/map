@@ -47,7 +47,7 @@ export const PANELS: { id: PanelId; label: string; hint: string }[] = [
   { id: 'settings', label: 'Settings', hint: 'Theme, install, source code, license and privacy' },
 ]
 
-export const panelLabel = (id: PanelId) => PANELS.find((p) => p.id === id)!.label
+const panelLabel = (id: PanelId) => PANELS.find((p) => p.id === id)!.label
 
 export function Rail({ open, onToggle, badges }: { open: PanelId | null; onToggle: (p: PanelId) => void; badges: Partial<Record<PanelId, number>> }) {
   const button = (p: (typeof PANELS)[number]) => {

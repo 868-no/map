@@ -19,7 +19,7 @@ const RATE_RETRIES = 3
 export class GenerationMoved extends Error {}
 
 /** GETs an API URL as text, retrying while the backend is busy; errors are typed as fetchRange's callers expect. */
-export async function fetchText(url: string): Promise<string> {
+async function fetchText(url: string): Promise<string> {
   let res: globalThis.Response
   for (let attempt = 0; ; attempt++) {
     try {

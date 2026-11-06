@@ -46,7 +46,7 @@ const NORWAY_BOUNDS: [[number, number], [number, number]] = [[4.5, 57.9], [31.2,
 /** Where most of Norway (and its mesh) lies, east to west. */
 const NORWAY_FOCUS_LON = 13.5
 /** The start view's centre longitude: the focus, clamped so both ends of the country stay in view. */
-export function startLon(width: number, zoom: number): number {
+function startLon(width: number, zoom: number): number {
   const p = startPadding()
   const degPerPx = 360 / (512 * 2 ** zoom)
   const [[west], [east]] = NORWAY_BOUNDS
