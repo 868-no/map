@@ -331,19 +331,26 @@ type IdentityRow struct {
 // an import adds older history later, and must not replace a trusted key. Public keys are
 // public data stored in decoded_metadata (plan amendment 3).
 //
+// Only rows with an id above `after` are read (0: all): an index range over
+// the newest rows, for the hourly top-up (identity.Store.Refresh). For one
+// node it stops at that node's first such row.
+//
 // This is an ingestion-side lookup over the whole retained log, never used to
 // fill a historical view, so it deliberately does not use window.Predicate.
-func VerifiedIdentities(ctx context.Context, pool *pgxpool.Pool, node *uint32) ([]IdentityRow, error) {
+func VerifiedIdentities(ctx context.Context, pool *pgxpool.Pool, node *uint32, after int64) ([]IdentityRow, error) {
 	q := `SELECT DISTINCT ON (source_node_id) source_node_id, decoded_metadata->'nodeinfo'->>'public_key', observed_at, id
 	      FROM packet_log
 	      WHERE packet_type = 'nodeinfo' AND signature_status = 'verified'
-	        AND decoded_metadata->'nodeinfo' ? 'public_key'`
-	args := []any{}
+	        AND decoded_metadata->'nodeinfo' ? 'public_key' AND id > $1`
+	args := []any{after}
 	if node != nil {
-		q += ` AND source_node_id = $1`
+		q += ` AND source_node_id = $2`
 		args = append(args, int64(*node))
 	}
 	q += ` ORDER BY source_node_id, id ASC`
+	if node != nil {
+		q += ` LIMIT 1`
+	}
 	rows, err := pool.Query(ctx, q, args...)
 	if err != nil {
 		return nil, err
@@ -384,6 +391,13 @@ func LatestAnnouncedKey(ctx context.Context, pool *pgxpool.Pool, node uint32) (A
 		return k, ErrNotFound
 	}
 	return k, err
+}
+
+// MaxRowID is the highest row id stored (0 when empty): an index probe per partition.
+func MaxRowID(ctx context.Context, pool *pgxpool.Pool) (int64, error) {
+	var id int64
+	err := pool.QueryRow(ctx, `SELECT COALESCE(max(id), 0) FROM packet_log`).Scan(&id)
+	return id, err
 }
 
 // ErrNotFound is returned by single-row lookups with no result.

@@ -182,7 +182,7 @@ func (s *Server) nodeKey(ctx context.Context, in *NodeKeyInput) (*NodeKeyOutput,
 	case !errors.Is(err, storage.ErrNotFound):
 		return nil, err
 	}
-	ids, err := storage.VerifiedIdentities(ctx, s.Pool, &n)
+	ids, err := storage.VerifiedIdentities(ctx, s.Pool, &n, 0)
 	if err != nil {
 		return nil, err
 	}

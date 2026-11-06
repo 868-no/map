@@ -11,12 +11,28 @@ import (
 	"sync"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
 	"github.com/868-no/map/internal/security"
 	"github.com/868-no/map/internal/storage"
 )
 
-// Loader fetches verified bindings (storage.VerifiedIdentities in production).
-type Loader func(ctx context.Context) ([]storage.IdentityRow, error)
+// Loader fetches the verified bindings among rows with an id above `after`
+// (0: all; storage.VerifiedIdentities in production), and the highest row
+// id stored when it began.
+type Loader func(ctx context.Context, after int64) (rows []storage.IdentityRow, maxID int64, err error)
+
+// StorageLoader is the production Loader.
+func StorageLoader(pool *pgxpool.Pool) Loader {
+	return func(ctx context.Context, after int64) ([]storage.IdentityRow, int64, error) {
+		maxID, err := storage.MaxRowID(ctx, pool)
+		if err != nil {
+			return nil, 0, err
+		}
+		rows, err := storage.VerifiedIdentities(ctx, pool, nil, after)
+		return rows, maxID, err
+	}
+}
 
 // Store implements security.IdentityLookup.
 type Store struct {
@@ -27,6 +43,10 @@ type Store struct {
 	promoted map[uint32]time.Time
 	load     Loader
 	log      *slog.Logger
+	// The highest row id when the last read began, and when the one before
+	// it began: a top-up reads from the older, so a row whose id was taken
+	// but not yet committed at the last read is still read.
+	seen, older int64
 }
 
 // New returns an empty store; call Reload before ingesting.
@@ -63,30 +83,17 @@ func (s *Store) Promote(id security.Identity) bool {
 }
 
 // Reload replaces the index with the bindings still present in packet_log,
-// dropping identities whose rows retention has deleted. Rows that fail
-// conversion are skipped (they were verified at ingest, so this indicates
-// corruption) and logged.
+// dropping identities whose rows retention has deleted.
 func (s *Store) Reload(ctx context.Context) error {
 	start := time.Now()
-	rows, err := s.load(ctx)
+	rows, maxID, err := s.load(ctx, 0)
 	if err != nil {
 		return err
 	}
 	next := make(map[uint32]security.Identity, len(rows))
-	for _, r := range rows {
-		pk, err := base64.StdEncoding.DecodeString(r.PublicKey)
-		if err != nil || !security.KeyBindsNode(pk, r.Node) {
-			s.log.Warn("skipping invalid stored identity", "node", r.Node, "row", r.RowID)
-			continue
-		}
-		id, err := security.NewIdentity(r.Node, pk)
-		if err != nil {
-			continue
-		}
-		id.Since, id.RowID = r.Since, r.RowID
-		next[r.Node] = id
-	}
+	s.convert(rows, func(id security.Identity) { next[id.Node] = id })
 	s.mu.Lock()
+	s.seen, s.older = maxID, maxID
 	// Keep promotions that committed after the load query started.
 	for n, at := range s.promoted {
 		if at.Before(start.Add(-time.Minute)) {
@@ -104,18 +111,65 @@ func (s *Store) Reload(ctx context.Context) error {
 	return nil
 }
 
-// Run reloads every interval and whenever trigger fires (retention events).
+// convert turns stored bindings into identities. Rows that fail conversion
+// are skipped (they were verified at ingest, so this indicates corruption)
+// and logged.
+func (s *Store) convert(rows []storage.IdentityRow, add func(security.Identity)) {
+	for _, r := range rows {
+		pk, err := base64.StdEncoding.DecodeString(r.PublicKey)
+		if err != nil || !security.KeyBindsNode(pk, r.Node) {
+			s.log.Warn("skipping invalid stored identity", "node", r.Node, "row", r.RowID)
+			continue
+		}
+		id, err := security.NewIdentity(r.Node, pk)
+		if err != nil {
+			continue
+		}
+		id.Since, id.RowID = r.Since, r.RowID
+		add(id)
+	}
+}
+
+// Refresh adds the bindings stored since the read before last for nodes
+// not yet known. Ids come from a sequence, so a newer row never displaces
+// a node's first binding (TOFU), and the read is an index range over the
+// newest rows instead of the whole log. Deletions (retention) and an
+// import's older history wait for Reload.
+func (s *Store) Refresh(ctx context.Context) error {
+	s.mu.RLock()
+	after := s.older
+	s.mu.RUnlock()
+	rows, maxID, err := s.load(ctx, after)
+	if err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.convert(rows, func(id security.Identity) {
+		if _, ok := s.byID[id.Node]; !ok {
+			s.byID[id.Node] = id
+		}
+	})
+	s.older, s.seen = s.seen, maxID
+	return nil
+}
+
+// Run tops the index up every interval (Refresh) and reloads it whenever
+// trigger fires (retention events, which delete rows).
 func (s *Store) Run(ctx context.Context, every time.Duration, trigger <-chan struct{}) {
 	t := time.NewTicker(every)
 	defer t.Stop()
 	for {
+		var err error
 		select {
 		case <-ctx.Done():
 			return
 		case <-t.C:
+			err = s.Refresh(ctx)
 		case <-trigger:
+			err = s.Reload(ctx)
 		}
-		if err := s.Reload(ctx); err != nil && ctx.Err() == nil {
+		if err != nil && ctx.Err() == nil {
 			s.log.Warn("identity reload failed", "err", err)
 		}
 	}

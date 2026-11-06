@@ -109,9 +109,7 @@ func TestImportEnvelopesMatchesLiveIngest(t *testing.T) {
 		if len(in) == 0 {
 			in = []string{csv.String()}
 		}
-		ids := identity.New(func(ctx context.Context) ([]storage.IdentityRow, error) {
-			return storage.VerifiedIdentities(ctx, pool, nil)
-		}, quiet)
+		ids := identity.New(identity.StorageLoader(pool), quiet)
 		if err := ids.Reload(ctx); err != nil {
 			t.Fatal(err)
 		}

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -101,9 +100,7 @@ func importEnvelopesCmd() *cobra.Command {
 			kr.DefaultFallback = c.Env.DefaultKeyFallback
 			// Known identities verify signed packets; NodeInfo learned along
 			// the way is added (first binding wins, as at ingest).
-			ids := identity.New(func(ctx context.Context) ([]storage.IdentityRow, error) {
-				return storage.VerifiedIdentities(ctx, pool, nil)
-			}, log)
+			ids := identity.New(identity.StorageLoader(pool), log)
 			if err := ids.Reload(ctx); err != nil {
 				return fmt.Errorf("identities: %w", err)
 			}

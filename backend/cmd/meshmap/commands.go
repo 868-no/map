@@ -279,9 +279,7 @@ func serveCmd() *cobra.Command {
 					return err
 				}
 				kr.DefaultFallback = c.Env.DefaultKeyFallback
-				ids := identity.New(func(ctx context.Context) ([]storage.IdentityRow, error) {
-					return storage.VerifiedIdentities(ctx, ipool, nil)
-				}, log)
+				ids := identity.New(identity.StorageLoader(ipool), log)
 				if err := ids.Reload(ctx); err != nil {
 					return fmt.Errorf("identity rebuild: %w", err)
 				}

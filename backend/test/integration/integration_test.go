@@ -141,10 +141,7 @@ func waitRows(t *testing.T, pool *pgxpool.Pool, atLeast int) int {
 func TestPipelineDemoStream(t *testing.T) {
 	pool := freshDB(t)
 	rc := redisClient(t)
-	load := func(ctx context.Context) ([]storage.IdentityRow, error) {
-		return storage.VerifiedIdentities(ctx, pool, nil)
-	}
-	ids := identity.New(load, quiet)
+	ids := identity.New(identity.StorageLoader(pool), quiet)
 	p := newPipeline(t, pool, rc, ids)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
@@ -194,16 +191,26 @@ func TestPipelineDemoStream(t *testing.T) {
 		t.Fatal("no identities promoted")
 	}
 	// Restart: a fresh store rebuilt from packet_log alone matches.
-	rebuilt := identity.New(load, quiet)
+	rebuilt := identity.New(identity.StorageLoader(pool), quiet)
 	if err := rebuilt.Reload(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	if rebuilt.Len() != ids.Len() {
 		t.Fatalf("rebuilt %d identities, live store had %d", rebuilt.Len(), ids.Len())
 	}
+	// A top-up from nothing reads them all too, and one after it adds none.
+	topped := identity.New(identity.StorageLoader(pool), quiet)
+	for range 2 {
+		if err := topped.Refresh(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if topped.Len() != ids.Len() {
+		t.Fatalf("topped up %d identities, live store had %d", topped.Len(), ids.Len())
+	}
 	// Each verified node's newest announced key is served, and in the demo
 	// (no key changes) it is the trusted one.
-	trusted, err := storage.VerifiedIdentities(context.Background(), pool, nil)
+	trusted, err := storage.VerifiedIdentities(context.Background(), pool, nil, 0)
 	if err != nil || len(trusted) == 0 {
 		t.Fatalf("verified identities: %v (%d)", err, len(trusted))
 	}
@@ -224,7 +231,7 @@ func TestPipelineDemoStream(t *testing.T) {
 func TestBridgedBrokerLag(t *testing.T) {
 	pool := freshDB(t)
 	rc := redisClient(t)
-	ids := identity.New(func(ctx context.Context) ([]storage.IdentityRow, error) { return nil, nil }, quiet)
+	ids := identity.New(func(context.Context, int64) ([]storage.IdentityRow, int64, error) { return nil, 0, nil }, quiet)
 	p := newPipeline(t, pool, rc, ids)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
@@ -266,7 +273,7 @@ func TestBridgedBrokerLag(t *testing.T) {
 // Redis unavailable: dedupe falls back to the database.
 func TestDedupeWithoutRedis(t *testing.T) {
 	pool := freshDB(t)
-	ids := identity.New(func(ctx context.Context) ([]storage.IdentityRow, error) { return nil, nil }, quiet)
+	ids := identity.New(func(context.Context, int64) ([]storage.IdentityRow, int64, error) { return nil, 0, nil }, quiet)
 	p := newPipeline(t, pool, nil, ids)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan struct{})
