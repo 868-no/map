@@ -371,7 +371,7 @@ func dayHeaders(hc huma.Context, immutable bool, etag string) {
 // building their own. Without Redis every process builds its own.
 func (s *Server) sharedDay(ctx context.Context, db rowsDB, p dayPlan, head ObservationsBody, st storage.HistoryState, key string, br bool) (*dayResult, error) {
 	if s.DayCache != nil {
-		switch res, err := s.storedDay(ctx, key, br); {
+		switch res, err := s.storedDay(ctx, key, br, false); {
 		case err != nil:
 			s.cacheError("day_get", err)
 		case res != nil && res.tooLarge:
@@ -415,7 +415,7 @@ func (s *Server) fillDay(ctx context.Context, db rowsDB, p dayPlan, head Observa
 			case <-time.After(dayPoll):
 			}
 			var res *dayResult
-			if res, err = s.storedDay(ctx, key, true); err == nil && res != nil {
+			if res, err = s.storedDay(ctx, key, true, true); err == nil && res != nil {
 				s.dayCount("waited")
 				return res, nil
 			}
@@ -430,7 +430,7 @@ func (s *Server) fillDay(ctx context.Context, db rowsDB, p dayPlan, head Observa
 				}
 			}()
 			// Stored between our last look and taking the lock.
-			if res, err := s.storedDay(ctx, key, true); err == nil && res != nil {
+			if res, err := s.storedDay(ctx, key, true, true); err == nil && res != nil {
 				s.dayCount("waited")
 				return res, nil
 			}
@@ -459,27 +459,34 @@ func (s *Server) fillDay(ctx context.Context, db rowsDB, p dayPlan, head Observa
 	return res, nil
 }
 
-// storedDay reads a day from Redis, nil when it is not there. The gzip copy
-// is always read (it marks the day as stored), the br copy (key + ":br") when
-// asked for: a day stored before D-168 has none and goes out as gzip.
-func (s *Server) storedDay(ctx context.Context, key string, br bool) (*dayResult, error) {
-	gz, err := s.DayCache.GetBlob(ctx, key)
+// storedDay reads a day from Redis, nil when it is not there. br: a br copy
+// (key + ":br") serves the caller; gz: the gzip copy is needed as well (a
+// result shared with callers that may not take br). A br copy is stored only
+// for a finished build, before its gzip copy, so either marks the day as
+// stored; a day stored before D-168 has no br copy and goes out as gzip.
+func (s *Server) storedDay(ctx context.Context, key string, br, gz bool) (*dayResult, error) {
+	res := &dayResult{immutable: true}
+	if br {
+		var err error
+		if res.br, err = s.DayCache.GetBlob(ctx, key+":br"); err != nil {
+			s.cacheError("day_get", err)
+		}
+		if res.br != nil && !gz {
+			return res, nil
+		}
+	}
+	z, err := s.DayCache.GetBlob(ctx, key)
 	if err != nil {
 		return nil, err
 	}
-	if gz == nil {
+	if z == nil {
 		// Not stored: perhaps because a replica found it too large to build.
 		if large, err := s.DayCache.GetBlob(ctx, key+":large"); err != nil || large == nil {
 			return nil, err
 		}
 		return &dayResult{tooLarge: true}, nil
 	}
-	res := &dayResult{gz: gz, immutable: true}
-	if br {
-		if res.br, err = s.DayCache.GetBlob(ctx, key+":br"); err != nil {
-			s.cacheError("day_get", err)
-		}
-	}
+	res.gz = z
 	return res, nil
 }
 
