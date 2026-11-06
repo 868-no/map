@@ -120,7 +120,7 @@ const trendsRefreshLimit = 2 * time.Minute
 func (s *Server) WarmTrends(ctx context.Context) {
 	ctx, cancel := context.WithTimeout(ctx, trendsRefreshLimit)
 	defer cancel()
-	if err := s.trendHours.RefreshEvery(ctx, s.Pool, s.now(), TrendsTTL); err != nil && ctx.Err() == nil {
+	if err := s.trendHours.Warm(ctx, s.Pool, s.now()); err != nil && ctx.Err() == nil {
 		s.Log.Warn("trends warm-up failed", "err", err)
 	}
 }

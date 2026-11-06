@@ -237,6 +237,17 @@ func (t *TrendHours) RefreshEvery(ctx context.Context, pool *pgxpool.Pool, now t
 	return t.refresh(ctx, pool, now)
 }
 
+// Warm reads the summaries without counting them fresh: the first request
+// still looks again, but only at what arrived since (an empty log at start
+// must not answer for the next every).
+func (t *TrendHours) Warm(ctx context.Context, pool *pgxpool.Pool, now time.Time) error {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	err := t.refresh(ctx, pool, now)
+	t.last = time.Time{}
+	return err
+}
+
 // Oldest is the oldest retained row as of the last refresh (nil: none).
 func (t *TrendHours) Oldest() *time.Time {
 	t.mu.Lock()
