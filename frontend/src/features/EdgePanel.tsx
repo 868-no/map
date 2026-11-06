@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import type { Edge, SnapshotView } from '../derive/views'
 import { useLinkHistory } from '../state/data'
 import { useStore } from '../state/store'
@@ -109,20 +110,29 @@ function LinkHistoryCharts({ a, b, name, snapshot, start, end }: { a: string; b:
   // stationary routers, as rain or snow anywhere along the path may matter.
   const ends = [a, b].map((id) => snapshot.nodes.find((n) => n.id === id)).filter((n) => weatherSite(n))
   const weather = useWeather(ends.map(weatherSite), start, end)
-  const loaded = weather.filter((w) => w.data)
-  const rain: Band | undefined = loaded.length
-    ? { label: 'Precipitation', unit: 'mm', color: 'var(--purple)', kind: 'amount', decimals: 1,
-        points: meanPoints(loaded.map((w) => weatherPoints(w.data!.hours, 'precip_mm'))),
-        note: `${weather.some((w) => w.data?.incomplete) ? 'Loading… ' : ''}per hour, ${ends.length > 1 ? `mean of ${ends.map((n) => name(n!.id)).join(' and ')}` : `at ${name(ends[0]!.id)}`}, MET Norway (CC BY 4.0)` }
-    : undefined
-  const rainLoading = ends.length > 0 && !rain?.points.length && weather.some((w) => w.isLoading || w.data?.incomplete)
+  // Chart inputs keep their identity between renders unless their data
+  // changes: TimeChart prepares again whenever they do. (At most two ends.)
+  const [w0, w1] = [weather[0]?.data, weather[1]?.data]
+  const rainNote = `${weather.some((w) => w.data?.incomplete) ? 'Loading… ' : ''}per hour, ${ends.length > 1 ? `mean of ${ends.map((n) => name(n!.id)).join(' and ')}` : ends.length ? `at ${name(ends[0]!.id)}` : ''}, MET Norway (CC BY 4.0)`
+  const rain = useMemo((): (Band | undefined)[] => {
+    const loaded = [w0, w1].filter((w) => w != null)
+    return [loaded.length
+      ? { label: 'Precipitation', unit: 'mm', color: 'var(--purple)', kind: 'amount', decimals: 1, points: meanPoints(loaded.map((w) => weatherPoints(w.hours, 'precip_mm'))), note: rainNote }
+      : undefined]
+  }, [w0, w1, rainNote])
+  const rainLoading = ends.length > 0 && !rain[0]?.points.length && weather.some((w) => w.isLoading || w.data?.incomplete)
+  const [nameA, nameB] = [name(a), name(b)]
+  const series = useMemo(() => {
+    const { ab = [], ba = [] } = h.data ?? {}
+    const of = (k: 'snr' | 'rssi') => [
+      { label: `${nameA} → ${nameB}`, color: 'var(--accent)', points: ab.map((p) => [p.t, p[k] ?? null] as [number, number | null]) },
+      { label: `${nameB} → ${nameA}`, color: 'var(--warn)', points: ba.map((p) => [p.t, p[k] ?? null] as [number, number | null]) },
+    ]
+    return { snr: of('snr'), rssi: of('rssi') }
+  }, [h.data, nameA, nameB])
   if (!h.data) return null
   const { ab, ba } = h.data
   if (ab.length + ba.length === 0) return null
-  const series = (k: 'snr' | 'rssi') => [
-    { label: `${name(a)} → ${name(b)}`, color: 'var(--accent)', points: ab.map((p) => [p.t, p[k] ?? null] as [number, number | null]) },
-    { label: `${name(b)} → ${name(a)}`, color: 'var(--warn)', points: ba.map((p) => [p.t, p[k] ?? null] as [number, number | null]) },
-  ]
   const kinds = [...new Set([...ab, ...ba].map((p) => EV_LABEL[p.ev] ?? p.ev))]
   return (
     <section className="link-history">
@@ -130,8 +140,8 @@ function LinkHistoryCharts({ a, b, name, snapshot, start, end }: { a: string; b:
       {rainLoading && <p className="muted small">Loading precipitation from MET Norway…</p>}
       <p className="muted small">Each reading as the receiving node measured it ({kinds.join(', ')}). A falling line across days can mean a degrading antenna, cable or site; short dips are often weather or traffic.</p>
       <ChartGroup>
-        <TimeChart label="SNR" unit="dB" start={start} end={end} series={series('snr')} bands={[rain]} />
-        <TimeChart label="RSSI" unit="dBm" decimals={0} start={start} end={end} series={series('rssi')} empty="only measured by gateway receptions" />
+        <TimeChart label="SNR" unit="dB" start={start} end={end} series={series.snr} bands={rain} />
+        <TimeChart label="RSSI" unit="dBm" decimals={0} start={start} end={end} series={series.rssi} empty="only measured by gateway receptions" />
       </ChartGroup>
     </section>
   )
