@@ -261,6 +261,7 @@ Everything in this section is computed by the engine from the window's rows, aft
 ### 6.1 Nodes
 
 - **Heard** nodes sent something in the window or uplinked as a gateway. **Only named** (referenced) nodes appear only in others' NeighborInfo or traceroutes; they are coloured by when they were last named (`last_referenced`) (D-087).
+- **Latest means the newest packet (D-176):** a node's latest identity, position or device telemetry is the packet it sent most recently, by when that packet was first heard (its latest copy is the one shown). A gateway uplinking an old packet again later (seen 36 hours on) adds a copy, not a newer packet: its contents are as old as the packet, so it never stands in for the node's current state.
 - **Identity** is the latest in-window NodeInfo, else the latest named map report (§2.5). Without either, the node shows the last four hex digits of its id. NodeInfo rows marked with a key conflict are skipped.
 - **Gateway** (`is_gateway`): the node uplinked a reception in the window.
 - **Counts per node:** distinct packets it sent; receptions of them by other gateways and its own uplinks, kept apart (map reports count as own uplinks); signatures counted once per packet by its best copy's status (D-087).

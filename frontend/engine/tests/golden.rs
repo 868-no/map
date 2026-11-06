@@ -68,9 +68,17 @@ fn millis(s: &str) -> f64 {
     (((days * 24 + h) * 60 + mi) * 60 + se) as f64 * 1000.0 + ms as f64
 }
 
+/// The server took a node's latest NodeInfo, position or telemetry by its
+/// latest copy; the engine by its first (D-176). In this window that tells
+/// apart only !552ad94c's identity: its NodeInfo 928744739, first heard at
+/// 13:52:41, had a copy uplinked at 13:54:52, after 928744741 (13:52:54).
+fn server_views() -> Value {
+    serde_json::from_str(&EXPECTED.replace(r#""observed_at":"2026-10-31T13:54:52.30196Z""#, r#""observed_at":"2026-10-31T13:52:55.174Z""#)).unwrap()
+}
+
 #[test]
 fn engine_matches_the_recorded_server_views() {
-    let expected: Value = serde_json::from_str(EXPECTED).unwrap();
+    let expected = server_views();
     let mut e = Engine::new();
     e.set_options(&json!({ "geo": expected["geolocation"], "silent_rule": false, "mqtt_links": false, "move_rule": false, "signal_rule": false, "range_rule": false }).to_string()).unwrap();
     assert!(e.add_rows(ROWS, f64::NEG_INFINITY).unwrap() > 6000);

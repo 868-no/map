@@ -35722,7 +35722,7 @@
           "has_public_key": true,
           "hw_model": "HELTEC_MESH_POCKET",
           "long_name": "PORTER",
-          "observed_at": "2026-10-31T13:54:52.301Z",
+          "observed_at": "2026-10-31T13:52:55.174Z",
           "role": "CLIENT_MUTE",
           "short_name": "OWL0",
           "signature": "unsigned"
@@ -51143,7 +51143,7 @@
           "has_public_key": true,
           "hw_model": "HELTEC_MESH_POCKET",
           "long_name": "PORTER",
-          "observed_at": "2026-10-31T13:54:52.301Z",
+          "observed_at": "2026-10-31T13:52:55.174Z",
           "role": "CLIENT_MUTE",
           "short_name": "OWL0",
           "signature": "unsigned"

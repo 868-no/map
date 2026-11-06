@@ -77,16 +77,34 @@ impl<'a> ByType<'a> {
     }
 }
 
-/// Latest row per key by (observed_at, id).
+/// Per key, the newest packet's latest copy by (observed_at, id), packets
+/// ranked by their first copy: a late copy (a gateway uplinking an old packet
+/// again, hours or days on) never makes its packet the newest, its contents
+/// being as old as the packet (D-176).
 fn latest_by<'a>(rows: &[&'a Row], keep: impl Fn(&Row) -> bool, key: impl Fn(&Row) -> u32) -> FxMap<u32, &'a Row> {
-    let mut m: FxMap<u32, &Row> = map();
+    // Per packet: its first copy and its latest.
+    let mut copies: FxMap<u64, (&Row, &Row)> = map();
     for &r in rows {
         if !keep(r) {
             continue;
         }
-        m.entry(key(r)).and_modify(|cur| if newer(cur, r) { *cur = r }).or_insert(r);
+        copies
+            .entry(r.lp)
+            .and_modify(|(first, last)| {
+                if newer(r, first) {
+                    *first = r
+                }
+                if newer(last, r) {
+                    *last = r
+                }
+            })
+            .or_insert((r, r));
     }
-    m
+    let mut m: FxMap<u32, (&Row, &Row)> = map();
+    for (first, last) in copies.into_values() {
+        m.entry(key(last)).and_modify(|cur| if newer(cur.0, first) { *cur = (first, last) }).or_insert((first, last));
+    }
+    m.into_iter().map(|(k, (_, last))| (k, last)).collect()
 }
 
 /// One row per reception (observation key): the lowest id, in first-appearance order.
