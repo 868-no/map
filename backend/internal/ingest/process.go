@@ -183,6 +183,8 @@ func Process(m RawMessage, o Options) (Observation, error) {
 	var (
 		data   *pb.Data
 		crypto CryptoStatus
+		dec    ports.Decoded
+		vetted bool // dec already decoded (by decrypt, to vet the key)
 	)
 	mapReport := topic.Kind == protocol.TopicMap
 	if mapReport {
@@ -209,7 +211,7 @@ func Process(m RawMessage, o Options) (Observation, error) {
 		if p.GetChannel() > 0xFF {
 			return Observation{}, reject("invalid_envelope")
 		}
-		data, crypto, err = decrypt(m.BrokerID, channelName, p, o)
+		data, crypto, dec, vetted, err = decrypt(m.BrokerID, channelName, p, o)
 		if err != nil {
 			// A channel we hold no working key for: who sent what to whom
 			// is in the clear on RF, its content is not (D-093).
@@ -219,9 +221,10 @@ func Process(m RawMessage, o Options) (Observation, error) {
 	if data.GetPortnum() == pb.PortNum_UNKNOWN_APP {
 		return headerOnly(m, topic, env, channelName, ports.TypeInvalid, crypto, "decode_failed"), nil
 	}
-	dec, err := ports.Decode(data, p.GetFrom())
-	if err != nil {
-		return headerOnly(m, topic, env, channelName, ports.TypeInvalid, crypto, "payload_invalid"), nil
+	if !vetted {
+		if dec, err = ports.Decode(data, p.GetFrom()); err != nil {
+			return headerOnly(m, topic, env, channelName, ports.TypeInvalid, crypto, "payload_invalid"), nil
+		}
 	}
 	if !mapReport && dec.Type == ports.TypeMapReport {
 		return Observation{}, reject("map_report_invalid") // only the map topic carries them
@@ -374,10 +377,12 @@ func zeroPayload(env protocol.Envelope, size int, pki bool) []byte {
 	return raw
 }
 
-func decrypt(broker, topicChannel string, p *pb.MeshPacket, o Options) (*pb.Data, CryptoStatus, error) {
+// Without an authentication tag, the port decoding that vetted the key is
+// returned too (vetted), so the caller need not decode the payload again.
+func decrypt(broker, topicChannel string, p *pb.MeshPacket, o Options) (*pb.Data, CryptoStatus, ports.Decoded, bool, error) {
 	cands := o.Keyring.Candidates(broker, topicChannel, uint8(p.GetChannel()), o.KeyBudget)
 	if len(cands) == 0 {
-		return nil, "", reject("no_key")
+		return nil, "", ports.Decoded{}, false, reject("no_key")
 	}
 	ct := p.GetEncrypted()
 	authFailed := false
@@ -413,16 +418,18 @@ func decrypt(broker, topicChannel string, p *pb.MeshPacket, o Options) (*pb.Data
 		// key is chosen. A CCM tag already proved the key; a bad payload
 		// there is rejected by the caller as payload_invalid.
 		if status != CryptoCCM {
-			if _, err := ports.Decode(d, p.GetFrom()); err != nil {
+			dec, err := ports.Decode(d, p.GetFrom())
+			if err != nil {
 				continue
 			}
+			return d, status, dec, true, nil
 		}
-		return d, status, nil
+		return d, status, ports.Decoded{}, false, nil
 	}
 	if authFailed {
-		return nil, "", reject("ccm_auth_failed")
+		return nil, "", ports.Decoded{}, false, reject("ccm_auth_failed")
 	}
-	return nil, "", reject("decrypt_failed")
+	return nil, "", ports.Decoded{}, false, reject("decrypt_failed")
 }
 
 func transportName(t pb.MeshPacket_TransportMechanism) string {
