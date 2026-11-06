@@ -309,7 +309,7 @@ func serveCmd() *cobra.Command {
 				pubs := multiPublisher{hub}
 				if rc != nil {
 					dd = rc
-					pubs = append(pubs, &livePublisher{c: rc, log: log})
+					pubs = append(pubs, newLivePublisher(ingestCtx, rc, log))
 				}
 				var pub ingest.Publisher = pubs
 				pipe := ingest.New(ingest.Config{
