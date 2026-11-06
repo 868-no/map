@@ -193,7 +193,8 @@ export function meshLayerBuilder(): (input: MeshLayerInput) => Layer[] {
       const [x, y] = toPixels(p.lon, p.lat, zoom)
       return { x, y, r: roleRadius(p.node.identity?.role) + 2, glyph: glyphsFor(p).length > 0 }
     }))
-    const top = Math.max(0, ...levels)
+    let top = 0
+    for (const l of levels) top = Math.max(top, l)
     const markers: PlacedNode[][] = Array.from({ length: top + 1 }, () => [])
     const glyphs: Glyph[][] = Array.from({ length: top + 1 }, () => [])
     placed.forEach((p, k) => {

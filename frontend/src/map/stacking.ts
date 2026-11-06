@@ -18,7 +18,10 @@ export interface Disc {
 export function stackLevels(discs: Disc[]): number[] {
   const levels = new Array<number>(discs.length).fill(0)
   if (discs.length === 0) return levels
-  const cell = Math.max(...discs.map((d) => d.r)) * 2 || 1
+  // A loop, not a spread: one argument per disc overflows engines' limits at tens of thousands.
+  let cell = 0
+  for (const d of discs) cell = Math.max(cell, d.r * 2)
+  cell ||= 1
   const grid = new Map<string, number[]>()
   const key = (cx: number, cy: number) => `${cx},${cy}`
   discs.forEach((d, j) => {
