@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useFlash } from '../../lib/useFlash'
 import { ApiError, getJSON } from '../../api/client'
 import type { NodeKey } from '../../api/types'
 import type { MeshNode, NodeView } from '../../derive/views'
@@ -141,7 +142,7 @@ export function OverviewTab({ d, snapNode, now, names }: { d: NodeView; snapNode
 /** The node's public key from the whole retained log (keys identify a node, not a window). */
 function PublicKey({ id, optOut }: { id: string; optOut?: boolean }) {
   const [k, setK] = useState<NodeKey | 'none' | 'error' | null>(null)
-  const [copied, setCopied] = useState(false)
+  const [copied, flashCopied] = useFlash(false)
   useEffect(() => {
     const ctl = new AbortController()
     getJSON<NodeKey>(`/api/v1/nodes/${encodeURIComponent(id)}/public-key`, undefined, ctl.signal)
@@ -163,8 +164,7 @@ function PublicKey({ id, optOut }: { id: string; optOut?: boolean }) {
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(key)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2500)
+      flashCopied(true)
     } catch {
       /* clipboard refused */
     }

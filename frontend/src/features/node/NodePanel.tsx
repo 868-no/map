@@ -1,4 +1,5 @@
-import { Fragment, useMemo, useState } from 'react'
+import { Fragment, useMemo } from 'react'
+import { useFlash } from '../../lib/useFlash'
 import { NodeHealth } from '../health'
 import { ViewError, type SnapshotView } from '../../derive/views'
 import { useNodeDetail } from '../../state/data'
@@ -106,7 +107,7 @@ function DetailTabs({ counts }: { counts: Partial<Record<DetailTab, number>> }) 
  * there is one, otherwise copied to the clipboard.
  */
 function ShareNode({ id, name }: { id: string; name: string }) {
-  const [state, setState] = useState<'idle' | 'copied' | 'failed'>('idle')
+  const [state, flash] = useFlash<'idle' | 'copied' | 'failed'>('idle')
   const share = async () => {
     const url = nodeLink(id)
     try {
@@ -115,12 +116,11 @@ function ShareNode({ id, name }: { id: string; name: string }) {
         return
       }
       await navigator.clipboard.writeText(url)
-      setState('copied')
+      flash('copied')
     } catch (e) {
       if ((e as Error).name === 'AbortError') return // the share sheet was dismissed
-      setState('failed')
+      flash('failed')
     }
-    setTimeout(() => setState('idle'), 2500)
   }
   return (
     <button className="linkish share-link" onClick={() => void share()} title={`Copy a permanent link to this node: ${nodeLink(id)}`}>

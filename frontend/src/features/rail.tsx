@@ -137,6 +137,8 @@ function storeWidth(w: number | null) {
 
 function useDockWidth() {
   const width = useRef<number>(savedWidth() ?? DEFAULT_WIDTH)
+  // The width as last set, for the handle's aria-valuenow (the ref alone renders nothing).
+  const [shown, setShown] = useState(width.current)
   useEffect(() => {
     applyWidth(savedWidth())
     // Keep within the window as it changes size.
@@ -148,13 +150,14 @@ function useDockWidth() {
     width.current = w === null ? DEFAULT_WIDTH : clampWidth(w)
     applyWidth(w === null ? null : width.current)
     storeWidth(w === null ? null : width.current)
+    setShown(width.current)
   }, [])
-  return { width, set }
+  return { width, shown, set }
 }
 
 /** The open panel, docked beside the rail over the map. */
 export function Dock({ open, onClose, children }: { open: PanelId | null; onClose: () => void; children: ReactNode }) {
-  const { width, set } = useDockWidth()
+  const { width, shown, set } = useDockWidth()
   const drag = useRef<{ x: number; w: number } | null>(null)
   const onPointerDown = (e: PointerEvent<HTMLDivElement>) => {
     e.preventDefault()
@@ -178,7 +181,7 @@ export function Dock({ open, onClose, children }: { open: PanelId | null; onClos
   return (
     <aside id="dock" className="dock" aria-label={open ? panelLabel(open) : 'Panel'} hidden={!open}>
       <div className="dock-resize" role="separator" aria-orientation="vertical" aria-label="Panel width" tabIndex={0}
-        aria-valuemin={MIN_WIDTH} aria-valuemax={maxWidth()} aria-valuenow={width.current}
+        aria-valuemin={MIN_WIDTH} aria-valuemax={maxWidth()} aria-valuenow={shown}
         title="Drag to resize the panel (arrow keys too); double-click resets"
         onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}
         onDoubleClick={() => set(null)} onKeyDown={onKeyDown} />
