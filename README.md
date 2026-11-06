@@ -84,7 +84,10 @@ scripts/wasm.sh clippy                 # Rust: clippy, warnings as errors (lint 
 scripts/wasm.sh deny                   # Rust: dependency advisories, bans and sources (frontend/engine/deny.toml)
 scripts/node.sh npm run lint           # TypeScript/React: ESLint (frontend/eslint.config.js)
 scripts/node.sh npm run knip           # unused files, exports and dependencies (frontend/knip.json); --fix removes them
+scripts/node.sh npm audit              # npm: known vulnerabilities in any dependency
 ```
+
+A known vulnerability found by govulncheck, cargo-deny or npm audit fails CI, and with it the image build and the production deploy.
 
 The two Go tools install once into the cached GOBIN: `scripts/go.sh go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0` and `scripts/go.sh go install golang.org/x/vuln/cmd/govulncheck@v1.9.0`. Formatters beyond `gofmt` (rustfmt, Prettier) are not used: the code keeps its own layout, which they would rewrite.
 
