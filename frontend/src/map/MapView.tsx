@@ -185,9 +185,11 @@ export default memo(function MapView({ caps, snapshot, onPositions }: Props) {
         }
         map.on('moveend', view)
         map.on('load', view)
-        map.on('rotate', () => {
+        const turnNeedle = () => {
           if (needle.current) needle.current.style.transform = `rotate(${-map.getBearing()}deg)`
-        })
+        }
+        map.on('rotate', turnNeedle)
+        map.on('load', turnNeedle) // a rebuilt map starts north up: so does the needle
         map.on('error', (e: maplibregl.ErrorEvent) => console.warn('map error', e.error?.message))
         const overlay = new MapboxOverlay({ interleaved: true, pickingRadius: PICK_RADIUS, layers: [] })
         map.addControl(overlay as unknown as maplibregl.IControl)
@@ -328,7 +330,7 @@ export default memo(function MapView({ caps, snapshot, onPositions }: Props) {
   const namesShown = toggles.labels && zoom >= 10
   const clusters = useMemo(() => (namesShown ? clusterLabels(placed, zoom) : []), [namesShown, placed, zoom])
   const clusterOf = useRef(new Map<string, Cluster>())
-  const nameOf = useRef(new Map<string, string>())
+  const nameOf = useRef<ReadonlyMap<string, string>>(new Map())
   const shortOf = useRef(new Map<string, string>())
   // Every edge, before the map's filters: a direction a filter hid is not "no evidence".
   const allEdges = useRef(new Set<string>())
