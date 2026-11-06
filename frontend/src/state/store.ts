@@ -29,6 +29,7 @@ export interface Toggles {
   labels: boolean
   regions: boolean // Norway's landsdeler beneath the mesh
   trails: boolean // tracks behind moving nodes (D-073)
+  maxNodes: number // the most active nodes the map shows (D-182)
   theme: ThemeChoice
   basemap: Record<BasemapGroup, boolean>
 }
@@ -83,7 +84,11 @@ interface Store {
 export const defaultFilters: Filters = { channels: [], brokers: [], types: [], evidence: [], minConfidence: 'low', positionedOnly: false, onlineOnly: false, roles: [] }
 const prefersReducedMotion = typeof window !== 'undefined' && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
 
-export const defaultToggles: Toggles = { infraLinks: false, otherLinks: false, mqttLinks: false, inferred: true, uncertainty: false, animation: !prefersReducedMotion, labels: true, regions: false, trails: false, theme: 'system', basemap: defaultBasemap }
+/** The engine's default node limit (MAX_NODES, D-182) and the range offered in Settings. */
+export const DEFAULT_MAX_NODES = 5000
+export const MAX_NODES_RANGE: [number, number] = [100, 100_000]
+
+export const defaultToggles: Toggles = { infraLinks: false, otherLinks: false, mqttLinks: false, inferred: true, uncertainty: false, animation: !prefersReducedMotion, labels: true, regions: false, trails: false, maxNodes: DEFAULT_MAX_NODES, theme: 'system', basemap: defaultBasemap }
 
 // Layer choices are a per-viewer convenience kept in browser storage; the
 // map works the same when storage is unavailable.

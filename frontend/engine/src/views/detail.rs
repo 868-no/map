@@ -152,7 +152,7 @@ pub fn build_node_detail(rows: &[&Row], num: u32, b: &Built, i: &Interner) -> Op
     // The node itself (identity, position, staleness, anchor, movement,
     // estimate, counts) is the snapshot's, built from the same rows: one
     // implementation of every per-node rule. Only a node the snapshot left
-    // out (beyond MAX_NODES) is built here.
+    // out (beyond its node limit, D-182) is built here.
     if let Some(x) = b.snapshot.nodes.iter().find(|x| x.num == num) {
         n = x.clone();
     } else {

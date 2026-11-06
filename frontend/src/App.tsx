@@ -15,7 +15,7 @@ import { useCapabilities, useHealth, useRetention, useSnapshot } from './state/d
 import { useTerrainClasses } from './state/terrain'
 import type { Counts } from './derive/views'
 import { useLiveStream } from './state/live'
-import { initDerive } from './derive/client'
+import { initDerive, setMaxNodes } from './derive/client'
 import { toQuery, useStore } from './state/store'
 import { applyTheme, useTheme } from './theme'
 
@@ -44,6 +44,9 @@ export default function App() {
   useEffect(() => {
     if (caps.data) initDerive(caps.data)
   }, [caps.data])
+  // How many nodes the snapshot keeps, chosen in Settings (D-182).
+  const maxNodes = useStore((s) => s.toggles.maxNodes)
+  useEffect(() => setMaxNodes(maxNodes), [maxNodes])
 
   // The floating header's height, for the map controls and banners below it.
   const topbar = useRef<HTMLElement>(null)
@@ -175,7 +178,7 @@ export default function App() {
           {snap.error && <div className="banner error">{String((snap.error as Error).message)}</div>}
           {!snap.data && snap.isLoading && <div className="banner">Loading window…</div>}
           {empty && <div className="banner">No observed data for this interval.</div>}
-          {counts?.nodes_truncated && <div className="banner">Large network: showing the most active nodes.</div>}
+          {counts?.nodes_truncated && <div className="banner">Large network: showing the {maxNodes.toLocaleString('en')} most active nodes (Settings).</div>}
           {snap.data?.edges_truncated && <div className="banner">Showing the best-supported links only.</div>}
           {/* Always mounted, so screen readers announce a notice inserted into it. */}
           <div className="banner-live" role="status">

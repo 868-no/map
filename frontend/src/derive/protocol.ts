@@ -42,7 +42,13 @@ export interface TerrainRequest {
   links: TerrainLinkClass[]
 }
 
-export type Request = ViewRequest | InitRequest | GenerationHint | RowsRequest | TerrainRequest
+/** The snapshot's node limit, the most active nodes first (D-182). */
+export interface OptionsRequest {
+  type: 'options'
+  maxNodes: number
+}
+
+export type Request = ViewRequest | InitRequest | GenerationHint | RowsRequest | TerrainRequest | OptionsRequest
 
 /** A transmission one live reception proves (from the engine). */
 export interface Transmission {

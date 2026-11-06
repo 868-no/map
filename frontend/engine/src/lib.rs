@@ -67,6 +67,10 @@ struct Options {
     /// on; off only to compare with the old server views) (D-179).
     #[serde(default = "yes")]
     origin_rule: bool,
+    /// Nodes the snapshot keeps, the most active first (default MAX_NODES,
+    /// D-182). Kept until set again, so options without it leave it alone.
+    #[serde(default)]
+    max_nodes: Option<usize>,
 }
 
 fn yes() -> bool {
@@ -272,7 +276,7 @@ impl Engine {
         Engine::default()
     }
 
-    /// {geo: capabilities.geolocation, silent_rule?: bool, mqtt_links?: bool, move_rule?: bool, signal_rule?: bool}
+    /// {geo: capabilities.geolocation, silent_rule?: bool, mqtt_links?: bool, move_rule?: bool, signal_rule?: bool, max_nodes?: number}
     pub fn set_options(&mut self, options: &str) -> Result<(), JsError> {
         let o: Options = serde_json::from_str(options).map_err(err)?;
         if let Some(g) = o.geo {
@@ -284,7 +288,8 @@ impl Engine {
                 terrain: std::mem::take(&mut self.geo.terrain),
             };
         }
-        self.rules = Rules { silent: o.silent_rule, mqtt_links: o.mqtt_links, moves: o.move_rule, signal: o.signal_rule, range: o.range_rule, origin: o.origin_rule };
+        let max_nodes = o.max_nodes.map_or(self.rules.max_nodes, |n| n.max(1));
+        self.rules = Rules { silent: o.silent_rule, mqtt_links: o.mqtt_links, moves: o.move_rule, signal: o.signal_rule, range: o.range_rule, origin: o.origin_rule, max_nodes };
         self.built = None;
         Ok(())
     }

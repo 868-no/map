@@ -14,6 +14,7 @@ const decoder = new TextDecoder()
 let caps: Capabilities | undefined // re-sent to a restarted worker
 let terrain: TerrainLinkClass[] = [] // likewise
 let generation: string | null = null // likewise
+let maxNodes: number | null = null // likewise
 let restarts: number[] = [] // recent restart times
 let broken: string | null = null // gave up restarting: views fail with this
 
@@ -39,6 +40,7 @@ function restart(why: string): void {
   if (caps) initDerive(caps)
   if (terrain.length) get().postMessage({ type: 'terrain', links: terrain } satisfies Request)
   if (generation) get().postMessage({ type: 'generation', generation } satisfies Request)
+  if (maxNodes !== null) get().postMessage({ type: 'options', maxNodes } satisfies Request)
   onChanged?.()
 }
 
@@ -113,6 +115,13 @@ export function initDerive(c: Capabilities): void {
 export function hintGeneration(g: string): void {
   generation = g
   if (!broken) get().postMessage({ type: 'generation', generation: g } satisfies Request)
+}
+
+/** The snapshot's node limit (D-182); views are rebuilt with it. */
+export function setMaxNodes(n: number): void {
+  if (n === maxNodes) return
+  maxNodes = n
+  if (!broken) get().postMessage({ type: 'options', maxNodes: n } satisfies Request)
 }
 
 /** Line-of-sight classes of router links (D-143); views are rebuilt with them. */

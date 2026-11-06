@@ -1,11 +1,50 @@
 // The Settings panel (tool rail, D-066): display settings, installing the
 // app, and what the site is: source code, license and privacy policy.
-import { useStore } from '../state/store'
+import { useEffect, useState } from 'react'
+import { DEFAULT_MAX_NODES, MAX_NODES_RANGE, useStore } from '../state/store'
 import type { ThemeChoice } from '../theme'
 import { LICENSE_HREF, PRIVACY_URL, REVISION_HREF, SOURCE_HREF, SOURCE_REVISION } from '../links'
 import { resetEverything } from '../reset'
 
 const THEMES: [ThemeChoice, string][] = [['system', 'Auto'], ['light', 'Light'], ['dark', 'Dark']]
+
+/**
+ * How many nodes the map keeps, the most active first (D-182). Applied when
+ * the field is left or Enter pressed: every change rebuilds every view.
+ */
+function MaxNodes() {
+  const value = useStore((s) => s.toggles.maxNodes)
+  const setT = useStore((s) => s.setToggles)
+  const [draft, setDraft] = useState(String(value))
+  useEffect(() => setDraft(String(value)), [value])
+  const commit = () => {
+    const n = Math.round(Number(draft))
+    if (!Number.isFinite(n) || draft.trim() === '') return setDraft(String(value))
+    const v = Math.min(Math.max(n, MAX_NODES_RANGE[0]), MAX_NODES_RANGE[1])
+    setDraft(String(v))
+    if (v !== value) setT({ maxNodes: v })
+  }
+  return (
+    <>
+      <h3 id="settings-max-nodes">Nodes on the map</h3>
+      <p className="muted small">
+        At most this many nodes are shown, the most active first ({DEFAULT_MAX_NODES.toLocaleString('en')} by default). More costs memory and makes every
+        update slower; links, estimates and counts always use every node.
+      </p>
+      <input
+        type="number" aria-labelledby="settings-max-nodes" min={MAX_NODES_RANGE[0]} max={MAX_NODES_RANGE[1]} step={500}
+        value={draft} onChange={(e) => setDraft(e.target.value)} onBlur={commit}
+        onKeyDown={(e) => e.key === 'Enter' && (e.currentTarget as HTMLInputElement).blur()}
+      />
+      {value !== DEFAULT_MAX_NODES && (
+        <>
+          {' '}
+          <button className="linkish" onClick={() => setT({ maxNodes: DEFAULT_MAX_NODES })}>Reset to {DEFAULT_MAX_NODES.toLocaleString('en')}</button>
+        </>
+      )}
+    </>
+  )
+}
 
 export function SettingsPanel({ canInstall, install }: { canInstall: boolean; install: () => void }) {
   const theme = useStore((s) => s.toggles.theme)
@@ -22,6 +61,7 @@ export function SettingsPanel({ canInstall, install }: { canInstall: boolean; in
           </label>
         ))}
       </div>
+      <MaxNodes />
       {canInstall && (
         <>
           <h3>App</h3>

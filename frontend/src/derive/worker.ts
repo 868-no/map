@@ -316,6 +316,18 @@ self.onmessage = async (e: MessageEvent<Request>) => {
     }
     return
   }
+  if (msg.type === 'options') {
+    try {
+      await started
+      await inited
+      engine.set_options(JSON.stringify({ max_nodes: msg.maxNodes }))
+      memo.clear()
+      self.postMessage({ type: 'changed' } satisfies Response)
+    } catch (err) {
+      if (!fatal(err)) console.warn('options dropped', err)
+    }
+    return
+  }
   if (msg.type === 'init') {
     try {
       await started

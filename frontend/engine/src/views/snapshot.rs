@@ -11,6 +11,7 @@ use crate::graph::{Edge, LatLon, RelayContext};
 use crate::row::{Interner, Row};
 use crate::util::{iso, map, set, FxMap, FxSet};
 
+/// Nodes the snapshot keeps by default, the most active first (D-182).
 pub const MAX_NODES: usize = 5000;
 
 #[derive(Serialize, Clone, Debug, Default)]
@@ -121,11 +122,13 @@ pub struct Rules {
     pub signal: bool,     // a strong reading rules out relays too far away to give it (D-136)
     pub range: bool,      // the relay range rests on repeated links between nodes that stayed put (D-177)
     pub origin: bool,     // the originator is a candidate for its own byte (D-179)
+    /// Nodes the snapshot keeps, the most active first; the rest are left out (D-182).
+    pub max_nodes: usize,
 }
 
 impl Default for Rules {
     fn default() -> Self {
-        Rules { silent: true, mqtt_links: true, moves: true, signal: true, range: true, origin: true }
+        Rules { silent: true, mqtt_links: true, moves: true, signal: true, range: true, origin: true, max_nodes: MAX_NODES }
     }
 }
 
@@ -314,8 +317,8 @@ pub fn build_snapshot(rows: &[&Row], i: &Interner, g: &GeoOptions, rules: Rules)
     // Radio links as the map draws them: one per node pair, whichever directions were heard.
     counts.edges = er.edges.iter().filter(|e| !e.mqtt).map(|e| (e.src_num.min(e.dst_num), e.src_num.max(e.dst_num))).collect::<FxSet<_>>().len();
     list.sort_unstable_by(|a, b| (b.packets + b.gateway_receptions).cmp(&(a.packets + a.gateway_receptions)).then(a.num.cmp(&b.num)));
-    if list.len() > MAX_NODES {
-        list.truncate(MAX_NODES);
+    if list.len() > rules.max_nodes {
+        list.truncate(rules.max_nodes);
         counts.nodes_truncated = true;
     }
     Built {
