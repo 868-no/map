@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"errors"
 	"testing"
 
 	"google.golang.org/protobuf/proto"
@@ -51,16 +52,16 @@ func TestParseEnvelopeValidation(t *testing.T) {
 	bad := proto.Clone(good).(*pb.ServiceEnvelope)
 	bad.GatewayId = "!zz"
 	b, _ = proto.Marshal(bad)
-	if _, err := ParseEnvelope(b); err != ErrBadGateway {
+	if _, err := ParseEnvelope(b); !errors.Is(err, ErrBadGateway) {
 		t.Fatalf("bad gateway: %v", err)
 	}
 	bad = proto.Clone(good).(*pb.ServiceEnvelope)
 	bad.Packet.From = 0xFFFFFFFF
 	b, _ = proto.Marshal(bad)
-	if _, err := ParseEnvelope(b); err != ErrBadSender {
+	if _, err := ParseEnvelope(b); !errors.Is(err, ErrBadSender) {
 		t.Fatalf("broadcast sender: %v", err)
 	}
-	if _, err := ParseEnvelope(make([]byte, MaxEnvelopeBytes+1)); err != ErrOversize {
+	if _, err := ParseEnvelope(make([]byte, MaxEnvelopeBytes+1)); !errors.Is(err, ErrOversize) {
 		t.Fatal("oversize accepted")
 	}
 }

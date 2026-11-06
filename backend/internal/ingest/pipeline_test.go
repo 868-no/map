@@ -272,7 +272,7 @@ func TestPipelineLateCrossBrokerProvenance(t *testing.T) {
 func TestPipelineQueueFullDrops(t *testing.T) {
 	sink := &memSink{}
 	p, _ := newTestPipeline(t, sink, 2)
-	for i := 0; i < 10; i++ { // not running: queue fills
+	for range 10 { // not running: queue fills
 		p.Submit(msg(topicLF, []byte{1}))
 	}
 	if n := dropped(t, p, "queue_full"); n != 8 {
@@ -345,7 +345,7 @@ func TestShutdownDuringOutageIsBounded(t *testing.T) {
 // claim; seen as a flaky TestPipelineLateCrossBrokerProvenance in CI).
 func TestConcurrentLateCopiesKeepProvenance(t *testing.T) {
 	p, _ := newTestPipeline(t, &memSink{}, 10)
-	for i := 0; i < 3000; i++ {
+	for i := range 3000 {
 		var k [16]byte
 		k[0], k[1] = byte(i), byte(i>>8)
 		p.recent.add(k, 1, []string{"a"}, time.Now())

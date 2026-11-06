@@ -27,7 +27,7 @@ func TestSimulatorThroughIngest(t *testing.T) {
 	accepted := map[string]int{}
 	rejected := map[string]int{}
 	notes := map[string]map[string]int{}
-	for i := 0; i < 3000; i++ {
+	for range 3000 {
 		for _, m := range sim.Step() {
 			obs, err := ingest.Process(ingest.RawMessage{BrokerID: "demo", Topic: m.Topic, Payload: m.Payload, ObservedAt: time.Now()}, o)
 			if notes[m.Note] == nil {

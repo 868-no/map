@@ -189,7 +189,7 @@ func (im *Importer) one(ctx context.Context, rec []string) error {
 	payload, err := hex.DecodeString(strings.TrimSpace(rec[1]))
 	if !ok || err != nil {
 		im.Stats["line malformed"]++
-		return nil
+		return nil //nolint:nilerr // a malformed line is counted and skipped, not fatal
 	}
 	im.Stats["read"]++
 	if !at.After(im.After) {

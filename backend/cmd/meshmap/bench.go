@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -156,7 +157,7 @@ func benchCmd() *cobra.Command {
 			var took, first []time.Duration
 			var rows, bytes, pages int
 			var all []json.RawMessage // first window's rows, for --dump
-			for i := 0; i < n; i++ {
+			for i := range n {
 				// Distinct windows (shifted by i minutes) avoid measuring one cached plan.
 				we := end.Add(-time.Duration(i) * time.Minute)
 				q := url.Values{"start": {we.Add(-time.Duration(hours) * time.Hour).Format(time.RFC3339)}, "end": {we.Format(time.RFC3339)}}
@@ -166,7 +167,7 @@ func benchCmd() *cobra.Command {
 					if cursor != "" {
 						q.Set("cursor", cursor)
 					}
-					d, body, err := timeGetBody(srv.URL + "/api/v1/observations?" + q.Encode())
+					d, body, err := timeGetBody(cmd.Context(), srv.URL+"/api/v1/observations?"+q.Encode())
 					if err != nil {
 						return err
 					}
@@ -212,9 +213,13 @@ func benchCmd() *cobra.Command {
 	return cmd
 }
 
-func timeGetBody(u string) (time.Duration, []byte, error) {
+func timeGetBody(ctx context.Context, u string) (time.Duration, []byte, error) {
 	t := time.Now()
-	resp, err := http.Get(u)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return 0, nil, err
+	}
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return 0, nil, err
 	}
@@ -223,7 +228,7 @@ func timeGetBody(u string) (time.Duration, []byte, error) {
 	if err != nil {
 		return 0, nil, err
 	}
-	if resp.StatusCode != 200 {
+	if resp.StatusCode != http.StatusOK {
 		var p map[string]any
 		_ = json.Unmarshal(b, &p)
 		return 0, nil, fmt.Errorf("%s: HTTP %d %v", u, resp.StatusCode, p["detail"])

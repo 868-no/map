@@ -33,7 +33,7 @@ func TestHubEncodesOnceAndFlagsDrops(t *testing.T) {
 	if out, _ := json.Marshal(LiveDelta{raw: a.delta}); string(out) != string(a.delta) {
 		t.Fatalf("raw delta re-encoded: %s", out)
 	}
-	for i := 0; i < cap(slow)+5; i++ { // the slow subscriber never reads
+	for range cap(slow) + 5 { // the slow subscriber never reads
 		h.PublishLive(context.Background(), ev)
 		<-fast
 	}

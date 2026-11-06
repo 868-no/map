@@ -72,7 +72,7 @@ func (kr *Keyring) Candidates(broker, topicChannel string, hash uint8, budget in
 			other = append(other, k)
 		}
 	}
-	out := append(named, other...)
+	out := slices.Concat(named, other)
 	if len(named) == 0 && kr.DefaultFallback && !kr.named[topicChannel] {
 		out = append(out, defaultKeys(topicChannel, hash)...)
 	}

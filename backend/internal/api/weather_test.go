@@ -35,7 +35,7 @@ func TestWeatherEndpoint(t *testing.T) {
 	}
 	var rec *httptest.ResponseRecorder
 	var b WeatherBody
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		rec = get("lat=63.42&lon=10.27&start=2026-11-01T00:00:00Z&end=2026-11-01T03:00:00Z")
 		if rec.Code != 200 {
 			t.Fatal(rec.Code, rec.Body.String())
@@ -59,7 +59,7 @@ func TestWeatherEndpoint(t *testing.T) {
 		t.Fatalf("settled hours: %q", cc)
 	}
 	// Hours without a gust may still get one for up to 12 h.
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		if rec = get("lat=63.42&lon=10.27&start=2026-11-03T04:00:00Z&end=2026-11-03T07:00:00Z"); rec.Header().Get("Cache-Control") != "no-store" {
 			break
 		}

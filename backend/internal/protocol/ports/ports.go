@@ -41,6 +41,10 @@ const (
 	TypeStoreForward = "store_forward"
 )
 
+// PortUnknown is port 0 (UNKNOWN_APP), deprecated as a port to send on but
+// what an undecodable or wrongly decrypted payload reads as.
+const PortUnknown = pb.PortNum(0)
+
 var (
 	ErrInvalid = errors.New("invalid application payload")
 	unmarshal  = proto.UnmarshalOptions{RecursionLimit: 8}
@@ -98,7 +102,7 @@ func Decode(d *pb.Data, from uint32) (Decoded, error) {
 	case pb.PortNum_STORE_FORWARD_APP:
 		v, err := decodeStoreForward(d.GetPayload())
 		return Decoded{Type: TypeStoreForward, StoreForward: v}, err
-	case pb.PortNum_UNKNOWN_APP:
+	case PortUnknown:
 		return Decoded{}, ErrInvalid
 	}
 	return Decoded{Type: TypeOther, Other: &Other{Port: int32(d.GetPortnum()), PortName: portName(d.GetPortnum()), Bytes: len(d.GetPayload())}}, nil

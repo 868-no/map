@@ -17,21 +17,21 @@ import (
 // SafeHost reports whether host is a compose service name (no dots) or
 // resolves only to loopback/private addresses. The demo publisher refuses
 // anything else so it can never inject simulated traffic into a live mesh.
-func SafeHost(host string) (bool, error) {
+func SafeHost(ctx context.Context, host string) (bool, error) {
 	if host == "localhost" || !strings.Contains(host, ".") {
 		if ip, err := netip.ParseAddr(host); err == nil {
 			return ip.IsLoopback() || ip.IsPrivate(), nil
 		}
 		return true, nil
 	}
-	addrs, err := net.LookupHost(host)
+	addrs, err := net.DefaultResolver.LookupHost(ctx, host)
 	if err != nil {
 		return false, err
 	}
 	for _, a := range addrs {
 		ip, err := netip.ParseAddr(a)
-		if err != nil || !(ip.IsLoopback() || ip.IsPrivate()) {
-			return false, nil
+		if err != nil || (!ip.IsLoopback() && !ip.IsPrivate()) {
+			return false, nil //nolint:nilerr // an address that does not parse is not a safe one
 		}
 	}
 	return len(addrs) > 0, nil
@@ -50,7 +50,7 @@ type PublishConfig struct {
 // Publish runs the simulator against the demo broker until ctx ends.
 func Publish(ctx context.Context, c PublishConfig) error {
 	if !c.AllowExternal {
-		ok, err := SafeHost(c.Host)
+		ok, err := SafeHost(ctx, c.Host)
 		if err != nil {
 			return fmt.Errorf("resolve %s: %w", c.Host, err)
 		}

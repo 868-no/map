@@ -213,7 +213,7 @@ func readYAML(inline, envName, path, key string, out any, optional bool) error {
 		return fmt.Errorf("%s config %s: missing top-level %q list", key, path, key)
 	}
 	if err := node.Decode(out); err != nil {
-		return fmt.Errorf("%s config %s: %v", key, path, err)
+		return fmt.Errorf("%s config %s: %w", key, path, err)
 	}
 	return nil
 }

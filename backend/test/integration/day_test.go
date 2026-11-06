@@ -30,7 +30,7 @@ func (c *apiClient) day(date, gen string) dayAnswer {
 	}
 	defer resp.Body.Close()
 	a := dayAnswer{code: resp.StatusCode, cc: resp.Header.Get("Cache-Control"), etag: resp.Header.Get("ETag")}
-	if resp.StatusCode == 200 {
+	if resp.StatusCode == http.StatusOK {
 		var b struct {
 			Generation string            `json:"generation"`
 			Rows       []json.RawMessage `json:"rows"`
@@ -52,7 +52,7 @@ func (c *apiClient) day(date, gen string) dayAnswer {
 func (c *apiClient) rawRows(q url.Values) ([]json.RawMessage, string) {
 	c.t.Helper()
 	var all []json.RawMessage
-	gen := ""
+	var gen string
 	for {
 		var page struct {
 			Generation string            `json:"generation"`

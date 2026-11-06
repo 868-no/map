@@ -313,8 +313,8 @@ func TestRedecodeCleansChannelAndRoot(t *testing.T) {
 	ctx := context.Background()
 	f.position(base.Add(time.Hour), nodeA, gw1, 63.0)
 	f.position(base.Add(2*time.Hour), nodeB, gw1, 63.1)
-	if _, err := pool.Exec(ctx, `UPDATE packet_log SET decode_version = 3, channel_name = 'Long‮Fast',
-		decoded_metadata = decoded_metadata || '{"topic_root": "msh/‮EU_868", "imported": true}'::jsonb`); err != nil {
+	if _, err := pool.Exec(ctx, `UPDATE packet_log SET decode_version = 3, channel_name = 'Long' || chr(8238) || 'Fast',
+		decoded_metadata = decoded_metadata || '{"topic_root": "msh/\u202eEU_868", "imported": true}'::jsonb`); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := pool.Exec(ctx, `UPDATE packet_log SET decoded_metadata = decoded_metadata || '{"invalid": "sig_invalid"}'::jsonb WHERE source_node_id = $1`, int64(nodeB)); err != nil {

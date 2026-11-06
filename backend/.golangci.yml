@@ -1,0 +1,47 @@
+# golangci-lint v2 (scripts/go.sh golangci-lint run ./...): the standard set
+# (errcheck, govet, ineffassign, staticcheck, unused) plus correctness and
+# dead-code linters. Left out on purpose: style-only ones (revive's doc
+# comments, prealloc, perfsprint) and gosec, whose findings here are mostly
+# integer conversions of protocol fields; govulncheck covers vulnerable
+# dependencies.
+version: "2"
+linters:
+  default: standard
+  enable:
+    - bodyclose
+    - copyloopvar
+    - errorlint
+    - gocritic
+    - intrange
+    - misspell
+    - nilerr
+    - noctx
+    - unconvert
+    - unparam
+    - usestdlibvars
+    - wastedassign
+  settings:
+    errcheck:
+      # Writes to a response or terminal, and closing what was only read.
+      exclude-functions:
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+        - (io.Closer).Close
+        - (io.ReadCloser).Close
+        - (*os.File).Close
+    misspell:
+      ignore-rules: [mosquitto]
+    staticcheck:
+      checks: ["all", "-ST1000", "-ST1003", "-ST1020", "-ST1021", "-ST1022"]
+  exclusions:
+    rules:
+      # Tests build requests without a context of their own on purpose, and
+      # their helpers keep general signatures however a test calls them.
+      - path: _test\.go
+        linters: [noctx, unparam]
+run:
+  build-tags: [integration]
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0

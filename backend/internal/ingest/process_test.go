@@ -435,7 +435,7 @@ func TestProcessDefaultKeyFallback(t *testing.T) {
 func wantHeaderOnly(t *testing.T, what string, m RawMessage, o Options, ty, reason string) {
 	t.Helper()
 	obs, err := Process(m, o)
-	if err != nil || obs.PacketType != ty || obs.Meta.Invalid != reason || obs.Meta.Decoded.Type != ty {
+	if err != nil || obs.PacketType != ty || obs.Meta.Invalid != reason || obs.Meta.Type != ty {
 		t.Fatalf("%s: %v, type %q reason %q", what, err, obs.PacketType, obs.Meta.Invalid)
 	}
 	env, _ := protocol.ParseEnvelope(obs.EnvelopeBytes)
@@ -449,7 +449,7 @@ func wantHeaderOnly(t *testing.T, what string, m RawMessage, o Options, ty, reas
 // characters); decoding is unchanged.
 func TestProcessCleansShownTopicParts(t *testing.T) {
 	p := pkt{from: 0x11111111, id: 5, to: 0xffffffff, gw: "!aabbccdd", data: posData(t), hopStart: 3, hopLimit: 3, snr: 7.5, rssi: -90}
-	topic := "msh/EU_868/NO/‮Trøndelag/2/e/Long‮Fast/!aabbccdd"
+	topic := "msh/EU_868/NO/\u202eTrøndelag/2/e/Long\u202eFast/!aabbccdd"
 	obs, err := Process(msg(topic, envelope(t, p, security.DefaultPSK[:], security.ModeCTR, "LongFast")), opts(t, longFast))
 	if err != nil {
 		t.Fatal(err)

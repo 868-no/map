@@ -70,7 +70,7 @@ func signedData(t *testing.T, k testutil.XKey, from, id, to uint32, d *pb.Data) 
 // Gate 2: round trip through the production verify path plus mutations.
 func TestXEdDSARoundTripAndMutations(t *testing.T) {
 	bf := uint32(1)
-	for i := uint64(0); i < 50; i++ {
+	for i := range uint64(50) {
 		k := testutil.NewXKey(i)
 		from, id, to := k.NodeNum(), uint32(0x1000+i), uint32(0xffffffff)
 		d := &pb.Data{

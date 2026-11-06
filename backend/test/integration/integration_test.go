@@ -76,7 +76,7 @@ func redisClient(t *testing.T) *cache.Client {
 	if err := c.R.FlushDB(context.Background()).Err(); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { c.Close() })
+	t.Cleanup(func() { _ = c.Close() })
 	return c
 }
 
@@ -149,7 +149,7 @@ func TestPipelineDemoStream(t *testing.T) {
 
 	sim := demo.NewSimulator(demo.DefaultScenario(), 7)
 	var msgs []demo.Message
-	for i := 0; i < 400; i++ {
+	for range 400 {
 		msgs = append(msgs, sim.Step()...)
 	}
 	for _, broker := range []string{"a", "b"} { // the whole stream arrives via two brokers
@@ -240,7 +240,7 @@ func TestBridgedBrokerLag(t *testing.T) {
 	lagRand := rand.New(rand.NewPCG(1, 2))
 	var wg sync.WaitGroup
 	start := time.Now()
-	for i := 0; i < 150; i++ { // ~150 ticks at 50/s
+	for range 150 { // ~150 ticks at 50/s
 		for _, m := range sim.Step() {
 			p.Submit(ingest.RawMessage{BrokerID: "a", Topic: m.Topic, Payload: m.Payload, ObservedAt: time.Now()})
 			// Typical bridge delay is tens of ms with a long tail.
@@ -280,7 +280,7 @@ func TestDedupeWithoutRedis(t *testing.T) {
 	go func() { p.Run(ctx); close(done) }()
 	sim := demo.NewSimulator(demo.DefaultScenario(), 3)
 	var msgs []demo.Message
-	for i := 0; i < 60; i++ {
+	for range 60 {
 		msgs = append(msgs, sim.Step()...)
 	}
 	for _, m := range msgs {
@@ -348,7 +348,7 @@ func TestRetention(t *testing.T) {
 	// Concurrency: hold the lock elsewhere -> skipped.
 	conn, _ := pool.Acquire(ctx)
 	conn.Exec(ctx, `SELECT pg_advisory_lock(hashtext('meshmap:maintenance'))`) //nolint:errcheck
-	if _, err := r.RunOnce(ctx); err != maintenance.ErrLocked {
+	if _, err := r.RunOnce(ctx); !errors.Is(err, maintenance.ErrLocked) {
 		t.Fatalf("want ErrLocked, got %v", err)
 	}
 	conn.Exec(ctx, `SELECT pg_advisory_unlock(hashtext('meshmap:maintenance'))`) //nolint:errcheck

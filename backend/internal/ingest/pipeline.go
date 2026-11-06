@@ -193,7 +193,7 @@ func (p *Pipeline) Healthy() (ok bool, reason string) {
 // Run processes until ctx is cancelled, then drains the queue and flushes.
 func (p *Pipeline) Run(ctx context.Context) {
 	var wg sync.WaitGroup
-	for i := 0; i < p.cfg.Workers; i++ {
+	for range p.cfg.Workers {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()

@@ -3,6 +3,7 @@ package security
 import (
 	"bytes"
 	"encoding/hex"
+	"errors"
 	"testing"
 )
 
@@ -71,7 +72,7 @@ func TestCTRRoundTrip(t *testing.T) {
 	if wrong, _ := DecryptCTR(DefaultPSK[:], 0x12345679, 0xdeadbeef, ct); bytes.Equal(wrong, pt) {
 		t.Fatal("nonce does not bind the sender")
 	}
-	if _, err := DecryptCTR(DefaultPSK[:], 1, 1, make([]byte, MaxCiphertext+1)); err != ErrTooLarge {
+	if _, err := DecryptCTR(DefaultPSK[:], 1, 1, make([]byte, MaxCiphertext+1)); !errors.Is(err, ErrTooLarge) {
 		t.Fatal("oversize ciphertext accepted")
 	}
 }
@@ -93,14 +94,14 @@ func TestCCMAuthenticates(t *testing.T) {
 	for i := range ct {
 		m := bytes.Clone(ct)
 		m[i] ^= 1
-		if _, err := DecryptCCM(key, 0xa1b2c3d4, 0xffffffff, 99, m); err != ErrAuthFailed {
+		if _, err := DecryptCCM(key, 0xa1b2c3d4, 0xffffffff, 99, m); !errors.Is(err, ErrAuthFailed) {
 			t.Fatalf("flip at byte %d not rejected", i)
 		}
 	}
-	if _, err := DecryptCCM(key, 0xa1b2c3d4, 0x00000001, 99, ct); err != ErrAuthFailed {
+	if _, err := DecryptCCM(key, 0xa1b2c3d4, 0x00000001, 99, ct); !errors.Is(err, ErrAuthFailed) {
 		t.Fatal("AAD (to) not authenticated")
 	}
-	if _, err := DecryptCCM(key, 0xa1b2c3d5, 0xffffffff, 99, ct); err != ErrAuthFailed {
+	if _, err := DecryptCCM(key, 0xa1b2c3d5, 0xffffffff, 99, ct); !errors.Is(err, ErrAuthFailed) {
 		t.Fatal("from not authenticated")
 	}
 }

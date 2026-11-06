@@ -5,6 +5,7 @@ package cache
 
 import (
 	"context"
+	"errors"
 	"strconv"
 	"time"
 
@@ -106,7 +107,7 @@ func (c *Client) GetBlob(ctx context.Context, key string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, blobTimeout)
 	defer cancel()
 	b, err := c.R.Get(ctx, key).Bytes()
-	if err == redis.Nil {
+	if errors.Is(err, redis.Nil) {
 		return nil, nil
 	}
 	return b, err

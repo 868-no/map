@@ -25,7 +25,7 @@ func TestReadyCachesBackendChecks(t *testing.T) {
 	h.Register(mux, nil, false)
 	get := func(path string) int {
 		rec := httptest.NewRecorder()
-		mux.ServeHTTP(rec, httptest.NewRequest("GET", path, nil))
+		mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
 		return rec.Code
 	}
 	var wg sync.WaitGroup

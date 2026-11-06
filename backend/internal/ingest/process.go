@@ -187,13 +187,14 @@ func Process(m RawMessage, o Options) (Observation, error) {
 		vetted bool // dec already decoded (by decrypt, to vet the key)
 	)
 	mapReport := topic.Kind == protocol.TopicMap
-	if mapReport {
+	switch {
+	case mapReport:
 		// Map reports are plaintext by design and published by the node itself.
 		if env.Kind != protocol.PayloadDecoded || p.GetDecoded().GetPortnum() != pb.PortNum_MAP_REPORT_APP || env.Gateway == 0 || env.Gateway != p.GetFrom() {
 			return Observation{}, reject("map_report_invalid")
 		}
 		data, crypto = p.GetDecoded(), CryptoMapReport
-	} else if env.Kind == protocol.PayloadDecoded {
+	case env.Kind == protocol.PayloadDecoded:
 		if p.GetPkiEncrypted() {
 			return headerOnly(m, topic, env, channelName, ports.TypeDirectMessage, CryptoPKI, ""), nil
 		}
@@ -201,7 +202,7 @@ func Process(m RawMessage, o Options) (Observation, error) {
 			return headerOnly(m, topic, env, channelName, ports.TypeInvalid, CryptoPlaintext, "plaintext_unconfigured"), nil
 		}
 		data, crypto = p.GetDecoded(), CryptoPlaintext
-	} else {
+	default:
 		// PKI DMs travel with channel hash 0 and cannot be read with a PSK.
 		// Firmware uses PKI for unicast only: a broadcast with hash 0 is on a
 		// channel whose hash happens to be 0, so it gets the channel keys.
@@ -215,15 +216,15 @@ func Process(m RawMessage, o Options) (Observation, error) {
 		if err != nil {
 			// A channel we hold no working key for: who sent what to whom
 			// is in the clear on RF, its content is not (D-093).
-			return headerOnly(m, topic, env, channelName, ports.TypeEncrypted, CryptoUnreadable, ""), nil
+			return headerOnly(m, topic, env, channelName, ports.TypeEncrypted, CryptoUnreadable, ""), nil //nolint:nilerr // stored as unreadable, not an error
 		}
 	}
-	if data.GetPortnum() == pb.PortNum_UNKNOWN_APP {
+	if data.GetPortnum() == ports.PortUnknown {
 		return headerOnly(m, topic, env, channelName, ports.TypeInvalid, crypto, "decode_failed"), nil
 	}
 	if !vetted {
 		if dec, err = ports.Decode(data, p.GetFrom()); err != nil {
-			return headerOnly(m, topic, env, channelName, ports.TypeInvalid, crypto, "payload_invalid"), nil
+			return headerOnly(m, topic, env, channelName, ports.TypeInvalid, crypto, "payload_invalid"), nil //nolint:nilerr // stored as invalid, not an error
 		}
 	}
 	if !mapReport && dec.Type == ports.TypeMapReport {
@@ -410,7 +411,7 @@ func decrypt(broker, topicChannel string, p *pb.MeshPacket, o Options) (*pb.Data
 			}
 		}
 		d, err := protocol.ParseData(pt)
-		if err != nil || d.GetPortnum() == pb.PortNum_UNKNOWN_APP {
+		if err != nil || d.GetPortnum() == ports.PortUnknown {
 			continue
 		}
 		// Without a tag, "success" means only that the plaintext is

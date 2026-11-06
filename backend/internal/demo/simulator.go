@@ -300,7 +300,7 @@ func (sim *Simulator) linkSNR(a, b int) int32 {
 func (sim *Simulator) traceroute(src int) []Message {
 	var dst int
 	var p []int
-	for tries := 0; tries < 10; tries++ {
+	for range 10 {
 		dst = sim.r.IntN(len(sim.S.Nodes))
 		p = sim.path(src, dst)
 		if len(p) >= 3 && len(p) <= 5 {

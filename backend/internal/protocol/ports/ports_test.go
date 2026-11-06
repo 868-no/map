@@ -96,7 +96,7 @@ func TestPositionValidation(t *testing.T) {
 }
 
 func TestNodeInfoSanitisesAndRejectsBadKeys(t *testing.T) {
-	got, err := Decode(data(t, pb.PortNum_NODEINFO_APP, &pb.User{LongName: "Ola\x00‮Nordmann<script>", ShortName: "ON", PublicKey: make([]byte, 32)}), 1)
+	got, err := Decode(data(t, pb.PortNum_NODEINFO_APP, &pb.User{LongName: "Ola\x00\u202eNordmann<script>", ShortName: "ON", PublicKey: make([]byte, 32)}), 1)
 	if err != nil {
 		t.Fatal(err)
 	}

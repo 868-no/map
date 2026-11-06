@@ -131,7 +131,7 @@ func (c *apiClient) get(path string, q url.Values, out any) int {
 		c.t.Fatal(err)
 	}
 	defer resp.Body.Close()
-	if out != nil && resp.StatusCode == 200 {
+	if out != nil && resp.StatusCode == http.StatusOK {
 		if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
 			c.t.Fatal(err)
 		}

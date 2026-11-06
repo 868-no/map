@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/http"
@@ -23,7 +24,7 @@ func healthcheckCmd() *cobra.Command {
 			"Swarm replaces a task that turns unhealthy, so the deploy files use --live: a database\n" +
 			"outage must not restart the ingest process, whose queue is what absorbs it.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return probeHealth(addr, live)
+			return probeHealth(cmd.Context(), addr, live)
 		},
 	}
 	cmd.Flags().StringVar(&addr, "addr", probeAddr(os.Getenv("HTTP_ADDR")), "backend HTTP address (default from HTTP_ADDR)")
@@ -39,9 +40,13 @@ func healthPath(live bool) string {
 	return "/health/ready"
 }
 
-func probeHealth(addr string, live bool) error {
+func probeHealth(ctx context.Context, addr string, live bool) error {
 	c := http.Client{Timeout: 4 * time.Second}
-	resp, err := c.Get("http://" + addr + healthPath(live))
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "http://"+addr+healthPath(live), nil)
+	if err != nil {
+		return err
+	}
+	resp, err := c.Do(req)
 	if err != nil {
 		return err
 	}

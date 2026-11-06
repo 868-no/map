@@ -3,6 +3,7 @@ package security
 import (
 	"bytes"
 	"crypto/ed25519"
+	"errors"
 	"testing"
 
 	"google.golang.org/protobuf/proto"
@@ -45,7 +46,7 @@ func TestFirstContactNodeInfo(t *testing.T) {
 	hs := PacketHeader{From: victim, ID: 43, To: 0xffffffff}
 	ds := nodeInfoData(t, k, k.X25519Pub)
 	sign(k, hs, ds)
-	if _, err := Evaluate(hs, ds, k.X25519Pub, mapIDs{}, PolicyBalanced); err != ErrFirstContactInvalid {
+	if _, err := Evaluate(hs, ds, k.X25519Pub, mapIDs{}, PolicyBalanced); !errors.Is(err, ErrFirstContactInvalid) {
 		t.Fatalf("spoofed node number: %v", err)
 	}
 
@@ -54,7 +55,7 @@ func TestFirstContactNodeInfo(t *testing.T) {
 	ho := PacketHeader{From: other.NodeNum(), ID: 44, To: 0xffffffff}
 	do := nodeInfoData(t, other, other.X25519Pub)
 	sign(k, ho, do)
-	if _, err := Evaluate(ho, do, other.X25519Pub, mapIDs{}, PolicyBalanced); err != ErrFirstContactInvalid {
+	if _, err := Evaluate(ho, do, other.X25519Pub, mapIDs{}, PolicyBalanced); !errors.Is(err, ErrFirstContactInvalid) {
 		t.Fatalf("wrong signer: %v", err)
 	}
 }
@@ -71,12 +72,12 @@ func TestKnownKeyVerification(t *testing.T) {
 		t.Fatalf("valid: %+v %v", v, err)
 	}
 	d.Payload[2] ^= 1
-	if _, err := Evaluate(h, d, nil, ids, PolicyBalanced); err != ErrSigInvalid {
+	if _, err := Evaluate(h, d, nil, ids, PolicyBalanced); !errors.Is(err, ErrSigInvalid) {
 		t.Fatalf("mutated payload: %v", err)
 	}
 	d.Payload[2] ^= 1
 	d.XeddsaSignature[0] ^= 1
-	if _, err := Evaluate(h, d, nil, ids, PolicyBalanced); err != ErrSigInvalid {
+	if _, err := Evaluate(h, d, nil, ids, PolicyBalanced); !errors.Is(err, ErrSigInvalid) {
 		t.Fatalf("mutated signature: %v", err)
 	}
 }
@@ -89,7 +90,7 @@ func TestSignedNodeInfoMustClaimSigningKey(t *testing.T) {
 	other := testutil.NewXKey(6).X25519Pub
 	d := nodeInfoData(t, k, other)
 	sign(k, h, d)
-	if _, err := Evaluate(h, d, other, ids, PolicyBalanced); err != ErrNodeInfoKeyMismatch {
+	if _, err := Evaluate(h, d, other, ids, PolicyBalanced); !errors.Is(err, ErrNodeInfoKeyMismatch) {
 		t.Fatalf("got %v", err)
 	}
 }
@@ -103,7 +104,7 @@ func TestUnknownKeyAndUnsigned(t *testing.T) {
 	if v, err := Evaluate(h, d, nil, mapIDs{}, PolicyBalanced); err != nil || v.Status != SigUnverifiable {
 		t.Fatalf("unknown key: %+v %v", v, err)
 	}
-	if _, err := Evaluate(h, d, nil, mapIDs{}, PolicyStrict); err != ErrStrictUnverifiable {
+	if _, err := Evaluate(h, d, nil, mapIDs{}, PolicyStrict); !errors.Is(err, ErrStrictUnverifiable) {
 		t.Fatalf("strict: %v", err)
 	}
 	d.XeddsaSignature = nil
@@ -111,7 +112,7 @@ func TestUnknownKeyAndUnsigned(t *testing.T) {
 		t.Fatalf("unsigned: %+v %v", v, err)
 	}
 	d.XeddsaSignature = make([]byte, 63)
-	if _, err := Evaluate(h, d, nil, mapIDs{}, PolicyBalanced); err != ErrSigMalformed {
+	if _, err := Evaluate(h, d, nil, mapIDs{}, PolicyBalanced); !errors.Is(err, ErrSigMalformed) {
 		t.Fatalf("malformed: %v", err)
 	}
 }

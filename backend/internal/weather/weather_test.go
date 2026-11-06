@@ -69,7 +69,7 @@ precipitation_amount.time[1]
 // fill asks until every hour is in, as a browser does.
 func fill(t *testing.T, c *Client, cell Cell, start, end time.Time) []Hour {
 	t.Helper()
-	for i := 0; i < 2000; i++ {
+	for range 2000 {
 		hs, inc := c.Series(context.Background(), cell, start, end)
 		if !inc {
 			return hs

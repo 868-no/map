@@ -13,6 +13,14 @@ import (
 )
 
 func main() {
+	if err := run(); err != nil {
+		fmt.Fprintln(os.Stderr, "error:", err)
+		os.Exit(1)
+	}
+}
+
+// run is main without the exit, so its deferred calls run.
+func run() error {
 	root := &cobra.Command{
 		Use:           "meshmap",
 		Short:         "868.no Map backend (Meshtastic MQTT mesh map)",
@@ -22,8 +30,5 @@ func main() {
 	root.AddCommand(serveCmd(), checkConfigCmd(), initSchemaCmd(), maintenanceCmd(), demoPublishCmd(), inspectCmd(), healthcheckCmd(), openapiCmd(), seedCmd(), benchCmd(), importEnvelopesCmd())
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	if err := root.ExecuteContext(ctx); err != nil {
-		fmt.Fprintln(os.Stderr, "error:", err)
-		os.Exit(1)
-	}
+	return root.ExecuteContext(ctx)
 }

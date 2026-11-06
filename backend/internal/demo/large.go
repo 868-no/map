@@ -17,7 +17,7 @@ import (
 func LargeScenario(n int, seed uint64) *Scenario {
 	r := rand.New(rand.NewPCG(seed, 0x6c617267))
 	s := &Scenario{Links: map[int][]Link{}, index: map[uint32]int{}}
-	for i := 0; i < n; i++ {
+	for i := range n {
 		lat := 58.5 + r.Float64()*5.5
 		lon := 5.5 + r.Float64()*6.5
 		node := &Node{

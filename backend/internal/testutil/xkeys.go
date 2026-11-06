@@ -50,7 +50,7 @@ func DeriveXKey(seed []byte) (k XKey, ok bool) {
 func NewXKey(index uint64) XKey {
 	for ctr := uint64(0); ; ctr++ {
 		var in [16]byte
-		for i := 0; i < 8; i++ {
+		for i := range 8 {
 			in[i] = byte(index >> (8 * i))
 			in[8+i] = byte(ctr >> (8 * i))
 		}

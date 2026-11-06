@@ -37,7 +37,7 @@ func TestClientIP(t *testing.T) {
 	}
 	trusted := mustPrefixes("10.0.0.0/8", "172.16.0.0/12")
 	for _, c := range cases {
-		r, _ := http.NewRequest("GET", "/api/v1/snapshot", nil)
+		r, _ := http.NewRequest(http.MethodGet, "/api/v1/snapshot", nil)
 		r.RemoteAddr = c.peer
 		if c.xff != "" {
 			r.Header.Set("X-Forwarded-For", c.xff)
