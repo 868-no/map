@@ -69,7 +69,7 @@ fn millis(s: &str) -> f64 {
 }
 
 /// The server took a node's latest NodeInfo, position or telemetry by its
-/// latest copy; the engine by its first (D-176). In this window that tells
+/// latest copy; the engine by its first (D-180). In this window that tells
 /// apart only !552ad94c's identity: its NodeInfo 928744739, first heard at
 /// 13:52:41, had a copy uplinked at 13:54:52, after 928744741 (13:52:54).
 fn server_views() -> Value {

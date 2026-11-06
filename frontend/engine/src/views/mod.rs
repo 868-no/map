@@ -80,7 +80,7 @@ impl<'a> ByType<'a> {
 /// Per key, the newest packet's latest copy by (observed_at, id), packets
 /// ranked by their first copy: a late copy (a gateway uplinking an old packet
 /// again, hours or days on) never makes its packet the newest, its contents
-/// being as old as the packet (D-176).
+/// being as old as the packet (D-180).
 fn latest_by<'a>(rows: &[&'a Row], keep: impl Fn(&Row) -> bool, key: impl Fn(&Row) -> u32) -> FxMap<u32, &'a Row> {
     // Per packet: its first copy and its latest.
     let mut copies: FxMap<u64, (&Row, &Row)> = map();

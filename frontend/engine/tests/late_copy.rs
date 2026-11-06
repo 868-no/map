@@ -1,5 +1,5 @@
 //! A late copy of an old packet (a gateway uplinking it again, hours on)
-//! never stands in for a node's latest state (D-176).
+//! never stands in for a node's latest state (D-180).
 
 use serde_json::{json, Value};
 

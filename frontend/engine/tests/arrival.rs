@@ -1,6 +1,6 @@
 //! An anchored node that arrived from a trip in the window moved: its stay
 //! began when it came back, so earlier contacts were made elsewhere; a single
-//! far reading stays a GPS spike (D-179).
+//! far reading stays a GPS spike (D-181).
 
 use serde_json::{json, Value};
 

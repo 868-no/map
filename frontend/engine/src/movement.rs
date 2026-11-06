@@ -32,7 +32,7 @@ pub const MAX_TRACK: usize = 100;
 /// Reported altitude (above sea level) that, while moving, means airborne.
 pub const AIRBORNE_M: i32 = 750;
 /// How many move thresholds from its place an anchored node's reports must
-/// lie to be a trip rather than GPS noise (D-179).
+/// lie to be a trip rather than GPS noise (D-181).
 pub const TRIP_FACTOR: f64 = 5.0;
 
 #[derive(Serialize, Clone, Debug, PartialEq)]
@@ -50,7 +50,7 @@ pub struct Movement {
     pub moved_at: i64,
     /// Distinct positions in time order, the newest last.
     pub track: Vec<TrackPoint>,
-    /// It has come back to rest at its anchored place after a trip (D-179):
+    /// It has come back to rest at its anchored place after a trip (D-181):
     /// it is not moving now, so never airborne.
     pub settled: bool,
 }
@@ -303,7 +303,7 @@ fn track(pts: &[&Row]) -> Vec<TrackPoint> {
 }
 
 /// An anchored node that came to its place from a trip in the window
-/// (D-179): before its stay, at least two reports in a row lie far beyond
+/// (D-181): before its stay, at least two reports in a row lie far beyond
 /// what noise around the place explains (TRIP_FACTOR move thresholds). Its
 /// current place began with the first report after the trip's last; what
 /// the radio heard before then, it heard elsewhere. One far report alone
