@@ -89,6 +89,8 @@ scripts/node.sh npm audit              # npm: known vulnerabilities in any depen
 
 A known vulnerability found by govulncheck, cargo-deny or npm audit fails CI, and with it the image build and the production deploy.
 
+Dependencies are pinned and upgraded by hand. `scripts/outdated.sh` lists newer releases of the Go modules, npm packages and Rust crates; it only reports, so upgrades happen when there is time to test them (prefer releases at least two weeks old).
+
 The two Go tools install once into the cached GOBIN: `scripts/go.sh go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0` and `scripts/go.sh go install golang.org/x/vuln/cmd/govulncheck@v1.9.0`. Formatters beyond `gofmt` (rustfmt, Prettier) are not used: the code keeps its own layout, which they would rewrite.
 
 Every view is built in the browser, by a WebAssembly engine (`frontend/engine`, Rust) in a Web Worker, from the decoded rows of `/api/v1/observations` and the live stream (D-031, D-040, D-041).
