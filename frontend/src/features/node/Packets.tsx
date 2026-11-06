@@ -22,7 +22,7 @@ const INVALID: Record<string, string> = {
 }
 
 /** The Packets tab: packet log, delivery reports, airtime and signatures. */
-export function PacketsTab({ d, id, snapshot, names }: { d: NodeView; id: string; snapshot: SnapshotView | undefined; names: Map<string, string> }) {
+export function PacketsTab({ d, id, snapshot, names }: { d: NodeView; id: string; snapshot: SnapshotView | undefined; names: ReadonlyMap<string, string> }) {
   const select = useStore((s) => s.select)
   const positioned = useMemo(() => new Set((snapshot?.nodes ?? []).filter((n) => n.position || n.estimate).map((n) => n.id)), [snapshot])
   const moved = useMemo(() => new Set((snapshot?.nodes ?? []).filter((n) => n.moved_at).map((n) => n.id)), [snapshot])
@@ -102,7 +102,7 @@ const LOG_COLS: { label: string; width: ColumnDefault; title?: string }[] = [
   { label: 'Re', width: 34, title: 'Delivery reports: ✓ an ACK or ✗ an error answered this packet. Only reports that reached a gateway are known, so a blank never means it was lost. For a routing packet, ↩ selects the packet it answers' },
 ]
 
-function PacketLogs({ id, names, positioned, moved }: { id: string; names: Map<string, string>; positioned: Set<string>; moved: Set<string> }) {
+function PacketLogs({ id, names, positioned, moved }: { id: string; names: ReadonlyMap<string, string>; positioned: Set<string>; moved: Set<string> }) {
   const select = useStore((s) => s.select)
   const route = useStore((s) => s.route)
   const showRoute = useStore((s) => s.showRoute)

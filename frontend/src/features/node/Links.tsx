@@ -13,7 +13,7 @@ export function LinksTab({ d, id, snapshot, snapNode, names, neighbours }: {
   id: string
   snapshot: SnapshotView | undefined
   snapNode: MeshNode | undefined
-  names: Map<string, string>
+  names: ReadonlyMap<string, string>
   neighbours: LinkNeighbour[]
 }) {
   const select = useStore((s) => s.select)

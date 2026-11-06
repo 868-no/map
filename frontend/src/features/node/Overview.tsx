@@ -11,7 +11,7 @@ const METHOD: Record<string, string> = { weighted_centroid: 'weighted centre of 
 const QUALITY: Record<string, string> = { very_low: 'very rough', low: 'rough' }
 
 /** The Overview tab: identity, position and activity. */
-export function OverviewTab({ d, snapNode, now, names }: { d: NodeView; snapNode: MeshNode | undefined; now: number; names: Map<string, string> }) {
+export function OverviewTab({ d, snapNode, now, names }: { d: NodeView; snapNode: MeshNode | undefined; now: number; names: ReadonlyMap<string, string> }) {
   const select = useStore((s) => s.select)
   const est = snapNode?.estimate
   const pos = d.position // a stale one is never shown as its position (D-094)

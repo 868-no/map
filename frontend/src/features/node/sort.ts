@@ -15,7 +15,7 @@ export interface LinkNeighbour {
  * apart), sorted by the better direction's confidence, then its median SNR
  * (strongest first), then name. Internet links follow the radio ones.
  */
-export function linkNeighbours(edges: Edge[], id: string, names: Map<string, string>): LinkNeighbour[] {
+export function linkNeighbours(edges: Edge[], id: string, names: ReadonlyMap<string, string>): LinkNeighbour[] {
   const groups = new Map<string, LinkNeighbour>()
   for (const e of edges) {
     if (e.src !== id && e.dst !== id) continue
@@ -39,7 +39,7 @@ export function linkNeighbours(edges: Edge[], id: string, names: Map<string, str
  * link's confidence (none last: the gateway only got relayed copies), then
  * median SNR (strongest first), then name.
  */
-export function sortHearings(heardBy: Hearing[], id: string, edges: Edge[], names: Map<string, string>): { h: Hearing; link?: Edge }[] {
+export function sortHearings(heardBy: Hearing[], id: string, edges: Edge[], names: ReadonlyMap<string, string>): { h: Hearing; link?: Edge }[] {
   const links = new Map(edges.filter((e) => !e.mqtt && e.src === id).map((e) => [e.dst, e]))
   const rank = (x: { link?: Edge }) => (x.link ? CONF_RANK[x.link.confidence] ?? 0 : 0)
   const snr = (x: { h: Hearing }) => x.h.snr.median ?? -999

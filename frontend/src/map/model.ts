@@ -30,14 +30,15 @@ export function matchesSearch(n: Pick<MeshNode, 'id' | 'identity'>, q: string): 
   return !q || n.id.includes(q) || (n.identity?.long_name ?? '').toLowerCase().includes(q) || (n.identity?.short_name ?? '').toLowerCase().includes(q)
 }
 
-const names = new WeakMap<readonly MeshNode[], Map<string, string>>()
+const names = new WeakMap<readonly MeshNode[], ReadonlyMap<string, string>>()
+const NO_NAMES: ReadonlyMap<string, string> = new Map()
 
 /**
  * Every node's nodeName by id, made once per snapshot's node list and
- * shared by the panels and the map.
+ * shared (read-only) by the panels and the map.
  */
-export function namesOf(nodes: readonly MeshNode[] | undefined): Map<string, string> {
-  if (!nodes) return new Map()
+export function namesOf(nodes: readonly MeshNode[] | undefined): ReadonlyMap<string, string> {
+  if (!nodes) return NO_NAMES
   let m = names.get(nodes)
   if (!m) names.set(nodes, (m = new Map(nodes.map((n) => [n.id, nodeName(n, n.id)]))))
   return m

@@ -55,7 +55,7 @@ function radioSummary(r: Radio | undefined, name: (id: string) => string): { reg
 }
 
 /** The Radio tab: region, preset, channels, MQTT topics and brokers. */
-export function RadioTab({ d, names }: { d: NodeView; names: Map<string, string> }) {
+export function RadioTab({ d, names }: { d: NodeView; names: ReadonlyMap<string, string> }) {
   const radio = radioSummary(d.radio, (n) => names.get(n) ?? n)
   return (
     <>
