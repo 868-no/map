@@ -171,6 +171,7 @@ type dayResult struct {
 	gz, br    []byte
 	immutable bool
 	tooLarge  bool // over dayMaxBytes compressed: stream it from the database instead
+	unsettled bool // not final yet (D-159): stream it, nothing to build or hold
 }
 
 func (s *Server) dayCount(result string) {
@@ -245,6 +246,11 @@ func (s *Server) observationsDay(ctx context.Context, in *DayInput) (*DayOutput,
 	res, err := s.sharedDay(ctx, db, p, head, st, key, br)
 	if err != nil {
 		return nil, err
+	}
+	if res.unsettled {
+		// Rows still to be decoded again, or the writer not past the day yet.
+		s.dayCount("uncached")
+		return s.streamDay(ctx, db, p, head, gz)
 	}
 	if res.tooLarge {
 		// Too large to hold: written from the database like a page, from
@@ -518,18 +524,25 @@ func (b *cappedBuffer) Write(p []byte) (int, error) {
 }
 
 // buildDay reads a day final by the clock from the database into a
-// compressed body, under a heavy-read slot. It is immutable when it may be:
-// the day had no row awaiting a new decoding, the writer was past it, and no
-// import started or ended while it was read (D-159).
+// compressed body, under a heavy-read slot, once the day is settled: no row
+// awaiting a new decoding and the writer past it (D-159); otherwise it
+// builds nothing and reports it unsettled. The body is immutable unless an
+// import started or ended while it was read.
 func (s *Server) buildDay(ctx context.Context, db rowsDB, p dayPlan, head ObservationsBody, st storage.HistoryState) (*dayResult, error) {
 	release, err := s.acquire(ctx)
 	if err != nil {
 		return nil, err
 	}
 	defer release()
-	immutable, err := db.DaySettled(ctx, p.day, p.after)
+	settled, err := db.DaySettled(ctx, p.day, p.after)
 	if err != nil {
 		return nil, err
+	}
+	if !settled {
+		// Nothing built would be stored: building both encodings (brotli at
+		// quality 9) for one request, again for the next, is left to the
+		// stream, which compresses as it reads.
+		return &dayResult{unsettled: true}, nil
 	}
 	src, err := db.Rows(ctx, p.rows)
 	if err != nil {
@@ -554,13 +567,10 @@ func (s *Server) buildDay(ctx context.Context, db rowsDB, p dayPlan, head Observ
 	if err != nil {
 		return nil, err
 	}
-	if immutable {
-		// An import that began (or ended) while the rows were read changes
-		// the revision or holds the lock: then this copy is not final.
-		now, err := db.History(ctx)
-		immutable = err == nil && now == st
-	}
-	return &dayResult{gz: gzBuf.Bytes(), br: brBuf.Bytes(), immutable: immutable}, nil
+	// An import that began (or ended) while the rows were read changes the
+	// revision or holds the lock: then this copy is not final.
+	now, err := db.History(ctx)
+	return &dayResult{gz: gzBuf.Bytes(), br: brBuf.Bytes(), immutable: err == nil && now == st}, nil
 }
 
 // dayETag is the strong validator of a day's final body; each encoding ("",
