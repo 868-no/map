@@ -10,8 +10,15 @@ pub struct Fx(u64);
 
 impl Hasher for Fx {
     fn finish(&self) -> u64 {
-        self.0
+        // The product's low bits depend only on the key's low bits, and
+        // the table indexes by low bits: rotating brings the well-mixed
+        // high bits down (as rustc-hash 2 does), so keys sharing low zero
+        // bits (hour starts, coarse coordinates) do not share buckets.
+        self.0.rotate_left(26)
     }
+    // Out of line: inlined into every map keyed by a string, the word loop
+    // grew the WebAssembly by about 10 KB.
+    #[inline(never)]
     fn write(&mut self, bytes: &[u8]) {
         // Eight bytes at a time, as rustc's FxHasher: strings (interned on
         // every row added) hash in an eighth of the steps.
