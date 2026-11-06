@@ -158,7 +158,7 @@ Public by default. For basic auth, create `deploy/caddy-auth/basic.caddy` (see t
   - `meshmap_ingest_accepted_total{packet_type,signature_status}`, `meshmap_ingest_rejected_total{category}` (duplicates, unparseable envelopes and topics, `oversize`, `map_report_invalid` and `db_refused_row`, rows the database refused as data errors (SQLSTATE class 22/23), dropped instead of stalling the writer; packets that fail keys, decoding or verification are accepted as `encrypted`/`invalid` header-only rows)
   - `meshmap_ingest_dropped_total{reason}` (queue full = data loss window)
   - `meshmap_ingest_duplicate_deliveries_total{broker}`, `meshmap_ingest_provenance_updates_total`
-  - `meshmap_writer_*`, `meshmap_identities`, `meshmap_retention_deleted_rows_total`
+  - `meshmap_writer_*`, `meshmap_identities` (retention's deleted rows are in `/health/ready`, from the maintenance process)
   - `meshmap_api_day_requests_total{result}` (whole days, D-158), `meshmap_cache_errors_total{op}`
 
 ## Data loss windows

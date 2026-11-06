@@ -139,8 +139,7 @@ func maintenanceCmd() *cobra.Command {
 				return err
 			}
 			c := openCache(e, log)
-			r := &maintenance.Runner{Pool: pool, Cache: c, Months: e.RetentionMonths, Interval: time.Duration(e.MaintenanceInterval) * time.Hour,
-				Metrics: observability.NewMetrics(), Log: log}
+			r := &maintenance.Runner{Pool: pool, Cache: c, Months: e.RetentionMonths, Interval: time.Duration(e.MaintenanceInterval) * time.Hour, Log: log}
 			if once {
 				st, err := r.RunOnce(cmd.Context())
 				if err != nil {

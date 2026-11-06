@@ -15,7 +15,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/868-no/map/internal/cache"
-	"github.com/868-no/map/internal/observability"
 	"github.com/868-no/map/internal/storage"
 	"github.com/868-no/map/internal/window"
 )
@@ -45,15 +44,8 @@ type Runner struct {
 	Cache    *cache.Client // may be nil
 	Months   int
 	Interval time.Duration
-	Metrics  *observability.Metrics
 	Log      *slog.Logger
 	Now      func() time.Time
-}
-
-func (r *Runner) count(n int64) {
-	if r.Metrics != nil && n > 0 {
-		r.Metrics.RetentionRows.Add(float64(n))
-	}
 }
 
 func (r *Runner) now() time.Time {
@@ -99,7 +91,6 @@ func (r *Runner) RunOnce(ctx context.Context) (Status, error) {
 			return st, err
 		}
 		st.DeletedRows += n
-		r.count(n)
 		r.Log.Info("retention dropped a month", "partition", storage.PartitionName(m), "rows", n)
 	}
 	var trimmed int64
@@ -113,7 +104,6 @@ func (r *Runner) RunOnce(ctx context.Context) (Status, error) {
 		}
 		n := tag.RowsAffected()
 		trimmed += n
-		r.count(n)
 		if n < chunkSize {
 			break
 		}
