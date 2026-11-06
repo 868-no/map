@@ -237,7 +237,13 @@ pub fn movements_of(by_node: &FxMap<u32, Vec<&Row>>, anchored: &FxMap<u32, Ancho
         // Judge movement on its finest positions: a node that reports precise
         // Position packets and coarse map reports moves within the coarse
         // cells unseen, and mixing the two inflates the threshold.
-        let finest = (0..=32u32).rev().find(|&b| pts.iter().filter(|r| bits(&r.pos().unwrap()) == b).count() >= 2);
+        let mut at = [0u32; 33];
+        for r in &pts {
+            if let Some(n) = at.get_mut(bits(&r.pos().unwrap()) as usize) {
+                *n += 1
+            }
+        }
+        let finest = (0..=32u32).rev().find(|&b| at[b as usize] >= 2);
         let judged: Vec<&Row> = match finest {
             Some(b) => pts.iter().copied().filter(|r| bits(&r.pos().unwrap()) == b).collect(),
             None => pts.clone(),

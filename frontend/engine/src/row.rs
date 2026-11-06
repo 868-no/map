@@ -3,6 +3,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::borrow::Cow;
+use std::rc::Rc;
 
 use crate::util::{key64, key_hex, map, FxMap};
 
@@ -11,8 +12,9 @@ use crate::util::{key64, key_hex, map, FxMap};
 /// string worked out once when it is interned, so hot loops never compare
 /// strings.
 pub struct Interner {
-    strs: Vec<String>,
-    ids: FxMap<String, u32>,
+    /// Each string once, shared by the list and the lookup.
+    strs: Vec<Rc<str>>,
+    ids: FxMap<Rc<str>, u32>,
     facts: Vec<Facts>,
 }
 
@@ -72,9 +74,10 @@ impl Interner {
             return i;
         }
         let i = self.strs.len() as u32;
-        self.strs.push(s.to_string());
-        self.ids.insert(s.to_string(), i);
         self.facts.push(Facts::of(s));
+        let s: Rc<str> = s.into();
+        self.ids.insert(s.clone(), i);
+        self.strs.push(s);
         i
     }
     pub fn get(&self, s: &str) -> Option<u32> {

@@ -169,7 +169,7 @@ impl Engine {
                 };
                 // A traceroute request: its replies record its whole way to the target.
                 let replies: Vec<&row::Row> = match rows.first().filter(|r| r.traceroute().is_some_and(|t| t.valid && !t.is_reply)).and_then(|r| r.pid.map(|p| (r.src, p))) {
-                    Some((src, pid)) => all.iter().copied().filter(|r| r.dst == Some(src) && r.traceroute().is_some_and(|t| t.valid && t.is_reply && t.request == pid)).collect(),
+                    Some((src, pid)) => index.traceroute_replies(pid, src, &all).collect(),
                     None => vec![],
                 };
                 let b = &self.built.as_ref().unwrap().1;
@@ -390,9 +390,16 @@ impl Engine {
                 // ACK's the way back (D-172).
                 if let Some(rt) = r.routing().filter(|rt| Some(rt.kind) == ack && rt.request != 0) {
                     let sender = r.dst.unwrap_or(u32::MAX);
-                    let original: Vec<&row::Row> = self.store.slice(r.t - ACK_LOOKBACK_MS, r.t + 1).iter().filter(|o| o.src == sender && o.pid == Some(rt.request) && Some(o.ty) != invalid).collect();
-                    // The ACK's own copies so far, this one last: the way it took back.
-                    let mut copies: Vec<&row::Row> = self.store.slice(r.t - ACK_LOOKBACK_MS, r.t + 1).iter().filter(|o| o.lp == r.lp && Some(o.ty) != invalid).collect();
+                    let (mut original, mut copies): (Vec<&row::Row>, Vec<&row::Row>) = (vec![], vec![]);
+                    for o in self.store.slice(r.t - ACK_LOOKBACK_MS, r.t + 1).iter().filter(|o| Some(o.ty) != invalid) {
+                        if o.src == sender && o.pid == Some(rt.request) {
+                            original.push(o)
+                        }
+                        // The ACK's own copies so far, this one last: the way it took back.
+                        if o.lp == r.lp {
+                            copies.push(o)
+                        }
+                    }
                     copies.push(r);
                     t.extend(packets::delivery_ping(r, ack, &original, &copies, &b.ctx, &b.roles, &self.i));
                 }

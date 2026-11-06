@@ -250,18 +250,25 @@ pub fn packet_log(rows: &[&Row], num: u32, ctx: &RelayContext, replies: &ReplyIn
 pub struct ReplyIndex {
     by_request: FxMap<(u32, u32), Vec<u32>>, // (request id, addressed to) -> rows
     by_id: FxMap<(u32, u32), u64>,           // (sender, packet id) -> packet key
+    traceroutes: FxMap<(u32, u32), Vec<u32>>, // (request id, addressed to) -> valid traceroute replies
     /// How many rows it was made from.
     pub rows: usize,
 }
 
 impl ReplyIndex {
     pub fn new(rows: &[&Row]) -> Self {
-        let mut ix = ReplyIndex { by_request: map(), by_id: map(), rows: rows.len() };
+        let mut ix = ReplyIndex { by_request: map(), by_id: map(), traceroutes: map(), rows: rows.len() };
         for (k, &r) in rows.iter().enumerate() {
             if let (Some(rt), Some(d)) = (r.routing(), r.dst)
                 && rt.request != 0
             {
                 ix.by_request.entry((rt.request, d)).or_default().push(k as u32);
+            }
+            if let (Some(t), Some(d)) = (r.traceroute(), r.dst)
+                && t.valid
+                && t.is_reply
+            {
+                ix.traceroutes.entry((t.request, d)).or_default().push(k as u32);
             }
             if let Some(p) = r.pid.filter(|&p| p != 0) {
                 ix.by_id.entry((r.src, p)).or_insert(r.lp);
@@ -285,12 +292,21 @@ impl ReplyIndex {
     /// The routing rows answering `sender`'s packet `pid`. rows: those it
     /// was made from.
     pub fn answering<'a>(&self, pid: u32, sender: u32, rows: &[&'a Row]) -> impl Iterator<Item = &'a Row> {
+        debug_assert_eq!(rows.len(), self.rows, "ReplyIndex used with other rows than it was made from");
         self.by_request.get(&(pid, sender)).into_iter().flatten().map(|&k| rows[k as usize])
+    }
+
+    /// The valid traceroute replies to `sender`'s request `pid`. rows: those
+    /// it was made from.
+    pub fn traceroute_replies<'a>(&self, pid: u32, sender: u32, rows: &[&'a Row]) -> impl Iterator<Item = &'a Row> {
+        debug_assert_eq!(rows.len(), self.rows, "ReplyIndex used with other rows than it was made from");
+        self.traceroutes.get(&(pid, sender)).into_iter().flatten().map(|&k| rows[k as usize])
     }
 
     /// Replies to `sender`'s packet `pid`, grouped by who answered and how.
     /// rows: those it was made from.
     pub fn replies(&self, pid: u32, sender: u32, rows: &[&Row], i: &Interner) -> Vec<Reply> {
+        debug_assert_eq!(rows.len(), self.rows, "ReplyIndex used with other rows than it was made from");
         let Some(rs) = self.by_request.get(&(pid, sender)) else { return vec![] };
         let mut groups: FxMap<(u32, u32, u32), FxSet<u64>> = map();
         let mut order = vec![];
