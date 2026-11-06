@@ -146,9 +146,11 @@ function useDockWidth() {
     window.addEventListener('resize', onResize)
     return () => window.removeEventListener('resize', onResize)
   }, [])
-  const set = useCallback((w: number | null) => {
+  // A drag applies each step but stores and announces the width only once it ends (persist).
+  const set = useCallback((w: number | null, persist = true) => {
     width.current = w === null ? DEFAULT_WIDTH : clampWidth(w)
     applyWidth(w === null ? null : width.current)
+    if (!persist) return
     storeWidth(w === null ? null : width.current)
     setShown(width.current)
   }, [])
@@ -166,8 +168,9 @@ export function Dock({ open, onClose, children }: { open: PanelId | null; onClos
     document.body.classList.add('resizing')
   }
   // The panel sits left of the rail: dragging left widens it.
-  const onPointerMove = (e: PointerEvent<HTMLDivElement>) => drag.current && set(drag.current.w + drag.current.x - e.clientX)
+  const onPointerMove = (e: PointerEvent<HTMLDivElement>) => drag.current && set(drag.current.w + drag.current.x - e.clientX, false)
   const onPointerUp = () => {
+    if (drag.current) set(width.current)
     drag.current = null
     document.body.classList.remove('resizing')
   }
