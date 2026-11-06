@@ -84,10 +84,10 @@ func (t *TrendHours) refresh(ctx context.Context, pool *pgxpool.Pool, now time.T
 		return err
 	}
 	t.oldest = oldest
-	t.last = time.Now()
 	if oldest == nil {
 		t.hours = map[time.Time]*HourSummary{}
 		t.seenID, t.olderID = 0, 0
+		t.last = time.Now()
 		return nil
 	}
 	first := oldest.UTC().Truncate(time.Hour)
@@ -150,6 +150,10 @@ func (t *TrendHours) refresh(ctx context.Context, pool *pgxpool.Pool, now time.T
 		t.olderID = t.seenID
 	}
 	t.seenID = m
+	// Fresh only once complete: a refresh cut short (an error, the request
+	// ending) leaves the hours it read, and the next request carries on
+	// from the last of them instead of serving partial sums as fresh.
+	t.last = time.Now()
 	return nil
 }
 
@@ -223,7 +227,7 @@ func (t *TrendHours) readRange(ctx context.Context, pool *pgxpool.Pool, lo, hi t
 // between, whatever bucket or zone they ask for, reuse the summaries. The
 // look and the refresh share the lock, so requests arriving while one
 // refreshes wait for it and then find the summaries fresh, instead of each
-// reading the log again in turn.
+// reading the log again in turn; if it failed, the next one carries it on.
 func (t *TrendHours) RefreshEvery(ctx context.Context, pool *pgxpool.Pool, now time.Time, every time.Duration) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
