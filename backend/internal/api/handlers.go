@@ -295,7 +295,9 @@ func (s *Server) observations(ctx context.Context, in *ObservationsInput) (*Obse
 		if page != nil {
 			defer page.Close()
 		}
-		if err := writeObservations(hc.BodyWriter(), head, page, after); err != nil {
+		dst, done := stallGuard(hc)
+		defer done()
+		if err := writeObservations(dst, head, page, after); err != nil {
 			// Headers are gone: cut the response so the client sees a
 			// truncated body, never a well-formed partial page.
 			s.Log.Warn("observations stream aborted", "err", err)

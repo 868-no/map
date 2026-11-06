@@ -262,15 +262,17 @@ func (s *Server) observationsDay(ctx context.Context, in *DayInput) (*DayOutput,
 	}
 	return &DayOutput{Body: func(hc huma.Context) {
 		dayHeaders(hc, res.immutable, dayETag(gen, in.Date, enc))
+		dst, done := stallGuard(hc)
+		defer done()
 		if enc != "" {
 			hc.SetHeader("Content-Encoding", enc)
 			hc.SetHeader("Content-Length", strconv.Itoa(len(body)))
-			_, _ = hc.BodyWriter().Write(body)
+			_, _ = dst.Write(body)
 			return
 		}
 		zr, err := gzip.NewReader(bytes.NewReader(res.gz))
 		if err == nil {
-			_, err = io.Copy(hc.BodyWriter(), zr)
+			_, err = io.Copy(dst, zr)
 		}
 		if err != nil {
 			s.Log.Warn("day stream aborted", "err", err)
@@ -312,15 +314,8 @@ func (s *Server) streamDay(ctx context.Context, db rowsDB, p dayPlan, head Obser
 		defer src.Close()
 		dayHeaders(hc, false, "")
 		head.Now = s.now()
-		var dst io.Writer = hc.BodyWriter()
-		if rw, ok := dst.(http.ResponseWriter); ok {
-			// The read slot and the database connection are held for as long
-			// as the client takes: one that stops reading for stallLimit ends
-			// the stream and frees them.
-			rc := http.NewResponseController(rw)
-			defer func() { _ = rc.SetWriteDeadline(time.Time{}) }() // the connection may serve another request
-			dst = stallWriter{dst, rc}
-		}
+		dst, done := stallGuard(hc)
+		defer done()
 		var zw *gzip.Writer
 		if gz {
 			hc.SetHeader("Content-Encoding", "gzip")
@@ -338,12 +333,29 @@ func (s *Server) streamDay(ctx context.Context, db rowsDB, p dayPlan, head Obser
 	}}, nil
 }
 
-// stallLimit is how long one write of a streamed day may wait on the client.
+// stallLimit is how long one write of a response body may wait on the client.
 const stallLimit = 30 * time.Second
 
+// stallGuard wraps hc's body writer in a stallWriter, and returns the
+// function that lifts the deadline again once the body is written (the
+// connection may serve another request). A body holding a read slot, a
+// database connection or a large buffer is held for as long as the client
+// takes: the request's own deadline cancels its query but cannot unblock a
+// write to a client that stopped reading, which this does.
+func stallGuard(hc huma.Context) (io.Writer, func()) {
+	w := hc.BodyWriter()
+	rw, ok := w.(http.ResponseWriter)
+	if !ok {
+		return w, func() {}
+	}
+	rc := http.NewResponseController(rw)
+	return stallWriter{w, rc}, func() { _ = rc.SetWriteDeadline(time.Time{}) }
+}
+
 // stallWriter moves the connection's write deadline stallLimit ahead before
-// each write, so a slow client still gets the whole day but a stalled one
-// does not hold the stream open.
+// each write: a write that waits longer on the client fails, ending the
+// response. A slow client that keeps reading is limited only by the
+// request's deadline.
 type stallWriter struct {
 	w  io.Writer
 	rc *http.ResponseController
