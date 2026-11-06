@@ -132,37 +132,50 @@ function PacketLogs({ id, names, positioned, moved }: { id: string; names: Reado
   const live = useStore((s) => s.win.live)
   const liveRows = useLiveLog((s) => s.rows)
   const liveRelays = useLiveLog((s) => s.relays)
-  const entries = useMemo(() => {
+  // The built log, sorted once per build: live deltas only add to it.
+  const built = useMemo(() => {
     const all: Entry[] = [
       ...(data?.own ?? []).map((p) => ({ ...p, kind: 'own' as const })),
       ...(withRelayed ? (data?.relayed ?? []).map((p) => ({ ...p, kind: 'relayed' as const, gateways: p.gateways.length })) : []),
       ...(data?.inbound ?? []).map((p) => ({ ...p, kind: 'inbound' as const, to: id, gateways: 0 })),
     ]
+    const ms = new Map(all.map((e) => [e, Date.parse(e.at)]))
+    return { list: all.sort((a, b) => ms.get(b)! - ms.get(a)!), have: new Set(all.map((e) => e.kind + e.lp)) }
+  }, [data, withRelayed, id])
+  const entries = useMemo(() => {
     // Live packets newer than what the log was built from, until the next
     // rebuild has them: own and addressed to it from the rows, relayed from
-    // the pings' attribution, as the animation shows them.
-    if (live && data) {
-      const until = Date.parse(data.meta.data_until)
-      const have = new Set(all.map((e) => e.kind + e.lp))
-      const row = new Map(liveRows.map((r) => [r.lp, r]))
-      const add = (e: Entry) => !have.has(e.kind + e.lp) && (have.add(e.kind + e.lp), all.push(e))
-      for (const r of liveRows) {
-        if (r.t <= until) continue
-        const at = new Date(r.t).toISOString()
-        if (r.src === id) add({ kind: 'own', lp: r.lp, at, type: r.type, to: r.dst, gateways: 0, signature: '', pending: true })
-        else if (r.dst === id && (r.type === 'routing' || r.type === 'direct_message')) add({ kind: 'inbound', lp: r.lp, at, type: r.type, to: id, origin: r.src, gateways: 0, pending: true })
-      }
-      if (withRelayed) {
-        for (const x of liveRelays) {
-          const r = row.get(x.lp)
-          if (x.tx !== id || !r || r.src === id || r.t <= until) continue
-          add({ kind: 'relayed', lp: r.lp, at: new Date(r.t).toISOString(), type: r.type, to: r.dst, origin: r.src, evidence: [], gateways: 0, pending: true })
-        }
+    // the pings' attribution, as the animation shows them. All are newer
+    // than the built entries, so they go first.
+    if (!live || !data) return built.list
+    const until = Date.parse(data.meta.data_until)
+    const have = new Set<string>()
+    const pending: { e: Entry; t: number }[] = []
+    const add = (e: Entry, t: number) => {
+      const k = e.kind + e.lp
+      if (built.have.has(k) || have.has(k)) return
+      have.add(k)
+      pending.push({ e, t })
+    }
+    for (const r of liveRows) {
+      if (r.t <= until) continue
+      const at = new Date(r.t).toISOString()
+      if (r.src === id) add({ kind: 'own', lp: r.lp, at, type: r.type, to: r.dst, gateways: 0, signature: '', pending: true }, r.t)
+      else if (r.dst === id && (r.type === 'routing' || r.type === 'direct_message')) add({ kind: 'inbound', lp: r.lp, at, type: r.type, to: id, origin: r.src, gateways: 0, pending: true }, r.t)
+    }
+    if (withRelayed) {
+      const mine = liveRelays.filter((x) => x.tx === id)
+      const row = mine.length ? new Map(liveRows.map((r) => [r.lp, r])) : undefined
+      for (const x of mine) {
+        const r = row!.get(x.lp)
+        if (!r || r.src === id || r.t <= until) continue
+        add({ kind: 'relayed', lp: r.lp, at: new Date(r.t).toISOString(), type: r.type, to: r.dst, origin: r.src, evidence: [], gateways: 0, pending: true }, r.t)
       }
     }
-    const ms = new Map(all.map((e) => [e, Date.parse(e.at)]))
-    return all.sort((a, b) => ms.get(b)! - ms.get(a)!)
-  }, [data, withRelayed, id, live, liveRows, liveRelays])
+    if (!pending.length) return built.list
+    pending.sort((a, b) => b.t - a.t)
+    return [...pending.map((p) => p.e), ...built.list]
+  }, [built, data, withRelayed, id, live, liveRows, liveRelays])
   // Rows that arrive while the log is open slide in; what is there when it
   // opens, or appears with the relayed toggle, does not. Keyed like the rows,
   // so a pending row replaced by its full entry is not animated again.
