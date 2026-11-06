@@ -42754,7 +42754,7 @@
         "nodeinfo": 591,
         "position": 459
       },
-      "edges": 95,
+      "edges": 96,
       "estimated": 0,
       "first_event": "2026-10-31T03:17:03.038Z",
       "last_event": "2026-10-31T15:16:57.913Z",
@@ -42766,8 +42766,8 @@
       "referenced": 0
     },
     "diagnostics": {
-      "relay_ambiguous": 136,
-      "relay_unmatched": 225
+      "relay_ambiguous": 132,
+      "relay_unmatched": 245
     },
     "edges": [
       {
@@ -43033,6 +43033,38 @@
       },
       {
         "confidence": "high",
+        "dst": "!4c6575d4",
+        "dst_num": 1281717716,
+        "evidence": {
+          "direct_rf": 6,
+          "neighbor": 0,
+          "relay_hint": 65,
+          "traceroute": 0
+        },
+        "first_at": "2026-10-31T03:17:41.279Z",
+        "inferred": false,
+        "last_at": "2026-10-31T15:15:53.878Z",
+        "reason": "heard directly by the gateway repeatedly",
+        "rssi": {
+          "last": -84.0,
+          "max": -82.0,
+          "median": -84.0,
+          "min": -84.0,
+          "n": 71
+        },
+        "samples": 71,
+        "snr": {
+          "last": 12.0,
+          "max": 13.0,
+          "median": 12.25,
+          "min": 10.25,
+          "n": 71
+        },
+        "src": "!f66adc9c",
+        "src_num": 4134198428
+      },
+      {
+        "confidence": "high",
         "dst": "!2c14bd59",
         "dst_num": 739556697,
         "evidence": {
@@ -43062,6 +43094,38 @@
         },
         "src": "!5028b360",
         "src_num": 1344844640
+      },
+      {
+        "confidence": "medium",
+        "dst": "!b2a114e3",
+        "dst_num": 2996901091,
+        "evidence": {
+          "direct_rf": 1,
+          "neighbor": 0,
+          "relay_hint": 60,
+          "traceroute": 0
+        },
+        "first_at": "2026-10-31T09:43:26.051Z",
+        "inferred": false,
+        "last_at": "2026-10-31T13:30:50.862Z",
+        "reason": "heard directly by the gateway once or twice",
+        "rssi": {
+          "last": -114.0,
+          "max": -107.0,
+          "median": -112.0,
+          "min": -115.0,
+          "n": 61
+        },
+        "samples": 61,
+        "snr": {
+          "last": 2.0,
+          "max": 6.25,
+          "median": 2.75,
+          "min": -4.0,
+          "n": 60
+        },
+        "src": "!4d71933f",
+        "src_num": 1299288895
       },
       {
         "confidence": "high",
@@ -43126,38 +43190,6 @@
         },
         "src": "!48bff5f5",
         "src_num": 1220539893
-      },
-      {
-        "confidence": "medium",
-        "dst": "!84965cf6",
-        "dst_num": 2224446710,
-        "evidence": {
-          "direct_rf": 1,
-          "neighbor": 0,
-          "relay_hint": 20,
-          "traceroute": 0
-        },
-        "first_at": "2026-10-31T03:26:01.604Z",
-        "inferred": false,
-        "last_at": "2026-10-31T14:33:50.827Z",
-        "reason": "heard directly by the gateway once or twice",
-        "rssi": {
-          "last": -106.0,
-          "max": -103.0,
-          "median": -105.0,
-          "min": -107.0,
-          "n": 21
-        },
-        "samples": 21,
-        "snr": {
-          "last": -5.25,
-          "max": -1.75,
-          "median": -4.5,
-          "min": -9.5,
-          "n": 21
-        },
-        "src": "!672f1873",
-        "src_num": 1731139699
       },
       {
         "confidence": "medium",
@@ -43614,6 +43646,38 @@
       },
       {
         "confidence": "high",
+        "dst": "!9b0f4bd5",
+        "dst_num": 2601470933,
+        "evidence": {
+          "direct_rf": 4,
+          "neighbor": 0,
+          "relay_hint": 5,
+          "traceroute": 0
+        },
+        "first_at": "2026-10-31T04:01:35.050Z",
+        "inferred": false,
+        "last_at": "2026-10-31T13:01:36.541Z",
+        "reason": "heard directly by the gateway repeatedly",
+        "rssi": {
+          "last": -123.0,
+          "max": -122.0,
+          "median": -123.0,
+          "min": -123.0,
+          "n": 9
+        },
+        "samples": 9,
+        "snr": {
+          "last": -7.25,
+          "max": -5.5,
+          "median": -6.25,
+          "min": -7.25,
+          "n": 9
+        },
+        "src": "!c8ad4e48",
+        "src_num": 3366800968
+      },
+      {
+        "confidence": "high",
         "dst": "!39b01fc6",
         "dst_num": 967843782,
         "evidence": {
@@ -43643,38 +43707,6 @@
         },
         "src": "!f46cc74c",
         "src_num": 4100769612
-      },
-      {
-        "confidence": "high",
-        "dst": "!4c6575d4",
-        "dst_num": 1281717716,
-        "evidence": {
-          "direct_rf": 6,
-          "neighbor": 0,
-          "relay_hint": 3,
-          "traceroute": 0
-        },
-        "first_at": "2026-10-31T03:17:41.279Z",
-        "inferred": false,
-        "last_at": "2026-10-31T15:15:53.878Z",
-        "reason": "heard directly by the gateway repeatedly",
-        "rssi": {
-          "last": -84.0,
-          "max": -83.0,
-          "median": -83.0,
-          "min": -84.0,
-          "n": 9
-        },
-        "samples": 9,
-        "snr": {
-          "last": 12.0,
-          "max": 12.75,
-          "median": 12.25,
-          "min": 10.25,
-          "n": 9
-        },
-        "src": "!f66adc9c",
-        "src_num": 4134198428
       },
       {
         "confidence": "medium",
@@ -43776,6 +43808,38 @@
         },
         "src": "!b1610d41",
         "src_num": 2975927617
+      },
+      {
+        "confidence": "high",
+        "dst": "!b1610d41",
+        "dst_num": 2975927617,
+        "evidence": {
+          "direct_rf": 4,
+          "neighbor": 0,
+          "relay_hint": 3,
+          "traceroute": 0
+        },
+        "first_at": "2026-10-31T04:01:34.641Z",
+        "inferred": false,
+        "last_at": "2026-10-31T14:21:24.194Z",
+        "reason": "heard directly by the gateway repeatedly",
+        "rssi": {
+          "last": -70.0,
+          "max": -69.0,
+          "median": -70.0,
+          "min": -71.0,
+          "n": 7
+        },
+        "samples": 7,
+        "snr": {
+          "last": 12.5,
+          "max": 13.0,
+          "median": 12.0,
+          "min": 8.0,
+          "n": 7
+        },
+        "src": "!c8ad4e48",
+        "src_num": 3366800968
       },
       {
         "confidence": "high",
@@ -44835,70 +44899,6 @@
       },
       {
         "confidence": "high",
-        "dst": "!9b0f4bd5",
-        "dst_num": 2601470933,
-        "evidence": {
-          "direct_rf": 4,
-          "neighbor": 0,
-          "relay_hint": 0,
-          "traceroute": 0
-        },
-        "first_at": "2026-10-31T04:01:35.050Z",
-        "inferred": false,
-        "last_at": "2026-10-31T13:01:36.541Z",
-        "reason": "heard directly by the gateway repeatedly",
-        "rssi": {
-          "last": -123.0,
-          "max": -122.0,
-          "median": -122.5,
-          "min": -123.0,
-          "n": 4
-        },
-        "samples": 4,
-        "snr": {
-          "last": -7.25,
-          "max": -6.0,
-          "median": -6.25,
-          "min": -7.25,
-          "n": 4
-        },
-        "src": "!c8ad4e48",
-        "src_num": 3366800968
-      },
-      {
-        "confidence": "high",
-        "dst": "!b1610d41",
-        "dst_num": 2975927617,
-        "evidence": {
-          "direct_rf": 4,
-          "neighbor": 0,
-          "relay_hint": 0,
-          "traceroute": 0
-        },
-        "first_at": "2026-10-31T04:01:34.641Z",
-        "inferred": false,
-        "last_at": "2026-10-31T13:01:36.184Z",
-        "reason": "heard directly by the gateway repeatedly",
-        "rssi": {
-          "last": -70.0,
-          "max": -70.0,
-          "median": -70.0,
-          "min": -71.0,
-          "n": 4
-        },
-        "samples": 4,
-        "snr": {
-          "last": 8.0,
-          "max": 13.0,
-          "median": 10.88,
-          "min": 8.0,
-          "n": 4
-        },
-        "src": "!c8ad4e48",
-        "src_num": 3366800968
-      },
-      {
-        "confidence": "high",
         "dst": "!f6a6fd67",
         "dst_num": 4138138983,
         "evidence": {
@@ -44960,6 +44960,38 @@
         },
         "src": "!df042dd3",
         "src_num": 3741593043
+      },
+      {
+        "confidence": "low",
+        "dst": "!699cb4a0",
+        "dst_num": 1771877536,
+        "evidence": {
+          "direct_rf": 0,
+          "neighbor": 0,
+          "relay_hint": 4,
+          "traceroute": 0
+        },
+        "first_at": "2026-10-31T03:24:19.436Z",
+        "inferred": true,
+        "last_at": "2026-10-31T10:43:36.215Z",
+        "reason": "only guessed: relay bytes matched one known node; never observed directly",
+        "rssi": {
+          "last": -107.0,
+          "max": -106.0,
+          "median": -107.0,
+          "min": -107.0,
+          "n": 4
+        },
+        "samples": 4,
+        "snr": {
+          "last": -5.0,
+          "max": -4.75,
+          "median": -5.25,
+          "min": -6.5,
+          "n": 4
+        },
+        "src": "!f25e6bab",
+        "src_num": 4066274219
       },
       {
         "confidence": "medium",
@@ -45778,35 +45810,35 @@
       },
       {
         "confidence": "medium",
-        "dst": "!b2a114e3",
-        "dst_num": 2996901091,
+        "dst": "!84965cf6",
+        "dst_num": 2224446710,
         "evidence": {
           "direct_rf": 1,
           "neighbor": 0,
           "relay_hint": 0,
           "traceroute": 0
         },
-        "first_at": "2026-10-31T12:38:53.632Z",
+        "first_at": "2026-10-31T09:02:00.943Z",
         "inferred": false,
-        "last_at": "2026-10-31T12:38:53.632Z",
+        "last_at": "2026-10-31T09:02:00.943Z",
         "reason": "heard directly by the gateway once or twice",
         "rssi": {
-          "last": -113.0,
-          "max": -113.0,
-          "median": -113.0,
-          "min": -113.0,
+          "last": -103.0,
+          "max": -103.0,
+          "median": -103.0,
+          "min": -103.0,
           "n": 1
         },
         "samples": 1,
         "snr": {
-          "last": 2.25,
-          "max": 2.25,
-          "median": 2.25,
-          "min": 2.25,
+          "last": -4.75,
+          "max": -4.75,
+          "median": -4.75,
+          "min": -4.75,
           "n": 1
         },
-        "src": "!4d71933f",
-        "src_num": 1299288895
+        "src": "!672f1873",
+        "src_num": 1731139699
       },
       {
         "confidence": "medium",

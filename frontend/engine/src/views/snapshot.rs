@@ -90,6 +90,24 @@ pub fn is_silent_role(role: &str) -> bool {
     role == "CLIENT_MUTE"
 }
 
+/// Nodes that never rebroadcast in the window: their role now is one that
+/// never does, and so was every role they reported in it. A node that
+/// changed role (a router turned CLIENT_MUTE) relayed while it was a
+/// router, and stays a relay candidate for the whole window (D-177).
+fn silent_nodes(roles: &FxMap<u32, String>, nodeinfo: &[&Row], mapreport: &[&Row], i: &Interner) -> FxSet<u32> {
+    let mut out: FxSet<u32> = roles.iter().filter(|(_, r)| is_silent_role(r)).map(|(&n, _)| n).collect();
+    if out.is_empty() {
+        return out;
+    }
+    let reported = nodeinfo.iter().filter(|r| is_identity(r)).filter_map(|r| r.nodeinfo().map(|n| (r.src, n.role)));
+    for (n, role) in reported.chain(mapreport.iter().filter_map(|r| r.map_report().map(|m| (r.src, m.role)))) {
+        if role != 0 && !is_silent_role(i.s(role)) {
+            out.remove(&n);
+        }
+    }
+    out
+}
+
 /// Time-isolated nodes, links and counts. rows: in-window and filtered.
 /// Engine rules added after the server views were recorded (D-041); each can
 /// be switched off to compare with them.
@@ -99,11 +117,12 @@ pub struct Rules {
     pub mqtt_links: bool, // 0 dB traceroute hops are MQTT links, not radio (D-055)
     pub moves: bool,      // links use only evidence from after either end's latest move (D-073)
     pub signal: bool,     // a strong reading rules out relays too far away to give it (D-136)
+    pub range: bool,      // the relay range rests on repeated links between nodes that stayed put (D-177)
 }
 
 impl Default for Rules {
     fn default() -> Self {
-        Rules { silent: true, mqtt_links: true, moves: true, signal: true }
+        Rules { silent: true, mqtt_links: true, moves: true, signal: true, range: true }
     }
 }
 
@@ -209,7 +228,7 @@ pub fn build_snapshot(rows: &[&Row], i: &Interner, g: &GeoOptions, rules: Rules)
     let mut counts = window_counts(rows, i);
     let known: Vec<u32> = nodes.keys().copied().collect();
     let roles: FxMap<u32, String> = nodes.iter().filter_map(|(&n, x)| x.identity.as_ref().filter(|id| !id.role.is_empty()).map(|id| (n, id.role.clone()))).collect();
-    let silent: FxSet<u32> = if rules.silent { roles.iter().filter(|(_, r)| is_silent_role(r)).map(|(&n, _)| n).collect() } else { set() };
+    let silent: FxSet<u32> = if rules.silent { silent_nodes(&roles, &by.nodeinfo, &by.mapreport, i) } else { set() };
     let downlinkers: FxSet<u32> = nodes.iter().filter(|(_, x)| x.mqtt_downlink.is_some()).map(|(&n, _)| n).collect();
     // Nodes whose reports jump around one place get a narrowed position, and
     // their jumps are not movement (D-077). Nodes that moved (D-073): their
@@ -234,7 +253,7 @@ pub fn build_snapshot(rows: &[&Row], i: &Interner, g: &GeoOptions, rules: Rules)
     // Movers' latest positions say nothing of where they relayed or heard
     // a copy: the signal rule leaves them out (D-153).
     let mobile: FxSet<u32> = moves.keys().copied().collect();
-    let (mut er, mut ctx) = build_edges(rows, &by.neighborinfo, &hops, &known, pos, silent, rules.mqtt_links.then_some(&downlinkers), &moved, rules.signal, mobile);
+    let (mut er, mut ctx) = build_edges(rows, &by.neighborinfo, &hops, &known, pos, silent, rules.mqtt_links.then_some(&downlinkers), &moved, rules, mobile);
     if rules.mqtt_links {
         ctx.downlinkers = downlinkers;
     }

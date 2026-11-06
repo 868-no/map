@@ -812,7 +812,7 @@ mod tests {
         Row { detail: Some(Box::new(Detail::Traceroute(Traceroute { valid: true, is_reply: false, route, snr_towards: vec![], route_back: vec![], snr_back: vec![], request: 0 }))), ..r }
     }
     fn ctx(known: &[u32], links: &[(u32, u32)]) -> RelayContext {
-        RelayContext::new(known.iter().copied(), map(), links.iter().copied(), set())
+        RelayContext::new(known.iter().copied(), map(), links.iter().copied(), set(), set())
     }
     fn roles(m: &[(u32, &str)]) -> FxMap<u32, String> {
         m.iter().map(|&(n, r)| (n, r.to_string())).collect()
@@ -899,7 +899,7 @@ mod tests {
     fn relay_candidates_beyond_radio_range_are_excluded_but_never_unpositioned_ones() {
         let at = |lon: f64, lat: f64| LatLon { lat, lon };
         let mk = |pos: &[(u32, LatLon)], long: Option<(u32, u32)>| {
-            let mut c = RelayContext::new([A, C, C2, GW], pos.iter().copied().collect(), long, set());
+            let mut c = RelayContext::new([A, C, C2, GW], pos.iter().copied().collect(), long, set(), set());
             if long.is_some() {
                 c.max_range_m = 500_000.0;
             }

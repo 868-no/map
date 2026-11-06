@@ -300,6 +300,8 @@ pub fn distance_m(a: LatLon, b: LatLon) -> f64 {
 /// Relay candidates lie within the longest confirmed link plus margin, never below 50 km.
 pub const MIN_RELAY_RANGE_M: f64 = 50_000.0;
 pub const RELAY_RANGE_SLACK: f64 = 1.25;
+/// Samples a confirmed link needs before its length can set the relay range.
+pub const RANGE_MIN_SAMPLES: usize = 2;
 
 /// The most a link can gain between transmitter and receiver, in dB: 1 W
 /// transmitted, 10 dBi antennas at both ends and 20 dB for an amplified
@@ -346,6 +348,9 @@ pub struct RelayContext {
     confirmed: FxSet<(u32, u32)>,
     silent: FxSet<u32>, // known never to rebroadcast (CLIENT_MUTE)
     pub max_range_m: f64,
+    /// The range from every confirmed link, before D-177 (for comparing
+    /// with the old server views).
+    pub loose_range_m: f64,
     /// Probable MQTT downlinkers (D-054); empty when MQTT links are off.
     pub downlinkers: FxSet<u32>,
     /// Rule out relays too far away for the signal the gateway measured
@@ -363,23 +368,33 @@ fn pair(a: u32, b: u32) -> (u32, u32) {
 
 impl RelayContext {
     /// known: window nodes; pos: reported positions only; confirmed:
-    /// non-relay evidence pairs (src, dst); silent: nodes that never rebroadcast.
-    pub fn new(known: impl IntoIterator<Item = u32>, pos: FxMap<u32, LatLon>, confirmed: impl IntoIterator<Item = (u32, u32)>, silent: FxSet<u32>) -> Self {
-        let mut c = RelayContext { by_byte: vec![Vec::new(); 256], pos, confirmed: set(), silent, max_range_m: MIN_RELAY_RANGE_M, downlinkers: set(), signal_rule: true, mobile: set() };
+    /// non-relay evidence pairs (src, dst), one per sample; silent: nodes
+    /// that never rebroadcast; mobile: nodes that moved in the window.
+    pub fn new(known: impl IntoIterator<Item = u32>, pos: FxMap<u32, LatLon>, confirmed: impl IntoIterator<Item = (u32, u32)>, silent: FxSet<u32>, mobile: FxSet<u32>) -> Self {
+        let mut c = RelayContext { by_byte: vec![Vec::new(); 256], pos, confirmed: set(), silent, max_range_m: MIN_RELAY_RANGE_M, loose_range_m: MIN_RELAY_RANGE_M, downlinkers: set(), signal_rule: true, mobile };
         for k in known {
             c.by_byte[last_byte(k) as usize].push(k);
         }
-        let mut longest: f64 = 0.0;
+        let mut samples: FxMap<(u32, u32), usize> = map();
         for (a, b) in confirmed {
-            // Many samples share a pair: measure each pair once.
-            if !c.confirmed.insert(pair(a, b)) {
-                continue;
-            }
-            if let (Some(&pa), Some(&pb)) = (c.pos.get(&a), c.pos.get(&b)) {
-                longest = longest.max(distance_m(pa, pb));
+            *samples.entry(pair(a, b)).or_default() += 1;
+        }
+        // The range bound rests on links that can be trusted at their
+        // length: seen more than once, between nodes that stayed where they
+        // report. One report from a node since moved 275 km away widened it
+        // enough to credit a relay 296 km off (D-177). Every pair still
+        // breaks ties.
+        let (mut longest, mut loose): (f64, f64) = (0.0, 0.0);
+        for (&(a, b), &n) in &samples {
+            c.confirmed.insert((a, b));
+            let Some(d) = c.pos.get(&a).zip(c.pos.get(&b)).map(|(&pa, &pb)| distance_m(pa, pb)) else { continue };
+            loose = loose.max(d);
+            if n >= RANGE_MIN_SAMPLES && !c.mobile.contains(&a) && !c.mobile.contains(&b) {
+                longest = longest.max(d);
             }
         }
         c.max_range_m = MIN_RELAY_RANGE_M.max(longest * RELAY_RANGE_SLACK);
+        c.loose_range_m = MIN_RELAY_RANGE_M.max(loose * RELAY_RANGE_SLACK);
         c
     }
 
@@ -477,7 +492,7 @@ mod tests {
     }
 
     fn ctx(known: &[u32], confirmed: &[(u32, u32)]) -> RelayContext {
-        RelayContext::new(known.iter().copied(), map(), confirmed.iter().copied(), set())
+        RelayContext::new(known.iter().copied(), map(), confirmed.iter().copied(), set(), set())
     }
 
     #[test]
@@ -511,8 +526,26 @@ mod tests {
     fn silent_roles_are_never_relays() {
         let mut silent = set();
         silent.insert(0x1111_1142);
-        let c = RelayContext::new([0x1111_1142u32, 0x2222_2242], map(), [], silent);
+        let c = RelayContext::new([0x1111_1142u32, 0x2222_2242], map(), [], silent, set());
         assert_eq!(c.resolve(0x42, 1, 2, None), Some(Ok(0x2222_2242)));
+    }
+
+    #[test]
+    fn range_rests_on_repeated_links_between_nodes_that_stayed() {
+        // Gateway G in Trondheim; relay candidate F 300 km away. A link of
+        // 280 km seen once, or seen twice from a node that moved, must not
+        // widen the range enough to reach F (D-177).
+        let (g, f, a, b) = (0x0000_aa01u32, 0x1111_1142u32, 0x2222_2201u32, 0x3333_3302u32);
+        let mut pos = map();
+        pos.insert(g, LatLon { lat: 63.4, lon: 10.4 });
+        pos.insert(f, LatLon { lat: 61.2, lon: 7.1 });
+        pos.insert(a, LatLon { lat: 59.4, lon: 10.5 });
+        pos.insert(b, LatLon { lat: 61.9, lon: 10.2 });
+        let ctx = |n: usize, mobile: &[u32]| RelayContext::new([g, f, a, b], pos.clone(), std::iter::repeat_n((a, b), n), set(), mobile.iter().copied().collect());
+        assert_eq!(ctx(1, &[]).resolve(0x42, 5, g, None), None, "one sample: F out of range");
+        assert_eq!(ctx(2, &[b]).resolve(0x42, 5, g, None), None, "an end moved: F out of range");
+        assert_eq!(ctx(2, &[]).resolve(0x42, 5, g, None), Some(Ok(f)), "a repeated link between fixed nodes reaches F");
+        assert!(ctx(1, &[]).loose_range_m > 300_000.0, "the old bound, for the server comparison");
     }
 
     #[test]
@@ -521,7 +554,7 @@ mod tests {
         pos.insert(0x0000_aa01, LatLon { lat: 59.9, lon: 10.7 });
         pos.insert(0x1111_1142, LatLon { lat: 59.95, lon: 10.75 });
         pos.insert(0x2222_2242, LatLon { lat: 63.4, lon: 10.4 });
-        let c = RelayContext::new([0x0000_aa01u32, 0x1111_1142, 0x2222_2242], pos, [], set());
+        let c = RelayContext::new([0x0000_aa01u32, 0x1111_1142, 0x2222_2242], pos, [], set(), set());
         assert_eq!(c.resolve(0x42, 5, 0x0000_aa01, None), Some(Ok(0x1111_1142)));
     }
 
@@ -535,7 +568,7 @@ mod tests {
         pos.insert(g, LatLon { lat: 59.9, lon: 10.7 });
         pos.insert(m, LatLon { lat: 60.44, lon: 10.7 });
         pos.insert(p, LatLon { lat: 59.945, lon: 10.7 });
-        let mut c = RelayContext::new([g, m, p], pos, [], set());
+        let mut c = RelayContext::new([g, m, p], pos, [], set(), set());
         c.max_range_m = 100_000.0;
         assert_eq!(c.resolve(0x42, 5, g, Some(-50.0)), Some(Ok(p)), "static: M looks too far for the signal");
         c.mobile.insert(m);

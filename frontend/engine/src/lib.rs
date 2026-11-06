@@ -58,6 +58,11 @@ struct Options {
     /// (default on; off only to compare with the old server views) (D-136).
     #[serde(default = "yes")]
     signal_rule: bool,
+    /// Bound relay range by links seen more than once between nodes that
+    /// did not move (default on; off only to compare with the old server
+    /// views) (D-177).
+    #[serde(default = "yes")]
+    range_rule: bool,
 }
 
 fn yes() -> bool {
@@ -272,7 +277,7 @@ impl Engine {
                 terrain: std::mem::take(&mut self.geo.terrain),
             };
         }
-        self.rules = Rules { silent: o.silent_rule, mqtt_links: o.mqtt_links, moves: o.move_rule, signal: o.signal_rule };
+        self.rules = Rules { silent: o.silent_rule, mqtt_links: o.mqtt_links, moves: o.move_rule, signal: o.signal_rule, range: o.range_rule };
         self.built = None;
         Ok(())
     }
