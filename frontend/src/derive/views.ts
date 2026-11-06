@@ -83,6 +83,14 @@ export interface Estimate {
   reasons: string[]
 }
 
+/** A reported position a direct reception rules out (D-178). */
+export interface RejectedPosition extends Position {
+  gateway: string
+  rssi: number
+  distance_m: number
+  bound_m: number
+}
+
 export interface MeshNode {
   id: string
   num: number
@@ -90,6 +98,7 @@ export interface MeshNode {
   identity?: Identity
   position?: Position
   stale_position?: Position // newest report more than a day (a week for fixed nodes) before the window's latest data (D-094, D-138)
+  rejected_position?: RejectedPosition // newest report the radio rules out: ignored (D-178)
   telemetry?: Telemetry
   first_seen?: string
   last_seen?: string

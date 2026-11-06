@@ -75,6 +75,12 @@ export function OverviewTab({ d, snapNode, now, names }: { d: NodeView; snapNode
               {est ? 'Estimated instead:' : 'No estimate could be made, so it is not on the map.'}
             </div>
           )}
+          {d.rejected_position && (
+            <div className="stale-note" title="A gateway heard the packet carrying this position directly, at a signal too strong to have come that far (D-178)">
+              Reported position {d.rejected_position.lat.toFixed(4)}, {d.rejected_position.lon.toFixed(4)} ({formatLocal(d.rejected_position.observed_at)}) is ignored:{' '}
+              {d.rejected_position.gateway} heard it directly at {d.rejected_position.rssi} dBm, from at most {dist(d.rejected_position.bound_m)}, but it lies {dist(d.rejected_position.distance_m)} away.
+            </div>
+          )}
           {pos ? (
             <>
               {pos.lat.toFixed(5)}, {pos.lon.toFixed(5)}

@@ -4,8 +4,8 @@ use serde::Serialize;
 
 use super::{latest_by, newer, Downlink};
 use crate::geo::{precision_error_m, Estimate};
-use crate::graph::{distance_m, LatLon};
-use crate::row::{ty, Interner, Position as RowPos, Row};
+use crate::graph::{distance_m, max_distance_m, LatLon};
+use crate::row::{ty, HeardFrom, Interner, Position as RowPos, Row};
 use crate::util::{iso, map, node_id, set, FxMap, FxSet, BROADCAST};
 
 #[derive(Serialize, Clone, Debug)]
@@ -83,6 +83,21 @@ fn is_false(b: &bool) -> bool {
     !*b
 }
 
+/// A reported position the radio rules out (D-178): a gateway heard the
+/// packet carrying it directly, at a signal too strong for the distance
+/// between them.
+#[derive(Serialize, Clone, Debug)]
+pub struct RejectedPosition {
+    #[serde(flatten)]
+    pub position: Position,
+    /// The gateway whose direct reception contradicts it most.
+    pub gateway: String,
+    pub rssi: i32,
+    pub distance_m: f64,
+    /// The farthest that signal can have come from (graph::max_distance_m).
+    pub bound_m: f64,
+}
+
 #[derive(Serialize, Clone, Debug)]
 pub struct Node {
     pub id: String,
@@ -98,6 +113,10 @@ pub struct Node {
     /// since links drawn to an old place would mislead.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stale_position: Option<Position>,
+    /// Its newest position report the radio contradicts (D-178): ignored,
+    /// so the node is placed by its other reports or estimated.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rejected_position: Option<RejectedPosition>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub telemetry: Option<Telemetry>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -179,7 +198,7 @@ impl Node {
 
     pub(crate) fn new(n: u32) -> Self {
         Node {
-            id: node_id(n), num: n, status: "observed", identity: None, position: None, stale_position: None, telemetry: None, first_seen: None, last_seen: None, last_referenced: None, own_uplinks: 0,
+            id: node_id(n), num: n, status: "observed", identity: None, position: None, stale_position: None, rejected_position: None, telemetry: None, first_seen: None, last_seen: None, last_referenced: None, own_uplinks: 0,
             packets: 0, receptions: 0, gateway_receptions: 0, is_gateway: false, multi_uplink: false, signatures: Signatures::default(), brokers: None,
             mqtt_opt_out: false, estimate: None, estimate_note: None, mqtt_downlink: None, moved_at: None, track: None, airborne: false, refined: None, relaying: None, first: i64::MAX, last: i64::MIN, pos: None,
         }
@@ -319,6 +338,70 @@ pub(super) fn fresh_position_rows<'a>(rows: &[&'a Row], now: i64, role: impl Fn(
         _ => STALE_POSITION_MS,
     };
     position_rows(rows).into_iter().partition(|(n, _)| newest.get(n).is_some_and(|r| now - r.t <= limit(*n)))
+}
+
+/// One Position packet's contradiction (D-178): the gateway that rules it
+/// out by the widest margin, and how far beyond its signal's bound it lies.
+#[derive(Clone, Copy, Debug)]
+pub struct Contradiction {
+    pub gateway: u32,
+    pub rssi: i32,
+    pub distance_m: f64,
+    pub bound_m: f64,
+}
+
+/// Position packets whose reported place the radio rules out (D-178), by
+/// logical packet. A gateway that heard a copy directly, with an RSSI, is
+/// no farther from its sender than the free-space bound for that signal
+/// (graph::max_distance_m, never below 15 km), widened by how far either
+/// shared place may be off at its precision; the gateway's own place is its
+/// position report nearest in time, so a gateway on the move
+/// is judged where it was. A packet is ruled out when most of the gateways
+/// that can judge it put it beyond the bound: one gateway reporting a wrong
+/// place of its own cannot outvote the rest. Map reports travel over MQTT,
+/// never heard directly, so are never judged.
+pub(crate) fn contradicted_positions(rows: &[&Row]) -> FxMap<u64, Contradiction> {
+    // Every node's reported places in time order: gateways' places.
+    let mut places: FxMap<u32, Vec<(i64, RowPos)>> = map();
+    for r in rows.iter().filter(|r| is_position(r)) {
+        places.entry(r.src).or_default().push((r.t, r.pos().unwrap()));
+    }
+    for v in places.values_mut() {
+        v.sort_by_key(|x| x.0);
+    }
+    let place_at = |n: u32, t: i64| -> Option<RowPos> {
+        let v = places.get(&n)?;
+        let k = v.partition_point(|x| x.0 < t);
+        [k.checked_sub(1), Some(k)].into_iter().flatten().filter_map(|k| v.get(k)).min_by_key(|x| (x.0 - t).abs()).map(|x| x.1)
+    };
+    // Per packet: gateways judging it, those ruling it out, and the widest margin.
+    #[derive(Default)]
+    struct Judged {
+        by: FxSet<u32>,
+        out: FxSet<u32>,
+        widest: Option<Contradiction>,
+    }
+    let mut judged: FxMap<u64, Judged> = map();
+    for &r in rows {
+        if r.ty != ty::POSITION || r.heard_from() != HeardFrom::Direct {
+            continue;
+        }
+        let (Some(p), Some(gw), Some(rssi)) = (r.pos(), r.gw, r.rssi) else { continue };
+        let Some(at) = place_at(gw, r.t) else { continue };
+        let distance_m = distance_m(LatLon { lat: p.lat, lon: p.lon }, LatLon { lat: at.lat, lon: at.lon });
+        // Either place may be off by its precision.
+        let off = |q: &RowPos| if q.known { precision_error_m(q.bits, q.lat) } else { 0.0 };
+        let bound_m = max_distance_m(rssi as f64) + off(&p) + off(&at);
+        let e = judged.entry(r.lp).or_default();
+        e.by.insert(gw);
+        if distance_m > bound_m {
+            e.out.insert(gw);
+            if e.widest.is_none_or(|c| distance_m - bound_m > c.distance_m - c.bound_m) {
+                e.widest = Some(Contradiction { gateway: gw, rssi, distance_m, bound_m });
+            }
+        }
+    }
+    judged.into_iter().filter(|(_, j)| j.out.len() * 2 > j.by.len()).filter_map(|(lp, j)| j.widest.map(|c| (lp, c))).collect()
 }
 
 /// Each node's position row: latest of each packet type, then choose_position.

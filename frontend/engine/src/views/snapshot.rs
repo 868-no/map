@@ -5,7 +5,7 @@ use std::cell::OnceCell;
 use serde::Serialize;
 
 use super::estimate::estimate;
-use super::{brokers, build_edges, downlinks, Downlink, identity_of, identity_of_report, is_device_telemetry, is_identity, is_named_report, latest_by, origins, position_of, fresh_position_rows, referenced, sig_counts, telemetry_of, traceroute_hops, Node};
+use super::{brokers, build_edges, downlinks, Downlink, identity_of, identity_of_report, is_device_telemetry, is_identity, is_named_report, latest_by, origins, position_of, fresh_position_rows, referenced, sig_counts, telemetry_of, traceroute_hops, Contradiction, Node, RejectedPosition};
 use crate::geo;
 use crate::graph::{Edge, LatLon, RelayContext};
 use crate::row::{Interner, Row};
@@ -79,6 +79,8 @@ pub struct Built {
     pub downlinks: FxMap<u32, Downlink>,
     /// The window's latest observation (stale positions).
     pub now: i64,
+    /// Position packets the radio rules out, by logical packet (D-178).
+    pub rejected: FxMap<u64, Contradiction>,
     /// Radio groups and preset evidence (node view), made on first use.
     pub presets: OnceCell<crate::channels::PresetIndex>,
     /// Routing replies by what they answer (node view, packet log), made on first use.
@@ -127,7 +129,17 @@ impl Default for Rules {
 }
 
 pub fn build_snapshot(rows: &[&Row], i: &Interner, g: &GeoOptions, rules: Rules) -> Built {
-    let by = super::ByType::new(rows);
+    let mut by = super::ByType::new(rows);
+    // Positions the radio rules out are no position at all (D-178): every
+    // consumer below (place, staleness, anchors, movement, links, estimates)
+    // works without them.
+    let rejected = if rules.signal { super::contradicted_positions(&by.positioned) } else { map() };
+    let mut ruled_out: Vec<&Row> = Vec::new();
+    if !rejected.is_empty() {
+        let (keep, out) = by.positioned.iter().partition(|r| !rejected.contains_key(&r.lp));
+        by.positioned = keep;
+        ruled_out = out;
+    }
     let mut nodes: FxMap<u32, Node> = map();
     for (n, o) in origins(rows, i) {
         let x = nodes.entry(n).or_insert_with(|| Node::new(n));
@@ -196,6 +208,11 @@ pub fn build_snapshot(rows: &[&Row], i: &Interner, g: &GeoOptions, rules: Rules)
     }
     for (n, r) in stale {
         nodes.entry(n).or_insert_with(|| Node::new(n)).stale_position = Some(position_of(r, i));
+    }
+    for (n, r) in latest_by(&ruled_out, |_| true, |r| r.src) {
+        let c = rejected[&r.lp];
+        nodes.entry(n).or_insert_with(|| Node::new(n)).rejected_position =
+            Some(RejectedPosition { position: position_of(r, i), gateway: crate::util::node_id(c.gateway), rssi: c.rssi, distance_m: c.distance_m.round(), bound_m: c.bound_m.round() });
     }
     for (n, r) in latest_by(&by.telemetry, is_device_telemetry, |r| r.src) {
         nodes.entry(n).or_insert_with(|| Node::new(n)).telemetry = Some(telemetry_of(r));
@@ -309,6 +326,7 @@ pub fn build_snapshot(rows: &[&Row], i: &Interner, g: &GeoOptions, rules: Rules)
         hops,
         downlinks,
         now,
+        rejected,
         presets: OnceCell::new(),
         replies: OnceCell::new(),
     }

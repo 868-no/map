@@ -182,18 +182,20 @@ pub fn build_node_detail(rows: &[&Row], num: u32, b: &Built, i: &Interner) -> Op
         }
         // Stale relative to the window's latest observation, as in the snapshot (D-094).
         let fixed = n.identity.as_ref().is_some_and(|id| super::node::fixed_role(&id.role));
-        let (fresh, stale) = super::fresh_position_rows(&own, b.now, |_| fixed);
+        // Without the positions the radio rules out (D-178).
+        let placed: Vec<&Row> = own.iter().copied().filter(|r| !b.rejected.contains_key(&r.lp)).collect();
+        let (fresh, stale) = super::fresh_position_rows(&placed, b.now, |_| fixed);
         let fixed: crate::util::FxSet<u32> = if fixed { [num].into_iter().collect() } else { crate::util::set() };
         if let Some(r) = fresh.get(&num) {
             n.position = Some(position_of(r, i));
         } else if let Some(r) = stale.get(&num) {
             n.stale_position = Some(position_of(r, i));
         }
-        let anchored = crate::movement::anchors(&own, &fixed);
+        let anchored = crate::movement::anchors(&placed, &fixed);
         if let Some(a) = anchored.get(&num) {
             n.set_anchor(a);
         }
-        if let Some(m) = crate::movement::movements_except(&own, &anchored, &fixed).get(&num) {
+        if let Some(m) = crate::movement::movements_except(&placed, &anchored, &fixed).get(&num) {
             n.set_movement(m);
         }
         if let Some(r) = latest_by(&own, is_device_telemetry, |r| r.src).get(&num) {
@@ -233,7 +235,7 @@ pub fn build_node_detail(rows: &[&Row], num: u32, b: &Built, i: &Interner) -> Op
         list
     };
     let mut truncated = false;
-    d.positions = per_packet(&is_position, &mut truncated)
+    d.positions = per_packet(&|r| is_position(r) && !b.rejected.contains_key(&r.lp), &mut truncated)
         .into_iter()
         .map(|r| {
             let p = r.pos().unwrap();

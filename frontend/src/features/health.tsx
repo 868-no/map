@@ -34,6 +34,7 @@ const KIND: Record<string, string> = {
   chatty_nodeinfo: 'Frequent NodeInfo',
   chatty_telemetry: 'Frequent telemetry',
   stale_position: 'Stale position',
+  position_contradicted: 'Impossible position',
   battery_low: 'Low battery',
   battery_falling: 'Battery falling',
   store_forward: 'Store-and-forward airtime',
