@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 )
@@ -44,4 +45,23 @@ func errDetails(m *huma.ErrorModel) (s string) {
 		s += d.Message + ";"
 	}
 	return
+}
+
+// The trends memo keeps at most trendsMemoMax entries, dropping expired
+// ones first and then the oldest.
+func TestTrendsMemoIsBounded(t *testing.T) {
+	var c trendsCache
+	t0 := time.Date(2026, 11, 6, 12, 0, 0, 0, time.UTC)
+	c.put("stale", TrendsBody{Computed: t0.Add(-TrendsTTL)})
+	for i := 1; i < trendsMemoMax; i++ {
+		c.put(fmt.Sprint("z", i), TrendsBody{Computed: t0.Add(time.Duration(i) * time.Second)})
+	}
+	c.put("new", TrendsBody{Computed: t0.Add(time.Minute)})
+	if _, ok := c.byKey["stale"]; ok || len(c.byKey) != trendsMemoMax {
+		t.Fatalf("stale kept or size %d", len(c.byKey))
+	}
+	c.put("newer", TrendsBody{Computed: t0.Add(2 * time.Minute)})
+	if _, ok := c.byKey["z1"]; ok || len(c.byKey) != trendsMemoMax {
+		t.Fatalf("oldest kept or size %d", len(c.byKey))
+	}
 }

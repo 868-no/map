@@ -67,11 +67,29 @@ func (c *trendsCache) get(key string, now time.Time) (TrendsBody, bool) {
 	return b, ok && now.Sub(b.Computed) < TrendsTTL
 }
 
+// trendsMemoMax bounds the memo: any IANA zone can be asked for.
+const trendsMemoMax = 64
+
+// put keeps b (computed now), first dropping expired entries; when the memo
+// is still full it drops the oldest.
 func (c *trendsCache) put(key string, b TrendsBody) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.byKey == nil {
 		c.byKey = map[string]TrendsBody{}
+	}
+	if _, ok := c.byKey[key]; !ok && len(c.byKey) >= trendsMemoMax {
+		oldest := ""
+		for k, v := range c.byKey {
+			if b.Computed.Sub(v.Computed) >= TrendsTTL {
+				delete(c.byKey, k)
+			} else if oldest == "" || v.Computed.Before(c.byKey[oldest].Computed) {
+				oldest = k
+			}
+		}
+		if len(c.byKey) >= trendsMemoMax {
+			delete(c.byKey, oldest)
+		}
 	}
 	c.byKey[key] = b
 }
