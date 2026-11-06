@@ -124,6 +124,11 @@ func (s *Server) stream(ctx context.Context, in *StreamInput, send sse.Sender) {
 		case <-s.closing:
 			return
 		case <-t.C:
+			// Events lost in a burst followed by quiet: told now, not with
+			// a next delta that may be long in coming.
+			if sub.dropped.Swap(false) && send.Data(LiveStatus{Live: true, Reason: LaggedReason}) != nil {
+				return
+			}
 			if !heartbeat() {
 				return
 			}
