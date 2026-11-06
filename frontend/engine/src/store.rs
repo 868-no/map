@@ -6,7 +6,7 @@ use std::cell::Cell;
 
 use serde::{Deserialize, Serialize};
 
-use crate::row::{to_json, Interner, JRow, Row};
+use crate::row::{parse_rows, to_json, Interner, JRow, Row, RowsSeed};
 use crate::util::{FxMap, FxSet};
 
 pub const HOUR_MS: i64 = 3_600_000;
@@ -35,16 +35,57 @@ pub struct WindowEcho {
     pub rolling: bool,
 }
 
-#[derive(Deserialize)]
-struct JPage<'a> {
+/// An /observations page, its rows converted as they are parsed (RowsSeed).
+struct PageSeed<'s> {
+    i: &'s mut Interner,
+    rows: &'s mut Vec<Row>,
+}
+
+/// A page's fields besides its rows.
+struct PageHead {
     window: WindowEcho,
     generation: String,
-    #[serde(default)]
     more: bool,
-    #[serde(default)]
     next_cursor: Option<String>,
-    #[serde(borrow, default)]
-    rows: Option<Vec<JRow<'a>>>,
+}
+
+impl<'de> serde::de::DeserializeSeed<'de> for PageSeed<'_> {
+    type Value = PageHead;
+
+    fn deserialize<D: serde::Deserializer<'de>>(self, d: D) -> Result<PageHead, D::Error> {
+        d.deserialize_map(self)
+    }
+}
+
+impl<'de> serde::de::Visitor<'de> for PageSeed<'_> {
+    type Value = PageHead;
+
+    fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.write_str("an observations page")
+    }
+
+    fn visit_map<A: serde::de::MapAccess<'de>>(self, mut m: A) -> Result<PageHead, A::Error> {
+        use serde::de::Error;
+        let (mut window, mut generation, mut more, mut next_cursor) = (None, None, false, None);
+        while let Some(k) = m.next_key::<std::borrow::Cow<'de, str>>()? {
+            match &*k {
+                "window" => window = Some(m.next_value()?),
+                "generation" => generation = Some(m.next_value()?),
+                "more" => more = m.next_value()?,
+                "next_cursor" => next_cursor = m.next_value()?,
+                "rows" => m.next_value_seed(RowsSeed { i: &mut *self.i, keep: |_: &Row| true, out: &mut *self.rows })?,
+                _ => {
+                    m.next_value::<serde::de::IgnoredAny>()?;
+                }
+            }
+        }
+        Ok(PageHead {
+            window: window.ok_or_else(|| A::Error::missing_field("window"))?,
+            generation: generation.ok_or_else(|| A::Error::missing_field("generation"))?,
+            more,
+            next_cursor,
+        })
+    }
 }
 
 /// What the caller needs from a page; the rows stay in the engine.
@@ -71,14 +112,16 @@ impl Store {
 
     /// Parses one /observations page into a staged batch (batch 0 starts a new one).
     pub fn stage(&mut self, text: &str, batch: u32, i: &mut Interner) -> Result<PageMeta, String> {
-        let page: JPage = serde_json::from_str(text).map_err(|e| format!("invalid page: {e}"))?;
+        use serde::de::DeserializeSeed;
+        let mut rows = Vec::new();
+        let mut d = serde_json::Deserializer::from_str(text);
+        let page = PageSeed { i, rows: &mut rows }.deserialize(&mut d).and_then(|p| d.end().map(|_| p)).map_err(|e| format!("invalid page: {e}"))?;
         let batch = if batch == 0 {
             self.next_batch += 1;
             self.next_batch
         } else {
             batch
         };
-        let rows: Vec<Row> = page.rows.unwrap_or_default().into_iter().map(|r| r.into_row(i)).collect();
         let n = rows.len();
         self.staged.entry(batch).or_default().extend(rows);
         Ok(PageMeta { window: page.window, generation: page.generation, more: page.more, next_cursor: page.next_cursor, batch, rows: n })
@@ -95,8 +138,7 @@ impl Store {
 
     /// Parses a JSON array of rows and merges those at or after `lo` (live rows, restored chunks).
     pub fn add_json(&mut self, text: &str, lo: i64, i: &mut Interner) -> Result<usize, String> {
-        let rows: Vec<JRow> = serde_json::from_str(text).map_err(|e| format!("invalid rows: {e}"))?;
-        let rows: Vec<Row> = rows.into_iter().map(|r| r.into_row(i)).filter(|r| r.t >= lo).collect();
+        let rows = parse_rows(text, i, |r| r.t >= lo).map_err(|e| format!("invalid rows: {e}"))?;
         Ok(self.merge(rows))
     }
 
@@ -286,6 +328,21 @@ mod tests {
         let m = s.stage(&page, 0, &mut i).unwrap();
         s.reset();
         assert_eq!(s.commit(m.batch), 2);
+    }
+
+    #[test]
+    fn a_page_parses_in_any_field_order_with_or_without_rows() {
+        let mut i = Interner::default();
+        let mut s = Store::default();
+        let w = r#""window":{"start":"a","end":"b"}"#;
+        let m = s.stage(&format!(r#"{{"rows":[{}],"extra":{{"x":[1]}},"generation":"g",{w}}}"#, row(1, 10)), 0, &mut i).unwrap();
+        assert_eq!((m.rows, m.generation.as_str(), m.more, m.next_cursor), (1, "g", false, None), "rows first, unknown fields skipped");
+        assert_eq!(s.stage(&format!(r#"{{{w},"generation":"g","rows":null}}"#), 0, &mut i).unwrap().rows, 0, "null rows");
+        assert_eq!(s.stage(&format!(r#"{{{w},"generation":"g"}}"#), 0, &mut i).unwrap().rows, 0, "no rows");
+        assert!(s.stage(&format!(r#"{{{w},"rows":[]}}"#), 0, &mut i).err().is_some_and(|e| e.contains("generation")));
+        assert!(s.stage(&format!(r#"{{{w},"generation":"g","rows":[{{"i":1}}]}}"#), 0, &mut i).is_err(), "a bad row fails the page");
+        assert!(s.stage(&format!(r#"{{{w},"generation":"g"}} x"#), 0, &mut i).is_err(), "trailing text");
+        assert!(s.add_json("[1]", 0, &mut i).is_err());
     }
 
     #[test]

@@ -23,7 +23,7 @@ pub mod zerocost;
 use serde::Deserialize;
 use wasm_bindgen::prelude::*;
 
-use crate::row::{Interner, JRow};
+use crate::row::Interner;
 use crate::store::Store;
 use crate::util::{key64, parse_node};
 use crate::views::{build_node_detail, build_snapshot, build_traffic, bucket_for, filter_fn, Built, Filters, GeoOptions, Rules};
@@ -391,8 +391,7 @@ impl Engine {
     /// Transmissions proven by live rows (JSON array), attributed with the
     /// latest snapshot's relay context; JSON array of arrays, one per row.
     pub fn transmissions(&mut self, rows: &str) -> Result<String, JsError> {
-        let parsed: Vec<JRow> = serde_json::from_str(rows).map_err(err)?;
-        let rows: Vec<row::Row> = parsed.into_iter().map(|r| r.into_row(&mut self.i)).collect();
+        let rows = row::parse_rows(rows, &mut self.i, |_| true).map_err(err)?;
         let empty = Built::default();
         let b = self.built.as_ref().map_or(&empty, |(_, b)| b);
         let invalid = self.i.get("invalid");

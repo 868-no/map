@@ -704,6 +704,66 @@ impl JRow<'_> {
     }
 }
 
+/// Rows read from a JSON array (or null, none), each converted as it is
+/// parsed: a page or a day is never held as `JRow`s, several times the size
+/// of the rows they become. Rows `keep` turns down are not kept.
+pub struct RowsSeed<'s, F: FnMut(&Row) -> bool> {
+    pub i: &'s mut Interner,
+    pub keep: F,
+    pub out: &'s mut Vec<Row>,
+}
+
+impl<'de, F: FnMut(&Row) -> bool> serde::de::DeserializeSeed<'de> for RowsSeed<'_, F> {
+    type Value = ();
+
+    fn deserialize<D: serde::Deserializer<'de>>(self, d: D) -> Result<(), D::Error> {
+        d.deserialize_option(self)
+    }
+}
+
+impl<'de, F: FnMut(&Row) -> bool> serde::de::Visitor<'de> for RowsSeed<'_, F> {
+    type Value = ();
+
+    fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        f.write_str("an array of rows, or null")
+    }
+
+    fn visit_none<E>(self) -> Result<(), E> {
+        Ok(())
+    }
+
+    fn visit_unit<E>(self) -> Result<(), E> {
+        Ok(())
+    }
+
+    fn visit_some<D: serde::Deserializer<'de>>(self, d: D) -> Result<(), D::Error> {
+        d.deserialize_seq(self)
+    }
+
+    fn visit_seq<A: serde::de::SeqAccess<'de>>(mut self, mut seq: A) -> Result<(), A::Error> {
+        if let Some(n) = seq.size_hint() {
+            self.out.reserve(n);
+        }
+        while let Some(j) = seq.next_element::<JRow<'de>>()? {
+            let r = j.into_row(self.i);
+            if (self.keep)(&r) {
+                self.out.push(r);
+            }
+        }
+        Ok(())
+    }
+}
+
+/// A JSON array of rows, converted as parsed (`RowsSeed`), those `keep` accepts.
+pub fn parse_rows(text: &str, i: &mut Interner, keep: impl FnMut(&Row) -> bool) -> Result<Vec<Row>, serde_json::Error> {
+    use serde::de::DeserializeSeed;
+    let mut out = Vec::new();
+    let mut d = serde_json::Deserializer::from_str(text);
+    RowsSeed { i, keep, out: &mut out }.deserialize(&mut d)?;
+    d.end()?;
+    Ok(out)
+}
+
 /// Back to the API's JSON shape (for the persisted copy in IndexedDB).
 pub fn to_json<'a>(r: &Row, i: &'a Interner) -> JRow<'a> {
     let s = |x: u32| Cow::Borrowed(i.s(x));
