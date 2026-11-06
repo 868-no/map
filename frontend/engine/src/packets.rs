@@ -209,7 +209,7 @@ pub fn packet_log(rows: &[&Row], num: u32, ctx: &RelayContext, replies: &ReplyIn
                     downlinked: others.iter().any(|r| RelayContext::downlinked(r)),
                     receptions: rs.iter().map(|r| r.ok).collect::<FxSet<u64>>().len(),
                     signature: best.to_string(),
-                    replies: first.pid.map_or(vec![], |p| replies.replies(p, num, rows, i)),
+                    replies: first.pid.map_or(vec![], |p| replies.replies(p, num, &rows[..replies.rows.min(rows.len())], i)),
                     answers: replies.answer(first, &more, i),
                     in_response_to: in_response_to(first).map(node_id),
                     invalid: first.invalid().map(|v| i.s(v).to_string()),
