@@ -1,6 +1,6 @@
 // The Settings panel (tool rail, D-066): display settings, installing the
 // app, and what the site is: source code, license and privacy policy.
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { DEFAULT_MAX_NODES, MAX_NODES_RANGE, useStore } from '../state/store'
 import type { ThemeChoice } from '../theme'
 import { LICENSE_HREF, PRIVACY_URL, REVISION_HREF, SOURCE_HREF, SOURCE_REVISION } from '../links'
@@ -16,7 +16,12 @@ function MaxNodes() {
   const value = useStore((s) => s.toggles.maxNodes)
   const setT = useStore((s) => s.setToggles)
   const [draft, setDraft] = useState(String(value))
-  useEffect(() => setDraft(String(value)), [value])
+  // A change from elsewhere (Reset) replaces the draft during render, not in an effect after it.
+  const [shown, setShown] = useState(value)
+  if (value !== shown) {
+    setShown(value)
+    setDraft(String(value))
+  }
   const commit = () => {
     const n = Math.round(Number(draft))
     if (!Number.isFinite(n) || draft.trim() === '') return setDraft(String(value))
