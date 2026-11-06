@@ -1,6 +1,6 @@
 // Long-term trends (D-104): daily, weekly and monthly summaries over the whole
 // retained log, computed by the server (views stop at a week of rows).
-import { useState } from 'react'
+import { memo, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { getJSON } from '../api/client'
 import type { components } from '../api/schema'
@@ -25,15 +25,30 @@ function useTrends(bucket: Bucket) {
   })
 }
 
-export function TrendsPanel() {
+/**
+ * Memoised (no props): it sits in the dock, which re-renders with every live
+ * rebuild, while its data changes at most every 15 minutes.
+ */
+export const TrendsPanel = memo(function TrendsPanel() {
   const [bucket, setBucket] = useState<Bucket>('day')
   const t = useTrends(bucket)
-  const fmt = new Intl.DateTimeFormat(undefined, { ...FORMAT[bucket], timeZone: TZ })
-  const label = (iso: string) => (bucket === 'week' ? `week of ${fmt.format(new Date(iso))}` : fmt.format(new Date(iso)))
-  const buckets = t.data?.buckets ?? []
-  const totals = new Map<string, number>()
-  for (const b of buckets) for (const [k, v] of Object.entries(b.by_type ?? {})) totals.set(k, (totals.get(k) ?? 0) + v)
-  const allPackets = [...totals.values()].reduce((a, b) => a + b, 0)
+  // Labels and totals once per answer, not per render.
+  const { buckets, labels, shares, allPackets } = useMemo(() => {
+    const fmt = new Intl.DateTimeFormat(undefined, { ...FORMAT[bucket], timeZone: TZ })
+    const buckets = t.data?.buckets ?? []
+    const labels = buckets.map((b) => (bucket === 'week' ? `week of ${fmt.format(new Date(b.start))}` : fmt.format(new Date(b.start))))
+    const totals = new Map<string, number>()
+    for (const b of buckets) for (const [k, v] of Object.entries(b.by_type ?? {})) totals.set(k, (totals.get(k) ?? 0) + v)
+    const max = Math.max(1, ...totals.values())
+    const shares = [...totals].sort((a, b) => b[1] - a[1]).map(([k, v]) => ({ k, v, w: (v / max) * 100 }))
+    return { buckets, labels, shares, allPackets: [...totals.values()].reduce((a, b) => a + b, 0) }
+  }, [t.data, bucket])
+  const charts = useMemo(() => ({
+    nodes: buckets.map((b, i) => ({ label: labels[i], value: b.nodes, part: b.new_nodes })),
+    gateways: buckets.map((b, i) => ({ label: labels[i], value: b.gateways })),
+    packets: buckets.map((b, i) => ({ label: labels[i], value: b.packets })),
+    receptions: buckets.map((b, i) => ({ label: labels[i], value: b.receptions })),
+  }), [buckets, labels])
   return (
     <div className="panel trends-panel">
       <div className="segmented" role="radiogroup" aria-label="Summary period">
@@ -50,17 +65,17 @@ export function TrendsPanel() {
       {buckets.length > 0 && (
         <>
           <div className="tcharts">
-            <BarChart title="Nodes heard" partLabel="new" note="Distinct nodes that sent anything; new: first heard in that period" bars={buckets.map((b) => ({ label: label(b.start), value: b.nodes, part: b.new_nodes }))} />
-            <BarChart title="Gateways" note="Distinct gateways that uplinked anything" bars={buckets.map((b) => ({ label: label(b.start), value: b.gateways }))} />
-            <BarChart title="Packets" note="Distinct packets, each once however many gateways heard it" bars={buckets.map((b) => ({ label: label(b.start), value: b.packets }))} />
-            <BarChart title="Receptions" note="Gateway receptions of those packets" bars={buckets.map((b) => ({ label: label(b.start), value: b.receptions }))} />
+            <BarChart title="Nodes heard" partLabel="new" note="Distinct nodes that sent anything; new: first heard in that period" bars={charts.nodes} />
+            <BarChart title="Gateways" note="Distinct gateways that uplinked anything" bars={charts.gateways} />
+            <BarChart title="Packets" note="Distinct packets, each once however many gateways heard it" bars={charts.packets} />
+            <BarChart title="Receptions" note="Gateway receptions of those packets" bars={charts.receptions} />
           </div>
           <h3>Packets by type, whole period</h3>
           <ul className="shares">
-            {[...totals].sort((a, b) => b[1] - a[1]).map(([k, v]) => (
+            {shares.map(({ k, v, w }) => (
               <li key={k} className="share">
                 <span className="share-label">{TYPE_LABEL[k] ?? k}</span>
-                <span className="share-bar"><span style={{ width: `${(v / Math.max(1, ...totals.values())) * 100}%` }} /></span>
+                <span className="share-bar"><span style={{ width: `${w}%` }} /></span>
                 <span className="share-pct">{allPackets ? `${Math.round((v / allPackets) * 100)} %` : ''}</span>
               </li>
             ))}
@@ -69,13 +84,14 @@ export function TrendsPanel() {
           <table className="hear trends-table">
             <thead><tr><th>{{ day: 'Day', week: 'Week', month: 'Month' }[bucket]}</th><th title="Nodes heard">Nodes</th><th title="Nodes first heard">New</th><th title="Gateways">GWs</th><th title="Distinct packets">Packets</th><th title="Receptions">Rx</th></tr></thead>
             <tbody>
-              {[...buckets].reverse().map((b) => (
-                <tr key={b.start}><td>{label(b.start)}</td><td>{b.nodes}</td><td>{b.new_nodes}</td><td>{b.gateways}</td><td>{b.packets.toLocaleString()}</td><td>{b.receptions.toLocaleString()}</td></tr>
-              ))}
+              {/* Newest first. */}
+              {buckets.map((b, i) => (
+                <tr key={b.start}><td>{labels[i]}</td><td>{b.nodes}</td><td>{b.new_nodes}</td><td>{b.gateways}</td><td>{b.packets.toLocaleString()}</td><td>{b.receptions.toLocaleString()}</td></tr>
+              )).reverse()}
             </tbody>
           </table>
         </>
       )}
     </div>
   )
-}
+})
