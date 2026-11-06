@@ -25,12 +25,10 @@ import (
 	"github.com/868-no/map/internal/maintenance"
 	"github.com/868-no/map/internal/mqtt"
 	"github.com/868-no/map/internal/observability"
-	"github.com/868-no/map/internal/query"
 	"github.com/868-no/map/internal/security"
 	"github.com/868-no/map/internal/storage"
 	"github.com/868-no/map/internal/terrain"
 	"github.com/868-no/map/internal/weather"
-	"github.com/868-no/map/internal/window"
 )
 
 func databaseURL(e config.Env) string {
@@ -371,6 +369,10 @@ func serveCmd() *cobra.Command {
 			if c.Env.OperatorContact != "" {
 				ua += " " + c.Env.OperatorContact
 			}
+			// Routers and base stations, read once for the terrain warmer and
+			// the weather keeper alike (D-133, D-144), over the longer of their
+			// windows.
+			roster := &storage.Roster{Pool: pool, Window: max(terrain.WarmWindow, time.Duration(c.Env.MaxWindowHours)*time.Hour), Alive: 24 * time.Hour, TTL: 20 * time.Minute}
 			if c.Env.TerrainEnabled {
 				apiSrv.Terrain = terrain.New(c.Env.TerrainURL, ua)
 				apiSrv.Terrain.Store, apiSrv.Terrain.Log = &terrain.Store{Pool: pool}, log
@@ -380,7 +382,7 @@ func serveCmd() *cobra.Command {
 				// keeps any point from being fetched twice once it is in.
 				warm := &terrain.Warmer{Client: apiSrv.Terrain, Interval: terrain.WarmInterval, Log: log,
 					Load: func(ctx context.Context) ([]terrain.End, error) {
-						nodes, err := storage.InfraPositions(ctx, pool, time.Now().Add(-terrain.WarmWindow))
+						nodes, err := roster.Nodes(ctx)
 						if err != nil {
 							return nil, err
 						}
@@ -398,10 +400,9 @@ func serveCmd() *cobra.Command {
 				go apiSrv.Weather.Run(ctx)
 				// Live routers' weather is kept ready over the longest window (D-133).
 				span := time.Duration(c.Env.MaxWindowHours) * time.Hour
-				go apiSrv.Weather.Keep(ctx, 20*time.Minute, span, func(ctx context.Context) ([]weather.Cell, error) {
-					now := time.Now().UTC()
-					sites, err := query.RouterSites(ctx, pool, window.Window{Start: now.Add(-span), End: now}, window.Window{Start: now.Add(-24 * time.Hour), End: now})
-					return weather.Cells(sites), err
+				go apiSrv.Weather.Keep(ctx, roster.TTL, span, func(ctx context.Context) ([]weather.Cell, error) {
+					nodes, err := roster.Nodes(ctx)
+					return weather.Cells(nodes), err
 				})
 			}
 			apiSrv.NewHandler(mux)

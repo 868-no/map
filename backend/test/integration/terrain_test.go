@@ -14,12 +14,13 @@ import (
 
 	"github.com/868-no/map/internal/storage"
 	"github.com/868-no/map/internal/terrain"
+	"github.com/868-no/map/internal/window"
 )
 
 // The warmer's nodes (D-144): a node's newest role decides, positions come
 // from Position packets and map reports, the newest wins, a reported
 // altitude of 0 means none, and nothing older than the window counts.
-func TestInfraPositions(t *testing.T) {
+func TestInfrastructure(t *testing.T) {
 	pool := freshDB(t)
 	ctx := context.Background()
 	now := time.Now().UTC().Truncate(time.Second)
@@ -56,7 +57,7 @@ func TestInfraPositions(t *testing.T) {
 	row(6, "nodeinfo", 20*24*time.Hour, router) // older than the 14-day window
 	row(6, "position", 20*24*time.Hour, pos(63.0, 10.0, 10))
 
-	got, err := storage.InfraPositions(ctx, pool, now.Add(-terrain.WarmWindow))
+	got, err := storage.Infrastructure(ctx, pool, window.Window{Start: now.Add(-terrain.WarmWindow), End: now.Add(time.Second)}, now.Add(-24*time.Hour))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -69,7 +70,7 @@ func TestInfraPositions(t *testing.T) {
 	if n := got[1]; n.Node != 3 || n.Lat != 63.39 || n.Alt != nil {
 		t.Fatalf("node 3 (map report, no altitude): %+v", n)
 	}
-	if n := got[2]; n.Node != 5 || n.Lat != 63.34 {
+	if n := got[2]; n.Node != 5 || n.Lat != 63.34 || n.Role != "CLIENT_BASE" || n.Router() {
 		t.Fatalf("node 5 (newest position): %+v", n)
 	}
 }

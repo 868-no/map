@@ -13,7 +13,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/868-no/map/internal/query"
 	"github.com/868-no/map/internal/storage"
 	"github.com/868-no/map/internal/weather"
 	"github.com/868-no/map/internal/window"
@@ -151,7 +150,7 @@ func TestWeatherStoreLookups(t *testing.T) {
 // Only routers heard lately have their weather kept (D-133): a router that
 // fell silent, a node that stopped being a router, a client and a router
 // without a position drop out; the latest role and position count.
-func TestRouterSites(t *testing.T) {
+func TestLiveRouters(t *testing.T) {
 	pool := freshDB(t)
 	ctx := context.Background()
 	now := time.Date(2026, 11, 3, 12, 0, 0, 0, time.UTC)
@@ -188,12 +187,25 @@ func TestRouterSites(t *testing.T) {
 	row(6, "invalid", time.Hour, `{}`)
 	week := window.Window{Start: now.Add(-7 * 24 * time.Hour), End: now}
 	day := window.Window{Start: now.Add(-24 * time.Hour), End: now}
-	sites, err := query.RouterSites(ctx, pool, week, day)
+	nodes, err := storage.Infrastructure(ctx, pool, week, day.Start)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []query.RouterSite{{Node: 1, Lat: 63.4, Lon: 10.4}, {Node: 4, Lat: 63.5, Lon: 10.5}}
-	if !slices.Equal(sites, want) {
-		t.Fatalf("got %+v, want %+v", sites, want)
+	type site struct {
+		Node     uint32
+		Lat, Lon float64
+	}
+	var got []site
+	for _, n := range nodes {
+		if n.Router() && n.Heard {
+			got = append(got, site{n.Node, n.Lat, n.Lon})
+		}
+	}
+	want := []site{{1, 63.4, 10.4}, {4, 63.5, 10.5}}
+	if !slices.Equal(got, want) {
+		t.Fatalf("got %+v, want %+v", got, want)
+	}
+	if cells := weather.Cells(nodes); len(cells) != 2 {
+		t.Fatalf("cells %v, want the two live routers'", cells)
 	}
 }

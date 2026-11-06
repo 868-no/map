@@ -9,7 +9,7 @@ package weather
 import (
 	"math"
 
-	"github.com/868-no/map/internal/query"
+	"github.com/868-no/map/internal/storage"
 )
 
 // grid is a Lambert conformal conic grid on a sphere with one standard
@@ -70,11 +70,16 @@ var (
 // CellAt is the analysis cell holding a point, and false outside the grid.
 func CellAt(lat, lon float64) (Cell, bool) { return analysis.cell(lat, lon) }
 
-// Cells are the distinct analysis cells of the sites inside the grid.
-func Cells(sites []query.RouterSite) []Cell {
+// Cells are the distinct analysis cells, inside the grid, of the routers
+// among nodes heard lately: those whose weather is kept ready (D-133).
+// Routers that fell silent, or stopped being routers, drop out.
+func Cells(nodes []storage.InfraNode) []Cell {
 	seen := map[Cell]bool{}
 	var out []Cell
-	for _, s := range sites {
+	for _, s := range nodes {
+		if !s.Router() || !s.Heard {
+			continue
+		}
 		if c, ok := CellAt(s.Lat, s.Lon); ok && !seen[c] {
 			seen[c] = true
 			out = append(out, c)
