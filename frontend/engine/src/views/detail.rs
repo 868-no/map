@@ -2,7 +2,7 @@
 
 use serde::Serialize;
 
-use super::{brokers, dest, first_per_reception, identity_of, identity_of_report, is_device_telemetry, is_identity, is_named_report, is_position, latest_by, origins, position_of, referenced, sig_counts, telemetry_of, Built, Node};
+use super::{dest, first_per_reception, is_device_telemetry, is_position, referenced, Built, Node};
 use crate::graph::{self, Stats};
 use crate::row::{Interner, Row};
 use crate::util::{iso, map, node_id, set, FxMap, FxSet};
@@ -126,10 +126,8 @@ pub struct NodeDetail {
 /// referenced. b: the build of the same rows, whose window-wide parts
 /// (downlinks, radio groups, replies) it reads rather than redoes.
 pub fn build_node_detail(rows: &[&Row], num: u32, b: &Built, i: &Interner) -> Option<NodeDetail> {
-    let mut n = Node::new(num);
     let (mut first, mut last) = (i64::MAX, i64::MIN);
     let mut own: Vec<&Row> = Vec::new();
-    let mut gw_rx = set::<u64>();
     let mut uplinked: Vec<&Row> = Vec::new(); // what it reported as a gateway
     // Every row it sent, uplinked or was sent: all its own parts need, in one pass.
     let mut mine: Vec<&Row> = Vec::new();
@@ -145,63 +143,14 @@ pub fn build_node_detail(rows: &[&Row], num: u32, b: &Built, i: &Interner) -> Op
             own.push(r);
         }
         if r.gw == Some(num) {
-            gw_rx.insert(r.ok);
             uplinked.push(r);
         }
     }
     // The node itself (identity, position, staleness, anchor, movement,
     // estimate, counts) is the snapshot's, built from the same rows: one
-    // implementation of every per-node rule. Only a node the snapshot left
-    // out (beyond its node limit, D-182) is built here.
-    if let Some(x) = b.snapshot.nodes.iter().find(|x| x.num == num) {
-        n = x.clone();
-    } else {
-        if let Some(o) = origins(&own, i).get(&num) {
-            n.packets = o.packets.len();
-            n.receptions = o.receptions.len();
-            n.own_uplinks = o.own_uplinks.len();
-            n.signatures = sig_counts(o);
-            n.brokers = Some(brokers(o, i));
-            n.mqtt_opt_out = o.opt_out;
-        }
-        n.gateway_receptions = gw_rx.len();
-        n.is_gateway = !gw_rx.is_empty();
-        n.multi_uplink = n.is_gateway && crate::copies::multi_uplinkers(&uplinked).contains(&num);
-        n.mqtt_downlink = b.downlinks.get(&num).cloned();
-        if let Some(r) = latest_by(&own, is_identity, |r| r.src).get(&num) {
-            n.identity = Some(identity_of(r, i));
-        } else if let Some(r) = latest_by(&own, is_named_report, |r| r.src).get(&num) {
-            n.identity = Some(identity_of_report(r, i));
-        }
-        if n.mqtt_opt_out {
-            // Never named (D-032), whatever an older NodeInfo or map report says.
-            if let Some(id) = n.identity.as_mut() {
-                id.long_name.clear();
-                id.short_name.clear();
-            }
-        }
-        // Stale relative to the window's latest observation, as in the snapshot (D-094).
-        let fixed = n.identity.as_ref().is_some_and(|id| super::node::fixed_role(&id.role));
-        // Without the positions the radio rules out (D-178).
-        let placed: Vec<&Row> = own.iter().copied().filter(|r| !b.rejected.contains_key(&r.lp)).collect();
-        let (fresh, stale) = super::fresh_position_rows(&placed, b.now, |_| fixed);
-        let fixed: crate::util::FxSet<u32> = if fixed { [num].into_iter().collect() } else { crate::util::set() };
-        if let Some(r) = fresh.get(&num) {
-            n.position = Some(position_of(r, i));
-        } else if let Some(r) = stale.get(&num) {
-            n.stale_position = Some(position_of(r, i));
-        }
-        let anchored = crate::movement::anchors(&placed, &fixed);
-        if let Some(a) = anchored.get(&num) {
-            n.set_anchor(a);
-        }
-        if let Some(m) = crate::movement::movements_except(&placed, &anchored, &fixed).get(&num) {
-            n.set_movement(m);
-        }
-        if let Some(r) = latest_by(&own, is_device_telemetry, |r| r.src).get(&num) {
-            n.telemetry = Some(telemetry_of(r));
-        }
-    }
+    // implementation of every per-node rule, also for a node beyond the
+    // snapshot's node limit (D-182), which the build keeps aside.
+    let n = b.snapshot.nodes.iter().chain(&b.beyond).find(|x| x.num == num).cloned().unwrap_or_else(|| Node::new(num));
     let mut radio = crate::radio::radio(&own, i);
     radio.channels = crate::channels::channel_use(num, &mine, i);
     radio.preset = crate::channels::preset_guess(num, b.presets.get_or_init(|| crate::channels::PresetIndex::new(rows, &b.hops, i)));

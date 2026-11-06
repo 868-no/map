@@ -111,11 +111,6 @@ pub fn positions_by_node<'a>(rows: &[&'a Row]) -> FxMap<u32, Vec<&'a Row>> {
     by_node
 }
 
-/// Anchored nodes in `rows` (see `Anchor`); `fixed`: nodes whose role sits in one place.
-pub fn anchors(rows: &[&Row], fixed: &FxSet<u32>) -> FxMap<u32, Anchor> {
-    anchors_of(&positions_by_node(rows), fixed)
-}
-
 /// Anchored nodes among grouped position reports (`positions_by_node`).
 pub fn anchors_of(by_node: &FxMap<u32, Vec<&Row>>, fixed: &FxSet<u32>) -> FxMap<u32, Anchor> {
     let mut out = map();
@@ -211,14 +206,6 @@ fn narrow(inliers: &[crate::row::Position], mode: &crate::row::Position) -> (f64
     }
     let best = count.iter().max_by_key(|(_, n, last)| (*n, *last)).map_or(mode, |(p, _, _)| p);
     (best.lat, best.lon, err_m(best))
-}
-
-/// Nodes that moved within `rows`, with their tracks. Anchored nodes
-/// (`anchors`: home now, with most reports there) count only when they
-/// arrived from a trip (`arrival`): otherwise their readings away from home
-/// are noise.
-pub fn movements_except(rows: &[&Row], anchored: &FxMap<u32, Anchor>, fixed: &FxSet<u32>) -> FxMap<u32, Movement> {
-    movements_of(&positions_by_node(rows), anchored, fixed)
 }
 
 /// Nodes that moved, from grouped position reports (`positions_by_node`);
@@ -354,7 +341,7 @@ mod tests {
         };
         let rows: Vec<Row> = (0..10).map(|k| at(k + 1, 59.0 + 0.1 * k as f64)).collect();
         let refs: Vec<&Row> = rows.iter().collect();
-        let m = movements_except(&refs, &map(), &crate::util::set());
+        let m = movements_of(&positions_by_node(&refs), &map(), &crate::util::set());
         assert!(m.get(&1).is_some_and(|m| m.moved_at > 0));
     }
 }

@@ -69,6 +69,9 @@ impl Default for GeoOptions {
 #[derive(Default)]
 pub struct Built {
     pub snapshot: Snapshot,
+    /// Nodes past the snapshot's node limit (D-182), most active first:
+    /// left off the map, but their panels show them as built here.
+    pub beyond: Vec<Node>,
     pub ctx: RelayContext,
     pub roles: FxMap<u32, String>,
     /// Radio link evidence, for link history (D-105).
@@ -317,12 +320,15 @@ pub fn build_snapshot(rows: &[&Row], i: &Interner, g: &GeoOptions, rules: Rules)
     // Radio links as the map draws them: one per node pair, whichever directions were heard.
     counts.edges = er.edges.iter().filter(|e| !e.mqtt).map(|e| (e.src_num.min(e.dst_num), e.src_num.max(e.dst_num))).collect::<FxSet<_>>().len();
     list.sort_unstable_by(|a, b| (b.packets + b.gateway_receptions).cmp(&(a.packets + a.gateway_receptions)).then(a.num.cmp(&b.num)));
-    if list.len() > rules.max_nodes {
-        list.truncate(rules.max_nodes);
+    let beyond = if list.len() > rules.max_nodes {
         counts.nodes_truncated = true;
-    }
+        list.split_off(rules.max_nodes)
+    } else {
+        Vec::new()
+    };
     Built {
         snapshot: Snapshot { nodes: list, edges: er.edges, edges_truncated: er.truncated, counts, diagnostics: Diagnostics { relay_ambiguous: er.ambiguous, relay_unmatched: er.unmatched } },
+        beyond,
         ctx,
         roles,
         samples: er.samples,

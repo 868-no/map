@@ -21,8 +21,11 @@ fn the_node_limit_is_an_option_kept_until_set_again() {
     let mut e = Engine::new();
     e.add_rows(&Value::Array(rows).to_string(), f64::NEG_INFINITY).unwrap();
     assert_eq!(nodes(&mut e), (4, false), "three senders and the gateway");
+    let panel = |e: &mut Engine| -> Value { serde_json::from_str::<Value>(&e.view("node", T0 as f64, (T0 + 3_600_000) as f64, "{}", "!00000003").unwrap()).unwrap()["node"].clone() };
+    let whole = panel(&mut e);
     e.set_options(&json!({"max_nodes": 2}).to_string()).unwrap();
     assert_eq!(nodes(&mut e), (2, true));
+    assert_eq!(panel(&mut e), whole, "a node past the limit shows as the snapshot built it");
     e.set_options(&json!({"geo": null}).to_string()).unwrap();
     assert_eq!(nodes(&mut e), (2, true), "options without it keep it");
     e.set_options(&json!({"max_nodes": 10}).to_string()).unwrap();
