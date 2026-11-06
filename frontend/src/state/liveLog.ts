@@ -6,6 +6,7 @@
 import { create } from 'zustand'
 import type { ObsRow } from '../api/types'
 import type { Transmission } from '../derive/protocol'
+import { serverNow } from '../lib/serverClock'
 
 /** How long live rows and relays are kept: well past the slowest rebuild. */
 export const LIVE_LOG_MS = 120_000
@@ -43,7 +44,8 @@ export const useLiveLog = create<LiveLog>((set) => ({
         seen.add(r.l)
         add.push({ lp: r.l, t: r.t, src: nodeId(r.s), dst: r.d == null ? undefined : r.d === BROADCAST ? 'broadcast' : nodeId(r.d), type: r.y })
       }
-      return add.length ? { rows: prune([...s.rows, ...add], (r) => r.t, Date.now()) } : s
+      // Row times are the server's: aged by its clock, not the browser's.
+      return add.length ? { rows: prune([...s.rows, ...add], (r) => r.t, serverNow()) } : s
     })
   },
   addTransmissions: (ts, now = Date.now()) => {
