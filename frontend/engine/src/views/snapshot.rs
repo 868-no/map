@@ -146,35 +146,35 @@ pub fn build_snapshot(rows: &[&Row], i: &Interner, g: &GeoOptions, rules: Rules)
         ruled_out = out;
     }
     let mut nodes: FxMap<u32, Node> = map();
-    for (n, o) in origins(rows, i) {
+    let (origins, mut gw_rx, receptions) = origins(rows, i);
+    for (n, o) in origins {
         let x = nodes.entry(n).or_insert_with(|| Node::new(n));
         x.first = o.first;
         x.last = o.last;
         x.packets = o.packets.len();
-        x.receptions = o.receptions.len();
-        x.own_uplinks = o.own_uplinks.len();
+        x.receptions = o.receptions;
+        x.own_uplinks = o.own_uplinks;
         x.signatures = sig_counts(&o);
         x.brokers = Some(brokers(&o, i));
         x.mqtt_opt_out = o.opt_out;
     }
     // Gateway activity (an unauthenticated MQTT claim, but still an in-window observation).
     // The same pass finds the window's latest observation (now, below).
-    let mut gws: FxMap<u32, (i64, i64, FxSet<u64>)> = map();
+    let mut gws: FxMap<u32, (i64, i64)> = map();
     let mut now = 0;
     for r in rows {
         now = now.max(r.t);
         if let Some(g) = r.gw {
-            let a = gws.entry(g).or_insert_with(|| (r.t, r.t, set()));
+            let a = gws.entry(g).or_insert((r.t, r.t));
             a.0 = a.0.min(r.t);
             a.1 = a.1.max(r.t);
-            a.2.insert(r.ok);
         }
     }
     let gateways: FxSet<u32> = gws.keys().copied().collect();
-    for (n, (first, last, rx)) in gws {
+    for (n, (first, last)) in gws {
         let x = nodes.entry(n).or_insert_with(|| Node::new(n));
         x.is_gateway = true;
-        x.gateway_receptions = rx.len();
+        x.gateway_receptions = gw_rx.remove(&n).unwrap_or(0);
         x.first = x.first.min(first);
         x.last = x.last.max(last);
     }
@@ -247,7 +247,7 @@ pub fn build_snapshot(rows: &[&Row], i: &Interner, g: &GeoOptions, rules: Rules)
         }
     }
 
-    let mut counts = window_counts(rows, i);
+    let mut counts = window_counts(rows, receptions, i);
     let known: Vec<u32> = nodes.keys().copied().collect();
     let roles: FxMap<u32, String> = nodes.iter().filter_map(|(&n, x)| x.identity.as_ref().filter(|id| !id.role.is_empty()).map(|id| (n, id.role.clone()))).collect();
     let silent: FxSet<u32> = if rules.silent { silent_nodes(&roles, &by.nodeinfo, &by.mapreport, i) } else { set() };
@@ -338,13 +338,12 @@ pub fn build_snapshot(rows: &[&Row], i: &Interner, g: &GeoOptions, rules: Rules)
     }
 }
 
-fn window_counts(rows: &[&Row], i: &Interner) -> Counts {
-    let mut receptions: FxSet<u64> = FxSet::with_capacity_and_hasher(rows.len(), Default::default());
+/// receptions: the window's distinct receptions (origins).
+fn window_counts(rows: &[&Row], receptions: usize, i: &Interner) -> Counts {
     // Distinct (type, packet): packets per type, and packets as the distinct keys among them.
     let mut typed: FxSet<(u32, u64)> = FxSet::with_capacity_and_hasher(rows.len() / 2, Default::default());
     let (mut first, mut last) = (i64::MAX, i64::MIN);
     for r in rows {
-        receptions.insert(r.ok);
         typed.insert((r.ty, r.lp));
         first = first.min(r.t);
         last = last.max(r.t);
@@ -357,7 +356,7 @@ fn window_counts(rows: &[&Row], i: &Interner) -> Counts {
     }
     Counts {
         packets: packets.len(),
-        receptions: receptions.len(),
+        receptions,
         by_type: by_type.into_iter().map(|(k, v)| (i.s(k).to_string(), v)).collect(),
         first_event: (!rows.is_empty()).then(|| iso(first)),
         last_event: (!rows.is_empty()).then(|| iso(last)),

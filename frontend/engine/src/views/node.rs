@@ -422,31 +422,44 @@ pub(super) struct Origin {
     pub(super) last: i64,
     /// Its packets, each with its best copy's signature status rank.
     pub(super) packets: FxMap<u64, u8>,
-    pub(super) receptions: FxSet<u64>,
+    /// Its distinct receptions (by observation key).
+    pub(super) receptions: usize,
     /// Receptions it uplinked itself, as a gateway (map reports among them).
-    pub(super) own_uplinks: FxSet<u64>,
+    pub(super) own_uplinks: usize,
     brokers: FxSet<u32>,
     pub(super) opt_out: bool,
 }
 
-pub(super) fn origins(rows: &[&Row], i: &Interner) -> FxMap<u32, Origin> {
+/// Per sender, what it sent; and per gateway, its distinct receptions; and
+/// the window's distinct receptions. An observation key holds its packet's
+/// key (so its sender) and its gateway (§2.6): one set of keys counts all
+/// three, where a set per sender and per gateway would hash each again.
+pub(super) fn origins(rows: &[&Row], i: &Interner) -> (FxMap<u32, Origin>, FxMap<u32, usize>, usize) {
     let mut m: FxMap<u32, Origin> = map();
+    let mut gw_rx: FxMap<u32, usize> = map();
+    let mut seen: FxSet<u64> = FxSet::with_capacity_and_hasher(rows.len(), Default::default());
     for r in rows {
-        let o = m.entry(r.src).or_insert_with(|| Origin { first: r.t, last: r.t, packets: map(), receptions: set(), own_uplinks: set(), brokers: set(), opt_out: false });
+        let o = m.entry(r.src).or_insert_with(|| Origin { first: r.t, last: r.t, packets: map(), receptions: 0, own_uplinks: 0, brokers: set(), opt_out: false });
         o.first = o.first.min(r.t);
         o.last = o.last.max(r.t);
         // Relays can strip a signature, so a packet's status is its best copy's.
         let rank = i.sig_rank(r.sig);
         let b = o.packets.entry(r.lp).or_insert(rank);
         *b = (*b).max(rank);
-        o.receptions.insert(r.ok);
-        if r.gw == Some(r.src) {
-            o.own_uplinks.insert(r.ok);
+        if seen.insert(r.ok) {
+            o.receptions += 1;
+            if let Some(g) = r.gw {
+                *gw_rx.entry(g).or_default() += 1;
+                if g == r.src {
+                    o.own_uplinks += 1;
+                }
+            }
         }
         o.brokers.insert(r.broker);
         o.opt_out |= r.nk;
     }
-    m
+    let n = seen.len();
+    (m, gw_rx, n)
 }
 
 /// One status per packet, its best copy's: relays can strip a signature, so
