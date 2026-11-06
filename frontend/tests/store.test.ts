@@ -82,3 +82,14 @@ describe('window ends follow the server clock', () => {
     expect(fromQuery(q, t('2026-11-05T12:00:00Z')).win).toMatchObject({ live: false, start: '2026-11-04T00:00:00.000Z', end: '2026-11-05T12:00:00.000Z' })
   })
 })
+
+describe('window changes', () => {
+  it('choosing the live window already shown keeps it as it is', () => {
+    useStore.getState().setLive(24)
+    const win = useStore.getState().win
+    useStore.getState().setLive(24)
+    expect(useStore.getState().win).toBe(win) // nothing following the window restarts
+    useStore.getState().setLive(48)
+    expect(useStore.getState().win).toMatchObject({ live: true, durationH: 48 })
+  })
+})

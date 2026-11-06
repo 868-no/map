@@ -131,8 +131,13 @@ export const useStore = create<Store>((set) => ({
   probe: null,
   search: '',
   detailTab: 'overview',
+  // The window already shown is kept as it is (the same object), so
+  // choosing it again restarts nothing that follows the window.
   setLive: (durationH) =>
-    set((s) => ({ win: { live: true, durationH: durationH ?? s.win.durationH, start: null, end: null } })),
+    set((s) => {
+      const h = durationH ?? s.win.durationH
+      return s.win.live && s.win.durationH === h ? s : { win: { live: true, durationH: h, start: null, end: null } }
+    }),
   // A fixed window never creeps forward.
   setFixed: (start, end) => set((s) => ({ win: { ...s.win, live: false, start, end } })),
   setFilters: (f) => set((s) => ({ filters: { ...s.filters, ...f } })),
@@ -203,6 +208,9 @@ export function fromQuery(q: URLSearchParams, now = serverNow()): Partial<Pick<S
     out.win = { live: false, durationH: windowLimits.defaultH, start: s, end: e }
   } else if (dur) {
     const h = parseInt(dur, 10)
+    // windowLimits.maxH is the protocol's longest window (168 h) until
+    // /capabilities answers; no server serves longer, and applyLimits
+    // clamps to a shorter configured one then.
     if (h >= 1 && h <= windowLimits.maxH) out.win = { live: true, durationH: h, start: null, end: null }
   }
   const list = (k: string) => (q.get(k) ?? '').split(',').map((x) => x.trim()).filter(Boolean)
