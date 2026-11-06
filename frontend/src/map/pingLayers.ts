@@ -56,7 +56,7 @@ export function buildPingLayers(now: number, zoom: number, palette: MapPalette):
     new PathLayer<GapLine, PathStyleExtensionProps<GapLine>>({
       id: 'ping-gaps', data: gaps, getPath: (g) => [g.from, g.tip], widthUnits: 'pixels', getWidth: (g) => (g.progress < 1 ? 3 : 2),
       getColor: (g) => [...(g.internet ? palette.linkMqtt : bright(g)), Math.round(g.alpha * (g.progress < 1 ? 1 : 0.6))] as RGBA,
-      getDashArray: (g) => (g.internet ? [1, 2.5] : [5, 4]), dashJustified: false, extensions: [dashExt],
+      getDashArray: (g) => (g.internet ? DASH.internet : DASH.dashed), dashJustified: false, extensions: [dashExt],
       updateTriggers: { getPath: now, getWidth: now, getColor: now },
     }),
     new ScatterplotLayer<GapLine>({

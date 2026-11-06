@@ -126,10 +126,16 @@ export function deriveView(req: Omit<ViewRequest, 'type' | 'id'>, signal?: Abort
   const id = nextId++
   if (broken) return Promise.reject(new ViewError('internal', `the derivation engine cannot run in this browser (${broken}); reload to try again`))
   return new Promise((resolve, reject) => {
-    waiting.set(id, { resolve, reject })
-    signal?.addEventListener('abort', () => {
+    const onAbort = () => {
       if (waiting.delete(id)) reject(new DOMException('aborted', 'AbortError'))
-    }, { once: true })
+    }
+    // The listener goes when the view settles: a long-lived signal would otherwise keep every request's.
+    const settled = <T,>(f: (v: T) => void) => (v: T) => {
+      signal?.removeEventListener('abort', onAbort)
+      f(v)
+    }
+    waiting.set(id, { resolve: settled(resolve), reject: settled(reject) })
+    signal?.addEventListener('abort', onAbort, { once: true })
     get().postMessage({ ...req, type: 'view', id } satisfies Request)
   })
 }

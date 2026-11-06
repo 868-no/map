@@ -93,7 +93,11 @@ export function HealthPanel({ snapshot }: { snapshot: SnapshotView | undefined }
   const { issues, airtime } = h.data as HealthView
   const counts = (['problem', 'warning', 'notice'] as const).map((s) => [s, issues.filter((i) => i.severity === s).length] as const).filter(([, n]) => n > 0)
   const groups = new Map<string, Issue[]>()
-  for (const i of issues) groups.set(i.kind, [...(groups.get(i.kind) ?? []), i])
+  for (const i of issues) {
+    const list = groups.get(i.kind)
+    if (list) list.push(i)
+    else groups.set(i.kind, [i])
+  }
   const top = airtime.nodes.slice(0, 10)
   const maxNode = top[0]?.caused ?? 0
   return (

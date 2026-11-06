@@ -11,6 +11,7 @@ import type { MeshNode, SnapshotView } from '../derive/views'
 import { sendTerrain } from '../derive/client'
 import { isInfraRole } from '../map/model'
 import { useCapabilities } from './data'
+import { pollGaveUp, pollIncomplete, type IncompleteQuery } from '../lib/poll'
 
 /** An end of a cross section: a reported position, and the altitude reported with it. */
 export interface TerrainEnd { lat: number; lon: number; alt?: number }
@@ -26,19 +27,7 @@ export function terrainEnd(n: MeshNode | undefined): TerrainEnd | null {
 /** Points to 5 decimals (about 1 m): the server's grid is coarser. */
 const round = (v: number) => Math.round(v * 1e5) / 1e5
 
-/** Answers polled while the server is still fetching heights (about 15 minutes in all). */
-export const TERRAIN_POLLS = 25
-
-type TerrainQuery = { state: { data?: { incomplete?: boolean }; dataUpdateCount: number } }
-
-/** Whether polling has given up on an answer still missing heights. */
-export const terrainGaveUp = (q: TerrainQuery) => !!q.state.data?.incomplete && q.state.dataUpdateCount > TERRAIN_POLLS
-
-/** While the server is still fetching heights: soon at first, backing off, giving up after TERRAIN_POLLS answers. */
-export const again = (q: TerrainQuery) => {
-  const n = q.state.dataUpdateCount
-  return q.state.data?.incomplete && !terrainGaveUp(q) ? Math.min(4000 * 1.3 ** n, 60_000) : false
-}
+type TerrainQuery = IncompleteQuery
 
 /** An answer still missing heights is asked again when its panel opens again (staleTime is Infinity). */
 const stillMissing = (q: TerrainQuery) => (q.state.data?.incomplete ? ('always' as const) : false)
@@ -67,12 +56,12 @@ export function useTerrainProfile(a: TerrainEnd | null, b: TerrainEnd | null) {
     },
     staleTime: Infinity,
     retry: false,
-    refetchInterval: again,
+    refetchInterval: pollIncomplete,
     refetchOnMount: stillMissing,
   })
   // Each answer re-renders, so the query's update count read here is current.
   const state = client.getQueryState<TerrainProfile>(queryKey)
-  const gaveUp = !q.isFetching && !!state && terrainGaveUp({ state })
+  const gaveUp = !q.isFetching && !!state && pollGaveUp({ state })
   return { q, gaveUp }
 }
 
@@ -117,15 +106,14 @@ export function useTerrainClasses(snap: SnapshotView | undefined) {
       }, signal),
     staleTime: Infinity,
     retry: false,
-    refetchInterval: again,
+    refetchInterval: pollIncomplete,
     refetchOnMount: stillMissing,
   })
   const classes = useMemo(() => {
     const got = q.data?.classes
     if (!got) return null
-    const parsed = JSON.parse(key) as [string, string][]
-    return parsed.flatMap(([a, b], i) => (got[i] && got[i].class !== 'unknown' ? [{ a, b, class: got[i].class }] : []))
-  }, [q.data, key])
+    return links.flatMap(({ a, b }, i) => (got[i] && got[i].class !== 'unknown' ? [{ a, b, class: got[i].class }] : []))
+  }, [q.data, links])
   // A new answer (the links asked about moved, or one came or went) often
   // classifies them all the same: each send rebuilds every open view, so
   // the engine is sent only classes that differ from the last ones sent.

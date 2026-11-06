@@ -6,6 +6,7 @@ import type { Weather, WeatherHour } from '../api/types'
 import type { MeshNode } from '../derive/views'
 import { isInfraRole } from '../map/model'
 import { useCapabilities } from './data'
+import { pollIncomplete } from '../lib/poll'
 
 const HOUR = 3_600_000
 
@@ -43,13 +44,7 @@ export function useWeather(sites: ({ lat: number; lon: number } | null)[], start
           getJSON<Weather>('/api/v1/weather', new URLSearchParams({ lat: String(lat), lon: String(lon), start: s, end: e }), signal),
         staleTime: 10 * 60_000,
         retry: false,
-        // While the server is still fetching hours: soon at first, then
-        // backing off to a minute, and giving up after about 15 minutes, so
-        // an unreachable MET Norway never means polling for ever.
-        refetchInterval: (q: { state: { data?: Weather; dataUpdateCount: number } }) => {
-          const n = q.state.dataUpdateCount
-          return q.state.data?.incomplete && n <= 25 ? Math.min(4000 * 1.3 ** n, 60_000) : false
-        },
+        refetchInterval: pollIncomplete, // while the server is still fetching hours
       }
     }),
   })

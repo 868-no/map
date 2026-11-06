@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { Edge, MeshNode, SnapshotView } from '../src/derive/views'
-import { again, routerLinks, TERRAIN_POLLS, terrainEnd, terrainGaveUp } from '../src/state/terrain'
+import { routerLinks, terrainEnd } from '../src/state/terrain'
+import { INCOMPLETE_POLLS as TERRAIN_POLLS, pollGaveUp as terrainGaveUp, pollIncomplete as again } from '../src/lib/poll'
 
 const node = (id: string, role: string, extra: Partial<MeshNode> = {}): MeshNode => ({
   id, num: 1, status: 'observed', packets: 0, receptions: 0, gateway_receptions: 0, is_gateway: false,

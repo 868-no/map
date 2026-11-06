@@ -87,7 +87,6 @@ function AnswerTag({ a }: { a: { kind: string; error?: string } }) {
   return a.kind === 'ack' ? <span className="reply-ok">✓ ACK</span> : <span className="reply-err" title={a.error}>✗ {routingError(a.error)}</span>
 }
 
-/** The selected node's packets in the window: its own, others' it relayed, and routing packets and direct messages addressed to it. */
 /** How long a new row's slide-in lasts (index.css .row-new). */
 const NEW_ROW_MS = 1600
 
@@ -102,6 +101,7 @@ const LOG_COLS: { label: string; width: ColumnDefault; title?: string }[] = [
   { label: 'Re', width: 34, title: 'Delivery reports: ✓ an ACK or ✗ an error answered this packet. Only reports that reached a gateway are known, so a blank never means it was lost. For a routing packet, ↩ selects the packet it answers' },
 ]
 
+/** The selected node's packets in the window: its own, others' it relayed, and routing packets and direct messages addressed to it. */
 function PacketLogs({ id, names, positioned, moved }: { id: string; names: ReadonlyMap<string, string>; positioned: Set<string>; moved: Set<string> }) {
   const select = useStore((s) => s.select)
   const route = useStore((s) => s.route)
