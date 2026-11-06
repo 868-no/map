@@ -405,6 +405,7 @@ func serveCmd() *cobra.Command {
 				})
 			}
 			apiSrv.NewHandler(mux)
+			go apiSrv.WarmTrends(ctx)
 			handler := api.Protect(mux, api.Limits{Trusted: c.Proxies, PerSecond: c.Env.APIRatePerSecond, Burst: c.Env.APIRateBurst,
 				Timeout: c.Env.APIRequestTimeout, MaxStreams: c.Env.APIStreamsPerClient, MaxStreamsTotal: c.Env.APIStreamsTotal,
 				HeavyPerClient: c.Env.APIReadsPerClient})

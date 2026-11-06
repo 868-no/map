@@ -112,6 +112,19 @@ func zone(name string) (*time.Location, bool) {
 	return l, true
 }
 
+// trendsRefreshLimit bounds one refresh of the hourly summaries.
+const trendsRefreshLimit = 2 * time.Minute
+
+// WarmTrends reads the hourly summaries once at start, so the first visitor
+// to ask for trends does not wait for the whole retained log to be read.
+func (s *Server) WarmTrends(ctx context.Context) {
+	ctx, cancel := context.WithTimeout(ctx, trendsRefreshLimit)
+	defer cancel()
+	if err := s.trendHours.RefreshEvery(ctx, s.Pool, s.now(), TrendsTTL); err != nil && ctx.Err() == nil {
+		s.Log.Warn("trends warm-up failed", "err", err)
+	}
+}
+
 func (s *Server) trends(ctx context.Context, in *TrendsInput) (*TrendsOutput, error) {
 	loc, ok := zone(in.TZ)
 	if !ok {
@@ -125,7 +138,12 @@ func (s *Server) trends(ctx context.Context, in *TrendsInput) (*TrendsOutput, er
 	// (D-112). They are refreshed at most once per TrendsTTL whatever bucket
 	// or zone is asked for, so trends never compete with /observations for
 	// read slots; a request in between only sums from memory.
-	if err := s.trendHours.RefreshEvery(ctx, s.Pool, s.now(), TrendsTTL); err != nil {
+	// The refresh outlives the request that started it: the first after a
+	// start reads the whole retained log, which can take longer than a
+	// request may, and is not wasted on a request deadline.
+	rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), trendsRefreshLimit)
+	defer cancel()
+	if err := s.trendHours.RefreshEvery(rctx, s.Pool, s.now(), TrendsTTL); err != nil {
 		return nil, err
 	}
 	body := TrendsBody{Bucket: in.Bucket, TZ: in.TZ, Buckets: []TrendBucket{}, Computed: s.now(), Since: s.trendHours.Oldest()}
