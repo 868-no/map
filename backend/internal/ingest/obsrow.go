@@ -6,9 +6,9 @@ import (
 	"github.com/868-no/map/internal/obsrow"
 )
 
-// RowOf is the ObsRow of an observation stored as row id with the
+// rowOf is the ObsRow of an observation stored as row id with the
 // decoded_metadata meta.
-func RowOf(o *Observation, id int64, meta []byte) obsrow.ObsRow {
+func rowOf(o *Observation, id int64, meta []byte) obsrow.ObsRow {
 	pid := o.PacketID
 	return obsrow.New(obsrow.Fields{
 		ID: id, At: o.ObservedAt, Broker: o.BrokerID, Gateway: o.Gateway, Source: o.Source, Dest: o.Destination, PacketID: &pid,
@@ -22,7 +22,7 @@ func RowOf(o *Observation, id int64, meta []byte) obsrow.ObsRow {
 // stream completes the tail with the committed id rather than encoding the
 // row again (D-046). Meta must not change afterwards except through the
 // pipeline's takeAlsoVia, which resets the encoding. Called by the writer
-// (storage.Row), which owns the observation until it commits.
+// (storage.copyRow), which owns the observation until it commits.
 func (o *Observation) Encoded() (meta, tail []byte, err error) {
 	if o.tail == nil {
 		if o.meta, o.tail, err = o.encode(); err != nil {
@@ -36,7 +36,7 @@ func (o *Observation) encode() (meta, tail []byte, err error) {
 	if meta, err = json.Marshal(o.Meta); err != nil {
 		return nil, nil, err
 	}
-	if tail, err = obsrow.EncodeTail(RowOf(o, 0, meta)); err != nil {
+	if tail, err = obsrow.EncodeTail(rowOf(o, 0, meta)); err != nil {
 		return nil, nil, err
 	}
 	return meta, tail, nil

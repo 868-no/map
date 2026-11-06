@@ -131,8 +131,8 @@ func nullStr(s string) any {
 	return s
 }
 
-// Row converts an observation to COPY values.
-func Row(o *ingest.Observation) ([]any, error) {
+// copyRow converts an observation to COPY values.
+func copyRow(o *ingest.Observation) ([]any, error) {
 	meta, tail, err := o.Encoded()
 	if err != nil {
 		return nil, err
@@ -164,7 +164,7 @@ func InsertBatch(ctx context.Context, pool *pgxpool.Pool, obs []*ingest.Observat
 	lo, hi := obs[0].ObservedAt, obs[0].ObservedAt
 	rows := make([][]any, 0, len(obs))
 	for _, o := range obs {
-		r, err := Row(o)
+		r, err := copyRow(o)
 		if err != nil {
 			return nil, err
 		}
