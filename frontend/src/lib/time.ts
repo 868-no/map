@@ -1,7 +1,10 @@
 // All state is UTC; display is in the viewer's zone with a visible indicator.
 // Plain Intl: the zone rules come from the browser, as they did through Luxon.
 
-export const localZone = (): string => Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+// The viewer's zone, resolved once: building a formatter to ask costs as
+// much as the formatting it serves, and every default argument below asks.
+let zone: string | undefined
+export const localZone = (): string => (zone ??= Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC')
 
 const MIN = 60_000
 const pad = (n: number, w = 2) => String(n).padStart(w, '0')
@@ -68,7 +71,15 @@ export function formatShort(iso: string | Date, zone = localZone()): string {
 /** Compact log time: HH:mm:ss today, otherwise "LLL dd HH:mm". */
 export function formatLogTime(iso: string | Date, nowMs = Date.now(), zone = localZone()): string {
   const w = wall(ms(iso), zone)
-  return ymd(w) === ymd(wall(nowMs, zone)) ? `${hm(w)}:${pad(w.s)}` : formatShort(iso, zone)
+  return ymd(w) === today(nowMs, zone) ? `${hm(w)}:${pad(w.s)}` : formatShort(iso, zone)
+}
+
+// Today's date per zone, worked out once a minute: a log formats hundreds of rows against it.
+let todayMemo = { minute: NaN, zone: '', ymd: '' }
+function today(nowMs: number, zone: string): string {
+  const minute = Math.floor(nowMs / MIN)
+  if (minute !== todayMemo.minute || zone !== todayMemo.zone) todayMemo = { minute, zone, ymd: ymd(wall(nowMs, zone)) }
+  return todayMemo.ymd
 }
 
 /** Value for <input type="datetime-local"> in the given zone (minute precision). */
