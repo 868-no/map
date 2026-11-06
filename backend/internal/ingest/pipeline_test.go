@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	dto "github.com/prometheus/client_model/go"
 	"io"
 	"log/slog"
 	"slices"
@@ -103,6 +104,16 @@ func newTestPipeline(t *testing.T, sink *memSink, queue int) (*Pipeline, *promot
 	p := New(Config{QueueSize: queue, Workers: 2, BatchSize: 10, FlushEvery: 10 * time.Millisecond, ProcessOpts: opts(t, longFast)},
 		sink, nil, nil, pr, observability.NewMetrics(), slog.New(slog.NewTextHandler(io.Discard, nil)))
 	return p, pr
+}
+
+// dropped reads the pipeline's dropped-message counter for reason.
+func dropped(t *testing.T, p *Pipeline, reason string) float64 {
+	t.Helper()
+	var m dto.Metric
+	if err := p.m.Dropped.WithLabelValues(reason).Write(&m); err != nil {
+		t.Fatal(err)
+	}
+	return m.GetCounter().GetValue()
 }
 
 func waitFor(t *testing.T, cond func() bool) {
@@ -264,9 +275,8 @@ func TestPipelineQueueFullDrops(t *testing.T) {
 	for i := 0; i < 10; i++ { // not running: queue fills
 		p.Submit(msg(topicLF, []byte{1}))
 	}
-	gaps := p.Gaps()
-	if len(gaps) != 1 || gaps[0].Dropped != 8 || gaps[0].Reason != "queue_full" {
-		t.Fatalf("gaps %+v", gaps)
+	if n := dropped(t, p, "queue_full"); n != 8 {
+		t.Fatalf("dropped %v, want 8", n)
 	}
 }
 
@@ -324,8 +334,8 @@ func TestShutdownDuringOutageIsBounded(t *testing.T) {
 	if d := time.Since(start); d < 250*time.Millisecond {
 		t.Fatalf("gave up after %s, before the drain timeout", d)
 	}
-	if g := p.Gaps(); len(g) != 1 || g[0].Reason != "shutdown_db_unavailable" || g[0].Dropped != 1 {
-		t.Fatalf("gaps %+v", g)
+	if n := dropped(t, p, "shutdown_db_unavailable"); n != 1 {
+		t.Fatalf("dropped %v, want 1", n)
 	}
 }
 

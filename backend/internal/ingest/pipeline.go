@@ -134,17 +134,6 @@ type Pipeline struct {
 	dedupeWait    time.Duration // dedupeBackoff; shorter in tests
 	dedupeRetryAt atomic.Int64  // UnixNano before which Redis dedupe is skipped
 	dedupeDown    atomic.Bool   // an outage was logged
-
-	gapMu sync.Mutex
-	gaps  []Gap
-}
-
-// Gap is an interval where ingestion lost data (queue full); bounded
-// operational telemetry, not packet history.
-type Gap struct {
-	Start, End time.Time
-	Dropped    int
-	Reason     string
 }
 
 // New builds a pipeline. dedupe and pub may be nil.
@@ -187,29 +176,7 @@ func (p *Pipeline) Submit(msg RawMessage) {
 		p.m.QueueDepth.Set(float64(len(p.queue)))
 	default:
 		p.m.Dropped.WithLabelValues("queue_full").Inc()
-		p.noteGap(msg.ObservedAt, "queue_full")
 	}
-}
-
-func (p *Pipeline) noteGap(t time.Time, reason string) {
-	p.gapMu.Lock()
-	defer p.gapMu.Unlock()
-	if n := len(p.gaps); n > 0 && p.gaps[n-1].Reason == reason && t.Sub(p.gaps[n-1].End) < 10*time.Second {
-		p.gaps[n-1].End = t
-		p.gaps[n-1].Dropped++
-		return
-	}
-	p.gaps = append(p.gaps, Gap{Start: t, End: t, Dropped: 1, Reason: reason})
-	if len(p.gaps) > 256 {
-		p.gaps = p.gaps[len(p.gaps)-256:]
-	}
-}
-
-// Gaps returns a copy of recent ingestion gaps.
-func (p *Pipeline) Gaps() []Gap {
-	p.gapMu.Lock()
-	defer p.gapMu.Unlock()
-	return append([]Gap(nil), p.gaps...)
 }
 
 // Healthy reports whether the writer is committing and the queue is not saturated.
@@ -579,13 +546,10 @@ func (p *Pipeline) reject(o *Observation, err error) {
 	p.inflightMu.Unlock()
 }
 
-// giveUp records rows the shutdown drain could not store as a gap.
+// giveUp counts the rows the shutdown drain could not store as dropped.
 func (p *Pipeline) giveUp(rows []*Observation, err error) {
 	p.log.Error("database unavailable at shutdown; rows lost", "rows", len(rows), "err", err)
 	p.m.Dropped.WithLabelValues("shutdown_db_unavailable").Add(float64(len(rows)))
-	for _, o := range rows {
-		p.noteGap(o.ObservedAt, "shutdown_db_unavailable")
-	}
 }
 
 func (p *Pipeline) afterCommit(obs []*Observation, ids []int64) {
