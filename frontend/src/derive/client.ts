@@ -37,10 +37,8 @@ function restart(why: string): void {
     broken = why
     return
   }
-  if (caps) initDerive(caps)
-  if (terrain.length) get().postMessage({ type: 'terrain', links: terrain } satisfies Request)
+  if (caps) initDerive(caps) // with the terrain classes and node limit
   if (generation) get().postMessage({ type: 'generation', generation } satisfies Request)
-  if (maxNodes !== null) get().postMessage({ type: 'options', maxNodes } satisfies Request)
   onChanged?.()
 }
 
@@ -107,7 +105,7 @@ export function sendLiveRows(rows: ObsRow[], ping: number[]): void {
 
 export function initDerive(c: Capabilities): void {
   caps = c
-  const msg: Request = { type: 'init', geo: c.geolocation, liveQuantumMs: c.live_quantum_seconds * 1000 }
+  const msg: Request = { type: 'init', geo: c.geolocation, liveQuantumMs: c.live_quantum_seconds * 1000, maxNodes: maxNodes ?? undefined, terrain }
   get().postMessage(msg)
 }
 
@@ -117,17 +115,20 @@ export function hintGeneration(g: string): void {
   if (!broken) get().postMessage({ type: 'generation', generation: g } satisfies Request)
 }
 
-/** The snapshot's node limit (D-182); views are rebuilt with it. */
+/**
+ * The snapshot's node limit (D-182); views are rebuilt with it. Before
+ * init it only rides along with init, so the first build already uses it.
+ */
 export function setMaxNodes(n: number): void {
   if (n === maxNodes) return
   maxNodes = n
-  if (!broken) get().postMessage({ type: 'options', maxNodes: n } satisfies Request)
+  if (caps && !broken) get().postMessage({ type: 'options', maxNodes: n } satisfies Request)
 }
 
 /** Line-of-sight classes of router links (D-143); views are rebuilt with them. */
 export function sendTerrain(links: TerrainLinkClass[]): void {
   terrain = links
-  if (!broken) get().postMessage({ type: 'terrain', links } satisfies Request)
+  if (caps && !broken) get().postMessage({ type: 'terrain', links } satisfies Request)
 }
 
 /** Ask the worker for a view; resolves with the view body (with meta). Aborts only stop waiting. */

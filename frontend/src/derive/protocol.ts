@@ -20,6 +20,8 @@ export interface InitRequest {
   type: 'init'
   geo: Capabilities['geolocation']
   liveQuantumMs: number
+  maxNodes?: number // set before init, or kept across a restart (D-182)
+  terrain?: TerrainLinkClass[] // likewise (D-143)
 }
 
 /** The generation /retention reported: whole days are asked under it before /observations answers (D-170). */

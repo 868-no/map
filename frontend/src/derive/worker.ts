@@ -288,6 +288,19 @@ async function view(req: ViewRequest): Promise<{ body: Uint8Array; meta: ViewMet
   return { body, meta, offline }
 }
 
+/** Applies a setting every view depends on, after init, and has the page ask its views again. */
+async function reconfigure(what: string, apply: () => void): Promise<void> {
+  try {
+    await started
+    await inited
+    apply()
+    memo.clear()
+    self.postMessage({ type: 'changed' } satisfies Response)
+  } catch (err) {
+    if (!fatal(err)) console.warn(`${what} dropped`, err)
+  }
+}
+
 self.onmessage = async (e: MessageEvent<Request>) => {
   const msg = e.data
   if (msg.type === 'rows') {
@@ -304,34 +317,14 @@ self.onmessage = async (e: MessageEvent<Request>) => {
     void prefetch()
     return
   }
-  if (msg.type === 'terrain') {
-    try {
-      await started
-      await inited
-      engine.set_terrain(JSON.stringify(msg.links))
-      memo.clear()
-      self.postMessage({ type: 'changed' } satisfies Response)
-    } catch (err) {
-      if (!fatal(err)) console.warn('terrain classes dropped', err)
-    }
-    return
-  }
-  if (msg.type === 'options') {
-    try {
-      await started
-      await inited
-      engine.set_options(JSON.stringify({ max_nodes: msg.maxNodes }))
-      memo.clear()
-      self.postMessage({ type: 'changed' } satisfies Response)
-    } catch (err) {
-      if (!fatal(err)) console.warn('options dropped', err)
-    }
-    return
-  }
+  if (msg.type === 'terrain') return reconfigure('terrain classes', () => engine.set_terrain(JSON.stringify(msg.links)))
+  if (msg.type === 'options') return reconfigure('options', () => engine.set_options(JSON.stringify({ max_nodes: msg.maxNodes })))
   if (msg.type === 'init') {
     try {
       await started
-      engine.set_options(JSON.stringify({ geo: msg.geo }))
+      // Settings made before (or kept across) a restart come with it: one rebuild, not one each.
+      engine.set_options(JSON.stringify({ geo: msg.geo, max_nodes: msg.maxNodes }))
+      if (msg.terrain?.length) engine.set_terrain(JSON.stringify(msg.terrain))
       quantumMs = msg.liveQuantumMs
       memo.clear()
       pinned.clear()
