@@ -463,3 +463,43 @@ func TestIsolateKeepsEveryRow(t *testing.T) {
 		t.Fatalf("refused %v, again %v; want [0 1 3], [2]", keys(refused), keys(again))
 	}
 }
+
+// After a restart the in-process set is empty: a copy found in the database
+// is held in process from then on, and a same-broker replay of it is not
+// counted as another broker's delivery.
+func TestReplayFoundInDatabaseAfterRestart(t *testing.T) {
+	sink := &memSink{}
+	pk := pkt{from: 0x11111111, id: 9, to: 0xffffffff, gw: "!aabbccdd", data: posData(t), hopStart: 3, hopLimit: 3, snr: 5, rssi: -80}
+	b := envelope(t, pk, security.DefaultPSK[:], security.ModeCTR, "LongFast")
+	run := func(p *Pipeline, copies int) {
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan struct{})
+		go func() { p.Run(ctx); close(done) }()
+		for range copies {
+			m := msg(topicLF, b)
+			m.BrokerID = "a"
+			p.Submit(m)
+		}
+		waitFor(t, func() bool { return sink.count() == 1 && len(p.queue) == 0 })
+		time.Sleep(50 * time.Millisecond)
+		cancel()
+		<-done
+	}
+	first, _ := newTestPipeline(t, sink, 100)
+	run(first, 1)
+	restarted, _ := newTestPipeline(t, sink, 100)
+	run(restarted, 2)
+	if _, ok := restarted.recent.get(sink.row(0).ObservationKey, time.Now()); !ok {
+		t.Fatal("the copy found in the database is not held in process")
+	}
+	var m dto.Metric
+	if err := restarted.m.DupDeliveries.WithLabelValues("a").Write(&m); err != nil {
+		t.Fatal(err)
+	}
+	if n := m.GetCounter().GetValue(); n != 0 {
+		t.Fatalf("same-broker replays counted as %v cross-broker deliveries", n)
+	}
+	if r := sink.row(0); sink.count() != 1 || len(r.Meta.AlsoVia) != 0 {
+		t.Fatalf("rows %d, also_via %v", sink.count(), r.Meta.AlsoVia)
+	}
+}

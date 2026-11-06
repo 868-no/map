@@ -252,7 +252,7 @@ func (p *Pipeline) claim(o Observation) bool {
 	}
 	p.inflight[k] = o.BrokerID
 	p.inflightMu.Unlock()
-	id, found := p.committed(o)
+	id, found, local := p.committed(o)
 	if !found {
 		return true
 	}
@@ -264,8 +264,17 @@ func (p *Pipeline) claim(o Observation) bool {
 	delete(p.inflight, k)
 	delete(p.alsoVia, k)
 	p.inflightMu.Unlock()
-	cross := p.recent.addBroker(k, o.BrokerID)
-	if cross && id > 0 {
+	var cross bool
+	if local {
+		cross = p.recent.addBroker(k, o.BrokerID)
+	} else {
+		// Found in Redis or the database: whether this broker delivered it
+		// before is unknown, so it is not counted as another broker's copy,
+		// and the SQL keeps the row's own broker out of its provenance. Held
+		// in process from now on, so later copies are not looked up again.
+		p.recent.add(k, id, []string{o.BrokerID}, time.Now())
+	}
+	if (cross || !local) && id > 0 {
 		p.queueProvenance(id, o.BrokerID)
 	}
 	for _, b := range others {
@@ -308,12 +317,13 @@ func (p *Pipeline) takeAlsoVia(batch []*Observation) {
 }
 
 // committed looks up a recently stored observation and its row id (0 if
-// only existence is known).
-func (p *Pipeline) committed(o Observation) (int64, bool) {
+// only existence is known); local: found in the in-process set, which knows
+// the brokers that delivered it.
+func (p *Pipeline) committed(o Observation) (id int64, found, local bool) {
 	now := time.Now()
 	k := o.ObservationKey
 	if id, ok := p.recent.get(k, now); ok {
-		return id, true
+		return id, true, true
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
@@ -321,16 +331,16 @@ func (p *Pipeline) committed(o Observation) (int64, bool) {
 		ids, err := p.dedupe.LookupObservations(ctx, [][16]byte{k})
 		if err == nil {
 			p.dedupeOK()
-			return ids[0], ids[0] != 0
+			return ids[0], ids[0] != 0, false
 		}
 		p.dedupeFailed(now, err)
 		p.m.CacheErrors.WithLabelValues("dedupe_check").Inc()
 	}
 	id, found, err := p.sink.RecentObservation(ctx, k, o.ObservedAt.Add(-DedupeWindow))
 	if err != nil {
-		return 0, false // prefer a possible duplicate (collapsed at query time) over data loss
+		return 0, false, false // prefer a possible duplicate (collapsed at query time) over data loss
 	}
-	return id, found
+	return id, found, false
 }
 
 // After a Redis error the dedupe index is left alone for dedupeBackoff: an
