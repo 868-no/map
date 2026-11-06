@@ -322,10 +322,15 @@ export default memo(function MapView({ caps, snapshot, onPositions }: Props) {
   }, [reachOpt, selectedNode, reachQ.data, pos])
   // The link open in Details is always drawn.
   const selectedEdge = selection?.kind === 'edge' ? selection : null
-  const shownLinks = useMemo(
-    () => (route || reach ? [] : withSelectedLink(visibleLinks(links, { selectedNode, zoom, bounds }), selectedEdge, snapshot?.edges ?? [], allPos, roles)),
-    [route, reach, links, selectedNode, selectedEdge, snapshot, allPos, roles, zoom, bounds],
-  )
+  // A pan or zoom that leaves the same links drawn keeps the same array: the
+  // link layers regenerate every attribute whenever their data changes.
+  const lastShown = useRef<LinkGeom[]>([])
+  const shownLinks = useMemo(() => {
+    const next = route || reach ? [] : withSelectedLink(visibleLinks(links, { selectedNode, zoom, bounds }), selectedEdge, snapshot?.edges ?? [], allPos, roles)
+    const last = lastShown.current
+    if (next.length === last.length && next.every((g, i) => g === last[i])) return last
+    return (lastShown.current = next)
+  }, [route, reach, links, selectedNode, selectedEdge, snapshot, allPos, roles, zoom, bounds])
 
   // Name clusters at this zoom. One fans out while hovered (with a short
   // grace period to reach its names) or while one of its nodes is selected.
