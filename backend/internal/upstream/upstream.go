@@ -25,6 +25,7 @@ type Queue[K comparable] struct {
 	turns      []string       // visitors with keys waiting, next first
 	nUrgent    int            // keys in urgent
 	background []K
+	inBack     map[K]struct{} // keys with a copy in background
 	state      map[K]State
 }
 
@@ -33,7 +34,7 @@ type Queue[K comparable] struct {
 // unbounded).
 func NewQueue[K comparable](maxPerClient, maxUrgent, maxBackground int) *Queue[K] {
 	return &Queue[K]{maxPerClient: maxPerClient, maxUrgent: maxUrgent, maxBackground: maxBackground,
-		urgent: map[string][]K{}, state: map[K]State{}}
+		urgent: map[string][]K{}, inBack: map[K]struct{}{}, state: map[K]State{}}
 }
 
 // State is where k waits.
@@ -61,6 +62,7 @@ func (q *Queue[K]) PushBackground(k K) bool {
 		return false
 	}
 	q.background = append(q.background, k)
+	q.inBack[k] = struct{}{}
 	q.state[k] = Background
 	return true
 }
@@ -90,7 +92,12 @@ func (q *Queue[K]) room(client string) bool {
 	q.urgent[big] = q.urgent[big][:n-1] // n ≥ 2: never emptied, so still in turns
 	q.nUrgent--
 	if q.state[k] == Urgent {
-		delete(q.state, k) // a copy in the background queue goes too; background work queues it again
+		// It still waits where background work put it, if it did.
+		if _, ok := q.inBack[k]; ok {
+			q.state[k] = Background
+		} else {
+			delete(q.state, k)
+		}
 	}
 	return true
 }
@@ -116,6 +123,7 @@ func (q *Queue[K]) Pop() (k K, ok bool) {
 		return k, true
 	case len(q.background) > 0:
 		k, q.background = q.background[0], q.background[1:]
+		delete(q.inBack, k)
 		return k, true
 	}
 	return k, false

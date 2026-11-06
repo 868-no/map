@@ -81,3 +81,22 @@ func TestCacheDropsOldestTenth(t *testing.T) {
 		t.Fatal("a newer entry was dropped")
 	}
 }
+
+// A key taken from a visitor to make room still waits in background if
+// background work queued it: not forgotten, and not queued twice there.
+func TestQueueRoomKeepsBackgroundCopy(t *testing.T) {
+	q := NewQueue[int](10, 3, 0)
+	q.PushBackground(7)
+	for _, k := range []int{1, 2, 7} {
+		q.PushUrgent("greedy", k)
+	}
+	if !q.PushUrgent("other", 100) || q.State(7) != Background { // 7 is greedy's last: taken
+		t.Fatalf("state of the taken key: %v", q.State(7))
+	}
+	if q.PushBackground(7) || q.BackgroundLen() != 1 {
+		t.Fatal("queued in background twice")
+	}
+	if got := drain(q); !slices.Equal(got, []int{1, 100, 2, 7}) {
+		t.Fatalf("order %v", got)
+	}
+}
