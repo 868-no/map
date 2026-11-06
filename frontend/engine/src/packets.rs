@@ -524,12 +524,12 @@ pub fn packet_route(rows: &[&Row], ctx: &RelayContext, roles: &FxMap<u32, String
 /// with whether the hop into it crossed the internet (exactly 0 dB into a
 /// probable downlinker, D-054). The uplinking gateway ends it when the copy
 /// reached it over the air.
-fn traceroute_chain(r: &Row, t: &crate::row::Traceroute, gw: u32, over_radio: bool, ctx: &RelayContext) -> Vec<(Option<u32>, bool)> {
+fn traceroute_chain(r: &Row, t: &crate::row::Traceroute, gw: u32, over_radio: bool, ctx: &RelayContext) -> Chain {
     let (hops, snr) = if t.is_reply { (&t.route_back, &t.snr_back) } else { (&t.route, &t.snr_towards) };
-    let mut chain: Vec<(Option<u32>, bool)> = vec![(Some(r.src), false)];
+    let mut chain: Chain = vec![(Some(r.src), false)];
     for (k, h) in hops.iter().enumerate() {
         let n = (!h.unknown).then_some(h.id);
-        let internet = n.is_some_and(|n| ctx.downlinkers.contains(&n)) && snr.get(k).copied().flatten() == Some(0.0);
+        let internet = over_internet(n, snr.get(k).copied().flatten(), ctx);
         chain.push((n, internet));
     }
     if over_radio && chain.last().and_then(|c| c.0) != Some(gw) {
@@ -594,6 +594,12 @@ fn packet_ref(origin: u32, id: u32) -> String {
 /// it crossed the internet.
 pub type Chain = Vec<(Option<u32>, bool)>;
 
+/// A hop into a probable downlinker recorded at exactly 0 dB came over the
+/// internet, not the radio (D-054).
+fn over_internet(n: Option<u32>, snr: Option<f64>, ctx: &RelayContext) -> bool {
+    n.is_some_and(|n| ctx.downlinkers.contains(&n)) && snr == Some(0.0)
+}
+
 /// The request's whole way as a traceroute reply records it: requester,
 /// route, target (the reply's sender), each node (None where unknown) with
 /// whether the hop into it crossed the internet (exactly 0 dB into a probable
@@ -604,7 +610,7 @@ pub fn recorded_request(r: &Row, ctx: &RelayContext) -> Option<(u32, Chain)> {
     let mut chain = vec![(Some(requester), false)];
     let hops = t.route.iter().map(|h| (!h.unknown).then_some(h.id)).chain([Some(r.src)]);
     for (k, n) in hops.enumerate() {
-        let internet = n.is_some_and(|n| ctx.downlinkers.contains(&n)) && t.snr_towards.get(k).copied().flatten() == Some(0.0);
+        let internet = over_internet(n, t.snr_towards.get(k).copied().flatten(), ctx);
         chain.push((n, internet));
     }
     Some((requester, chain))
