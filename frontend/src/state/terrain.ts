@@ -3,7 +3,7 @@
 // Router-to-router links are classified as clear, grazing or blocked, and the
 // classes are handed to the engine, whose signal-to-distance model uses only
 // clear links.
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { getJSON, postJSON } from '../api/client'
 import type { TerrainClasses, TerrainProfile } from '../api/types'
@@ -126,9 +126,14 @@ export function useTerrainClasses(snap: SnapshotView | undefined) {
     const parsed = JSON.parse(key) as [string, string][]
     return parsed.flatMap(([a, b], i) => (got[i] && got[i].class !== 'unknown' ? [{ a, b, class: got[i].class }] : []))
   }, [q.data, key])
-  // classes changes only with the answer or the links asked about (key is a
-  // string), so the engine is sent each set of classes once.
+  // A new answer (the links asked about moved, or one came or went) often
+  // classifies them all the same: each send rebuilds every open view, so
+  // the engine is sent only classes that differ from the last ones sent.
+  const sent = useRef('')
   useEffect(() => {
-    if (classes) sendTerrain(classes)
+    const text = classes ? JSON.stringify(classes) : ''
+    if (!classes || text === sent.current) return
+    sent.current = text
+    sendTerrain(classes)
   }, [classes])
 }
