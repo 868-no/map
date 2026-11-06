@@ -338,12 +338,14 @@ test('opens on Norway, fits the data once it loads, and clicking empty map clear
   await page.waitForFunction(() => !!(window as unknown as { __meshmap?: unknown }).__meshmap)
   // D-074: Lindesnes, Utsira, Nordkapp and Grense Jakobselv are on screen before the data arrives...
   type M = { map: { getBounds: () => { contains: (p: [number, number]) => boolean } }; layers: () => { id: string; data: { lon: number; lat: number }[] }[] }
-  const norway = () => page.evaluate(() => {
-    const b = (window as unknown as { __meshmap: M }).__meshmap.map.getBounds()
-    return ([[7.05, 57.98], [4.88, 59.3], [25.78, 71.17], [30.8, 69.8]] as [number, number][]).every((p) => b.contains(p))
-  })
   const markers = () => page.evaluate(() => (window as unknown as { __meshmap: M }).__meshmap.layers().find((l) => l.id === 'nodes')?.data.length ?? 0)
-  if ((await markers()) === 0) expect(await norway()).toBe(true)
+  // Both read at once: data arriving between two reads would fit the view away.
+  expect(await page.evaluate(() => {
+    const mm = (window as unknown as { __meshmap: M }).__meshmap
+    if (mm.layers().find((l) => l.id === 'nodes')?.data.length) return true
+    const b = mm.map.getBounds()
+    return ([[7.05, 57.98], [4.88, 59.3], [25.78, 71.17], [30.8, 69.8]] as [number, number][]).every((p) => b.contains(p))
+  })).toBe(true)
   // ...then the view fits the markers: every one is on screen.
   await expect.poll(markers, { timeout: 30_000 }).toBeGreaterThan(0)
   await expect.poll(() => page.evaluate(() => {
