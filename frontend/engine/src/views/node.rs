@@ -193,7 +193,7 @@ impl Node {
     pub(super) fn set_movement(&mut self, m: &crate::movement::Movement) {
         self.moved_at = Some(iso(m.moved_at));
         self.track = Some(m.track.clone());
-        self.airborne = self.position.as_ref().and_then(|p| p.alt).is_some_and(|a| a > crate::movement::AIRBORNE_M);
+        self.airborne = !m.settled && self.position.as_ref().and_then(|p| p.alt).is_some_and(|a| a > crate::movement::AIRBORNE_M);
     }
 
     pub(crate) fn new(n: u32) -> Self {

@@ -31,6 +31,9 @@ const PRECISION_SLACK: f64 = 1.5;
 pub const MAX_TRACK: usize = 100;
 /// Reported altitude (above sea level) that, while moving, means airborne.
 pub const AIRBORNE_M: i32 = 750;
+/// How many move thresholds from its place an anchored node's reports must
+/// lie to be a trip rather than GPS noise (D-179).
+pub const TRIP_FACTOR: f64 = 5.0;
 
 #[derive(Serialize, Clone, Debug, PartialEq)]
 pub struct TrackPoint {
@@ -47,6 +50,9 @@ pub struct Movement {
     pub moved_at: i64,
     /// Distinct positions in time order, the newest last.
     pub track: Vec<TrackPoint>,
+    /// It has come back to rest at its anchored place after a trip (D-179):
+    /// it is not moving now, so never airborne.
+    pub settled: bool,
 }
 
 /// A position's precision in bits: one shared without a precision (bits 0,
@@ -207,33 +213,27 @@ fn narrow(inliers: &[crate::row::Position], mode: &crate::row::Position) -> (f64
 }
 
 /// Nodes that moved within `rows`, with their tracks. Anchored nodes
-/// (`anchors`: home now, with most reports there) are left out: their
-/// readings away from home are noise, not trips.
+/// (`anchors`: home now, with most reports there) count only when they
+/// arrived from a trip (`arrival`): otherwise their readings away from home
+/// are noise.
 pub fn movements_except(rows: &[&Row], anchored: &FxMap<u32, Anchor>, fixed: &FxSet<u32>) -> FxMap<u32, Movement> {
     movements_of(&positions_by_node(rows), anchored, fixed)
 }
 
-/// Nodes that moved, from grouped position reports (`positions_by_node`),
-/// leaving out anchored nodes (their tracks are not computed at all).
+/// Nodes that moved, from grouped position reports (`positions_by_node`);
+/// anchored nodes only when they arrived from a trip.
 /// Nodes in `fixed` (their role sits in one place) need a far bigger jump (D-139).
 pub fn movements_of(by_node: &FxMap<u32, Vec<&Row>>, anchored: &FxMap<u32, Anchor>, fixed: &FxSet<u32>) -> FxMap<u32, Movement> {
     let mut out = map();
     for (&n, rs) in by_node {
-        if anchored.contains_key(&n) {
+        let fixed = fixed.contains(&n);
+        if let Some(a) = anchored.get(&n) {
+            if let Some(m) = arrival(rs, a, fixed) {
+                out.insert(n, m);
+            }
             continue;
         }
-        let fixed = fixed.contains(&n);
-        // One point per distinct place, in order (copies from several gateways collapse).
-        let mut pts: Vec<&Row> = Vec::new();
-        for &r in rs {
-            let p = r.pos().unwrap();
-            if pts.last().is_none_or(|l| {
-                let q = l.pos().unwrap();
-                q.lat != p.lat || q.lon != p.lon
-            }) {
-                pts.push(r);
-            }
-        }
+        let pts = distinct_places(rs);
         // Judge movement on its finest positions: a node that reports precise
         // Position packets and coarse map reports moves within the coarse
         // cells unseen, and mixing the two inflates the threshold.
@@ -269,15 +269,67 @@ pub fn movements_of(by_node: &FxMap<u32, Vec<&Row>>, anchored: &FxMap<u32, Ancho
             }
         }
         if let Some(moved_at) = moved_at {
-            let skip = pts.len().saturating_sub(MAX_TRACK);
-            let track = pts[skip..].iter().map(|r| {
-                let p = r.pos().unwrap();
-                TrackPoint { lat: p.lat, lon: p.lon, alt: p.alt, at: iso(r.t) }
-            }).collect();
-            out.insert(n, Movement { moved_at, track });
+            out.insert(n, Movement { moved_at, track: track(&pts), settled: false });
         }
     }
     out
+}
+
+/// One point per distinct place, in order (copies from several gateways
+/// collapse), the newest MAX_TRACK.
+fn distinct_places<'a>(rs: &[&'a Row]) -> Vec<&'a Row> {
+    let mut pts: Vec<&Row> = Vec::new();
+    for &r in rs {
+        let p = r.pos().unwrap();
+        if pts.last().is_none_or(|l| {
+            let q = l.pos().unwrap();
+            q.lat != p.lat || q.lon != p.lon
+        }) {
+            pts.push(r);
+        }
+    }
+    pts
+}
+
+fn track(pts: &[&Row]) -> Vec<TrackPoint> {
+    let skip = pts.len().saturating_sub(MAX_TRACK);
+    pts[skip..]
+        .iter()
+        .map(|r| {
+            let p = r.pos().unwrap();
+            TrackPoint { lat: p.lat, lon: p.lon, alt: p.alt, at: iso(r.t) }
+        })
+        .collect()
+}
+
+/// An anchored node that came to its place from a trip in the window
+/// (D-179): before its stay, at least two reports in a row lie far beyond
+/// what noise around the place explains (TRIP_FACTOR move thresholds). Its
+/// current place began with the first report after the trip's last; what
+/// the radio heard before then, it heard elsewhere. One far report alone
+/// stays a GPS spike.
+fn arrival(rs: &[&Row], a: &Anchor, fixed: bool) -> Option<Movement> {
+    let mut seen = crate::util::set();
+    let reports: Vec<&Row> = rs.iter().copied().filter(|r| seen.insert(r.lp)).collect();
+    let home = LatLon { lat: a.lat, lon: a.lon };
+    let base = if fixed { FIXED_MOVE_M } else { MOVE_M };
+    let far = |r: &Row| {
+        let p = r.pos().unwrap();
+        distance_m(home, LatLon { lat: p.lat, lon: p.lon }) > TRIP_FACTOR * (base + PRECISION_SLACK * (a.radius_m + err_m(&p)))
+    };
+    let (mut run, mut trip_end) = (0, None);
+    for (k, r) in reports.iter().enumerate() {
+        if far(r) {
+            run += 1;
+            if run >= 2 {
+                trip_end = Some(k);
+            }
+        } else {
+            run = 0;
+        }
+    }
+    let moved_at = reports.get(trip_end? + 1)?.t;
+    Some(Movement { moved_at, track: track(&distinct_places(rs)), settled: true })
 }
 
 #[cfg(test)]
