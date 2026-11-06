@@ -78,14 +78,18 @@ pub fn build_edges(rows: &[&Row], neighborinfo: &[&Row], hops: &[Sample], known:
             samples.push(Sample { src: id, dst: r.src, ev: Ev::Neighbor, t: r.t, snr, rssi: None, key: SKey::Lp(r.lp) });
         }
     }
-    // B. Traceroute: adjacent segments of every valid copy (deduplicated in reduce).
-    samples.extend_from_slice(hops);
-    // Traceroute hops that went over MQTT are links of their own, never radio
+    // B. Traceroute: adjacent segments of every valid copy (deduplicated in
+    // reduce). Hops that went over MQTT are links of their own, never radio
     // evidence (relay resolution, estimates, link statistics) (D-055).
-    let (mut samples, mqtt) = match downlinkers {
-        Some(d) => graph::split_mqtt(samples, d),
-        None => (samples, vec![]),
-    };
+    let mut mqtt: Vec<Sample> = Vec::new();
+    match downlinkers {
+        Some(d) => {
+            for s in hops {
+                if graph::is_mqtt_hop(s, d) { mqtt.push(*s) } else { samples.push(*s) }
+            }
+        }
+        None => samples.extend_from_slice(hops),
+    }
     // C/D. Gateway receptions: zero-hop RF -> source->gateway; relayed with a hint -> resolved after.
     let mut rx = first_per_reception(rows, |r| matches!(r.heard_from(), HeardFrom::Direct | HeardFrom::Relayed(Some(_))) && (r.snr.is_some() || r.rssi.is_some()));
     rx.sort_unstable_by_key(|r| r.id);

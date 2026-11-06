@@ -104,13 +104,12 @@ fn is_false(b: &bool) -> bool {
     !*b
 }
 
-/// Splits off traceroute hops that went over MQTT: a packet a node took from
-/// a broker (downlink) has no radio reception, so the hop into it records
-/// exactly 0 dB. Only hops into probable downlinking nodes (views::downlinks,
-/// D-054) count: elsewhere a 0 dB reading is a genuine one that rounded to 0
-/// (D-055). Returns (radio, mqtt).
-pub fn split_mqtt(samples: Vec<Sample>, downlinkers: &FxSet<u32>) -> (Vec<Sample>, Vec<Sample>) {
-    samples.into_iter().partition(|s| !(s.ev == Ev::Traceroute && s.snr == Some(0.0) && downlinkers.contains(&s.dst)))
+/// A traceroute hop that went over MQTT: a packet a node took from a broker
+/// (downlink) has no radio reception, so the hop into it records exactly
+/// 0 dB. Only hops into probable downlinking nodes (views::downlinks, D-054)
+/// count: elsewhere a 0 dB reading is a genuine one that rounded to 0 (D-055).
+pub fn is_mqtt_hop(s: &Sample, downlinkers: &FxSet<u32>) -> bool {
+    s.ev == Ev::Traceroute && s.snr == Some(0.0) && downlinkers.contains(&s.dst)
 }
 
 /// MQTT links from split-off samples: marked, with no radio signal statistics.
@@ -495,7 +494,8 @@ mod tests {
         // 2 downlinks. Its 0 dB hops go over MQTT; its other readings, and 0 dB
         // readings at 4 (an ordinary node), stay radio.
         let v = vec![hop(1, 2, 1, 0.0), hop(1, 2, 2, 0.0), hop(1, 2, 2, 0.0), hop(3, 2, 3, 0.0), hop(1, 2, 4, 5.0), hop(3, 4, 5, 0.0)];
-        let (radio, mqtt) = split_mqtt(v, &[2].into_iter().collect());
+        let d: FxSet<u32> = [2].into_iter().collect();
+        let (mqtt, radio): (Vec<Sample>, Vec<Sample>) = v.into_iter().partition(|s| is_mqtt_hop(s, &d));
         let pairs = |s: &[Sample]| s.iter().map(|x| (x.src, x.dst, x.snr.unwrap())).collect::<Vec<_>>();
         assert_eq!(pairs(&mqtt), vec![(1, 2, 0.0), (1, 2, 0.0), (1, 2, 0.0), (3, 2, 0.0)]);
         assert_eq!(pairs(&radio), vec![(1, 2, 5.0), (3, 4, 0.0)]);
