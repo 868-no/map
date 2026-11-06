@@ -80,7 +80,7 @@ fn server_views() -> Value {
 fn engine_matches_the_recorded_server_views() {
     let expected = server_views();
     let mut e = Engine::new();
-    e.set_options(&json!({ "geo": expected["geolocation"], "silent_rule": false, "mqtt_links": false, "move_rule": false, "signal_rule": false, "range_rule": false }).to_string()).unwrap();
+    e.set_options(&json!({ "geo": expected["geolocation"], "silent_rule": false, "mqtt_links": false, "move_rule": false, "signal_rule": false, "range_rule": false, "origin_rule": false }).to_string()).unwrap();
     assert!(e.add_rows(ROWS, f64::NEG_INFINITY).unwrap() > 6000);
     let (s, t) = (millis(expected["window"]["start"].as_str().unwrap()), millis(expected["window"]["end"].as_str().unwrap()));
     let view = |e: &mut Engine, kind: &str, filters: Value, arg: &str| -> Value { serde_json::from_str(&e.view(kind, s, t, &filters.to_string(), arg).unwrap()).unwrap() };

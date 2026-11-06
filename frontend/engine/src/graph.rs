@@ -356,6 +356,9 @@ pub struct RelayContext {
     /// Rule out relays too far away for the signal the gateway measured
     /// (default on; off only to compare with the old server views) (D-136).
     pub signal_rule: bool,
+    /// Count the originator as a candidate for its own byte (default on;
+    /// off only to compare with the old server views) (D-179).
+    pub origin_rule: bool,
     /// Nodes that moved in the window: their latest position says nothing
     /// about where they were when a copy was heard, so the signal rule
     /// treats them as unpositioned, as relay or as gateway (D-153).
@@ -371,7 +374,7 @@ impl RelayContext {
     /// non-relay evidence pairs (src, dst), one per sample; silent: nodes
     /// that never rebroadcast; mobile: nodes that moved in the window.
     pub fn new(known: impl IntoIterator<Item = u32>, pos: FxMap<u32, LatLon>, confirmed: impl IntoIterator<Item = (u32, u32)>, silent: FxSet<u32>, mobile: FxSet<u32>) -> Self {
-        let mut c = RelayContext { by_byte: vec![Vec::new(); 256], pos, confirmed: set(), silent, max_range_m: MIN_RELAY_RANGE_M, loose_range_m: MIN_RELAY_RANGE_M, downlinkers: set(), signal_rule: true, mobile };
+        let mut c = RelayContext { by_byte: vec![Vec::new(); 256], pos, confirmed: set(), silent, max_range_m: MIN_RELAY_RANGE_M, loose_range_m: MIN_RELAY_RANGE_M, downlinkers: set(), signal_rule: true, origin_rule: true, mobile };
         for k in known {
             c.by_byte[last_byte(k) as usize].push(k);
         }
@@ -458,9 +461,13 @@ impl RelayContext {
                 }
             }
         }
+        // A byte equal to the originator's own may be the originator, or any
+        // relay that left it as it was: one more candidate, never ruled out,
+        // with no confirmed link (D-179).
+        let origin_byte = self.origin_rule && origin != 0 && hint == last_byte(origin);
         match (n, n_confirmed) {
             (0, _) => None,
-            (1, _) => Some(Ok((first, false))),
+            (1, _) if !origin_byte => Some(Ok((first, false))),
             (_, 1) => Some(Ok((first_confirmed, true))),
             _ => Some(Err(())),
         }
@@ -504,6 +511,11 @@ mod tests {
         assert_eq!(c.resolve(0x33, 0, 0, None), Some(Ok(0x3333_3333)));
         assert_eq!(c.resolve(0x33, 0x3333_3333, 0, None), None, "origin excluded");
         assert_eq!(c.resolve(0x33, 0, 0x3333_3333, None), None, "gateway excluded");
+        // The originator's byte may be the originator or a relay that left
+        // it unchanged: never the other node sharing it on its own (D-179).
+        assert_eq!(c.resolve(0x33, 0x4444_4433, 0, None), Some(Err(())), "the originator's byte is ambiguous");
+        let c = ctx(&[0x3333_3333, 0x0000_aa01], &[(0x3333_3333, 0x0000_aa01)]);
+        assert_eq!(c.resolve(0x33, 0x4444_4433, 0x0000_aa01, None), Some(Ok(0x3333_3333)), "a confirmed link still breaks the tie");
         let c = ctx(&[0x1111_1142, 0x2222_2242, 0x0000_aa01], &[(0x2222_2242, 0x0000_aa01)]);
         assert_eq!(c.resolve(0x42, 5, 0x0000_aa01, None), Some(Ok(0x2222_2242)), "confirmed link breaks the tie");
         let c = ctx(&[0x0000_aa42, 0x1111_1142], &[]);

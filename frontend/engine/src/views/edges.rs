@@ -101,6 +101,7 @@ pub fn build_edges(rows: &[&Row], neighborinfo: &[&Row], hops: &[Sample], known:
     let confirmed: Vec<(u32, u32)> = samples.iter().filter(|s| s.ev != Ev::RelayHint).map(|s| (s.src, s.dst)).collect();
     let mut ctx = RelayContext::new(known.iter().copied(), pos, confirmed, silent, mobile);
     ctx.signal_rule = rules.signal;
+    ctx.origin_rule = rules.origin;
     if !rules.range {
         ctx.max_range_m = ctx.loose_range_m;
     }

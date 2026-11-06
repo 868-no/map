@@ -120,11 +120,12 @@ pub struct Rules {
     pub moves: bool,      // links use only evidence from after either end's latest move (D-073)
     pub signal: bool,     // a strong reading rules out relays too far away to give it (D-136)
     pub range: bool,      // the relay range rests on repeated links between nodes that stayed put (D-177)
+    pub origin: bool,     // the originator is a candidate for its own byte (D-179)
 }
 
 impl Default for Rules {
     fn default() -> Self {
-        Rules { silent: true, mqtt_links: true, moves: true, signal: true, range: true }
+        Rules { silent: true, mqtt_links: true, moves: true, signal: true, range: true, origin: true }
     }
 }
 
