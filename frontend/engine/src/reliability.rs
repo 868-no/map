@@ -114,6 +114,6 @@ pub fn relaying(packets: &Copies, rows: &[&Row], gateways: &FxSet<u32>, edges: &
         }
     }
     acc.into_iter()
-        .map(|(n, (expected, seen, gw))| (n, Relaying { expected, seen, witnesses: witnesses.get(&n).map_or(0, |w| w.len()), received_as_gateway: gw }))
+        .map(|(n, (expected, seen, gw))| (n, Relaying { expected, seen, witnesses: witnesses.get(&n).map_or(0, std::collections::HashSet::len), received_as_gateway: gw }))
         .collect()
 }

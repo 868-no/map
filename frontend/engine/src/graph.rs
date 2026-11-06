@@ -241,9 +241,9 @@ pub fn stats(v: &[(i64, f64)], round: bool) -> Stats {
         }
     }
     let mut vals: Vec<f64> = v.iter().map(|x| x.1).collect();
-    vals.sort_unstable_by(|a, b| a.total_cmp(b));
+    vals.sort_unstable_by(f64::total_cmp);
     let h = vals.len() / 2;
-    let med = if vals.len().is_multiple_of(2) { (vals[h - 1] + vals[h]) / 2.0 } else { vals[h] };
+    let med = if vals.len().is_multiple_of(2) { f64::midpoint(vals[h - 1], vals[h]) } else { vals[h] };
     let r = |x: f64| if round { round2(x) } else { x };
     Stats { n: vals.len(), median: Some(if round { round2(med) } else { med }), min: Some(r(vals[0])), max: Some(r(vals[vals.len() - 1])), last: Some(r(last.1)) }
 }

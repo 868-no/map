@@ -17,7 +17,7 @@ fn position(i: i64, t: i64, src: u32, gw: u32, lp: &str, (lat, lon): (f64, f64),
            "po": {"lat": lat, "lon": lon, "precision_bits": 32, "precision_known": true}})
 }
 
-fn engine(rows: Value) -> Engine {
+fn engine(rows: &Value) -> Engine {
     let mut e = Engine::new();
     e.add_rows(&rows.to_string(), f64::NEG_INFINITY).unwrap();
     e
@@ -30,7 +30,7 @@ fn node(e: &mut Engine, id: &str) -> Value {
 
 #[test]
 fn a_position_heard_directly_from_far_beyond_its_signal_is_ignored() {
-    let mut e = engine(json!([
+    let mut e = engine(&json!([
         position(1, T0, GW, GW, "00000000000000a1", (63.3930, 10.4268), (true, -20)), // the gateway's own report
         position(2, T0 + 1_000, OTHER_GW, OTHER_GW, "00000000000000a2", (63.3537, 10.3612), (true, -20)),
         position(3, T0 + 60_000, NODE, GW, "00000000000000b1", (63.3930, 63.3930), (true, -43)), // heard directly, nearby
@@ -48,7 +48,7 @@ fn a_position_heard_directly_from_far_beyond_its_signal_is_ignored() {
 
 #[test]
 fn a_position_within_its_signal_stays_and_one_wrong_gateway_cannot_outvote_the_rest() {
-    let mut e = engine(json!([
+    let mut e = engine(&json!([
         position(1, T0, GW, GW, "00000000000000a1", (59.9, 10.7), (true, -20)), // this gateway's own place is wrong (Oslo)
         position(2, T0 + 1_000, OTHER_GW, OTHER_GW, "00000000000000a2", (63.36, 10.37), (true, -20)),
         position(3, T0 + 2_000, 0x0000_0009, 0x0000_0009, "00000000000000a3", (63.40, 10.40), (true, -20)),

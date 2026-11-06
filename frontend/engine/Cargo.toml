@@ -22,3 +22,21 @@ opt-level = 3
 lto = true
 codegen-units = 1
 panic = "abort"
+
+# Clippy's default groups (warnings are errors in scripts/wasm.sh clippy),
+# plus the pedantic and nursery lints that point at waste or a smell rather
+# than style: copies and clones not needed, needless wrapping, hand-written
+# versions of what the standard library has.
+[lints.clippy]
+needless_pass_by_value = "warn"
+redundant_clone = "warn"
+unnecessary_wraps = "warn"
+manual_midpoint = "warn"
+stable_sort_primitive = "warn"
+redundant_closure_for_method_calls = "warn"
+manual_let_else = "warn"
+unnested_or_patterns = "warn"
+needless_collect = "warn"
+inefficient_to_string = "warn"
+implicit_clone = "warn"
+large_types_passed_by_value = "warn"

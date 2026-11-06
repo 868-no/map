@@ -155,7 +155,7 @@ fn merge_sites(mut pts: Vec<Pt>, spacing: f64) -> (Vec<Pt>, Vec<Vec<u32>>) {
 }
 
 fn median(mut v: Vec<f64>) -> f64 {
-    v.sort_unstable_by(|a, b| a.total_cmp(b));
+    v.sort_unstable_by(f64::total_cmp);
     v[v.len() / 2]
 }
 
@@ -212,7 +212,7 @@ fn widest_gap(x: f64, y: f64, pts: &[Pt]) -> f64 {
     if b.len() < 2 {
         return 360.0;
     }
-    b.sort_unstable_by(|p, q| p.total_cmp(q));
+    b.sort_unstable_by(f64::total_cmp);
     let wrap = b[0] + 360.0 - b[b.len() - 1];
     b.windows(2).map(|w| w[1] - w[0]).fold(wrap, f64::max)
 }
@@ -588,7 +588,7 @@ mod tests {
         assert!(est.lat < plain.lat - 0.05, "moved south: {} → {}", plain.lat, est.lat);
         // Surrounded: a centroid with anchors all round is left alone.
         anchors.insert(4, Anchor { node: 4, lat: 62.9, lon: 10.0, err_m: 0.0 });
-        let mut ms4 = ms.clone();
+        let mut ms4 = ms;
         ms4.push(Measurement { anchor: 4, snr: Some(0.0), rssi: None, samples: 10, first: 1, last: 2 });
         assert_eq!(locate(&anchors, &ms4, &Params::default(), Some(&r), node_id).unwrap().method, "weighted_centroid");
     }

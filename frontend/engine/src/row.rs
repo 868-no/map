@@ -297,7 +297,7 @@ impl Row {
                 f(&mut r.kind);
                 f(&mut r.error);
             }
-            Some(Detail::NodeStatus(v)) | Some(Detail::Invalid(v)) => f(v),
+            Some(Detail::NodeStatus(v) | Detail::Invalid(v)) => f(v),
             Some(Detail::StoreForward(s)) => f(&mut s.kind),
             Some(Detail::MapReport(m)) => {
                 for x in [&mut m.region, &mut m.preset, &mut m.long_name, &mut m.short_name, &mut m.hw_model, &mut m.role] {
@@ -310,7 +310,7 @@ impl Row {
                 }
             }
             Some(Detail::Telemetry(t)) => f(&mut t.kind),
-            Some(Detail::Neighbors(_)) | Some(Detail::Traceroute(_)) | None => {}
+            Some(Detail::Neighbors(_) | Detail::Traceroute(_)) | None => {}
         }
     }
 

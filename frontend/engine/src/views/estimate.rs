@@ -113,7 +113,7 @@ fn ranging(nodes: &FxMap<u32, Node>, edges: &[Edge], anchors: &FxMap<u32, Anchor
         .filter_map(|(&(a, b), v)| {
             let (Some(x), Some(y)) = (v[0], v[1]) else { return None };
             let (p, q) = (anchors[&a], anchors[&b]);
-            Some((distance_m(LatLon { lat: p.lat, lon: p.lon }, LatLon { lat: q.lat, lon: q.lon }) / 1000.0, (x + y) / 2.0))
+            Some((distance_m(LatLon { lat: p.lat, lon: p.lon }, LatLon { lat: q.lat, lon: q.lon }) / 1000.0, f64::midpoint(x, y)))
         })
         .collect();
     Ranging::fit(&links)

@@ -14,7 +14,8 @@ const O: u32 = 0x0a00_00a0; // an originator
 
 fn row(i: i64, t: i64, extra: Value) -> Value {
     let mut r = json!({"i": i, "t": T0 + t * 60_000, "b": "it", "l": format!("{i:016x}"), "o": format!("{:016x}", i + 1000), "sg": "unsigned"});
-    r.as_object_mut().unwrap().extend(extra.as_object().unwrap().clone());
+    let Value::Object(extra) = extra else { panic!("extra fields: an object") };
+    r.as_object_mut().unwrap().extend(extra);
     r
 }
 

@@ -3,12 +3,14 @@
 # inside the pinned Rust image, so the host needs only Docker.
 #   scripts/wasm.sh            release build + wasm-bindgen
 #   scripts/wasm.sh test       cargo test (native)
-#   scripts/wasm.sh clippy     cargo clippy, warnings as errors
+#   scripts/wasm.sh clippy     cargo clippy, warnings as errors (lints: Cargo.toml)
+#   scripts/wasm.sh deny       cargo-deny: dependency advisories, bans, sources (deny.toml)
 #   UPDATE_GOLDEN=1 scripts/wasm.sh test   re-record tests/fixtures/mesh-12h/engine.json
 set -euo pipefail
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 image="${RUST_IMAGE:-rust:1.99.1-slim-bookworm}"
 bindgen="0.2.129" # must equal the wasm-bindgen crate version in Cargo.toml
+deny="0.20.2"
 # Binaryen's wasm-opt optimises the bindgen output (-O3, as the release
 # profile's opt-level 3) and strips the name section (debug names only). The image has no curl, so the
 # release is fetched on the host, checked and cached outside the repo.
@@ -40,6 +42,11 @@ case "${1:-build}" in
   test) run "cargo test --release" ;;
   clippy) run "rustup component add clippy >/dev/null &&
       cargo clippy --release --all-targets -- -D warnings" ;;
+  # The full image: cargo-deny clones the advisory database with git, which slim lacks.
+  deny) image="${RUST_FULL_IMAGE:-rust:1.99.1-bookworm}"
+    run "[ -x /cache/cargo/bin/cargo-deny ] && /cache/cargo/bin/cargo-deny --version | grep -q $deny \
+        || cargo install --locked cargo-deny --version $deny
+      /cache/cargo/bin/cargo-deny check advisories bans sources" ;;
   build)
     if [ ! -x "$binaryen_dir/wasm-opt" ]; then
       # Into a directory of its own, then moved into place: jobs sharing the
@@ -61,5 +68,5 @@ case "${1:-build}" in
       /binaryen/wasm-opt -O3 --strip-debug --strip-producers \
         /src/frontend/src/engine/pkg/engine_bg.wasm -o /src/frontend/src/engine/pkg/engine_bg.wasm"
     ls -l "$repo/frontend/src/engine/pkg" ;;
-  *) echo "usage: $0 [build|test|clippy]" >&2; exit 2 ;;
+  *) echo "usage: $0 [build|test|clippy|deny]" >&2; exit 2 ;;
 esac

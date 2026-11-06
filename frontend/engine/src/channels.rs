@@ -64,8 +64,8 @@ pub fn channel_use(num: u32, rows: &[&Row], i: &Interner) -> Vec<ChannelUse> {
         .into_iter()
         .map(|c| ChannelUse {
             name: i.s(c).to_string(),
-            sent: sent.get(&c).map_or(0, |s| s.len()),
-            uplinked: uplinked.get(&c).map_or(0, |s| s.len()),
+            sent: sent.get(&c).map_or(0, std::collections::HashSet::len),
+            uplinked: uplinked.get(&c).map_or(0, std::collections::HashSet::len),
             primary: primary == Some(c),
         })
         .collect();
@@ -201,6 +201,7 @@ impl PresetIndex {
         for &(a, b) in &contacts {
             union(&mut parent, a, b);
         }
+        #[expect(clippy::needless_collect, reason = "find mutates parent, so its keys cannot stay borrowed")]
         let keys: Vec<u32> = parent.keys().copied().collect();
         let root: FxMap<u32, u32> = keys.into_iter().map(|n| (n, find(&mut parent, n))).collect();
         let mut groups: FxMap<u32, Vec<u32>> = map();
@@ -241,14 +242,14 @@ pub struct Inferred<'x> {
 
 /// None without evidence.
 pub fn infer(num: u32, ix: &PresetIndex) -> Option<Inferred<'_>> {
-    fn it<'x>(preset: Option<&'x str>, basis: &'static str, from: &'x [u32], conflict: Vec<(String, usize)>) -> Option<Inferred<'x>> {
-        Some(Inferred { preset, basis, from, conflict })
+    fn it<'x>(preset: Option<&'x str>, basis: &'static str, from: &'x [u32], conflict: Vec<(String, usize)>) -> Inferred<'x> {
+        Inferred { preset, basis, from, conflict }
     }
     match ix.ev.get(&num) {
-        Some((p, true)) => return it(Some(p), "map_report", &[], vec![]),
+        Some((p, true)) => return Some(it(Some(p), "map_report", &[], vec![])),
         // Its own hint yields only to confirmed reports of its group (below).
-        Some((p, false)) if ix.root.get(&num).and_then(|r| ix.confirmed.get(r)).is_none_or(|c| c.is_empty()) => {
-            return it(Some(p), "channel_name", &[], vec![]);
+        Some((p, false)) if ix.root.get(&num).and_then(|r| ix.confirmed.get(r)).is_none_or(std::collections::HashMap::is_empty) => {
+            return Some(it(Some(p), "channel_name", &[], vec![]));
         }
         _ => {}
     }
@@ -258,15 +259,15 @@ pub fn infer(num: u32, ix: &PresetIndex) -> Option<Inferred<'_>> {
     if let Some(c) = ix.confirmed.get(root).filter(|c| !c.is_empty()) {
         if c.len() == 1 {
             let (p, from) = c.iter().next().unwrap();
-            return it(Some(p), "radio_contact", from, vec![]);
+            return Some(it(Some(p), "radio_contact", from, vec![]));
         }
         let mut v: Vec<(String, usize)> = c.iter().map(|(p, m)| (p.clone(), m.len())).collect();
         v.sort_unstable_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
-        return it(None, "conflict", &[], v);
+        return Some(it(None, "conflict", &[], v));
     }
     // The default name most of the group was heard on (ties: the first by name).
     let (p, from) = ix.named.get(root)?.iter().max_by(|a, b| a.1.len().cmp(&b.1.len()).then(b.0.cmp(a.0)))?;
-    it(Some(p), "radio_contact_channel_name", from, vec![])
+    Some(it(Some(p), "radio_contact_channel_name", from, vec![]))
 }
 
 /// What the window says about `num`'s modem preset (`infer`, with its radio

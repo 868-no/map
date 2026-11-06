@@ -753,11 +753,10 @@ pub fn transmissions(r: &Row, ctx: &RelayContext, roles: &FxMap<u32, String>) ->
         // Not heard over the air.
         HeardFrom::NotRadio => return vec![first(None, None)],
     };
-    let relay = match byte.and_then(|b| ctx.resolve(b, r.src, gw, r.rssi.map(f64::from))) {
-        Some(Ok(n)) => n,
+    let Some(Ok(relay)) = byte.and_then(|b| ctx.resolve(b, r.src, gw, r.rssi.map(f64::from))) else {
         // Heard, but not from whom: the sender's way to the gateway, as the
         // routing graph draws it.
-        _ => return vec![first(None, None), gap(gw, if downlinked { "internet" } else { "unknown_relay" })],
+        return vec![first(None, None), gap(gw, if downlinked { "internet" } else { "unknown_relay" })];
     };
     // A downlinked copy (D-088) carries no hop count: the relay got it from MQTT.
     let heard_origin = !downlinked && r.hops() == Some(1) && roles.get(&relay).is_some_and(|ro| !ro.is_empty() && !zero_cost_role(ro));

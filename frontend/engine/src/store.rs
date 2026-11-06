@@ -383,10 +383,10 @@ mod tests {
             }
             let got: Vec<(i64, i64)> = s.rows().iter().map(|r| (r.t, r.id)).collect();
             let mut sorted = got.clone();
-            sorted.sort();
+            sorted.sort_unstable();
             assert_eq!(got, sorted, "round {round}: in order");
             if round % 2 == 0 {
-                want.sort();
+                want.sort_unstable();
                 assert_eq!(got, want, "round {round}: every row once");
             }
         }

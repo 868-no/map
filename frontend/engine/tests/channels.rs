@@ -22,7 +22,7 @@ fn radio(e: &mut Engine, id: u32) -> Value {
     let d: Value = serde_json::from_str(&e.view("node", T0 as f64, (T0 + 3_600_000) as f64, "{}", &format!("!{id:08x}")).unwrap()).unwrap();
     d["radio"].clone()
 }
-fn engine(rows: Value) -> Engine {
+fn engine(rows: &Value) -> Engine {
     let mut e = Engine::new();
     e.add_rows(&rows.to_string(), f64::NEG_INFINITY).unwrap();
     e
@@ -30,7 +30,7 @@ fn engine(rows: Value) -> Engine {
 
 #[test]
 fn channels_come_from_uplinks_and_the_map_report() {
-    let mut e = engine(json!([
+    let mut e = engine(&json!([
         report(1, G, "NarrowFast", "NARROW_FAST", true),
         rx(2, A, G, "NarrowFast", true),
         rx(3, A, G, "NarrowFast", true),
@@ -54,7 +54,7 @@ fn separate_meshes_keep_their_own_presets_and_a_bridge_shows_a_conflict() {
         rx(4, Y, X, "LongFast", true),
         report(5, Y, "Custom", "LONG_FAST", false), // unconfirmed: not evidence
     ]);
-    let mut e = engine(rows.clone());
+    let mut e = engine(&rows);
     assert_eq!(radio(&mut e, A)["preset"]["preset"], "NARROW_FAST");
     assert_eq!(radio(&mut e, Y)["preset"], json!({"preset": "LONG_FAST", "basis": "radio_contact", "via": ["!0e00000e"], "group": 1, "direct": 1}));
 
@@ -62,7 +62,7 @@ fn separate_meshes_keep_their_own_presets_and_a_bridge_shows_a_conflict() {
     let mut both = rows.as_array().unwrap().clone();
     both.push(rx(6, 0x0d00000d, G, "NarrowFast", true));
     both.push(rx(7, 0x0d00000d, X, "LongFast", true));
-    let mut e = engine(Value::Array(both));
+    let mut e = engine(&Value::Array(both));
     let p = radio(&mut e, A)["preset"].clone();
     assert_eq!(p["basis"], "conflict");
     assert!(p["preset"].is_null());
@@ -75,11 +75,11 @@ fn channel_names_are_only_a_hint_and_zero_db_hops_do_not_join_groups() {
         json!({"i": i, "t": T0 + i * 1000, "b": "it", "s": A, "d": Y, "g": G, "y": "traceroute", "c": "NarrowFast", "l": format!("{i:016x}"), "o": format!("{:016x}", i + 1000),
             "sg": "unsigned", "sn": 5.0, "hs": 3, "hl": 3, "tr": {"valid": true, "is_reply": false, "route": [], "snr_towards": [snr], "route_back": [], "snr_back": []}})
     };
-    let mut e = engine(json!([rx(1, A, G, "NarrowFast", false), report(2, X, "LongFast", "LONG_FAST", true), tr(3, 0.0)]));
+    let mut e = engine(&json!([rx(1, A, G, "NarrowFast", false), report(2, X, "LongFast", "LONG_FAST", true), tr(3, 0.0)]));
     // A's only evidence is the default channel name it was heard on.
     assert_eq!(radio(&mut e, A)["preset"], json!({"preset": "NARROW_FAST", "basis": "channel_name", "group": 0, "direct": 0}));
     assert!(radio(&mut e, Y)["preset"].is_null(), "a hop at exactly 0 dB may be MQTT: no radio contact");
-    let mut e = engine(json!([report(2, Y, "LongFast", "LONG_FAST", true), tr(3, 6.5)]));
+    let mut e = engine(&json!([report(2, Y, "LongFast", "LONG_FAST", true), tr(3, 6.5)]));
     assert_eq!(radio(&mut e, A)["preset"]["basis"], "radio_contact", "a real traceroute hop is radio contact");
 }
 
@@ -90,7 +90,7 @@ fn health_and_the_node_panel_agree_on_a_nodes_preset() {
     let mut rows: Vec<Value> = (10..20).map(|i| rx(i, Y, G, "NarrowFast", true)).collect();
     rows.push(report(1, A, "MediumFast", "LONG_FAST", true));
     rows.extend((2..5).map(|i| rx(i, A, G, "MediumFast", false)));
-    let mut e = engine(Value::Array(rows));
+    let mut e = engine(&Value::Array(rows));
     assert_eq!(radio(&mut e, A)["preset"]["preset"], "LONG_FAST");
     let h: Value = serde_json::from_str(&e.view("health", T0 as f64, (T0 + 3_600_000) as f64, "{}", "").unwrap()).unwrap();
     let issue = h["issues"].as_array().unwrap().iter().find(|x| x["kind"] == "preset" && x["node"] == format!("!{A:08x}")).expect("flagged").clone();

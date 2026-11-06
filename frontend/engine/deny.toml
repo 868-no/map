@@ -1,0 +1,12 @@
+# cargo-deny (scripts/wasm.sh deny): known vulnerabilities and unmaintained
+# crates (RustSec), duplicate versions, and crates from anywhere but crates.io.
+[advisories]
+yanked = "deny"
+
+[bans]
+multiple-versions = "deny"
+wildcards = "deny"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
