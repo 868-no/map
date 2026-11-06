@@ -181,8 +181,11 @@ impl Engine {
                 let num = parse_node(id).ok_or_else(|| err("invalid node id"))?;
                 self.build(start, end, filters)?;
                 let b = &self.built.as_ref().unwrap().1;
+                // Current roles, not the relay rule's window-wide set (D-177): reach is
+                // about where a packet sent now would go.
                 let silent: util::FxSet<u32> = b.roles.iter().filter(|(_, r)| views::is_silent_role(r)).map(|(&n, _)| n).collect();
-                let own: Vec<&row::Row> = self.rows().into_iter().filter(|r| r.src == num).collect();
+                let rows = self.store.rows();
+                let own: Vec<&row::Row> = self.rows.as_ref().map_or(&[][..], |(_, idx)| idx).iter().map(|&k| &rows[k as usize]).filter(|r| r.src == num).collect();
                 Ok(json(&reach::reach(num, &b.snapshot.edges, &silent, internet, &own)))
             }
             "link" => {

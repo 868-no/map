@@ -204,10 +204,7 @@ pub fn airtime(copies: &Copies, rows: &[&Row], i: &Interner, hours: f64) -> Airt
             if let Some(s) = h.sender.filter(|&s| s != row.src) {
                 relays.push(s);
             }
-            if let Some(t) = h.row.traceroute().filter(|t| t.valid) {
-                let hops = if t.is_reply { &t.route_back } else { &t.route };
-                relays.extend(hops.iter().filter(|x| !x.unknown && x.id != row.src && Some(x.id) != h.row.gw).map(|x| x.id));
-            }
+            relays.extend(h.row.traced_relays().filter(|&x| x != row.src));
         }
         relays.sort_unstable();
         relays.dedup();
@@ -317,8 +314,7 @@ pub fn health(rows: &[&Row], invalid: &[&Row], nodes: &[Node], copies: &Copies, 
     let mut fewest: FxMap<u64, i16> = map();
     for &r in rows {
         if r.gw.is_some_and(|g| g != r.src)
-            && r.rr != ty::VIA_MQTT
-            && r.rr != ty::NON_RF
+            && r.over_radio()
             && let Some(h) = r.hops().filter(|&h| h >= 0)
         {
             let e = fewest.entry(r.lp).or_insert(h);

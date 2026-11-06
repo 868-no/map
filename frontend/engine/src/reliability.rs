@@ -84,10 +84,7 @@ pub fn relaying(packets: &Copies, rows: &[&Row], gateways: &FxSet<u32>, edges: &
                     sent.push((sender, hl));
                 }
             }
-            if let Some(t) = r.traceroute().filter(|t| t.valid) {
-                let hops = if t.is_reply { &t.route_back } else { &t.route };
-                traced.extend(hops.iter().filter(|h| !h.unknown && Some(h.id) != r.gw).map(|h| h.id));
-            }
+            traced.extend(r.traced_relays());
         }
         // Routers with a witness that got the packet (a witness is never the
         // router itself); without one nothing could be seen.

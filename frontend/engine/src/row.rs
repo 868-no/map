@@ -314,6 +314,18 @@ impl Row {
         }
     }
 
+    /// The known nodes a valid traceroute copy records on the way it took
+    /// (forward for a request, back for a reply), less its own gateway.
+    pub fn traced_relays(&self) -> impl Iterator<Item = u32> + '_ {
+        let hops = self.traceroute().filter(|t| t.valid).map_or(&[][..], |t| if t.is_reply { &t.route_back[..] } else { &t.route[..] });
+        hops.iter().filter(move |h| !h.unknown && Some(h.id) != self.gw).map(|h| h.id)
+    }
+
+    /// Its gateway got it over the radio, not over MQTT or another transport.
+    pub fn over_radio(&self) -> bool {
+        self.rr != ty::VIA_MQTT && self.rr != ty::NON_RF
+    }
+
     /// Whom its gateway heard it from (HeardFrom). The ingest's reception
     /// reason decides; rows without one fall back on the hop fields.
     pub fn heard_from(&self) -> HeardFrom {

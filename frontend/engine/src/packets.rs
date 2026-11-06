@@ -192,9 +192,8 @@ pub fn packet_log(rows: &[&Row], num: u32, ctx: &RelayContext, replies: &ReplyIn
     let own_list: Vec<OwnPacket> = own
         .map(|rs| {
             let first = rs.iter().copied().reduce(|a, b| if b.t < a.t { b } else { a }).unwrap();
-            use crate::row::ty;
             let others: Vec<&Row> = rs.iter().copied().filter(|r| r.gw.is_some_and(|g| g != num)).collect();
-            let radio = |r: &&&Row| r.rr != ty::VIA_MQTT && r.rr != ty::NON_RF;
+            let radio = |r: &&&Row| r.over_radio();
             let hops = others.iter().filter(radio).filter_map(|r| r.hops()).min();
             let best = rs.iter().map(|r| r.sig).max_by_key(|&s| i.sig_rank(s)).map_or("unsigned", |s| i.s(s));
             OwnPacket {
@@ -454,11 +453,10 @@ pub fn packet_route(rows: &[&Row], ctx: &RelayContext, roles: &FxMap<u32, String
         }
     };
     let leg = |t: &crate::row::Traceroute| if t.is_reply { "back" } else { "forward" };
-    use crate::row::ty;
     let mut add_seg: Vec<(u32, u32, bool, &'static str)> = vec![];
     for r in rows {
         let Some(gw) = r.gw.filter(|&g| g != origin) else { continue };
-        let over_radio = r.rr != ty::VIA_MQTT && r.rr != ty::NON_RF;
+        let over_radio = r.over_radio();
         if let Some(t) = r.traceroute().filter(|t| t.valid) {
             add_chain(traceroute_chain(r, t, gw, over_radio, ctx), leg(t));
             continue;
@@ -498,7 +496,7 @@ pub fn packet_route(rows: &[&Row], ctx: &RelayContext, roles: &FxMap<u32, String
         let Some(chain) = recorded_request(reply, ctx).filter(|(requester, _)| *requester == origin).map(|(_, c)| c) else { continue };
         add_chain(chain, "forward");
         if let (Some(gw), Some(t)) = (reply.gw.filter(|&g| g != reply.src), reply.traceroute().filter(|t| t.valid)) {
-            let over_radio = reply.rr != ty::VIA_MQTT && reply.rr != ty::NON_RF;
+            let over_radio = reply.over_radio();
             add_chain(traceroute_chain(reply, t, gw, over_radio, ctx), "back");
         }
     }
@@ -713,9 +711,8 @@ pub fn transmissions(r: &Row, ctx: &RelayContext, roles: &FxMap<u32, String>) ->
     let lp = key_hex(r.lp);
     let key = |tx: u32| format!("{lp}|{}", node_id(tx));
     let strength = signal_strength(r.snr, r.rssi);
-    use crate::row::ty;
     if let Some(t) = r.traceroute().filter(|t| t.valid) {
-        let over_radio = r.rr != ty::VIA_MQTT && r.rr != ty::NON_RF;
+        let over_radio = r.over_radio();
         let chain = match r.gw {
             Some(g) => traceroute_chain(r, t, g, over_radio, ctx),
             None => traceroute_chain(r, t, r.src, false, ctx),

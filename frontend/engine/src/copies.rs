@@ -56,7 +56,7 @@ impl Copies {
         // per-packet allocation, in row order within each packet.
         let mut keyed: Vec<(u64, u32)> = Vec::new();
         for (k, &r) in rows.iter().enumerate() {
-            if r.gw.is_some() && r.ty != ty::MAPREPORT && r.rr != ty::VIA_MQTT && r.rr != ty::NON_RF {
+            if r.gw.is_some() && r.ty != ty::MAPREPORT && r.over_radio() {
                 keyed.push((r.lp, k as u32));
             }
         }
@@ -107,7 +107,7 @@ pub fn multi_uplinkers(rows: &[&Row]) -> FxSet<u32> {
     let mut copies: FxMap<(u32, u64), usize> = map();
     for &r in rows {
         let Some(g) = r.gw else { continue };
-        if g == r.src || r.ty == ty::MAPREPORT || r.rr == ty::VIA_MQTT || r.rr == ty::NON_RF {
+        if g == r.src || r.ty == ty::MAPREPORT || !r.over_radio() {
             continue;
         }
         *copies.entry((g, r.lp)).or_default() += 1;
