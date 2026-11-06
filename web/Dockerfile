@@ -4,8 +4,8 @@
 
 # The WebAssembly engine (frontend/engine): every view is derived in the browser.
 FROM --platform=$BUILDPLATFORM rust:1.99.1-slim-bookworm AS engine
-# Must equal the wasm-bindgen crate version in frontend/engine/Cargo.toml.
-ARG WASM_BINDGEN=0.2.129
+# Must equal the wasm-bindgen crate version in frontend/engine/Cargo.toml (and bindgen in scripts/wasm.sh).
+ARG WASM_BINDGEN=0.2.130
 RUN rustup target add wasm32-unknown-unknown \
  && cargo install --locked wasm-bindgen-cli --version "$WASM_BINDGEN"
 WORKDIR /src/engine

@@ -9,7 +9,7 @@
 set -euo pipefail
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 image="${RUST_IMAGE:-rust:1.99.1-slim-bookworm}"
-bindgen="0.2.129" # must equal the wasm-bindgen crate version in Cargo.toml
+bindgen="0.2.130" # must equal the wasm-bindgen crate version in Cargo.toml (and WASM_BINDGEN in web/Dockerfile)
 deny="0.20.2"
 # Binaryen's wasm-opt optimises the bindgen output (-O3, as the release
 # profile's opt-level 3) and strips the name section (debug names only). The image has no curl, so the
