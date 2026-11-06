@@ -128,6 +128,39 @@ describe('RowStore', () => {
     expect(store.cov).toEqual({ lo: T0 + 11 * H, hi: T0 + 13 * H })
   })
 
+  it('releases what a window that does not contain the last one cannot use, in fresh memory', async () => {
+    const all = Array.from({ length: 96 * 6 }, (_, k) => row(k + 1, T0 + k * 600_000)) // four days, every 10 min
+    let now = T0 + 96 * H
+    const s = server(all, () => now)
+    const store = newStore(s.fetch)
+    const kept: [number, number][] = []
+    const keepOnly = store.held.keepOnly.bind(store.held)
+    store.held.keepOnly = (lo, hi) => {
+      kept.push([lo, hi])
+      keepOnly(lo, hi)
+    }
+    await store.sync({ live: true, durationH: 72 }, now)
+    // The rolling window moving on, and growing, contains the last one: nothing released.
+    now += H
+    await store.sync({ live: true, durationH: 72 }, now)
+    await store.sync({ live: true, durationH: 96 }, now)
+    expect(kept).toEqual([])
+    // Shorter: only the last day (and a minute's margin) stays.
+    await store.sync({ live: true, durationH: 24 }, now)
+    expect(kept).toHaveLength(1)
+    expect(store.held.rows.every((r) => r.t >= now - 24 * H - 60_000)).toBe(true)
+    // A fixed window inside the held range but not containing the last window: its part only.
+    const iso = (t: number) => new Date(t).toISOString()
+    await store.sync({ live: false, start: iso(now - 20 * H), end: iso(now - 10 * H) }, now)
+    expect(kept).toHaveLength(2)
+    expect(store.held.rows.every((r) => r.t >= now - 20 * H && r.t < now - 10 * H)).toBe(true)
+    expect(store.cov).toEqual({ lo: now - 20 * H, hi: now - 10 * H })
+    // Back to a rolling window that contains it: nothing released; the newer rows are fetched.
+    const r = await store.sync({ live: true, durationH: 24 }, now)
+    expect(kept).toHaveLength(2)
+    expect(store.held.slice(r.start, r.end).map((x) => x.i)).toEqual(all.filter((x) => x.t >= r.start && x.t < r.end).map((x) => x.i))
+  })
+
   it('serves held rows offline, clipped to the window', async () => {
     const all = Array.from({ length: 60 }, (_, k) => row(k + 1, T0 + k * 60_000))
     const store = newStore(server(all, () => T0 + H).fetch)

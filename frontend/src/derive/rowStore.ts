@@ -7,8 +7,8 @@
 
 /** Re-fetch this much before the end of what we hold: rows may commit slightly after their observed_at. */
 export const OVERLAP_MS = 2 * 60_000
-/** Rows older than this before the newest requested window end are dropped. */
-const KEEP_MS = 8 * 24 * 3_600_000
+/** Rows older than this before the newest requested window end are dropped: the longest window (14 days) and a day. */
+const KEEP_MS = 15 * 24 * 3_600_000
 /** Hard cap on rows held; beyond it the store keeps only the requested window. */
 const MAX_ROWS = 750_000
 
@@ -37,6 +37,7 @@ export interface Backend<B, L> {
   addLive(rows: L, lo: number): number // rows at or after lo, new ids only
   reset(): void
   trimBefore(t: number): void
+  /** Keep only rows in [lo, hi), in freshly reserved memory where the backend can (the engine: a new instance). */
   keepOnly(lo: number, hi: number): void
   newestT(): number // 0 when empty
   count(): number
@@ -71,6 +72,8 @@ export function baseParams(req: WindowReq): URLSearchParams {
 export class RowStore<B, L> {
   cov: Coverage | null = null
   generation: string | null = null
+  /** The window last synced: the next one releases what it cannot use unless it contains it. */
+  private last: { req: WindowReq; start: number; end: number } | null = null
 
   constructor(public rows: Backend<B, L>, private fetchRange: FetchRange<B>, public sink?: StoreSink) {}
 
@@ -105,8 +108,37 @@ export class RowStore<B, L> {
     return this.fetchRange(p)
   }
 
+  /**
+   * Before syncing req: when it does not contain the last window (a shorter
+   * one, or one earlier, later or only partly overlapping), keep only the rows
+   * it can use, in fresh memory (Backend.keepOnly), so a long window viewed
+   * once does not stay reserved. A rolling window that keeps or grows its
+   * length contains its earlier self, though it has moved on since.
+   */
+  private release(req: WindowReq, now: number) {
+    const last = this.last, cov = this.cov
+    if (!last || !cov) return
+    // A rolling window's start by this clock, a minute early: the server's may lag it.
+    const lo = req.live ? now - req.durationH * 3_600_000 - 60_000 : Date.parse(req.start)
+    const hi = req.live ? Infinity : Date.parse(req.end)
+    const contains = req.live && last.req.live ? req.durationH >= last.req.durationH : lo <= last.start && hi >= last.end
+    if (contains) return
+    const keepLo = Math.max(cov.lo, lo), keepHi = Math.min(cov.hi, hi)
+    if (keepLo === cov.lo && this.rows.newestT() < hi) return // nothing held outside it
+    if (keepLo < keepHi) {
+      this.rows.keepOnly(keepLo, hi) // a rolling window also keeps streamed rows past the coverage mark
+      this.cov = { lo: keepLo, hi: keepHi }
+    } else {
+      this.rows.keepOnly(lo, lo) // nothing held is usable
+      this.cov = null
+    }
+    this.sink?.reset()
+    if (this.cov) this.sink?.changed()
+  }
+
   /** Bring the store up to date for req; returns the window's bounds. */
-  async sync(req: WindowReq): Promise<Synced> {
+  async sync(req: WindowReq, now = Date.now()): Promise<Synced> {
+    this.release(req, now)
     const base = baseParams(req)
     const cov = this.cov
     let S: number, E: number
@@ -154,6 +186,7 @@ export class RowStore<B, L> {
       this.cov = { lo: S, hi: E }
     }
     this.sink?.meta(this.cov, this.generation)
+    this.last = { req, start: S, end: E }
     return { start: S, end: E, rolling }
   }
 

@@ -3,7 +3,7 @@
 // WebAssembly engine and builds every view from it, off the main thread
 // (D-031, D-040). Rows travel as JSON text straight into the engine; views
 // come back as UTF-8 JSON bytes, handed to the page as transferables.
-import init, { Engine } from '../engine/pkg/engine.js'
+import init, { Engine, __wbg_reset_state as newInstance } from '../engine/pkg/engine.js'
 // Content-hashed in builds: names this engine build for the saved row copy (D-102).
 import engineUrl from '../engine/pkg/engine_bg.wasm?url'
 // The map's Regions layer outlines (content-hashed), for health's topic-root rule (D-161).
@@ -23,6 +23,49 @@ let engine: Engine
 let store: RowStore<number, string>
 let persist: Persistence | null = null
 
+// What the engine was told, so a fresh instance is told the same.
+const options: Record<string, unknown> = {}
+let terrain: string | null = null
+let regions: string | null = null
+function setOptions(o: Record<string, unknown>) {
+  engine.set_options(JSON.stringify(o))
+  // As the engine merges them: a field left out (or undefined, so not sent) keeps its value.
+  for (const [k, v] of Object.entries(o)) if (v !== undefined) options[k] = v
+}
+function setTerrain(json: string) {
+  engine.set_terrain(json)
+  terrain = json
+}
+function setRegions(text: string) {
+  engine.set_regions(text)
+  regions = text
+}
+
+/** Rows copied to a fresh instance per export: a few hours at a time, never the whole range as one string. */
+const COPY_SPAN_MS = 6 * 3_600_000
+
+/**
+ * Keeps only the rows in [lo, hi) in a new WebAssembly instance. Its memory
+ * only grows, so dropping rows frees nothing to the browser; a new instance
+ * starts small, and the old one's memory goes when it is collected. Every
+ * Engine of the old instance is unusable afterwards (wasm-bindgen's
+ * --experimental-reset-state-function).
+ */
+function freshEngine(lo: number, hi: number) {
+  const end = Math.min(hi, engine.newest_t() + 1)
+  const parts: string[] = []
+  for (let t = lo; t < end; t += COPY_SPAN_MS) parts.push(engine.export(t, Math.min(t + COPY_SPAN_MS, end)))
+  newInstance()
+  engine = new Engine()
+  if (Object.keys(options).length) engine.set_options(JSON.stringify(options))
+  if (terrain) engine.set_terrain(terrain)
+  if (regions) engine.set_regions(regions)
+  for (const p of parts) engine.add_rows(p, -Infinity)
+  // Views of the old instance are keyed by its revisions, which the new one counts afresh.
+  memo.clear()
+  pinned.clear()
+}
+
 /** The engine as the row store's backend: batches are staged page ids, live rows JSON text. */
 class EngineRows implements Backend<number, string> {
   commit(batch: number) {
@@ -41,7 +84,7 @@ class EngineRows implements Backend<number, string> {
     engine.trim_before(t)
   }
   keepOnly(lo: number, hi: number) {
-    engine.keep_only(lo, hi)
+    freshEngine(lo, hi)
   }
   newestT() {
     return engine.newest_t()
@@ -236,7 +279,7 @@ async function loadRegions() {
       if (!res.ok) throw new Error(`regions: HTTP ${res.status}`)
       const text = await res.text()
       await started
-      engine.set_regions(text)
+      setRegions(text)
       memo.forget('health')
       self.postMessage({ type: 'changed' } satisfies Response)
       return
@@ -325,14 +368,14 @@ self.onmessage = async (e: MessageEvent<Request>) => {
     void prefetch()
     return
   }
-  if (msg.type === 'terrain') return reconfigure('terrain classes', () => engine.set_terrain(JSON.stringify(msg.links)))
-  if (msg.type === 'options') return reconfigure('options', () => engine.set_options(JSON.stringify({ max_nodes: msg.maxNodes })))
+  if (msg.type === 'terrain') return reconfigure('terrain classes', () => setTerrain(JSON.stringify(msg.links)))
+  if (msg.type === 'options') return reconfigure('options', () => setOptions({ max_nodes: msg.maxNodes }))
   if (msg.type === 'init') {
     try {
       await started
       // Settings made before (or kept across) a restart come with it: one rebuild, not one each.
-      engine.set_options(JSON.stringify({ geo: msg.geo, max_nodes: msg.maxNodes }))
-      if (msg.terrain?.length) engine.set_terrain(JSON.stringify(msg.terrain))
+      setOptions({ geo: msg.geo, max_nodes: msg.maxNodes })
+      if (msg.terrain?.length) setTerrain(JSON.stringify(msg.terrain))
       quantumMs = msg.liveQuantumMs
       memo.clear()
       pinned.clear()

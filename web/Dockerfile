@@ -5,6 +5,7 @@
 # The WebAssembly engine (frontend/engine): every view is derived in the browser.
 FROM --platform=$BUILDPLATFORM rust:1.99.1-slim-bookworm AS engine
 # Must equal the wasm-bindgen crate version in frontend/engine/Cargo.toml (and bindgen in scripts/wasm.sh).
+# --experimental-reset-state-function: the worker recreates the engine instance to give memory back (D-183).
 ARG WASM_BINDGEN=0.2.130
 RUN rustup target add wasm32-unknown-unknown \
  && cargo install --locked wasm-bindgen-cli --version "$WASM_BINDGEN"
@@ -20,12 +21,12 @@ ADD --checksum=sha256:2dc9c7813f5375db93d96ead4b78222fcc3e2677bbb832297af4797782
 ARG BUILDARCH
 RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,target=/src/engine/target \
     cargo build --release --locked --target wasm32-unknown-unknown \
- && wasm-bindgen --target web --out-dir /out --out-name engine target/wasm32-unknown-unknown/release/meshmap_engine.wasm \
+ && wasm-bindgen --target web --experimental-reset-state-function --out-dir /out --out-name engine target/wasm32-unknown-unknown/release/meshmap_engine.wasm \
  && if [ "$BUILDARCH" = amd64 ]; then \
       tar xzf /tmp/binaryen.tar.gz -C /usr/local/bin --strip-components=2 "binaryen-${BINARYEN}/bin/wasm-opt" \
       && wasm-opt -O3 --strip-debug --strip-producers /out/engine_bg.wasm -o /out/engine_bg.wasm; \
     else \
-      wasm-bindgen --target web --remove-name-section --remove-producers-section --out-dir /out --out-name engine target/wasm32-unknown-unknown/release/meshmap_engine.wasm; \
+      wasm-bindgen --target web --experimental-reset-state-function --remove-name-section --remove-producers-section --out-dir /out --out-name engine target/wasm32-unknown-unknown/release/meshmap_engine.wasm; \
     fi
 
 FROM --platform=$BUILDPLATFORM node:22.21.1-bookworm AS app

@@ -63,7 +63,7 @@ case "${1:-build}" in
       [ -x /cache/cargo/bin/wasm-bindgen ] && /cache/cargo/bin/wasm-bindgen --version | grep -q $bindgen \
         || cargo install --locked wasm-bindgen-cli --version $bindgen
       cargo build --release --target wasm32-unknown-unknown
-      /cache/cargo/bin/wasm-bindgen --target web --out-dir /src/frontend/src/engine/pkg --out-name engine \
+      /cache/cargo/bin/wasm-bindgen --target web --experimental-reset-state-function --out-dir /src/frontend/src/engine/pkg --out-name engine \
         /cache/target/wasm32-unknown-unknown/release/meshmap_engine.wasm
       /binaryen/wasm-opt -O3 --strip-debug --strip-producers \
         /src/frontend/src/engine/pkg/engine_bg.wasm -o /src/frontend/src/engine/pkg/engine_bg.wasm"

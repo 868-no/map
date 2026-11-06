@@ -358,10 +358,6 @@ impl Engine {
         self.store.trim_before(t as i64);
         self.compact();
     }
-    pub fn keep_only(&mut self, lo: f64, hi: f64) {
-        self.store.keep_only(lo as i64, hi as i64);
-        self.compact();
-    }
     pub fn newest_t(&self) -> f64 {
         self.store.newest_t() as f64
     }
@@ -457,13 +453,6 @@ mod tests {
         e.trim_before(t as f64);
         assert!(e.i.len() < before - 4900, "{} strings left of {before}", e.i.len());
         assert_eq!(e.export(t as f64, f64::MAX), kept, "kept rows read the same");
-        // Kept in place, rows and their strings unchanged.
-        e.keep_only((t + 9002) as f64, (t + 9005) as f64);
-        assert_eq!(e.count(), 3);
-        assert_eq!(e.take_dirty(), vec![(t / 3_600_000 * 3_600_000) as f64]);
-        let v: Vec<serde_json::Value> = serde_json::from_str(&e.export(0.0, f64::MAX)).unwrap();
-        assert_eq!(v.iter().map(|r| r["y"].as_str().unwrap()).collect::<Vec<_>>(), vec!["nodeinfo", "telemetry", "routing"]);
-        assert_eq!(v[2]["rt"]["error"], "re");
     }
 
     #[test]

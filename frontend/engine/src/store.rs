@@ -245,32 +245,6 @@ impl Store {
         self.version += 1;
     }
 
-    /// Returns memory to the allocator once the rows use under half of it
-    /// (after the row cap). Not after a trim: the rows it keeps grow back
-    /// into the room as new ones arrive.
-    fn shrink(&mut self) {
-        if self.buf.capacity() > 2 * self.buf.len() {
-            self.buf.shrink_to_fit();
-        }
-    }
-
-    /// Keeps only [lo, hi) (the row cap), in place: no copy of the kept
-    /// rows, so memory does not peak at twice the cap. The kept hours count
-    /// as changed, as after starting over with them.
-    pub fn keep_only(&mut self, lo: i64, hi: i64) {
-        let (a, b) = self.range(lo, hi);
-        self.buf.truncate(self.start + b);
-        self.buf.drain(..self.start + a);
-        self.start = 0;
-        self.shrink();
-        self.ids.clear();
-        self.ids.extend(self.buf.iter().map(|r| r.id));
-        self.dirty.clear();
-        self.dirty.extend(self.buf.iter().map(|r| r.t.div_euclid(HOUR_MS) * HOUR_MS));
-        self.max_id = self.buf.iter().map(|r| r.id).max();
-        self.version += 1;
-    }
-
     /// Calls `f` on every interned id held, committed or staged (Interner::retain).
     pub fn for_each_id(&mut self, mut f: impl FnMut(&mut u32)) {
         // Only rows held. The trimmed prefix keeps its old ids, which go
@@ -427,7 +401,7 @@ mod tests {
         s.trim_before(25); // evicts the newest id (9)
         assert_eq!(s.stats(0, 100), (1, 3));
         check(&s);
-        s.keep_only(0, 0);
+        s.reset();
         assert_eq!(s.stats(0, 100), (0, 0));
     }
 
@@ -449,9 +423,8 @@ mod tests {
         s.trim_before(65); // over half dropped: compacted
         assert_eq!(ids(&s), vec![7, 8, 9, 10, 12]);
         s.trim_before(75);
-        s.keep_only(80, 100); // the cap, with an offset
-        assert_eq!(ids(&s), vec![8, 9]);
-        assert_eq!(s.stats(0, 1000), (2, 9));
+        assert_eq!(ids(&s), vec![8, 9, 10, 12]);
+        assert_eq!(s.stats(0, 1000), (4, 12));
         assert_eq!(s.add_json(&format!("[{}]", row(8, 80)), 0, &mut i).unwrap(), 0, "kept ids still deduplicate");
     }
 
