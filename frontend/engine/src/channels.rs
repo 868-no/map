@@ -120,9 +120,19 @@ fn union(p: &mut FxMap<u32, u32>, a: u32, b: u32) {
     }
 }
 
-/// Pairs of nodes that heard each other over the air in `rows`. hops:
-/// traceroute_hops of the rows.
-fn radio_contacts(rows: &[&Row], hops: &[crate::graph::Sample]) -> Vec<(u32, u32)> {
+/// Pairs a traceroute hop shows heard each other over the air, once each.
+/// hops: traceroute_hops of the rows. Exactly 0 dB may be a hop taken from
+/// MQTT, not the air (D-054).
+pub fn traceroute_contacts(hops: &[crate::graph::Sample]) -> Vec<(u32, u32)> {
+    let mut out: Vec<(u32, u32)> = hops.iter().filter(|s| s.ev == Ev::Traceroute && s.snr != Some(0.0)).map(|s| (s.src, s.dst)).collect();
+    out.sort_unstable();
+    out.dedup();
+    out
+}
+
+/// Pairs of nodes that heard each other over the air in `rows`, with those
+/// traceroutes showed (`traceroute_contacts`).
+fn radio_contacts(rows: &[&Row], traced: &[(u32, u32)]) -> Vec<(u32, u32)> {
     let mut out = Vec::new();
     for &r in rows {
         if let (true, Some(g)) = (r.dr, r.gw) {
@@ -132,8 +142,7 @@ fn radio_contacts(rows: &[&Row], hops: &[crate::graph::Sample]) -> Vec<(u32, u32
             out.extend(r.neighbors().iter().map(|&(n, _)| (r.src, n)));
         }
     }
-    // Exactly 0 dB may be a hop taken from MQTT, not the air (D-054).
-    out.extend(hops.iter().filter(|s| s.ev == Ev::Traceroute && s.snr != Some(0.0)).map(|s| (s.src, s.dst)));
+    out.extend_from_slice(traced);
     out
 }
 
@@ -185,9 +194,9 @@ pub struct PresetIndex {
 }
 
 impl PresetIndex {
-    /// hops: traceroute_hops of the rows.
-    pub fn new(rows: &[&Row], hops: &[crate::graph::Sample], i: &Interner) -> Self {
-        let contacts = radio_contacts(rows, hops);
+    /// traced: traceroute_contacts of the rows.
+    pub fn new(rows: &[&Row], traced: &[(u32, u32)], i: &Interner) -> Self {
+        let contacts = radio_contacts(rows, traced);
         let mut parent: FxMap<u32, u32> = map();
         for &(a, b) in &contacts {
             union(&mut parent, a, b);

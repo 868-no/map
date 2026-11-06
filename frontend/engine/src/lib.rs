@@ -199,7 +199,7 @@ impl Engine {
                 let (a, b) = arg.split_once('|').and_then(|(a, b)| Some((parse_node(a)?, parse_node(b)?))).ok_or_else(|| err("invalid link"))?;
                 self.build(start, end, filters)?;
                 let built = &self.built.as_ref().unwrap().1;
-                Ok(json(&views::link::link_history(&built.samples, a, b)))
+                Ok(json(&views::link::link_history(&built.readings, a, b)))
             }
             "health" => {
                 self.build(start, end, filters)?;
@@ -210,7 +210,7 @@ impl Engine {
                 let (lo, hi) = self.store.range(start, end);
                 let invalid: Vec<&row::Row> = self.store.rows()[lo..hi].iter().filter(|r| Some(r.ty) == invalid_ty).collect();
                 let rows = self.rows();
-                let presets = b.presets.get_or_init(|| channels::PresetIndex::new(&rows, &b.hops, &self.i));
+                let presets = b.presets.get_or_init(|| channels::PresetIndex::new(&rows, &b.traceroute_contacts, &self.i));
                 Ok(json(&health::health(&rows, &invalid, &b.snapshot.nodes, &b.copies, presets, &self.i, hours, &self.regions)))
             }
             _ => Err(err(format!("unknown view {kind}"))),

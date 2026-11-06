@@ -153,7 +153,7 @@ pub fn build_node_detail(rows: &[&Row], num: u32, b: &Built, i: &Interner) -> Op
     let n = b.snapshot.nodes.iter().chain(&b.beyond).find(|x| x.num == num).cloned().unwrap_or_else(|| Node::new(num));
     let mut radio = crate::radio::radio(&own, i);
     radio.channels = crate::channels::channel_use(num, &mine, i);
-    radio.preset = crate::channels::preset_guess(num, b.presets.get_or_init(|| crate::channels::PresetIndex::new(rows, &b.hops, i)));
+    radio.preset = crate::channels::preset_guess(num, b.presets.get_or_init(|| crate::channels::PresetIndex::new(rows, &b.traceroute_contacts, i)));
     radio.uplink_topics = crate::radio::uplink_topics(&uplinked, i);
     let mut d = NodeDetail { node: n, positions: vec![], telemetry_series: vec![], environment_series: vec![], node_status: vec![], delivery_by_recipient: vec![], heard_by: vec![], heard: vec![], recent_packets: vec![], truncated: false, radio, delivery: crate::packets::delivery(&mine, num, i) };
     if first == i64::MAX {

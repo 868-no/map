@@ -74,12 +74,13 @@ pub struct Built {
     pub beyond: Vec<Node>,
     pub ctx: RelayContext,
     pub roles: FxMap<u32, String>,
-    /// Radio link evidence, for link history (D-105).
-    pub samples: Vec<crate::graph::Sample>,
+    /// Radio link readings, for link history (D-105).
+    pub readings: super::link::LinkReadings,
     /// Every packet's radio copies with their transmitters (health's airtime).
     pub copies: crate::copies::Copies,
-    /// Traceroute hops (radio groups) and probable downlinks per node (node view).
-    pub hops: Vec<crate::graph::Sample>,
+    /// Pairs a traceroute hop shows heard each other over the air (radio
+    /// groups), and probable downlinks per node (node view).
+    pub traceroute_contacts: Vec<(u32, u32)>,
     pub downlinks: FxMap<u32, Downlink>,
     /// The window's latest observation (stale positions).
     pub now: i64,
@@ -331,9 +332,9 @@ pub fn build_snapshot(rows: &[&Row], i: &Interner, g: &GeoOptions, rules: Rules)
         beyond,
         ctx,
         roles,
-        samples: er.samples,
+        readings: super::link::LinkReadings::new(&er.samples),
         copies,
-        hops,
+        traceroute_contacts: crate::channels::traceroute_contacts(&hops),
         downlinks,
         now,
         rejected,
