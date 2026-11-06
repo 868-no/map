@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { useFlash } from '../../lib/useFlash'
 import { ApiError, getJSON } from '../../api/client'
 import type { NodeKey } from '../../api/types'
@@ -147,17 +147,19 @@ export function OverviewTab({ d, snapNode, now, names }: { d: NodeView; snapNode
 
 /** The node's public key from the whole retained log (keys identify a node, not a window). */
 function PublicKey({ id, optOut }: { id: string; optOut?: boolean }) {
-  const [k, setK] = useState<NodeKey | 'none' | 'error' | null>(null)
   const [copied, flashCopied] = useFlash(false)
-  useEffect(() => {
-    const ctl = new AbortController()
-    getJSON<NodeKey>(`/api/v1/nodes/${encodeURIComponent(id)}/public-key`, undefined, ctl.signal)
-      .then(setK)
-      .catch((e: unknown) => {
-        if ((e as Error).name !== 'AbortError') setK(e instanceof ApiError && e.status === 404 ? 'none' : 'error')
-      })
-    return () => ctl.abort()
-  }, [id])
+  // Cached per node for the visit: switching tabs or nodes back asks again only after ten minutes.
+  const q = useQuery({
+    queryKey: ['public-key', id],
+    queryFn: ({ signal }) =>
+      getJSON<NodeKey>(`/api/v1/nodes/${encodeURIComponent(id)}/public-key`, undefined, signal).catch((e: unknown) => {
+        if (e instanceof ApiError && e.status === 404) return 'none' as const
+        throw e
+      }),
+    staleTime: 10 * 60_000,
+    retry: false,
+  })
+  const k = q.isError ? 'error' : (q.data ?? null)
   if (k === null) return <span className="muted">…</span>
   if (k === 'none')
     return optOut ? (
