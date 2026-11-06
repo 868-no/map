@@ -11,7 +11,7 @@ require (
 
 require (
 	github.com/andybalholm/brotli v1.2.8
-	github.com/caarlos0/env/v11 v11.4.1
+	github.com/caarlos0/env/v11 v11.4.2
 	github.com/danielgtaylor/huma/v2 v2.40.0
 	github.com/eclipse/paho.golang v0.23.0
 	github.com/eclipse/paho.mqtt.golang v1.5.1
