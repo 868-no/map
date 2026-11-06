@@ -154,15 +154,39 @@ impl Store {
         let n = fresh.len();
         self.max_id = fresh.iter().map(|r| r.id).chain(self.max_id).max();
         let append = self.rows().last().is_none_or(|tail| by_time(&fresh[0], tail).is_ge());
-        self.buf.extend(fresh);
-        if !append {
-            // An older range filled in, routine since day commits arrive out
-            // of order (D-160): the stable sort finds the two sorted runs and
-            // merges them in linear time, where an unstable sort would not.
-            self.buf[self.start..].sort_by(by_time);
+        if append {
+            self.buf.extend(fresh);
+        } else {
+            self.merge_older(fresh);
         }
         self.version += 1;
         n
+    }
+
+    /// Merges sorted rows, some older than rows held, into place: an older
+    /// range filled in, routine since day commits arrive out of order
+    /// (D-160). From the back, held rows move up into the room made for the
+    /// new ones and the new ones fill the gaps: no scratch beyond that room
+    /// (a stable sort would take half the store's size, in memory that never
+    /// shrinks), and only rows after the first new one move.
+    fn merge_older(&mut self, mut fresh: Vec<Row>) {
+        // The first held row the new ones go before.
+        let p = self.start + self.rows().partition_point(|h| by_time(h, &fresh[0]).is_le());
+        // Room at the end, filled with a cheap row (no boxed parts) to be overwritten.
+        let room = Row { pos: None, detail: None, ..fresh[0].clone() };
+        let mut held = self.buf.len(); // held[p..held] still to place
+        self.buf.resize(held + fresh.len(), room);
+        // Slots w and above are placed; held..=w are free.
+        let mut w = self.buf.len();
+        while let Some(f) = fresh.last() {
+            w -= 1;
+            if held > p && by_time(&self.buf[held - 1], f).is_gt() {
+                held -= 1;
+                self.buf.swap(held, w);
+            } else {
+                self.buf[w] = fresh.pop().unwrap();
+            }
+        }
     }
 
     /// Drops every committed row. Staged batches belong to fetches in flight
@@ -328,6 +352,44 @@ mod tests {
         let m = s.stage(&page, 0, &mut i).unwrap();
         s.reset();
         assert_eq!(s.commit(m.batch), 2);
+    }
+
+    #[test]
+    fn older_rows_merge_into_place_in_order() {
+        let mut i = Interner::default();
+        // A small linear congruential generator: varied, repeatable batches.
+        let mut seed = 7u64;
+        let mut next = |m: i64| {
+            seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            ((seed >> 33) as i64).rem_euclid(m)
+        };
+        for round in 0..50 {
+            let mut s = Store::default();
+            let mut id = 1;
+            let mut want: Vec<(i64, i64)> = Vec::new();
+            for _ in 0..6 {
+                let base = next(1000);
+                let batch: Vec<String> = (0..next(40)).map(|_| {
+                    id += 1;
+                    // Equal times among batches, ordered by id.
+                    let t = base + next(50);
+                    want.push((t, id));
+                    row(id, t)
+                }).collect();
+                s.add_json(&format!("[{}]", batch.join(",")), 0, &mut i).unwrap();
+                if round % 2 == 1 {
+                    s.trim_before(next(200)); // an offset start: order alone is checked
+                }
+            }
+            let got: Vec<(i64, i64)> = s.rows().iter().map(|r| (r.t, r.id)).collect();
+            let mut sorted = got.clone();
+            sorted.sort();
+            assert_eq!(got, sorted, "round {round}: in order");
+            if round % 2 == 0 {
+                want.sort();
+                assert_eq!(got, want, "round {round}: every row once");
+            }
+        }
     }
 
     #[test]
