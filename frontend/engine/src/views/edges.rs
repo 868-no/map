@@ -1,7 +1,7 @@
 //! Evidence-backed links, MQTT ones kept apart (D-055).
 
 use super::first_per_reception;
-use crate::graph::{self, reduce, traceroute_samples, Edge, Ev, LatLon, RelayContext, SKey, Sample};
+use crate::graph::{self, traceroute_samples, Edge, Ev, LatLon, RelayContext, SKey, Sample};
 use crate::row::{ty, HeardFrom, Row};
 use crate::util::{map, FxMap, FxSet};
 
@@ -12,8 +12,8 @@ pub struct EdgeResult {
     pub truncated: bool,
     pub ambiguous: usize,
     pub unmatched: usize,
-    /// The radio evidence the edges were reduced from, for link history (D-105).
-    pub samples: Vec<Sample>,
+    /// The measured readings of the radio evidence, for link history (D-105).
+    pub readings: super::link::LinkReadings,
     /// The relay each relayed copy here resolved to, by row id, for
     /// copies::Copies to reuse rather than resolve again.
     pub resolved: FxMap<i64, Option<u32>>,
@@ -123,9 +123,11 @@ pub fn build_edges(rows: &[&Row], neighborinfo: &[&Row], hops: &[Sample], known:
             None => unmatched += 1,
         }
     }
-    let mut edges = reduce(&samples);
+    let mut readings = super::link::LinkReadings::default();
+    let mut edges = graph::reduce_kept(&samples, |s| readings.push(s));
+    let readings = readings.sorted();
     let truncated = edges.len() > MAX_EDGES;
     edges.truncate(MAX_EDGES);
     edges.extend(graph::reduce_mqtt(&mqtt));
-    (EdgeResult { edges, truncated, ambiguous, unmatched, samples, resolved }, ctx)
+    (EdgeResult { edges, truncated, ambiguous, unmatched, readings, resolved }, ctx)
 }

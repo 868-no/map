@@ -329,7 +329,7 @@ pub fn build_snapshot(rows: &[&Row], i: &Interner, g: &GeoOptions, rules: Rules)
         beyond,
         ctx,
         roles,
-        readings: super::link::LinkReadings::new(&er.samples),
+        readings: er.readings,
         copies,
         traceroute_contacts: crate::channels::traceroute_contacts(&hops),
         rejected,

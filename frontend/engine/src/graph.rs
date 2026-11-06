@@ -131,6 +131,12 @@ fn invalid(n: u32) -> bool {
 
 /// Folds samples into edges; duplicate samples (same key, direction and evidence) count once.
 pub fn reduce(samples: &[Sample]) -> Vec<Edge> {
+    reduce_kept(samples, |_| {})
+}
+
+/// reduce, also handing `kept` each sample it counts (once per RF event),
+/// for link history to keep without deduplicating again.
+pub fn reduce_kept(samples: &[Sample], mut kept: impl FnMut(&Sample)) -> Vec<Edge> {
     let mut m: FxMap<(u32, u32), Acc> = map();
     // One set for every edge's sample keys, rather than a set per edge.
     let mut keys: FxSet<(u32, u32, Ev, SKey)> = set();
@@ -142,6 +148,7 @@ pub fn reduce(samples: &[Sample]) -> Vec<Edge> {
         if s.key != SKey::None && !keys.insert((s.src, s.dst, s.ev, s.key)) {
             continue;
         }
+        kept(s);
         match s.ev {
             Ev::Neighbor => a.counts.neighbor += 1,
             Ev::Traceroute => a.counts.traceroute += 1,

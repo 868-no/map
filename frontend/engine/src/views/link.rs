@@ -3,8 +3,8 @@
 
 use serde::Serialize;
 
-use crate::graph::{Ev, SKey, Sample};
-use crate::util::{node_id, set, FxSet};
+use crate::graph::{Ev, Sample};
+use crate::util::node_id;
 
 /// Most recent points kept per direction.
 pub const MAX_LINK_POINTS: usize = 2000;
@@ -64,17 +64,25 @@ fn wide(v: f32) -> Option<f64> {
 }
 
 impl LinkReadings {
+    /// From samples, deduplicated as graph::reduce counts them.
     pub fn new(samples: &[Sample]) -> Self {
-        let mut seen: FxSet<(u32, u32, Ev, SKey)> = set();
-        let mut v: Vec<Reading> = samples
-            .iter()
-            .filter(|s| s.snr.is_some() || s.rssi.is_some())
-            .filter(|s| s.key == SKey::None || seen.insert((s.src, s.dst, s.ev, s.key)))
-            .map(|s| Reading { src: s.src, dst: s.dst, t: s.t, snr: s.snr.map_or(f32::NAN, |x| x as f32), rssi: s.rssi.map_or(f32::NAN, |x| x as f32), ev: s.ev })
-            .collect();
-        // Stable: equal times keep the samples' order, as the view did.
-        v.sort_by_key(|r| (r.src, r.dst, r.t));
-        LinkReadings(v)
+        let mut r = LinkReadings::default();
+        crate::graph::reduce_kept(samples, |s| r.push(s));
+        r.sorted()
+    }
+
+    /// Adds a sample reduce kept (counted once), if it measured a signal.
+    pub fn push(&mut self, s: &Sample) {
+        if s.snr.is_some() || s.rssi.is_some() {
+            self.0.push(Reading { src: s.src, dst: s.dst, t: s.t, snr: s.snr.map_or(f32::NAN, |x| x as f32), rssi: s.rssi.map_or(f32::NAN, |x| x as f32), ev: s.ev });
+        }
+    }
+
+    /// Sorted by direction and time, once every sample is in. Stable: equal
+    /// times keep the samples' order, as the view did.
+    pub fn sorted(mut self) -> Self {
+        self.0.sort_by_key(|r| (r.src, r.dst, r.t));
+        self
     }
 
     /// The readings from `src` to `dst`, oldest first, the newest MAX_LINK_POINTS.
@@ -93,6 +101,7 @@ pub fn link_history(readings: &LinkReadings, a: u32, b: u32) -> LinkHistory {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::graph::SKey;
 
     #[test]
     fn each_direction_in_time_order_with_each_event_once() {
