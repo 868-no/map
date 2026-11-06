@@ -74,6 +74,20 @@ docker run --rm --network host --ipc=host -v "$PWD":/src -w /src/frontend \
 scripts/bench.sh                      # 2M-row reference benchmark
 ```
 
+Linters (CI runs them all; fix what they report before pushing):
+
+```sh
+scripts/go.sh go vet ./... && scripts/go.sh gofmt -l .          # Go basics
+scripts/go.sh golangci-lint run ./...  # Go linters (backend/.golangci.yml); --fix applies the safe fixes
+scripts/go.sh govulncheck ./...        # Go: known vulnerabilities in code paths actually called
+scripts/wasm.sh clippy                 # Rust: clippy, warnings as errors (lint set in frontend/engine/Cargo.toml)
+scripts/wasm.sh deny                   # Rust: dependency advisories, bans and sources (frontend/engine/deny.toml)
+scripts/node.sh npm run lint           # TypeScript/React: ESLint (frontend/eslint.config.js)
+scripts/node.sh npm run knip           # unused files, exports and dependencies (frontend/knip.json); --fix removes them
+```
+
+The two Go tools install once into the cached GOBIN: `scripts/go.sh go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0` and `scripts/go.sh go install golang.org/x/vuln/cmd/govulncheck@v1.9.0`. Formatters beyond `gofmt` (rustfmt, Prettier) are not used: the code keeps its own layout, which they would rewrite.
+
 Every view is built in the browser, by a WebAssembly engine (`frontend/engine`, Rust) in a Web Worker, from the decoded rows of `/api/v1/observations` and the live stream (D-031, D-040, D-041).
 
 ## Operations

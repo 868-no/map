@@ -44,6 +44,16 @@ jobs:
         run: |
           unformatted="$(scripts/go.sh gofmt -l ./cmd ./internal ./test)"
           if [ -n "$unformatted" ]; then echo "gofmt needed:"; echo "$unformatted"; exit 1; fi
+      # golangci-lint (backend/.golangci.yml) and govulncheck, pinned and
+      # built into the cached GOBIN.
+      - name: golangci-lint
+        run: |
+          scripts/go.sh go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0
+          scripts/go.sh golangci-lint run ./...
+      - name: govulncheck
+        run: |
+          scripts/go.sh go install golang.org/x/vuln/cmd/govulncheck@v1.9.0
+          scripts/go.sh govulncheck ./...
       # The race detector needs cgo, which the golang bookworm image has on.
       - run: scripts/go.sh go test -race ./...
 
@@ -69,6 +79,7 @@ jobs:
           hash: ${{ hashFiles('frontend/engine/Cargo.lock', 'scripts/wasm.sh') }}
       - run: scripts/wasm.sh test
       - run: scripts/wasm.sh clippy
+      - run: scripts/wasm.sh deny
 
   frontend:
     name: frontend (types, lint, unit, build)
@@ -82,7 +93,7 @@ jobs:
       - name: build the WebAssembly engine
         run: scripts/wasm.sh
       - run: scripts/node.sh npm ci --no-audit --no-fund
-      - run: scripts/node.sh sh -c 'npm run typecheck && npm run lint && npx vitest run && npm run build'
+      - run: scripts/node.sh sh -c 'npm run typecheck && npm run lint && npm run knip && npx vitest run && npm run build'
       # The API types are generated from docs/api-openapi.yaml (itself checked
       # against the backend by internal/api/openapi_test.go): they must be current.
       - name: generated API types are current
