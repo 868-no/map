@@ -58,6 +58,8 @@ export function useLiveStream(positions: RefObject<Map<string, [number, number]>
     }
     const off = onTransmissions((ts) => {
       useLiveLog.getState().addTransmissions(ts) // the open packet log, at once
+      // No pings while the animation is off: nothing would draw or expire them.
+      if (!useStore.getState().toggles.animation) return
       if (painting()) return ts.forEach((t) => addTransmission(t, positions.current))
       deferred.push({ at: Date.now(), ts })
       if (deferred.length > MAX_DEFERRED) deferred.shift()
