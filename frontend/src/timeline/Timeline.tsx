@@ -1,6 +1,6 @@
 // The period: the header's live indicator and the Period panel on the tool
 // rail (D-067), which replaced the time bar along the bottom of the map.
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useMemo, useState } from 'react'
 import type { Capabilities, Retention } from '../api/types'
 import type { SnapshotView } from '../derive/views'
 import { useTraffic } from '../state/data'
@@ -94,19 +94,19 @@ export function PeriodPanel({ caps, retention, snapshot }: { caps: Capabilities;
     onKeyUp: () => { if (draft) applyFixed(draft[0], draft[1]); setDraft(null) },
     onBlur: () => { if (draft) applyFixed(draft[0], draft[1]); setDraft(null) },
   }
-  const [startInput, setStartInput] = useState(toLocalInput(new Date(startMs)))
-  const [endInput, setEndInput] = useState(toLocalInput(new Date(endMs)))
-  // Follow the window, but not while someone is typing: a live window moves
-  // on every rebuild and would wipe a half-typed date.
-  const editing = useRef(false)
-  useEffect(() => {
-    if (editing.current) return
-    setStartInput(toLocalInput(new Date(startMs)))
-    setEndInput(toLocalInput(new Date(endMs)))
-  }, [startMs, endMs])
-  const commitInputs = (s = startInput, e = endInput) => {
-    const si = fromLocalInput(s), ei = fromLocalInput(e)
+  // Typed dates are drafts until committed (Enter, or leaving the field);
+  // without one a field shows the window, live or not. Leaving a field with
+  // nothing typed changes nothing, so a live window stays live.
+  const [startDraft, setStartDraft] = useState<string | null>(null)
+  const [endDraft, setEndDraft] = useState<string | null>(null)
+  const startInput = startDraft ?? toLocalInput(new Date(startMs))
+  const endInput = endDraft ?? toLocalInput(new Date(endMs))
+  const commitInputs = () => {
+    if (startDraft === null && endDraft === null) return
+    const si = fromLocalInput(startInput), ei = fromLocalInput(endInput)
     if (si && ei) applyFixed(Date.parse(si), Date.parse(ei))
+    setStartDraft(null)
+    setEndDraft(null)
   }
 
   const pct = (ms: number) => ((ms - minMs) / (now - minMs)) * 100
@@ -127,11 +127,11 @@ export function PeriodPanel({ caps, retention, snapshot }: { caps: Capabilities;
       <h3>From and to</h3>
       <label className="dt">
         <span>Start</span>
-        <input type="datetime-local" value={startInput} onChange={(e) => setStartInput(e.target.value)} onFocus={() => (editing.current = true)} onBlur={() => { editing.current = false; commitInputs() }} onKeyDown={(e) => e.key === 'Enter' && commitInputs()} />
+        <input type="datetime-local" value={startInput} onChange={(e) => setStartDraft(e.target.value)} onBlur={commitInputs} onKeyDown={(e) => e.key === 'Enter' && commitInputs()} />
       </label>
       <label className="dt">
         <span>End</span>
-        <input type="datetime-local" value={endInput} onChange={(e) => setEndInput(e.target.value)} onFocus={() => (editing.current = true)} onBlur={() => { editing.current = false; commitInputs() }} onKeyDown={(e) => e.key === 'Enter' && commitInputs()} />
+        <input type="datetime-local" value={endInput} onChange={(e) => setEndDraft(e.target.value)} onBlur={commitInputs} onKeyDown={(e) => e.key === 'Enter' && commitInputs()} />
       </label>
       <p className="tz" title="Times are shown in your local time zone; the server works in UTC">
         {zoneLabel(new Date(endMs))}
