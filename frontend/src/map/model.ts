@@ -44,6 +44,24 @@ export function namesOf(nodes: readonly MeshNode[] | undefined): ReadonlyMap<str
   return m
 }
 
+const shortNames = new WeakMap<readonly MeshNode[], ReadonlyMap<string, string>>()
+/** Every node's short name by id, made on first use per snapshot's node list (link tooltips). */
+export function shortNamesOf(nodes: readonly MeshNode[] | undefined): ReadonlyMap<string, string> {
+  if (!nodes) return NO_NAMES
+  let m = shortNames.get(nodes)
+  if (!m) shortNames.set(nodes, (m = new Map(nodes.map((n) => [n.id, n.identity?.short_name || n.identity?.long_name || n.id]))))
+  return m
+}
+
+const edgeKeys = new WeakMap<readonly Edge[], ReadonlySet<string>>()
+/** `src|dst|mqtt` of every edge, made on first use per snapshot's edge list (link tooltips). */
+export function edgeKeysOf(edges: readonly Edge[] | undefined): ReadonlySet<string> {
+  if (!edges) return new Set()
+  let s = edgeKeys.get(edges)
+  if (!s) edgeKeys.set(edges, (s = new Set(edges.map((x) => `${x.src}|${x.dst}|${!!x.mqtt}`))))
+  return s
+}
+
 /** A node heard within this long before the window's end is online (D-101). */
 export const ONLINE_MS = 3 * 3_600_000
 

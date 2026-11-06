@@ -5,10 +5,10 @@ import { MapboxOverlay } from '@deck.gl/mapbox'
 import { ScatterplotLayer } from '@deck.gl/layers'
 import type { Layer, PickingInfo } from '@deck.gl/core'
 import type { Capabilities } from '../api/types'
-import type { Edge, SnapshotView } from '../derive/views'
+import type { Edge, MeshNode, SnapshotView } from '../derive/views'
 import { useStore } from '../state/store'
 import { applyStylePaint, loadStyle, registerPMTiles } from './style'
-import { bridgeRoute, namesOf, positionAt, filterEdges, passesNodeFilters, linkGeometry, placeNodes, visibleLinks, withSelectedLink, type LinkGeom, type PlacedNode } from './model'
+import { bridgeRoute, edgeKeysOf, namesOf, shortNamesOf, positionAt, filterEdges, passesNodeFilters, linkGeometry, placeNodes, visibleLinks, withSelectedLink, type LinkGeom, type PlacedNode } from './model'
 import { frameArrived, onPingAdded, pingCount } from './pings'
 import { BASEMAP_GROUPS } from './layers'
 import { meshLayerBuilder, type ReachGeom, type RouteGeom } from './meshLayers'
@@ -264,6 +264,8 @@ export default memo(function MapView({ caps, snapshot, onPositions }: Props) {
     return { placed, pos, allPos, roles }
   }, [snapshot, positionedOnly, onlineOnly, roleFilter, windowEnd, windowMs])
   const links = useMemo(() => {
+    // All link layers are off by default: nothing to build (a selected link is drawn apart).
+    if (!toggles.infraLinks && !toggles.otherLinks && !toggles.mqttLinks) return []
     const edges = filterEdges(snapshot?.edges ?? [], filters, toggles)
     return linkGeometry(edges, pos, roles).filter((g) => (g.mqtt ? toggles.mqttLinks : g.infra ? toggles.infraLinks : toggles.otherLinks))
   }, [snapshot, pos, roles, filters.minConfidence, filters.evidence, toggles.infraLinks, toggles.otherLinks, toggles.mqttLinks, toggles.inferred]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -276,7 +278,8 @@ export default memo(function MapView({ caps, snapshot, onPositions }: Props) {
   const routeQ = usePacketRoute(routeLp)
   // Moved nodes are drawn where they were when the packet was heard, with a
   // ring there and a dashed line to where they are now (D-073).
-  const nodeById = useMemo(() => new Map((snapshot?.nodes ?? []).map((n) => [n.id, n])), [snapshot])
+  // Only while a route is drawn.
+  const nodeById = useMemo(() => (routeLp ? new Map((snapshot?.nodes ?? []).map((n) => [n.id, n])) : new Map<string, MeshNode>()), [snapshot, routeLp])
   const { route, routeGhosts } = useMemo(() => {
     if (!routeLp) return { route: null, routeGhosts: [] }
     const segs = routeQ.data?.segments ?? []
@@ -340,12 +343,10 @@ export default memo(function MapView({ caps, snapshot, onPositions }: Props) {
   const clusters = useMemo(() => (namesShown ? clusterLabels(placed, zoom) : []), [namesShown, placed, zoom])
   const clusterOf = useRef(new Map<string, Cluster>())
   const nameOf = useRef<ReadonlyMap<string, string>>(new Map())
-  const shortOf = useRef(new Map<string, string>())
-  // Every edge, before the map's filters: a direction a filter hid is not "no evidence".
-  const allEdges = useRef(new Set<string>())
-  allEdges.current = useMemo(() => new Set((snapshot?.edges ?? []).map((x) => `${x.src}|${x.dst}|${!!x.mqtt}`)), [snapshot])
+  // The snapshot for the link tooltip, which builds its lookups on first use.
+  const tipSnapshot = useRef(snapshot)
+  tipSnapshot.current = snapshot
   nameOf.current = namesOf(snapshot?.nodes)
-  shortOf.current = useMemo(() => new Map((snapshot?.nodes ?? []).map((n) => [n.id, n.identity?.short_name || n.identity?.long_name || n.id])), [snapshot])
   clusterOf.current = useMemo(() => new Map(clusters.flatMap((c) => c.members.map((m) => [m.node.id, c] as const))), [clusters])
   const [hoverCluster, setHoverCluster] = useState<string | null>(null)
   const collapseTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
@@ -464,8 +465,11 @@ export default memo(function MapView({ caps, snapshot, onPositions }: Props) {
           setHover({ x: info.x, y: info.y, text: `${name}${o.kind === 'estimated' ? ' — estimated location' : ''}${n.airborne ? ' — airborne' : n.moved_at ? ' — moving' : ''}${n.mqtt_opt_out ? ' — did not allow MQTT uplink; name withheld' : ''}` })
         } else {
           // One line per direction, nodes by short name.
-          const sn = (id: string) => shortOf.current.get(id) ?? id
-          const hidden = (from: string, to: string) => allEdges.current.has(`${from}|${to}|${!!o.mqtt}`)
+          const short = shortNamesOf(tipSnapshot.current?.nodes)
+          // Every edge, before the map's filters: a direction a filter hid is not "no evidence".
+          const all = edgeKeysOf(tipSnapshot.current?.edges)
+          const sn = (id: string) => short.get(id) ?? id
+          const hidden = (from: string, to: string) => all.has(`${from}|${to}|${!!o.mqtt}`)
           const dir = (e: Edge | undefined, from: string, to: string) =>
             `${sn(from)} → ${sn(to)}: ${e ? (e.mqtt ? 'over the internet' : `${e.confidence} confidence, ${e.samples} report${e.samples === 1 ? '' : 's'}${e.zero_cost?.likely ? ', 0-cost' : ''}`) : hidden(from, to) ? 'hidden by the filters' : 'no evidence'}`
           setHover({ x: info.x, y: info.y, text: [o.mqtt ? 'Over the internet (MQTT), not radio' : '', dir(o.ab, o.a, o.b), dir(o.ba, o.b, o.a)].filter(Boolean).join('\n') })
