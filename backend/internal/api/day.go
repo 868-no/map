@@ -284,11 +284,14 @@ func (s *Server) observationsDay(ctx context.Context, in *DayInput) (*DayOutput,
 // it per request. Bounded: a process sees few such days, but each
 // generation renames them.
 func (s *Server) noteLargeDay(key string) {
+	if _, known := s.dayLarge.LoadOrStore(key, struct{}{}); known {
+		return // every request that shared the build notes it: count it once
+	}
 	if s.dayLargeN.Add(1) > 1024 {
 		s.dayLarge.Clear()
 		s.dayLargeN.Store(0)
+		s.dayLarge.Store(key, struct{}{})
 	}
-	s.dayLarge.Store(key, struct{}{})
 }
 
 // streamDay writes a day's rows from the database as they are read, never
@@ -371,6 +374,9 @@ func (s *Server) sharedDay(ctx context.Context, db rowsDB, p dayPlan, head Obser
 		switch res, err := s.storedDay(ctx, key, br); {
 		case err != nil:
 			s.cacheError("day_get", err)
+		case res != nil && res.tooLarge:
+			s.dayCount("large")
+			return res, nil
 		case res != nil:
 			s.dayCount("hit")
 			return res, nil
@@ -432,6 +438,12 @@ func (s *Server) fillDay(ctx context.Context, db rowsDB, p dayPlan, head Observa
 	}
 	s.dayCount("built")
 	res, err := s.buildDay(ctx, db, p, head, st)
+	if err == nil && res.tooLarge && s.DayCache != nil {
+		// Tell the other replicas, whose waiters would build it next.
+		if err := s.DayCache.SetBlob(ctx, key+":large", []byte{1}, dayTTL); err != nil {
+			s.cacheError("day_set", err)
+		}
+	}
 	if err != nil || !res.immutable || res.tooLarge || s.DayCache == nil || len(res.gz) > dayMaxRedis {
 		return res, err
 	}
@@ -452,8 +464,15 @@ func (s *Server) fillDay(ctx context.Context, db rowsDB, p dayPlan, head Observa
 // asked for: a day stored before D-168 has none and goes out as gzip.
 func (s *Server) storedDay(ctx context.Context, key string, br bool) (*dayResult, error) {
 	gz, err := s.DayCache.GetBlob(ctx, key)
-	if err != nil || gz == nil {
+	if err != nil {
 		return nil, err
+	}
+	if gz == nil {
+		// Not stored: perhaps because a replica found it too large to build.
+		if large, err := s.DayCache.GetBlob(ctx, key+":large"); err != nil || large == nil {
+			return nil, err
+		}
+		return &dayResult{tooLarge: true}, nil
 	}
 	res := &dayResult{gz: gz, immutable: true}
 	if br {

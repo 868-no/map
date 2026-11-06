@@ -553,7 +553,8 @@ func TestDayTooLargeStreamsWithoutRebuilding(t *testing.T) {
 	defer func(m int) { dayMaxBytes = m }(dayMaxBytes)
 	dayMaxBytes = 16
 	db := &fakeRows{settled: true, rows: []string{`{"i":1,"t":1}`, `{"i":2,"t":2}`}}
-	s, h := dayServer(t, db, newBlobs())
+	blobs := newBlobs()
+	s, h := dayServer(t, db, blobs)
 	gen := s.generation(0)
 	for i := range 3 {
 		w := getDay(h, testDay, gen, map[string]string{"Accept-Encoding": "gzip"})
@@ -564,5 +565,14 @@ func TestDayTooLargeStreamsWithoutRebuilding(t *testing.T) {
 	// One build that gave up, then a stream per request: 1 + 3 reads, one settled query.
 	if r, q := db.reads.Load(), db.settledQs.Load(); r != 4 || q != 1 {
 		t.Fatalf("database reads %d, settled queries %d", r, q)
+	}
+	// Another replica sharing the Redis learns it from there and builds nothing.
+	db2 := &fakeRows{settled: true, rows: db.rows}
+	_, h2 := dayServer(t, db2, blobs)
+	if w := getDay(h2, testDay, gen, nil); w.Code != 200 || w.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("other replica: got %d, %v", w.Code, w.Header())
+	}
+	if r, q := db2.reads.Load(), db2.settledQs.Load(); r != 1 || q != 0 {
+		t.Fatalf("other replica: database reads %d, settled queries %d; want only the stream", r, q)
 	}
 }
