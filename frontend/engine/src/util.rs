@@ -104,11 +104,6 @@ pub fn key_hex(k: u64) -> String {
     format!("{k:016x}")
 }
 
-/// Go's math.Round (Rust's f64::round): halves away from zero.
-pub fn round_away(v: f64) -> f64 {
-    v.round()
-}
-
 pub fn round2(v: f64) -> f64 {
     (v * 100.0).round() / 100.0
 }
@@ -161,7 +156,5 @@ mod tests {
     #[test]
     fn rounding_is_away_from_zero() {
         assert_eq!(round2(-0.125), -0.13);
-        assert_eq!(round_away(-2.5), -3.0);
-        assert_eq!(round_away(2.5), 3.0);
     }
 }

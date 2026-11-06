@@ -4,7 +4,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::util::{iso, round_away};
+use crate::util::iso;
 
 #[derive(Clone, Copy, Debug)]
 pub struct Anchor {
@@ -388,14 +388,14 @@ pub fn locate(
     let anchor_err = pts.iter().fold(0.0f64, |m, q| m.max(q.a.err_m));
     if anchor_err > 0.0 {
         unc += anchor_err;
-        reasons.push(format!("radius includes up to {} m of anchor position imprecision", fmt0(round_away(anchor_err / 100.0) * 100.0)));
+        reasons.push(format!("radius includes up to {} m of anchor position imprecision", fmt0((anchor_err / 100.0).round() * 100.0)));
     }
     let (lat, lon) = e.from(x, y);
     Ok(Estimate {
         // Never report finer than ~100 m in coordinates.
-        lat: round_away(lat * 1000.0) / 1000.0,
-        lon: round_away(lon * 1000.0) / 1000.0,
-        uncertainty_radius_m: round_away(unc / 100.0) * 100.0,
+        lat: (lat * 1000.0).round() / 1000.0,
+        lon: (lon * 1000.0).round() / 1000.0,
+        uncertainty_radius_m: (unc / 100.0).round() * 100.0,
         method,
         quality,
         anchor_count: pts.len(),

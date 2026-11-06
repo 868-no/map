@@ -207,7 +207,9 @@ impl Store {
 
     /// Calls `f` on every interned id held, committed or staged (Interner::retain).
     pub fn for_each_id(&mut self, mut f: impl FnMut(&mut u32)) {
-        // Only rows held: the trimmed prefix is never read again.
+        // Only rows held. The trimmed prefix keeps its old ids, which go
+        // stale (or u32::MAX) once the interner renumbers; that is safe only
+        // because nothing reads those rows again before compaction drops them.
         let start = self.start;
         for r in self.buf[start..].iter_mut().chain(self.staged.values_mut().flatten()) {
             r.for_each_id(&mut f);
