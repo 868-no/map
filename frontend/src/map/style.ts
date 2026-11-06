@@ -1,12 +1,18 @@
 import * as maplibregl from 'maplibre-gl'
 import type { StyleSpecification } from 'maplibre-gl'
+import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url'
 import { Protocol } from 'pmtiles'
 
 let registered = false
 
-/** Register the pmtiles:// protocol once (self-hosted basemap). */
+/**
+ * Register the pmtiles:// protocol once (self-hosted basemap), and point
+ * MapLibre at its worker: since v6 a bundler must name it, and Vite emits it
+ * as a self-contained module served from this origin (worker-src 'self').
+ */
 export function registerPMTiles(): void {
   if (registered) return
+  maplibregl.setWorkerUrl(workerUrl)
   const p = new Protocol()
   maplibregl.addProtocol('pmtiles', p.tile)
   registered = true
@@ -49,9 +55,12 @@ export async function applyStylePaint(map: maplibregl.Map, styleURL: string): Pr
   if (paintRequests.get(map) !== token) return
   for (const l of style.layers) {
     if (!map.getLayer(l.id) || !('paint' in l) || !l.paint) continue
-    for (const [k, v] of Object.entries(l.paint)) map.setPaintProperty(l.id, k, v)
+    // The style's own paint keys, so valid paint properties of the layer.
+    for (const [k, v] of Object.entries(l.paint)) map.setPaintProperty(l.id, k as PaintProperty, v)
   }
 }
+
+type PaintProperty = Parameters<maplibregl.Map['setPaintProperty']>[1]
 
 /** Id of the style layer that mesh overlays are inserted beneath. */
 export const LABELS_BEFORE = 'labels-start'

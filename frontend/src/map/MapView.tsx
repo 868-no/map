@@ -1,7 +1,7 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import * as maplibregl from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
-import { MapboxOverlay } from '@deck.gl/mapbox'
+import { MapLibreOverlay } from '@deck.gl/maplibre'
 import { ScatterplotLayer } from '@deck.gl/layers'
 import type { Layer, PickingInfo } from '@deck.gl/core'
 import type { Capabilities } from '../api/types'
@@ -115,8 +115,8 @@ export default memo(function MapView({ caps, snapshot, onPositions }: Props) {
   const container = useRef<HTMLDivElement>(null)
   const mapRef = useRef<maplibregl.Map | null>(null)
   const startView = useRef<{ center: maplibregl.LngLat; zoom: number } | null>(null) // the view the map opened on
-  const overlayRef = useRef<MapboxOverlay | null>(null)
-  const pingOverlayRef = useRef<MapboxOverlay | null>(null)
+  const overlayRef = useRef<MapLibreOverlay | null>(null)
+  const pingOverlayRef = useRef<MapLibreOverlay | null>(null)
   const meshLayers = useRef<Layer[] | null>(null) // read by the e2e hook
   const [ready, setReady] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -194,11 +194,11 @@ export default memo(function MapView({ caps, snapshot, onPositions }: Props) {
         map.on('rotate', turnNeedle)
         map.on('load', turnNeedle) // a rebuilt map starts north up: so does the needle
         map.on('error', (e: maplibregl.ErrorEvent) => console.warn('map error', e.error?.message))
-        const overlay = new MapboxOverlay({ interleaved: true, pickingRadius: PICK_RADIUS, layers: [] })
+        const overlay = new MapLibreOverlay({ interleaved: true, pickingRadius: PICK_RADIUS, layers: [] })
         map.addControl(overlay as unknown as maplibregl.IControl)
         // Pings animate in a canvas of their own above the map: redrawing it
         // at 30 fps leaves the basemap and the mesh layers alone (D-083).
-        const pingOverlay = new MapboxOverlay({ interleaved: false, layers: [], getCursor: () => 'inherit' })
+        const pingOverlay = new MapLibreOverlay({ interleaved: false, layers: [], getCursor: () => 'inherit' })
         map.addControl(pingOverlay as unknown as maplibregl.IControl)
         // As a control its canvas lands in the top-left control corner, which
         // sits below the header: move it beside the map canvas, under the controls.

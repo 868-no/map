@@ -2,7 +2,7 @@
 import { PathStyleExtension } from '@deck.gl/extensions'
 import { LABELS_BEFORE } from './style'
 
-// Interleaved overlay prop (typed by @deck.gl/mapbox as LayerOverlayProps but
+// Interleaved overlay prop (read by @deck.gl/maplibre in interleaved mode but
 // not merged into layer props): insert mesh layers beneath the label layers.
 export const UNDER_LABELS: { beforeId?: string } = { beforeId: LABELS_BEFORE }
 
