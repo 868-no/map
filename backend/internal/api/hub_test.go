@@ -41,3 +41,34 @@ func TestHubEncodesOnceAndFlagsDrops(t *testing.T) {
 		t.Fatal("dropped events not flagged")
 	}
 }
+
+// The pipeline's hand-encoded live batch reads exactly as the documented
+// LiveEvent would encode, so the two types cannot drift apart.
+func TestLiveBatchMatchesDocumentedEvent(t *testing.T) {
+	g, snr := uint32(7), float32(-4.25)
+	rows := []obsrow.ObsRow{
+		{ID: 1, T: 1_700_000_000_123, Broker: "b", Gateway: &g, Source: 5, Type: "position", Logical: "0a", Reception: "0b", SNR: &snr},
+		{ID: 2, T: 1_700_000_000_456, Broker: "b", Source: 6, Type: "text", Logical: "0c", Reception: "0d"},
+	}
+	at := []time.Time{time.UnixMilli(1_700_000_000_123).UTC(), time.Date(2026, 11, 6, 10, 0, 0, 500, time.FixedZone("x", 3600))}
+	var events []ingest.LiveEvent
+	var want []LiveEvent
+	for i, r := range rows {
+		b, err := json.Marshal(r)
+		if err != nil {
+			t.Fatal(err)
+		}
+		events = append(events, ingest.LiveEvent{ID: r.ID, T: at[i], Row: b})
+		want = append(want, LiveEvent{ID: r.ID, T: at[i], Row: r})
+	}
+	exp, err := json.Marshal(want)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := ingest.EncodeLiveBatch(events); string(got) != string(exp) {
+		t.Fatalf("batch\n got %s\nwant %s", got, exp)
+	}
+	if got := ingest.EncodeLiveBatch(nil); string(got) != "[]" {
+		t.Fatalf("empty batch: %s", got)
+	}
+}
