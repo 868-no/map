@@ -1267,12 +1267,12 @@ paths:
             examples:
               - "2026-10-31T00:00:00Z"
             type: string
-        - description: Rolling window length (1h to 168h); default 72h.
+        - description: Rolling window length (1h to 336h); default 72h.
           explode: false
           in: query
           name: duration
           schema:
-            description: Rolling window length (1h to 168h); default 72h.
+            description: Rolling window length (1h to 336h); default 72h.
             examples:
               - 72h
             type: string

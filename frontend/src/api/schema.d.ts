@@ -953,7 +953,7 @@ export interface operations {
                 start?: string;
                 /** @description Exclusive end, RFC 3339. */
                 end?: string;
-                /** @description Rolling window length (1h to 168h); default 72h. */
+                /** @description Rolling window length (1h to 336h); default 72h. */
                 duration?: string;
                 /** @description Narrow the lower bound to this instant (RFC 3339); clamped to the window, never widening it */
                 since?: string;

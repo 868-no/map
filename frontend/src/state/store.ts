@@ -54,7 +54,7 @@ export interface WindowState {
  * and the longest window it serves. Until they arrive these are the server's
  * own defaults, but no view is requested before then (`limitsReady`).
  */
-const windowLimits = { defaultH: 72, maxH: 168 }
+const windowLimits = { defaultH: 72, maxH: 336 }
 
 interface Store {
   win: WindowState
@@ -213,7 +213,7 @@ export function fromQuery(q: URLSearchParams, now = serverNow()): Partial<Pick<S
     out.win = { live: false, durationH: windowLimits.defaultH, start: s, end: e }
   } else if (dur) {
     const h = parseInt(dur, 10)
-    // windowLimits.maxH is the protocol's longest window (168 h) until
+    // windowLimits.maxH is the protocol's longest window (336 h) until
     // /capabilities answers; no server serves longer, and applyLimits
     // clamps to a shorter configured one then.
     if (h >= 1 && h <= windowLimits.maxH) out.win = { live: true, durationH: h, start: null, end: null }

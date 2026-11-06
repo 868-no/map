@@ -13,7 +13,7 @@ import (
 // DEFAULT_WINDOW_HOURS.
 const (
 	MinDuration = time.Hour
-	MaxDuration = 7 * 24 * time.Hour
+	MaxDuration = 14 * 24 * time.Hour
 	ClockSkew   = 5 * time.Second
 )
 

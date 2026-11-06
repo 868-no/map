@@ -40,8 +40,8 @@ const (
 	// writerEvidence: a row observed this long after the day ended shows the
 	// writer committed everything observed before it (D-159).
 	writerEvidence = 15 * time.Minute
-	dayTTL         = 8 * 24 * time.Hour // Redis keeps a day this long: rolling windows reach back 8 days; older days are rebuilt when asked
-	dayBuildLimit  = 2 * time.Minute    // a build outlives the request that started it, not by more than this
+	dayTTL         = 15 * 24 * time.Hour // Redis keeps a day this long: the longest window (14 days) and its first, partly covered day; older days are rebuilt when asked
+	dayBuildLimit  = 2 * time.Minute     // a build outlives the request that started it, not by more than this
 	// One replica builds a day; a crashed builder's lock lapses after this.
 	// The build's deadline starts before the lock is taken, so a lock this
 	// long outlives every build it guards.

@@ -37,7 +37,7 @@ type Env struct {
 
 	RetentionMonths     int           `env:"RETENTION_MONTHS" envDefault:"6"`
 	DefaultWindowHours  int           `env:"DEFAULT_WINDOW_HOURS" envDefault:"72"`
-	MaxWindowHours      int           `env:"MAX_WINDOW_HOURS" envDefault:"168"`
+	MaxWindowHours      int           `env:"MAX_WINDOW_HOURS" envDefault:"336"`
 	MaintenanceInterval int           `env:"MAINTENANCE_INTERVAL_HOURS" envDefault:"24"`
 	LiveQuantum         time.Duration `env:"LIVE_QUANTUM" envDefault:"10s"`
 	DefaultMapLat       float64       `env:"DEFAULT_MAP_LAT" envDefault:"63.43"`
@@ -233,7 +233,7 @@ func (c *Config) validate() error {
 		add("RETENTION_MONTHS must be 1..120")
 	}
 	if maxH := int(window.MaxDuration / time.Hour); e.MaxWindowHours < 1 || e.MaxWindowHours > maxH {
-		add("MAX_WINDOW_HOURS must be 1..%d (spec maximum is 7 days)", maxH)
+		add("MAX_WINDOW_HOURS must be 1..%d (spec maximum is 14 days)", maxH)
 	}
 	if e.DefaultWindowHours < 1 || e.DefaultWindowHours > e.MaxWindowHours {
 		add("DEFAULT_WINDOW_HOURS must be 1..MAX_WINDOW_HOURS")

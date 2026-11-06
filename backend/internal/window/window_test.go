@@ -23,11 +23,11 @@ func TestHalfOpen(t *testing.T) {
 	}
 }
 
-// design §10.2 test 18: 7 days + 1 s and pre-retention requests are rejected.
+// design §10.2 test 18: 14 days + 1 s and pre-retention requests are rejected.
 func TestRejections(t *testing.T) {
 	b := bounds()
 	cases := map[string]func() error{
-		"7d+1s":     func() error { _, err := Fixed(now.Add(-MaxDuration-time.Second), now, b); return err },
+		"14d+1s":    func() error { _, err := Fixed(now.Add(-MaxDuration-time.Second), now, b); return err },
 		"retention": func() error { _, err := Fixed(b.Cutoff.Add(-time.Second), b.Cutoff.Add(time.Hour), b); return err },
 		"reversed":  func() error { _, err := Fixed(now, now.Add(-time.Hour), b); return err },
 		"future":    func() error { _, err := Fixed(now.Add(-time.Hour), now.Add(time.Minute), b); return err },
@@ -39,7 +39,7 @@ func TestRejections(t *testing.T) {
 		}
 	}
 	if _, err := Fixed(now.Add(-MaxDuration), now, b); err != nil {
-		t.Errorf("exactly 7d must be accepted: %v", err)
+		t.Errorf("exactly 14d must be accepted: %v", err)
 	}
 }
 

@@ -94,7 +94,7 @@ func (s *Server) geoSettings() GeoSettings {
 	return g
 }
 
-var presets = []Preset{{"1h", 1}, {"3h", 3}, {"6h", 6}, {"12h", 12}, {"24h", 24}, {"3d", 72}, {"7d", 168}}
+var presets = []Preset{{"1h", 1}, {"3h", 3}, {"6h", 6}, {"12h", 12}, {"24h", 24}, {"3d", 72}, {"7d", 168}, {"14d", 336}}
 
 func (s *Server) capabilities(ctx context.Context, _ *struct{}) (*CapabilitiesOutput, error) {
 	var b CapabilitiesBody

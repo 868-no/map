@@ -85,7 +85,7 @@ func (s *Server) now() time.Time {
 type WindowParams struct {
 	Start    string `query:"start" doc:"Inclusive start, RFC 3339 (UTC recommended). Omit start and end for the rolling live window." example:"2026-10-28T00:00:00Z"`
 	End      string `query:"end" doc:"Exclusive end, RFC 3339." example:"2026-10-31T00:00:00Z"`
-	Duration string `query:"duration" doc:"Rolling window length (1h to 168h); default 72h." example:"72h"`
+	Duration string `query:"duration" doc:"Rolling window length (1h to 336h); default 72h." example:"72h"`
 }
 
 // WindowEcho is the effective window every response reports.
