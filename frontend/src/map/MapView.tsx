@@ -178,6 +178,9 @@ export default memo(function MapView({ caps, snapshot, onPositions }: Props) {
           el.textContent = `${e.lngLat.lat.toFixed(4)}, ${e.lngLat.lng.toFixed(4)}`
           el.hidden = false
         })
+        map.on('mouseout', () => {
+          if (coords.current) coords.current.hidden = true // no stale reading once the pointer leaves
+        })
         const view = () => {
           setZoom(map.getZoom())
           const b = map.getBounds()
@@ -485,7 +488,7 @@ export default memo(function MapView({ caps, snapshot, onPositions }: Props) {
   }, [ready, select])
 
   const routeFrame = useMemo(() => (routeLp && route?.length ? { key: routeLp, points: route.flatMap((r) => [r.from, r.to]) } : null), [routeLp, route])
-  const { fit } = useCamera(mapRef, container, { pos, selection, route: routeFrame })
+  const { fit } = useCamera(mapRef, container, { pos, selection, route: routeFrame, ready })
   // On page load, fit the map to the data once its markers are placed (D-074):
   // the Norway view only bridges the wait. A permanent link to a node flies
   // there instead, so it is left alone.
@@ -499,7 +502,7 @@ export default memo(function MapView({ caps, snapshot, onPositions }: Props) {
     const s = startView.current
     const unmoved = !!s && Math.abs(map.getZoom() - s.zoom) < 0.01 && map.getCenter().distanceTo(s.center) < 100
     if (!selection && unmoved) fit(1200) // a smooth zoom from Norway to the mesh
-  }, [pos, selection, fit])
+  }, [ready, pos, selection, fit]) // ready: the data can arrive before the map exists
 
   return (
     <div className="map-wrap">

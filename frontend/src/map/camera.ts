@@ -33,7 +33,9 @@ function covered(container: HTMLElement | null): { top: number; right: number; b
 export function useCamera(
   mapRef: RefObject<maplibregl.Map | null>,
   container: RefObject<HTMLDivElement | null>,
-  { pos, selection, route }: { pos: Map<string, LngLat>; selection: Selection; route: { key: string; points: LngLat[] } | null },
+  // ready: the map has loaded. The effects below run again then, as the data
+  // can arrive before the map exists (mapRef is not reactive).
+  { pos, selection, route, ready }: { pos: Map<string, LngLat>; selection: Selection; route: { key: string; points: LngLat[] } | null; ready: boolean },
 ): { fit: (duration?: number) => void } {
   const fit = useCallback(
     (duration = 600) => {
@@ -73,7 +75,7 @@ export function useCamera(
       mapRef.current?.easeTo({ center: p, zoom: Math.max(mapRef.current.getZoom(), 10), duration: 600, offset: [-c.right / 2, (c.top - c.bottom) / 2] })
     }
     requestAnimationFrame(go)
-  }, [selection, pos, mapRef, container])
+  }, [selection, pos, mapRef, container, ready])
 
   // Frame a packet's route once when it is drawn (not again as data refreshes).
   const framed = useRef<string | null>(null)
@@ -89,7 +91,7 @@ export function useCamera(
     route.points.forEach((p) => b.extend(p))
     const c = covered(container.current)
     map.fitBounds(b, { padding: { top: 40 + c.top, left: 80, right: 80 + c.right, bottom: 80 + c.bottom }, maxZoom: 13, duration: 600 })
-  }, [route, mapRef, container])
+  }, [route, mapRef, container, ready])
 
   return { fit }
 }
