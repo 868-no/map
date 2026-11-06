@@ -50,7 +50,13 @@ export interface OptionsRequest {
   maxNodes: number
 }
 
-export type Request = ViewRequest | InitRequest | GenerationHint | RowsRequest | TerrainRequest | OptionsRequest
+/** The page stopped waiting for a view: the worker skips building it if it has not yet. */
+export interface CancelRequest {
+  type: 'cancel'
+  id: number
+}
+
+export type Request = ViewRequest | InitRequest | GenerationHint | RowsRequest | TerrainRequest | OptionsRequest | CancelRequest
 
 /** A transmission one live reception proves (from the engine). */
 export interface Transmission {

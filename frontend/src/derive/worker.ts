@@ -252,6 +252,11 @@ void loadRegions()
 const NULL = [110, 117, 108, 108] // "null"
 const isNull = (b: Uint8Array) => b.length === 4 && NULL.every((c, k) => b[k] === c)
 
+/** Views asked for and not yet answered; one the page cancelled is dropped from it. */
+const asked = new Set<number>()
+/** Thrown for a view cancelled before its build: no answer is sent. */
+const CANCELLED = Symbol('cancelled')
+
 async function view(req: ViewRequest): Promise<{ body: Uint8Array; meta: ViewMeta; offline: boolean }> {
   if (!firstWin) {
     firstWin = req.win
@@ -261,6 +266,9 @@ async function view(req: ViewRequest): Promise<{ body: Uint8Array; meta: ViewMet
   if (startError) throw new ViewError('internal', `the derivation engine failed to start: ${startError}`)
   liveHours = req.win.live ? req.win.durationH : null
   const { synced: sy, offline } = await synced(req.win, req.epoch)
+  // Waiting on the sync is when requests pile up (start-up, a new window or
+  // filter, a node clicked through): those given up are not built.
+  if (!asked.has(req.id)) throw CANCELLED
   const { start, end } = bounds(req, sy, offline)
   const f = { channels: req.filters.channels, brokers: req.filters.brokers, types: req.filters.types }
   const fj = JSON.stringify(f)
@@ -336,16 +344,24 @@ self.onmessage = async (e: MessageEvent<Request>) => {
     }
     return
   }
+  if (msg.type === 'cancel') {
+    asked.delete(msg.id)
+    return
+  }
   let out: Response
   const transfer: Transferable[] = []
+  asked.add(msg.id)
   try {
     const { body, meta, offline } = await view(msg)
     const bytes = body.slice() // the memo keeps the original; the copy is transferred
     transfer.push(bytes.buffer)
     out = { id: msg.id, ok: true, body: bytes, meta, offline }
   } catch (err) {
+    if (err === CANCELLED) return
     fatal(err)
     out = { id: msg.id, ok: false, kind: err instanceof ViewError ? err.kind : 'internal', message: err instanceof Error ? err.message : String(err) }
+  } finally {
+    asked.delete(msg.id)
   }
   self.postMessage(out, transfer)
 }

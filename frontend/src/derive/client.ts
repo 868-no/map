@@ -131,13 +131,16 @@ export function sendTerrain(links: TerrainLinkClass[]): void {
   if (caps && !broken) get().postMessage({ type: 'terrain', links } satisfies Request)
 }
 
-/** Ask the worker for a view; resolves with the view body (with meta). Aborts only stop waiting. */
+/** Ask the worker for a view; resolves with the view body (with meta). An abort stops waiting, and the build if it has not begun. */
 export function deriveView(req: Omit<ViewRequest, 'type' | 'id'>, signal?: AbortSignal): Promise<{ body: unknown; offline: boolean }> {
   const id = nextId++
   if (broken) return Promise.reject(new ViewError('internal', `the derivation engine cannot run in this browser (${broken}); reload to try again`))
   return new Promise((resolve, reject) => {
     const onAbort = () => {
-      if (waiting.delete(id)) reject(new DOMException('aborted', 'AbortError'))
+      if (!waiting.delete(id)) return
+      reject(new DOMException('aborted', 'AbortError'))
+      // A view still waiting on a sync is not built for nobody.
+      worker?.postMessage({ type: 'cancel', id } satisfies Request)
     }
     // The listener goes when the view settles: a long-lived signal would otherwise keep every request's.
     const settled = <T,>(f: (v: T) => void) => (v: T) => {
