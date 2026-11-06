@@ -2,7 +2,7 @@
 
 use serde::Serialize;
 
-use super::{dest, first_per_reception, is_device_telemetry, is_position, referenced, Built, Node};
+use super::{dest, first_per_reception, is_device_telemetry, is_position, Built, Node};
 use crate::graph::{self, Stats};
 use crate::row::{Interner, Row};
 use crate::util::{iso, map, node_id, set, FxMap, FxSet};
@@ -157,10 +157,9 @@ pub fn build_node_detail(rows: &[&Row], num: u32, b: &Built, i: &Interner) -> Op
     radio.uplink_topics = crate::radio::uplink_topics(&uplinked, i);
     let mut d = NodeDetail { node: n, positions: vec![], telemetry_series: vec![], environment_series: vec![], node_status: vec![], delivery_by_recipient: vec![], heard_by: vec![], heard: vec![], recent_packets: vec![], truncated: false, radio, delivery: crate::packets::delivery(&mine, num, i) };
     if first == i64::MAX {
-        let &t = referenced(rows).get(&num)?;
-        d.node.status = "referenced";
-        d.node.last_referenced = Some(iso(t));
-        return Some(d);
+        // Neither sent nor uplinked anything: the snapshot's node says
+        // whether others named it, and when.
+        return (d.node.status == "referenced").then_some(d);
     }
     d.node.first_seen = Some(iso(first));
     d.node.last_seen = Some(iso(last));

@@ -5,7 +5,7 @@ use std::cell::OnceCell;
 use serde::Serialize;
 
 use super::estimate::estimate;
-use super::{brokers, build_edges, downlinks, Downlink, identity_of, identity_of_report, is_device_telemetry, is_identity, is_named_report, latest_by, origins, position_of, fresh_position_rows, referenced, sig_counts, telemetry_of, traceroute_hops, Contradiction, Node, RejectedPosition};
+use super::{brokers, build_edges, downlinks, identity_of, identity_of_report, is_device_telemetry, is_identity, is_named_report, latest_by, origins, position_of, fresh_position_rows, referenced, sig_counts, telemetry_of, traceroute_hops, Contradiction, Node, RejectedPosition};
 use crate::geo;
 use crate::graph::{Edge, LatLon, RelayContext};
 use crate::row::{Interner, Row};
@@ -79,11 +79,8 @@ pub struct Built {
     /// Every packet's radio copies with their transmitters (health's airtime).
     pub copies: crate::copies::Copies,
     /// Pairs a traceroute hop shows heard each other over the air (radio
-    /// groups), and probable downlinks per node (node view).
+    /// groups, node view).
     pub traceroute_contacts: Vec<(u32, u32)>,
-    pub downlinks: FxMap<u32, Downlink>,
-    /// The window's latest observation (stale positions).
-    pub now: i64,
     /// Position packets the radio rules out, by logical packet (D-178).
     pub rejected: FxMap<u64, Contradiction>,
     /// Radio groups and preset evidence (node view), made on first use.
@@ -184,7 +181,7 @@ pub fn build_snapshot(rows: &[&Row], i: &Interner, g: &GeoOptions, rules: Rules)
     let hops = traceroute_hops(&by.traceroute);
     let downlinks = downlinks(&by.traceroute, &hops);
     let hops = hops.samples;
-    for (&n, d) in &downlinks {
+    for (n, d) in downlinks {
         // A node known only from others' traceroutes is named, not heard.
         nodes
             .entry(n)
@@ -193,7 +190,7 @@ pub fn build_snapshot(rows: &[&Row], i: &Interner, g: &GeoOptions, rules: Rules)
                 x.status = "referenced";
                 x
             })
-            .mqtt_downlink = Some(d.clone());
+            .mqtt_downlink = Some(d);
     }
     for (n, r) in latest_by(&by.nodeinfo, is_identity, |r| r.src) {
         nodes.entry(n).or_insert_with(|| Node::new(n)).identity = Some(identity_of(r, i));
@@ -335,8 +332,6 @@ pub fn build_snapshot(rows: &[&Row], i: &Interner, g: &GeoOptions, rules: Rules)
         readings: super::link::LinkReadings::new(&er.samples),
         copies,
         traceroute_contacts: crate::channels::traceroute_contacts(&hops),
-        downlinks,
-        now,
         rejected,
         presets: OnceCell::new(),
         replies: OnceCell::new(),
