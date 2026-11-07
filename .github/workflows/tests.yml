@@ -140,6 +140,11 @@ jobs:
             backend.cache-to=type=gha,mode=max,scope=e2e-backend
             web.cache-from=type=gha,scope=e2e-web
             web.cache-to=type=gha,mode=max,scope=e2e-web
+      # A fresh database: on a self-hosted runner the named volume of an
+      # earlier run's stack (meshmap_pgdata) is still there, and seeding on
+      # top of its rows would change what the tests see.
+      - name: remove an earlier stack and its volumes
+        run: docker compose --profile demo down -v --remove-orphans
       - name: start the demo stack
         run: docker compose --profile demo up -d --no-build postgres redis backend web mosquitto demo-publisher
       - name: seed two days of history
@@ -171,6 +176,9 @@ jobs:
           path: frontend/e2e/.results
           include-hidden-files: true # .results is a hidden folder, skipped by default
           retention-days: 7
+      - name: remove the stack and its volumes
+        if: always()
+        run: docker compose --profile demo down -v --remove-orphans
 
   images:
     name: images
