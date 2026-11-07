@@ -180,7 +180,7 @@ export function meshLayerBuilder(): (input: MeshLayerInput) => Layer[] {
     const radio = (r: RouteGeom) => !net(r) && !ack(r)
     return { solid: route.filter((r) => !r.dashed && radio(r)), dashed: route.filter((r) => r.dashed && radio(r)), internet: route.filter(net), delivered: route.filter(ack), legs: all.filter((r) => !!r.seg.leg) }
   })
-  const reachParts = memoLast((segs: ReachGeom['segments']) => ({ solid: segs.filter((r) => !r.gap), gaps: segs.filter((r) => r.gap) }))
+  const reachParts = memoLast((segs: ReachGeom['segments']) => ({ solid: segs.filter((r) => !r.gap), gaps: segs.filter((r) => r.gap), free: segs.filter((r) => r.free) }))
   // Draw order: markers without glyphs first, then those with one (stable
   // otherwise). A plain marker drawn later would cover a glyph node at the
   // same spot entirely, hiding its uplink glyph while the downlink and
@@ -341,7 +341,7 @@ export function meshLayerBuilder(): (input: MeshLayerInput) => Layer[] {
           updateTriggers: { getColor: [c] },
         }),
         new IconLayer<ReachGeom['segments'][number]>({
-          id: 'reach-free', ...UNDER_LABELS, data: reach.segments.filter((r) => r.free), getPosition: (r) => chevron(r.from, r.to).pos,
+          id: 'reach-free', ...UNDER_LABELS, data: parts.free, getPosition: (r) => chevron(r.from, r.to).pos,
           getAngle: (r) => chevron(r.from, r.to).angle, ...chevronIcon(), getIcon: () => 'chevron', sizeUnits: 'pixels', getSize: 14,
           getColor: [...c.zeroCost, 255], pickable: false, updateTriggers: { getColor: [c] },
         }),
