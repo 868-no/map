@@ -1,0 +1,75 @@
+// Package places searches Norwegian place names for the map's search
+// (D-193): Kartverket's place-name register (Sentralt stedsnavnregister,
+// CC BY 4.0), downloaded from Geonorge and loaded into the database, so a
+// search asks no one outside this server.
+package places
+
+import (
+	"errors"
+	"strings"
+	"unicode"
+)
+
+// DefaultURL is Geonorge's download of the register for common use, as GML
+// in EPSG:4258 (latitude and longitude), zipped: about 140 MB.
+const DefaultURL = "https://nedlasting.geonorge.no/geonorge/Basisdata/Stedsnavn/GML/Basisdata_0000_Norge_4258_Stedsnavn_GML.zip"
+
+// Attribution is what Kartverket's licence asks for.
+const Attribution = "Place names: © Kartverket"
+
+const (
+	// MinQuery and MaxQuery bound a search, in characters.
+	MinQuery = 2
+	MaxQuery = 64
+	// Results per search.
+	perSearch = 8
+)
+
+// ErrQuery: the search text is too short, too long or not text.
+var ErrQuery = errors.New("places: the search must be 2 to 64 characters of text")
+
+// Place is one named place.
+type Place struct {
+	Name         string  `json:"name"`
+	Kind         string  `json:"kind" doc:"Kartverket's name object type, e.g. Fjell, By, Tettsted, Innsjø (Norwegian)"`
+	Municipality string  `json:"municipality,omitempty"`
+	County       string  `json:"county,omitempty"`
+	Lat          float64 `json:"lat"`
+	Lon          float64 `json:"lon"`
+}
+
+// Normalize is the search as matched: trimmed, spaces collapsed, lower
+// case; ErrQuery when it is not 2 to 64 characters of text.
+func Normalize(q string) (string, error) {
+	q = strings.ToLower(strings.Join(strings.Fields(q), " "))
+	n := 0
+	for _, r := range q {
+		if unicode.IsControl(r) {
+			return "", ErrQuery
+		}
+		n++
+	}
+	if n < MinQuery || n > MaxQuery {
+		return "", ErrQuery
+	}
+	return q, nil
+}
+
+// rank orders kinds of place (navneobjekttype codes): where people live
+// first, minor features last, others in between.
+func rank(code string) int {
+	switch code {
+	case "by", "kommune", "fylke":
+		return 0
+	case "tettsted", "tettbebyggelse", "bydel", "tettsteddel", "administrativBydel":
+		return 1
+	case "grend", "bygdelagBygd", "boligfelt", "hyttefelt":
+		return 2
+	case "gard", "bruk", "navnegard", "adressenavn", "adressetilleggsnavn", "matrikkeladressenavn", "bru", "vegkryss", "vegsving",
+		"jorde", "eng", "sti", "traktorveg", "utmark", "eiendom", "eiendomsteig", "stølsSetereiendom", "eneboligMindreBoligbygg",
+		"fritidsbolig", "boligblokk", "byggForJordbrukFiskeOgFangst", "gammelBosettingsplass", "annenKulturdetalj",
+		"annenTerrengdetalj", "grunnkrets", "valgkrets", "skolekrets", "sokn", "grind", "gjerde", "tuft", "statistiskTettsted":
+		return 4
+	}
+	return 3
+}

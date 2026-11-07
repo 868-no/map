@@ -19,6 +19,7 @@ import (
 	"github.com/868-no/map/internal/config"
 	"github.com/868-no/map/internal/geo"
 	"github.com/868-no/map/internal/observability"
+	"github.com/868-no/map/internal/places"
 	"github.com/868-no/map/internal/storage"
 	"github.com/868-no/map/internal/terrain"
 	"github.com/868-no/map/internal/weather"
@@ -54,6 +55,8 @@ type Server struct {
 	Weather *weather.Client
 	// Terrain serves /terrain (D-143); nil when disabled.
 	Terrain *terrain.Client
+	// Places serves /places (D-193); nil when disabled.
+	Places *places.Store
 	// DayCache shares whole days of rows between replicas (D-158); nil
 	// without Redis.
 	DayCache BlobStore
@@ -249,6 +252,8 @@ func (s *Server) register(api huma.API) {
 		Summary: "Daily, weekly or monthly summaries over the whole retained log", Tags: []string{"mesh"}, Errors: []int{400, 503}}, s.trends)
 	huma.Register(api, huma.Operation{OperationID: "weather", Method: http.MethodGet, Path: "/api/v1/weather",
 		Summary: "Hourly weather at a point from MET Norway's analysis (temperature, precipitation)", Tags: []string{"meta"}, Errors: []int{400, 404, 422}}, s.weather)
+	huma.Register(api, huma.Operation{OperationID: "places", Method: http.MethodGet, Path: "/api/v1/places",
+		Summary: "Norwegian places with a name word starting with the search text (Kartverket's place-name register)", Tags: []string{"meta"}, Errors: []int{400, 404, 503}}, s.places)
 	huma.Register(api, huma.Operation{OperationID: "terrain-profile", Method: http.MethodGet, Path: "/api/v1/terrain/profile",
 		Summary: "Cross section of the terrain between two points and its line-of-sight class (Kartverket)", Tags: []string{"meta"}, Errors: []int{400, 404, 422}}, s.terrainProfile)
 	huma.Register(api, huma.Operation{OperationID: "terrain-classes", Method: http.MethodPost, Path: "/api/v1/terrain/classes",

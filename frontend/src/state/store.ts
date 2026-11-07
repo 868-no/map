@@ -40,6 +40,14 @@ export interface Reach {
   internet: boolean
 }
 
+/** A place to show (D-193): where, how close, and its name for the marker's tooltip. */
+export interface PlaceMark {
+  lon: number
+  lat: number
+  zoom: number
+  name: string
+}
+
 export type Selection = { kind: 'node'; id: string } | { kind: 'edge'; src: string; dst: string; mqtt?: boolean } | null
 
 export interface WindowState {
@@ -67,6 +75,7 @@ interface Store {
   route: string | null // logical key of the packet whose route is drawn
   reach: Reach | null // the selected node's simulated reach, drawn on the map (D-069)
   probe: [number, number] | null // [lon, lat] the link's cross section is hovered at, marked on the map (D-143)
+  place: PlaceMark | null // a place picked from the search: the map goes there and marks it (D-193)
   search: string
   detailTab: DetailTab // the node panel's tab, kept across selections
   setLive: (durationH?: number) => void
@@ -77,6 +86,7 @@ interface Store {
   showRoute: (lp: string | null) => void
   setReach: (r: Reach | null) => void
   setProbe: (p: [number, number] | null) => void
+  goToPlace: (p: PlaceMark | null) => void
   setSearch: (s: string) => void
   setDetailTab: (t: DetailTab) => void
 }
@@ -134,6 +144,7 @@ export const useStore = create<Store>((set) => ({
   route: null,
   reach: null,
   probe: null,
+  place: null,
   search: '',
   detailTab: 'overview',
   // The window already shown is kept as it is (the same object), so
@@ -157,6 +168,7 @@ export const useStore = create<Store>((set) => ({
   showRoute: (route) => set({ route, reach: null }),
   setReach: (reach) => set({ reach, route: null }),
   setProbe: (probe) => set({ probe }),
+  goToPlace: (place) => set({ place }),
   setSearch: (search) => set({ search }),
   setDetailTab: (detailTab) => set({ detailTab }),
 }))

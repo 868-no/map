@@ -27,7 +27,7 @@ func run() error {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
-	root.AddCommand(serveCmd(), checkConfigCmd(), initSchemaCmd(), maintenanceCmd(), demoPublishCmd(), inspectCmd(), healthcheckCmd(), openapiCmd(), seedCmd(), benchCmd(), importEnvelopesCmd())
+	root.AddCommand(serveCmd(), checkConfigCmd(), initSchemaCmd(), maintenanceCmd(), demoPublishCmd(), inspectCmd(), healthcheckCmd(), openapiCmd(), seedCmd(), benchCmd(), importEnvelopesCmd(), importPlacesCmd())
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	return root.ExecuteContext(ctx)

@@ -502,3 +502,8 @@ button.danger:hover { background: var(--err); color: var(--bg); }
 .watch-remove { flex: none; padding: 4px 6px; font-size: 15px; line-height: 1; color: var(--muted); }
 .watch-notify { display: block; font-size: 12px; margin-top: 6px; }
 .node-title .watch-toggle { flex: none; font-size: 13px; }
+
+/* Place search results (D-193), under the node search. */
+.place-results h3 { margin-top: 6px; }
+.place-results .place-row { grid-template-columns: 1fr auto; }
+.place-results p { margin: 2px 0 6px; }

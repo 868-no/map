@@ -25,6 +25,7 @@ import (
 	"github.com/868-no/map/internal/maintenance"
 	"github.com/868-no/map/internal/mqtt"
 	"github.com/868-no/map/internal/observability"
+	"github.com/868-no/map/internal/places"
 	"github.com/868-no/map/internal/security"
 	"github.com/868-no/map/internal/storage"
 	"github.com/868-no/map/internal/terrain"
@@ -141,6 +142,9 @@ func maintenanceCmd() *cobra.Command {
 			}
 			c := openCache(e, log)
 			r := &maintenance.Runner{Pool: pool, Cache: c, Months: e.RetentionMonths, Interval: time.Duration(e.MaintenanceInterval) * time.Hour, Log: log}
+			if e.PlacesEnabled && !once {
+				go keepPlaces(cmd.Context(), pool, e, log)
+			}
 			if once {
 				st, err := r.RunOnce(cmd.Context())
 				if err != nil {
@@ -153,6 +157,74 @@ func maintenanceCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&once, "once", false, "run a single cleanup and exit")
+	return cmd
+}
+
+// userAgent names this software, and the operator when configured, to the
+// services it asks.
+func userAgent(e config.Env) string {
+	ua := "868-map/" + api.Version + " github.com/868-no/map"
+	if e.OperatorContact != "" {
+		ua += " " + e.OperatorContact
+	}
+	return ua
+}
+
+// keepPlaces loads the place-name register (D-193) when missing and again
+// once it is PLACES_MAX_AGE_DAYS old, checking daily (hourly after a
+// failure).
+func keepPlaces(ctx context.Context, pool *pgxpool.Pool, e config.Env, log *slog.Logger) {
+	for {
+		wait := 24 * time.Hour
+		if err := places.Refresh(ctx, pool, e.PlacesURL, userAgent(e), time.Duration(e.PlacesMaxAge)*24*time.Hour, log); err != nil {
+			if ctx.Err() != nil {
+				return
+			}
+			log.Warn("place names not imported; trying again in an hour", "err", err)
+			wait = time.Hour
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(wait):
+		}
+	}
+}
+
+// importPlacesCmd loads the place-name register now.
+func importPlacesCmd() *cobra.Command {
+	var src string
+	cmd := &cobra.Command{
+		Use:   "import-places",
+		Short: "Load Kartverket's place-name register for the map's search (URL, or a local .zip or .gml)",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			e, err := config.LoadEnv()
+			if err != nil {
+				return err
+			}
+			log := observability.NewLogger(e.LogLevel).With("role", "import-places")
+			pool, err := openDB(cmd.Context(), e, log, "import-places", 2)
+			if err != nil {
+				return err
+			}
+			defer pool.Close()
+			if err := storage.InitSchema(cmd.Context(), pool); err != nil {
+				return err
+			}
+			if src == "" {
+				src = e.PlacesURL
+			}
+			st, err := places.Import(cmd.Context(), pool, src, userAgent(e), log)
+			if err != nil {
+				return err
+			}
+			fmt.Printf("Loaded %d names of %d places (%d without a position, %d names not in use) in %s.\n",
+				st.Names, st.Places, st.NoPoint, st.NotInUse, st.Duration.Round(time.Second))
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&src, "from", "", "Geonorge GML download URL, or a local .zip or .gml file (default PLACES_URL)")
 	return cmd
 }
 
@@ -366,14 +438,14 @@ func serveCmd() *cobra.Command {
 			if rc != nil {
 				apiSrv.DayCache = rc // whole days shared between replicas (D-158)
 			}
-			ua := "868-map/" + api.Version + " github.com/868-no/map"
-			if c.Env.OperatorContact != "" {
-				ua += " " + c.Env.OperatorContact
-			}
+			ua := userAgent(c.Env)
 			// Routers and base stations, read once for the terrain warmer and
 			// the weather keeper alike (D-133, D-144), over the longer of their
 			// windows.
 			roster := &storage.Roster{Pool: pool, Window: max(terrain.WarmWindow, time.Duration(c.Env.MaxWindowHours)*time.Hour), Alive: 24 * time.Hour, TTL: 20 * time.Minute}
+			if c.Env.PlacesEnabled {
+				apiSrv.Places = &places.Store{Pool: pool}
+			}
 			if c.Env.TerrainEnabled {
 				apiSrv.Terrain = terrain.New(c.Env.TerrainURL, ua)
 				apiSrv.Terrain.Store, apiSrv.Terrain.Log = &terrain.Store{Pool: pool}, log

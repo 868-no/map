@@ -58,8 +58,13 @@ type Env struct {
 	WeatherEnabled bool   `env:"WEATHER_ENABLED" envDefault:"true"`
 	WeatherURL     string `env:"WEATHER_URL" envDefault:"https://thredds.met.no/thredds/dodsC"`
 	// Terrain cross sections of router links from Kartverket (D-143).
-	TerrainEnabled  bool     `env:"TERRAIN_ENABLED" envDefault:"true"`
-	TerrainURL      string   `env:"TERRAIN_URL" envDefault:"https://ws.geonorge.no/hoydedata/v1"`
+	TerrainEnabled bool   `env:"TERRAIN_ENABLED" envDefault:"true"`
+	TerrainURL     string `env:"TERRAIN_URL" envDefault:"https://ws.geonorge.no/hoydedata/v1"`
+	// Place-name search over Kartverket's place-name register, downloaded
+	// from Geonorge by maintenance and kept in the database (D-193).
+	PlacesEnabled   bool     `env:"PLACES_ENABLED" envDefault:"true"`
+	PlacesURL       string   `env:"PLACES_URL" envDefault:"https://nedlasting.geonorge.no/geonorge/Basisdata/Stedsnavn/GML/Basisdata_0000_Norge_4258_Stedsnavn_GML.zip"`
+	PlacesMaxAge    int      `env:"PLACES_MAX_AGE_DAYS" envDefault:"30"`
 	SignaturePolicy string   `env:"SIGNATURE_POLICY" envDefault:"balanced"`
 	TrustedProxies  []string `env:"TRUSTED_PROXIES" envSeparator:"," envDefault:"10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,127.0.0.0/8,::1/128,fc00::/7"`
 	// Public API protection, per client (an IPv4 address or an IPv6 /64).

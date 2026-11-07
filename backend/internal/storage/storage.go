@@ -26,12 +26,12 @@ import (
 var schemaSQL string
 
 // SchemaVersion is the value stored in the packet_log table comment.
-const SchemaVersion = "meshmap-schema:4"
+const SchemaVersion = "meshmap-schema:5"
 
 // Tables are the application tables, sorted: packet_log for mesh data,
 // terrain_height for terrain and weather_hour for weather (design §1.2,
 // invariant 2; D-133, D-143).
-var Tables = []string{"packet_log", "terrain_height", "weather_hour"}
+var Tables = []string{"packet_log", "place_key", "place_name", "terrain_height", "weather_hour"}
 
 // Open creates a connection pool of at most maxConns connections. role names
 // it in pg_stat_activity (application_name meshmap-{role}).

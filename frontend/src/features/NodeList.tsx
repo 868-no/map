@@ -1,7 +1,10 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import { getJSON } from '../api/client'
+import type { Place } from '../api/types'
 import type { MeshNode, SnapshotView } from '../derive/views'
 import { useStore } from '../state/store'
-import { useHealth, useWatched } from '../state/data'
+import { useCapabilities, useHealth, useWatched } from '../state/data'
 import { allowNotifications, canNotify, useWatch, WATCH_BATTERY_LOW } from '../state/watch'
 import { relativeAge } from '../lib/time'
 import { ageColor, lastHeardAge, matchesSearch, nodeName, passesNodeFilters } from '../map/model'
@@ -60,7 +63,8 @@ export function NodeList({ snapshot }: { snapshot: SnapshotView | undefined }) {
   return (
     <div className="panel">
       <WatchList now={endMs} />
-      <input className="search" type="search" placeholder="Search in-window nodes (id or name)" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search nodes" />
+      <input className="search" type="search" placeholder="Search nodes (id or name) or places" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search nodes and places" />
+      <PlaceResults search={search} />
       {hidden > 0 && (
         <p className="node-filter-alert" role="status">
           ⚠ {hidden} node{hidden === 1 ? '' : 's'} hidden by the active node filters.{' '}
@@ -137,6 +141,52 @@ function WatchList({ now }: { now: number }) {
         </label>
       )}
       {refused && <p className="muted small">The browser did not allow notifications for this site; its site settings can.</p>}
+    </section>
+  )
+}
+
+/** How close to go for a kind of place (Kartverket's types, in Norwegian). */
+const PLACE_ZOOM: Record<string, number> = { Fylke: 7, Kommune: 9, By: 11, Tettsted: 12, Tettbebyggelse: 13, Bydel: 13, 'Administrativ bydel': 13, Tettsteddel: 14, Grend: 13, Innsjø: 11, Øy: 11, 'Øy i sjø': 11, Fjellområde: 10, Fjell: 12, Topp: 13 }
+
+/**
+ * Places matching the search (D-193), from Kartverket's place-name register
+ * as this server keeps it: picking one moves the map there and rings it. Shown
+ * once two characters are typed, after a short pause.
+ */
+function PlaceResults({ search }: { search: string }) {
+  const enabled = !!useCapabilities().data?.features.places
+  const goToPlace = useStore((s) => s.goToPlace)
+  const [q, setQ] = useState('')
+  useEffect(() => {
+    const t = setTimeout(() => setQ(search.trim()), 300)
+    return () => clearTimeout(t)
+  }, [search])
+  useEffect(() => {
+    if (!search.trim()) goToPlace(null) // the ring goes with the search
+  }, [search, goToPlace])
+  const places = useQuery({
+    queryKey: ['places', q.toLowerCase()],
+    queryFn: ({ signal }) => getJSON<{ places: Place[] | null; attribution: string }>('/api/v1/places', new URLSearchParams({ q }), signal),
+    enabled: enabled && [...q].length >= 2,
+    staleTime: Infinity,
+    retry: false,
+  })
+  const list = places.data?.places ?? []
+  if (!enabled || [...q].length < 2 || list.length === 0) return null
+  return (
+    <section className="place-results" aria-label="Places">
+      <h3>Places</h3>
+      <ul className="node-list">
+        {list.slice(0, 5).map((p) => (
+          <li key={`${p.name}|${p.kind}|${p.lat}|${p.lon}`}>
+            <button className="node-row place-row" onClick={() => goToPlace({ lon: p.lon, lat: p.lat, zoom: PLACE_ZOOM[p.kind] ?? 12, name: p.name })} title={`Show ${p.name} on the map`}>
+              <span className="nm">{p.name}</span>
+              <span className="ct">{[p.kind, p.municipality].filter(Boolean).join(' · ')}</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+      <p className="muted small">{places.data?.attribution}</p>
     </section>
   )
 }

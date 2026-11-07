@@ -75,6 +75,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/places": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Norwegian places with a name word starting with the search text (Kartverket's place-name register) */
+        get: operations["places"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/retention": {
         parameters: {
             query?: never;
@@ -231,6 +248,8 @@ export interface components {
         CapabilitiesBodyFeaturesStruct: {
             geolocation: boolean;
             live: boolean;
+            /** @description GET /api/v1/places is served (D-193) */
+            places: boolean;
             /** @description /api/v1/terrain is served (D-143) */
             terrain: boolean;
             /** @description GET /api/v1/weather is served (D-133) */
@@ -601,6 +620,28 @@ export interface components {
             since: string;
             /** @description The full window the rows belong to */
             window: components["schemas"]["WindowEcho"];
+        };
+        Place: {
+            county?: string;
+            /** @description Kartverket's name object type, e.g. Fjell, By, Tettsted, Innsjø (Norwegian) */
+            kind: string;
+            /** Format: double */
+            lat: number;
+            /** Format: double */
+            lon: number;
+            municipality?: string;
+            name: string;
+        };
+        PlacesOutputBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/api/schemas/PlacesOutputBody.json
+             */
+            readonly $schema?: string;
+            attribution: string;
+            /** @description Best match first, at most 8 */
+            places: components["schemas"]["Place"][] | null;
         };
         Preset: {
             /**
@@ -1036,6 +1077,75 @@ export interface operations {
             };
             /** @description Conflict */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    places: {
+        parameters: {
+            query: {
+                /** @description The start of a place name, or of a word in it; 2 to 64 characters once spaces are collapsed */
+                q: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PlacesOutputBody"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Not Found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

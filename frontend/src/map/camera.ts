@@ -2,7 +2,7 @@
 // and keep framed content clear of the panel that overlays the map.
 import { useCallback, useEffect, useRef, type RefObject } from 'react'
 import * as maplibregl from 'maplibre-gl'
-import type { Selection } from '../state/store'
+import type { PlaceMark, Selection } from '../state/store'
 
 type LngLat = [number, number]
 
@@ -35,7 +35,7 @@ export function useCamera(
   container: RefObject<HTMLDivElement | null>,
   // ready: the map has loaded. The effects below run again then, as the data
   // can arrive before the map exists (mapRef is not reactive).
-  { pos, selection, route, ready }: { pos: Map<string, LngLat>; selection: Selection; route: { key: string; points: LngLat[] } | null; ready: boolean },
+  { pos, selection, route, place, ready }: { pos: Map<string, LngLat>; selection: Selection; route: { key: string; points: LngLat[] } | null; place: PlaceMark | null; ready: boolean },
 ): { fit: (duration?: number) => void } {
   const fit = useCallback(
     (duration = 600) => {
@@ -76,6 +76,14 @@ export function useCamera(
     }
     requestAnimationFrame(go)
   }, [selection, pos, mapRef, container, ready])
+
+  // Go to a place picked from the search (D-193), in the area the panel leaves free.
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !place) return
+    const c = covered(container.current)
+    map.easeTo({ center: [place.lon, place.lat], zoom: place.zoom, duration: 800, offset: [-c.right / 2, (c.top - c.bottom) / 2] })
+  }, [place, mapRef, container, ready])
 
   // Frame a packet's route once when it is drawn (not again as data refreshes).
   const framed = useRef<string | null>(null)

@@ -47,6 +47,7 @@ type CapabilitiesBody struct {
 		Live        bool `json:"live"`
 		Weather     bool `json:"weather" doc:"GET /api/v1/weather is served (D-133)"`
 		Terrain     bool `json:"terrain" doc:"/api/v1/terrain is served (D-143)"`
+		Places      bool `json:"places" doc:"GET /api/v1/places is served (D-193)"`
 	} `json:"features"`
 	// Geolocation carries the estimator settings so browsers deriving views
 	// themselves apply the operator's rules (D-031).
@@ -108,6 +109,7 @@ func (s *Server) capabilities(ctx context.Context, _ *struct{}) (*CapabilitiesOu
 	b.Features.Live = s.Hub != nil && s.Hub.Available()
 	b.Features.Weather = s.Weather != nil
 	b.Features.Terrain = s.Terrain != nil
+	b.Features.Places = s.Places != nil
 	b.Geolocation = s.geoSettings()
 	return &CapabilitiesOutput{Body: b}, nil
 }

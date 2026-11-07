@@ -91,7 +91,7 @@ Pin a version tag or `sha-…` in production (`compose.production.yaml` takes it
 
 ## Privacy policy
 
-The map links to `/privacy.html` (source: `frontend/public/privacy.html`). It describes what this software collects and fills in, from `/api/v1/capabilities`, the operator (`OPERATOR_NAME`), how to reach them (`OPERATOR_CONTACT`, an e-mail address or URL; with weather on, it is also sent to MET Norway in the backend's User-Agent), the retention period, whether position estimates are on, whether map tiles come from an outside provider and whether the backend fetches weather from MET Norway (`WEATHER_ENABLED`, on by default; it needs outbound HTTPS to `thredds.met.no`, D-133) and whether it fetches terrain heights from Kartverket (`TERRAIN_ENABLED`, on by default; it needs outbound HTTPS to `ws.geonorge.no`, and sends the operator contact in its User-Agent too, D-143; from start it also warms heights between infrastructure nodes in the background so cross sections are ready before visitors ask, D-144). Set both operator variables in production. If you change what the deployment collects or shares (an outside tile provider, access logs in your reverse proxy), check the page still matches, and edit it if not; it is a draft for the operator to review, not legal advice.
+The map links to `/privacy.html` (source: `frontend/public/privacy.html`). It describes what this software collects and fills in, from `/api/v1/capabilities`, the operator (`OPERATOR_NAME`), how to reach them (`OPERATOR_CONTACT`, an e-mail address or URL; with weather on, it is also sent to MET Norway in the backend's User-Agent), the retention period, whether position estimates are on, whether map tiles come from an outside provider and whether the backend fetches weather from MET Norway (`WEATHER_ENABLED`, on by default; it needs outbound HTTPS to `thredds.met.no`, D-133) and whether it fetches terrain heights from Kartverket (`TERRAIN_ENABLED`, on by default; it needs outbound HTTPS to `ws.geonorge.no`, and sends the operator contact in its User-Agent too, D-143; from start it also warms heights between infrastructure nodes in the background so cross sections are ready before visitors ask, D-144) and whether it looks up place names in Kartverket's place-name register for the search (`PLACES_ENABLED`, on by default; it needs outbound HTTPS to `api.kartverket.no`, sends the search text and the operator contact in its User-Agent, and spaces its requests at least 200 ms apart, D-193). Set both operator variables in production. If you change what the deployment collects or shares (an outside tile provider, access logs in your reverse proxy), check the page still matches, and edit it if not; it is a draft for the operator to review, not legal advice.
 
 ## HTTPS / reverse proxy
 
@@ -129,7 +129,7 @@ Every new visitor then reads past days from Cloudflare, and the backend reads ea
 | Service | Command | Replicas | Why |
 | --- | --- | --- | --- |
 | `ingest` | `serve` | exactly 1, `stop-first` | MQTT ingest: the broker `client_id` is fixed, so two would disconnect each other, and two subscribers would only duplicate work. It is also the only process that fetches weather (MET's MEPS archive answers 429 to a second concurrent request) and terrain (Geonorge should see one client), runs their warmers, and knows broker state for `/health/ready`. |
-| `backend` | `serve --no-ingest` | `API_REPLICAS` (default 2), `start-first` | The API. `WEATHER_ENABLED=false`, `TERRAIN_ENABLED=false`; live rows arrive over Redis pub/sub, so Redis is required. Page cursors are stateless, so any replica answers any page. |
+| `backend` | `serve --no-ingest` | `API_REPLICAS` (default 2), `start-first` | The API. `WEATHER_ENABLED=false`, `TERRAIN_ENABLED=false` (place search stays on: it reads the database); live rows arrive over Redis pub/sub, so Redis is required. Page cursors are stateless, so any replica answers any page. |
 | `web` | Caddy | 2 | Stateless. |
 | `postgres`, `redis`, `maintenance`, `basemap` | | 1 each | `maintenance` takes an advisory lock anyway; Postgres is `stop-first` so two servers never share the data directory. |
 
@@ -176,6 +176,10 @@ Schema 3 adds the `weather_hour` table (D-133); `init-schema` creates it at the 
 ## Upgrading to schema 4 (terrain)
 
 Schema 4 adds the `terrain_height` table (D-143); `init-schema` creates it at the first start of a version that has it, with nothing to convert. As with schema 3, an older image refuses to start against a schema-4 database; to roll back past it, restore a backup taken before the upgrade.
+
+## Upgrading to schema 5 (place names)
+
+Schema 5 adds the `place_name` and `place_key` tables (D-193); `init-schema` creates them empty at the first start of a version that has them, and the `maintenance` service then downloads Kartverket's place-name register from Geonorge (about 140 MB, to its temporary directory) and loads it, which takes a few minutes; place search answers 503 until then. It reloads the register once it is `PLACES_MAX_AGE_DAYS` (default 30) old. To load it at once, or from a file on a server without internet access: `docker compose run --rm maintenance import-places [--from file.zip]`. As with schema 4, an older image refuses to start against a schema-5 database; to roll back past it, restore a backup taken before the upgrade.
 
 ## Retention
 

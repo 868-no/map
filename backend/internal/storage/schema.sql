@@ -117,4 +117,31 @@ CREATE TABLE IF NOT EXISTS terrain_height (
     CONSTRAINT terrain_height_pkey PRIMARY KEY (lat_k, lon_k)
 );
 
-COMMENT ON TABLE packet_log IS 'meshmap-schema:4';
+-- Place names (D-193) from Kartverket's place-name register, for the map's
+-- search: one row per name in use (a place may have several, sharing its
+-- place_id), and each
+-- name's word starts as keys (lower case), so a prefix finds any word. Loaded
+-- whole by places.Load, which builds new tables and swaps them in; when it
+-- ran is the table's comment. No node ids: it says nothing about the mesh.
+CREATE TABLE IF NOT EXISTS place_name (
+    id           INTEGER NOT NULL,
+    place_id     INTEGER NOT NULL, -- Kartverket's stedsnummer: a place's names share it
+    alt          BOOLEAN NOT NULL, -- not its main name (another language or spelling)
+    name         TEXT NOT NULL,
+    name_lc      TEXT NOT NULL,
+    kind         TEXT NOT NULL,
+    rank         SMALLINT NOT NULL,
+    importance   SMALLINT NOT NULL,
+    municipality TEXT NOT NULL DEFAULT '',
+    county       TEXT NOT NULL DEFAULT '',
+    lat          DOUBLE PRECISION NOT NULL,
+    lon          DOUBLE PRECISION NOT NULL,
+    CONSTRAINT place_name_pkey PRIMARY KEY (id)
+);
+CREATE TABLE IF NOT EXISTS place_key (
+    key     TEXT COLLATE "C" NOT NULL, -- byte order, so LIKE 'abc%' uses the index
+    name_id INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS place_key_key_idx ON place_key (key);
+
+COMMENT ON TABLE packet_log IS 'meshmap-schema:5';

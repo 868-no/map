@@ -6,7 +6,7 @@ import { ScatterplotLayer } from '@deck.gl/layers'
 import type { Layer, PickingInfo } from '@deck.gl/core'
 import type { Capabilities } from '../api/types'
 import type { Edge, MeshNode, SnapshotView } from '../derive/views'
-import { useStore } from '../state/store'
+import { useStore, type PlaceMark } from '../state/store'
 import { applyStylePaint, loadStyle, registerPMTiles } from './style'
 import { bridgeRoute, edgeKeysOf, namesOf, shortNamesOf, positionAt, filterEdges, passesNodeFilters, linkGeometry, placeNodes, visibleLinks, withSelectedLink, type LinkGeom, type PlacedNode } from './model'
 import { frameArrived, onPingAdded, pingCount } from './pings'
@@ -97,6 +97,14 @@ interface Props {
 // than the line. A direct hit on a node still wins, as the centre pixel is
 // tested first (D-146).
 const PICK_RADIUS = 6
+
+/** A place picked from the search (D-193): a ring where it is. */
+function placeLayer(place: PlaceMark, palette: MapPalette) {
+  return new ScatterplotLayer<PlaceMark>({
+    id: 'place', ...OVER_MARKERS, data: [place], getPosition: (p) => [p.lon, p.lat], radiusUnits: 'pixels', getRadius: 9,
+    filled: false, stroked: true, lineWidthUnits: 'pixels', getLineWidth: 3, getLineColor: palette.selected, pickable: false,
+  })
+}
 
 /** The marker on the selected link where its cross section is hovered. */
 function probeLayer(probe: [number, number], palette: MapPalette) {
@@ -376,14 +384,14 @@ export default memo(function MapView({ caps, snapshot, onPositions }: Props) {
   useEffect(() => {
     const overlay = overlayRef.current
     if (!ready || !overlay) return
-    const show = (probe: [number, number] | null) => {
-      const layers = probe ? [...baseLayers, probeLayer(probe, palette)] : baseLayers
+    const show = (probe: [number, number] | null, place: PlaceMark | null) => {
+      const layers = [...baseLayers, ...(place ? [placeLayer(place, palette)] : []), ...(probe ? [probeLayer(probe, palette)] : [])]
       overlay.setProps({ layers })
       meshLayers.current = layers // the e2e hook sees the probe too
     }
-    show(useStore.getState().probe)
+    show(useStore.getState().probe, useStore.getState().place)
     return useStore.subscribe((s, prev) => {
-      if (s.probe !== prev.probe) show(s.probe)
+      if (s.probe !== prev.probe || s.place !== prev.place) show(s.probe, s.place)
     })
   }, [ready, baseLayers, palette])
 
@@ -498,7 +506,8 @@ export default memo(function MapView({ caps, snapshot, onPositions }: Props) {
   }, [ready, select])
 
   const routeFrame = useMemo(() => (routeLp && route?.length ? { key: routeLp, points: route.flatMap((r) => [r.from, r.to]) } : null), [routeLp, route])
-  const { fit } = useCamera(mapRef, container, { pos, selection, route: routeFrame, ready })
+  const place = useStore((s) => s.place)
+  const { fit } = useCamera(mapRef, container, { pos, selection, route: routeFrame, place, ready })
   // On page load, fit the map to the data once its markers are placed (D-074):
   // the Norway view only bridges the wait. A permanent link to a node flies
   // there instead, so it is left alone.
