@@ -125,7 +125,8 @@ frontend/                 React + MapLibre GL 5 + deck.gl 9 (Vite); e2e/ Playwri
   sw/                     service worker (offline app shell and last-known data)
 web/                      Caddyfile, dark and light OpenMapTiles styles, image build (fonts)
 basemap/                  basemap service image: Planetiler + run.sh (builds and refreshes basemap.pmtiles)
-deploy/                   compose.production.yaml, stack.swarm.yaml (split for Swarm), Mosquitto config for the demo, caddy-auth snippets
+deploy/                   compose.production.yaml, stack.swarm.yaml (split for Swarm), Mosquitto config for the demo, caddy-auth snippets,
+                          runners/ (self-hosted CI runners)
 scripts/                  go.sh, node.sh, wasm.sh, integration.sh, bench.sh, basemap_import.sh, regions.sh/regions.js,
                           outdated.sh (lists newer dependency releases)
 ```
