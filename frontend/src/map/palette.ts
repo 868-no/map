@@ -1,6 +1,8 @@
 // Overlay colours per theme. The route and opt-out colours and the node age
 // ramp (D-085) read on both basemaps; everything drawn in the basemap's
 // own tones (text, outlines, selection, links, pings) changes with it.
+// The legend's link, ping and delivered swatches repeat these in index.css
+// (--link-infra, --ping-origin, …): change both together.
 import type { Theme } from '../theme'
 import type { RegionId } from './regionData'
 import { AGE_STOPS } from './model'

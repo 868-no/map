@@ -31,6 +31,13 @@
   --bg-warn: #3a2f12;
   --ctrl-icon-filter: invert(0.9);
   --bar-dim: #2b4a5c; /* gateway receptions behind unique packets */
+  /* The map's overlay colours the legend draws (map/palette.ts, per theme). */
+  --link-infra: rgb(76, 201, 240);
+  --link-other: rgb(150, 163, 184);
+  --ping-origin: rgb(125, 224, 255);
+  --ping-relay: rgb(255, 196, 110);
+  --delivered: rgb(90, 245, 190);
+  --row-hover: rgba(255, 255, 255, 0.04);
   font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   font-size: 14px;
 }
@@ -64,6 +71,12 @@
   --bg-warn: #fbf0d0;
   --ctrl-icon-filter: none;
   --bar-dim: #b9dcea;
+  --link-infra: rgb(8, 126, 164);
+  --link-other: rgb(98, 110, 128);
+  --ping-origin: rgb(0, 150, 210);
+  --ping-relay: rgb(222, 128, 0);
+  --delivered: rgb(0, 140, 100);
+  --row-hover: rgba(0, 0, 0, 0.04);
 }
 * { box-sizing: border-box; }
 html, body, #root { height: 100%; margin: 0; background: var(--bg); color: var(--text); }
@@ -256,7 +269,7 @@ table.pkt-log td { white-space: nowrap; }
 .log-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
 .log-head label { font-size: 12px; white-space: nowrap; }
 table.pkt-log tbody tr { cursor: pointer; }
-table.pkt-log tbody tr:hover { background: rgba(255, 255, 255, 0.04); }
+table.pkt-log tbody tr:hover { background: var(--row-hover); }
 table.pkt-log tbody tr.active { background: rgba(255, 170, 60, 0.18); }
 /* A row that arrived while the log is open slides in under a fading highlight;
    one only just heard (no details yet) stays dimmed until the rebuild fills it in. */
@@ -342,8 +355,8 @@ table.hear th:not(:first-child), table.hear td:not(:first-child) { white-space: 
 .legend ul.node-icons li > .node-icon, .legend ul.node-icons li > span { margin-top: 1px; }
 .optout-ring { display: inline-flex; flex: none; border-radius: 50%; box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--optout); }
 .ln { display: inline-block; width: 26px; height: 0; border-top: 2px solid; vertical-align: middle; margin-right: 4px; }
-.ln.infra { border-color: rgb(76, 201, 240); }
-.ln.other { border-color: rgb(150, 163, 184); }
+.ln.infra { border-color: var(--link-infra); }
+.ln.other { border-color: var(--link-other); }
 .ln.c-high { opacity: 0.92; }
 .ln.c-medium { opacity: 0.6; }
 .ln.c-low { opacity: 0.47; }
@@ -351,8 +364,7 @@ table.hear th:not(:first-child), table.hear td:not(:first-child) { white-space: 
 .ln.thick { border-top-width: 3px; }
 .ln.thin { border-top-width: 1px; }
 .ln.mqtt { border-top: 3px dotted var(--mqtt); }
-.ln.delivered { border-top: 3px dashed rgb(90, 245, 190); }
-:root[data-theme="light"] .ln.delivered { border-top-color: rgb(0, 140, 100); }
+.ln.delivered { border-top: 3px dashed var(--delivered); }
 .ln.route { border-color: rgb(255, 170, 60); border-top-width: 3px; }
 .age-ramp { height: 10px; border-radius: 3px; }
 .strip-key .key { display: inline-block; width: 10px; height: 8px; border-radius: 2px; vertical-align: baseline; }
@@ -361,8 +373,8 @@ table.hear th:not(:first-child), table.hear td:not(:first-child) { white-space: 
 .age-labels { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); margin-top: 2px; }
 .direction h3 { text-transform: none; letter-spacing: 0; font-size: 13px; color: var(--text); }
 .ping { display: inline-block; width: 14px; height: 14px; border-radius: 50%; border: 2px solid; vertical-align: middle; margin-right: 4px; }
-.ping.origin { border-color: rgb(125, 224, 255); background: rgba(125, 224, 255, 0.12); }
-.ping.relay { border-color: rgb(255, 196, 110); background: rgba(255, 196, 110, 0.12); }
+.ping.origin { border-color: var(--ping-origin); background: color-mix(in srgb, var(--ping-origin) 12%, transparent); }
+.ping.relay { border-color: var(--ping-relay); background: color-mix(in srgb, var(--ping-relay) 12%, transparent); }
 .legend ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 6px; }
 .conf { padding: 0 6px; border-radius: 8px; font-size: 11px; }
 .conf-high { background: var(--bg-accent); color: var(--accent); }
