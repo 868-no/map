@@ -819,7 +819,8 @@ test('a hollow (estimated) marker is clickable inside its ring, not only on it',
     const best = nodes.filter((n) => n.kind === 'estimated').reduce((a, b) => (gap(b) > gap(a) ? b : a))
     return { id: best.node.id, lon: best.lon, lat: best.lat }
   })
-  await page.evaluate(([lon, lat]) => (window as unknown as { __meshmap: M }).__meshmap.map.jumpTo({ center: [lon, lat], zoom: 13 }), [hit.lon, hit.lat])
+  // Zoom 9: node names (from zoom 10) would cover part of the marker, and pick as its label.
+  await page.evaluate(([lon, lat]) => (window as unknown as { __meshmap: M }).__meshmap.map.jumpTo({ center: [lon, lat], zoom: 9 }), [hit.lon, hit.lat])
   await page.waitForTimeout(800)
   const pt = await page.evaluate(([lon, lat]) => (window as unknown as { __meshmap: M }).__meshmap.map.project([lon, lat]), [hit.lon, hit.lat])
   // The clear inside picks the marker at every pixel, the centre too (D-187 keeps it undrawn, not unpickable).
@@ -830,8 +831,7 @@ test('a hollow (estimated) marker is clickable inside its ring, not only on it',
   // And a click at its centre selects it: hover first, as a user would, then click.
   const box = (await page.locator('.map').boundingBox())!
   await page.mouse.move(box.x + pt.x, box.y + pt.y)
-  await expect.poll(async () => (await page.locator('.tooltip').isVisible()) || (await page.evaluate(() =>
-    (window as unknown as { __meshmap: Hook }).__meshmap.layers().some((l) => l.id === 'label-leaders')))).toBe(true)
+  await expect(page.locator('.tooltip')).toBeVisible()
   await expect(async () => {
     await page.mouse.click(box.x + pt.x, box.y + pt.y)
     await expect(page.locator('#dock')).toBeVisible({ timeout: 2000 })
