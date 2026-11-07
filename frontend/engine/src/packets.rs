@@ -159,7 +159,9 @@ pub fn packet_log(rows: &[&Row], num: u32, ctx: &RelayContext, replies: &ReplyIn
                 e.gateways.insert(g);
             }
         };
-        if let (Some(g), HeardFrom::Relayed(Some(b))) = (r.gw, r.heard_from())
+        // A downlinked copy's byte names the node that transmitted it from
+        // MQTT (D-088): relaying too, as the pings and routes draw it.
+        if let (Some(g), HeardFrom::Relayed(Some(b)) | HeardFrom::Downlinked(Some(b))) = (r.gw, r.heard_from())
             && g != num
             && b == last_byte(num)
             && ctx.resolve(b, r.src, g, r.rssi.map(f64::from)) == Some(Ok(num))
@@ -1024,6 +1026,17 @@ mod tests {
         assert_eq!(clog.own[0].answers.as_ref().map(|a| (a.kind.as_str(), a.request_id)), Some(("ack", 77)));
         assert_eq!(delivery(&refs, A, &it), Some(Delivery { acks_sent: 0, acks_received: 2, errors_sent: vec![], errors_received: vec![("NO_RESPONSE".into(), 1)] }));
         assert_eq!(delivery(&refs, C, &it).map(|d| d.acks_sent), Some(2));
+    }
+
+    #[test]
+    fn a_downlinked_copy_is_in_the_downlinkers_relayed_log() {
+        let it = Interner::default();
+        let c = ctx(&[A, C, GW], &[]);
+        // C took A's packet from MQTT and transmitted it; GW heard C (relay byte 0xcc).
+        let copy = Row { rr: crate::row::ty::VIA_MQTT, ..relayed(row(A, GW), 0xcc, 0) };
+        let refs = vec![&copy];
+        let log = packet_log(&refs, C, &c, &ReplyIndex::new(&refs), &it);
+        assert_eq!(log.relayed.iter().map(|p| (p.origin.as_str(), p.evidence.clone())).collect::<Vec<_>>(), vec![(id(A).as_str(), vec!["relay_byte"])]);
     }
 
     #[test]
