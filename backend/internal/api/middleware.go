@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"net"
 	"net/http"
 	"net/netip"
@@ -185,7 +186,16 @@ func Protect(next http.Handler, l Limits) http.Handler {
 				tooMany(w)
 				return
 			case <-ctx.Done():
+				// Out of time while queued (API_REQUEST_TIMEOUT shorter than
+				// heavyWait), or the client left: answered as such, never
+				// as an empty 200.
 				t.Stop()
+				if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+					w.Header().Set("Retry-After", "2")
+					http.Error(w, `{"title":"Service Unavailable","status":503,"detail":"timed out, retry shortly"}`, http.StatusServiceUnavailable)
+				} else {
+					w.WriteHeader(statusClientClosed)
+				}
 				return
 			}
 		}

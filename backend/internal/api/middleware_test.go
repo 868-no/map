@@ -83,6 +83,22 @@ func TestPerClientReadCap(t *testing.T) {
 	}
 }
 
+// A read whose deadline passes while it queues behind the client's others
+// is answered 503, never an empty 200.
+func TestQueuedReadOutOfTimeIs503(t *testing.T) {
+	release, holding := make(chan struct{}), make(chan struct{})
+	defer close(release)
+	h := Protect(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { close(holding); <-release }),
+		Limits{PerSecond: 100, Burst: 100, Timeout: 50 * time.Millisecond, MaxStreams: 1, HeavyPerClient: 1})
+	go h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, heavyPath, nil)) // holds the slot
+	<-holding
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, heavyPath, nil))
+	if w.Code != http.StatusServiceUnavailable || w.Header().Get("Retry-After") == "" {
+		t.Fatalf("queued past the deadline: %d %v", w.Code, w.Header())
+	}
+}
+
 func TestTotalStreamCap(t *testing.T) {
 	release := make(chan struct{})
 	h := Protect(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { <-release }),
