@@ -127,6 +127,9 @@ func maintenanceCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if err := e.ValidateRetention(); err != nil {
+				return err
+			}
 			log := observability.NewLogger(e.LogLevel).With("role", "maintenance")
 			pool, err := openDB(cmd.Context(), e, log, "maintenance", 2)
 			if err != nil {

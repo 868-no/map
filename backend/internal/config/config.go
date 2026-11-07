@@ -19,6 +19,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/868-no/map/internal/geo"
+	"github.com/868-no/map/internal/protocol"
 	"github.com/868-no/map/internal/security"
 	"github.com/868-no/map/internal/window"
 )
@@ -161,6 +162,21 @@ func LoadEnv() (Env, error) {
 	return e, nil
 }
 
+// ValidateRetention checks what the maintenance command uses, which runs
+// without the broker and channel files (so without Load): retention outside
+// 1..120 months would delete current data, and a zero interval would run
+// retention back to back.
+func (e Env) ValidateRetention() error {
+	var errs []error
+	if e.RetentionMonths < 1 || e.RetentionMonths > 120 {
+		errs = append(errs, errors.New("RETENTION_MONTHS must be 1..120"))
+	}
+	if e.MaintenanceInterval < 1 {
+		errs = append(errs, errors.New("MAINTENANCE_INTERVAL_HOURS must be at least 1"))
+	}
+	return errors.Join(errs...)
+}
+
 // Load reads env plus the broker and channel files and validates all of it.
 // In demo mode missing files are allowed (no MQTT sources / demo defaults).
 func Load() (*Config, error) {
@@ -229,8 +245,8 @@ func (c *Config) validate() error {
 	if e.PGPassword == "CHANGE_ME" && !e.DemoMode {
 		add("POSTGRES_PASSWORD is still the CHANGE_ME placeholder")
 	}
-	if e.RetentionMonths < 1 || e.RetentionMonths > 120 {
-		add("RETENTION_MONTHS must be 1..120")
+	if err := e.ValidateRetention(); err != nil {
+		errs = append(errs, err)
 	}
 	if maxH := int(window.MaxDuration / time.Hour); e.MaxWindowHours < 1 || e.MaxWindowHours > maxH {
 		add("MAX_WINDOW_HOURS must be 1..%d (spec maximum is 14 days)", maxH)
@@ -280,7 +296,8 @@ func (c *Config) validate() error {
 		if s = strings.TrimSpace(s); s == "" {
 			continue
 		}
-		n, ok := parseNode(s)
+		n, ok := protocol.ParseNodeID(s)
+		ok = ok && protocol.ValidNode(n)
 		if !ok {
 			add("GEOLOCATION_EXCLUDE_NODE_IDS: invalid node id %q", s)
 			continue
@@ -364,6 +381,10 @@ func (c *Config) validate() error {
 		if len(ch.PSKs) == 0 {
 			add("%s: at least one psk is required", where)
 		}
+		// Not silently CTR: a mistyped mode would leave every packet of the channel unreadable.
+		if _, err := security.ParseMode(ch.Mode); err != nil {
+			add("%s: %v", where, err)
+		}
 		for _, id := range ch.BrokerIDs {
 			if id != "*" && !seen[id] && len(c.Brokers) > 0 {
 				add("%s: unknown broker id %q", where, id)
@@ -375,16 +396,6 @@ func (c *Config) validate() error {
 		add("%v", err)
 	}
 	return errors.Join(errs...)
-}
-
-func parseNode(s string) (uint32, bool) {
-	var n uint32
-	if strings.HasPrefix(s, "!") && len(s) == 9 {
-		_, err := fmt.Sscanf(s[1:], "%08x", &n)
-		return n, err == nil && n != 0
-	}
-	_, err := fmt.Sscanf(s, "%d", &n)
-	return n, err == nil && n != 0
 }
 
 // SecurityChannels converts channel config for the keyring. Plaintext uplinks

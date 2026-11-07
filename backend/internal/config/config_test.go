@@ -185,3 +185,36 @@ func TestReadSlotsFitTheAPIPool(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// A mistyped channel mode is an error, not CTR; a node id with stray
+// characters is not read up to the first of them.
+func TestChannelModeAndExcludedNodeIDsAreChecked(t *testing.T) {
+	setup(t, goodBrokers, `channels:
+  - {name: Private, broker_ids: ["*"], mode: aes-ccm, psks: ["AQ=="]}
+`)
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "unknown channel mode") {
+		t.Fatalf("a mistyped mode loaded: %v", err)
+	}
+	setup(t, goodBrokers, goodChannels)
+	t.Setenv("GEOLOCATION_EXCLUDE_NODE_IDS", "!12g45678")
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "invalid node id") {
+		t.Fatalf("a malformed node id loaded: %v", err)
+	}
+	t.Setenv("GEOLOCATION_EXCLUDE_NODE_IDS", "!0000abcd,123")
+	c, err := Load()
+	if err != nil || !c.Exclude[0xabcd] || !c.Exclude[123] {
+		t.Fatalf("valid ids: %v %v", c, err)
+	}
+}
+
+// The maintenance command checks retention without the broker and channel files.
+func TestRetentionSettingsAreChecked(t *testing.T) {
+	for _, bad := range []Env{{RetentionMonths: 0, MaintenanceInterval: 24}, {RetentionMonths: -1, MaintenanceInterval: 24}, {RetentionMonths: 6, MaintenanceInterval: 0}} {
+		if bad.ValidateRetention() == nil {
+			t.Errorf("accepted %+v", bad)
+		}
+	}
+	if err := (Env{RetentionMonths: 6, MaintenanceInterval: 24}).ValidateRetention(); err != nil {
+		t.Error(err)
+	}
+}
