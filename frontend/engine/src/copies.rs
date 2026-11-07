@@ -19,7 +19,7 @@ pub struct Heard<'a> {
 }
 
 /// Radio copies reported by a gateway (no map reports, no copies that came
-/// over MQTT or from outside RF), grouped by packet, in row order within a
+/// over MQTT or from outside RF), grouped by packet (packets in order of their first copy), in row order within a
 /// packet. Copies are positions in the window's rows rather than references,
 /// so the grouping is kept with the build (views::Built) for its views.
 #[derive(Default)]
@@ -81,6 +81,21 @@ impl Copies {
         if !keyed.is_empty() {
             c.ends.push(keyed.len() as u32);
         }
+        // Packets in the order of their first copy, so walking them visits
+        // the rows (in time order) about in sequence instead of in key order.
+        let mut groups: Vec<(u32, u32, u32)> = Vec::with_capacity(c.ends.len());
+        let mut a = 0;
+        for &e in &c.ends {
+            groups.push((c.heard[a as usize].0, a, e));
+            a = e;
+        }
+        groups.sort_unstable();
+        let mut heard = Vec::with_capacity(c.heard.len());
+        for (k, &(_, a, e)) in groups.iter().enumerate() {
+            heard.extend_from_slice(&c.heard[a as usize..e as usize]);
+            c.ends[k] = heard.len() as u32;
+        }
+        c.heard = heard;
         c
     }
 
