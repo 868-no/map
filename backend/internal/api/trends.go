@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"sync"
 	"time"
@@ -142,22 +143,72 @@ func (s *Server) trends(ctx context.Context, in *TrendsInput) (*TrendsOutput, er
 	if b, ok := s.trendsMemo.get(key, s.now()); ok {
 		return &TrendsOutput{CacheControl: trendsCC, Body: b}, nil
 	}
-	// Hourly summaries in memory keep this fast however long retention is
-	// (D-112). They are refreshed at most once per TrendsTTL whatever bucket
-	// or zone is asked for, so trends never compete with /observations for
-	// read slots; a request in between only sums from memory.
-	// The refresh outlives the request that started it: the first after a
-	// start reads the whole retained log, which can take longer than a
-	// request may, and is not wasted on a request deadline.
-	rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), trendsRefreshLimit)
-	defer cancel()
-	if err := s.trendHours.RefreshEvery(rctx, s.Pool, s.now(), TrendsTTL); err != nil {
+	fresh, err := s.refreshTrends(ctx)
+	if err != nil {
 		return nil, err
 	}
 	body := TrendsBody{Bucket: in.Bucket, Buckets: []TrendBucket{}, Computed: s.now(), Since: s.trendHours.Oldest()}
 	for _, b := range s.trendHours.Buckets(in.Bucket, loc, in.Region) {
 		body.Buckets = append(body.Buckets, TrendBucket{Start: b.Start, Nodes: b.Nodes, Gateways: b.Gateways, NewNodes: b.NewNodes, Packets: b.Packets, Receptions: b.Receptions, ByType: b.ByType})
 	}
+	if !fresh {
+		// The previous refresh's sums, while the next one runs: neither
+		// kept nor shared, so the next request has the fresh ones.
+		return &TrendsOutput{CacheControl: "no-store", Body: body}, nil
+	}
 	s.trendsMemo.put(key, body)
 	return &TrendsOutput{CacheControl: trendsCC, Body: body}, nil
+}
+
+// trendsWaitStale is how long a request waits for a refresh when the sums
+// of an earlier one can answer it meanwhile.
+const trendsWaitStale = 2 * time.Second
+
+// refreshTrends brings the hourly summaries up to date, at most once per
+// TrendsTTL whatever bucket or zone is asked for, so trends never compete
+// with /observations for read slots and a request in between only sums from
+// memory (D-112). One refresh runs at a time, on its own: the first after a
+// start reads the whole retained log, which can take longer than a request
+// may, and is not wasted on a request deadline. A request waits for it only
+// as long as its own context allows, and no more than trendsWaitStale when a
+// completed refresh's sums can answer instead (fresh is then false); with
+// none to answer, a request out of time is answered 503.
+func (s *Server) refreshTrends(ctx context.Context) (fresh bool, err error) {
+	if s.trendHours.Fresh(TrendsTTL) {
+		return true, nil
+	}
+	ch := s.trendsFlight.DoChan("refresh", func() (any, error) {
+		rctx, cancel := context.WithTimeout(context.Background(), trendsRefreshLimit)
+		defer cancel()
+		if s.trendsRefresh != nil {
+			return nil, s.trendsRefresh(rctx)
+		}
+		return nil, s.trendHours.RefreshEvery(rctx, s.Pool, s.now(), TrendsTTL)
+	})
+	stale := s.trendHours.Complete()
+	wait := ctx
+	if stale {
+		var cancel context.CancelFunc
+		wait, cancel = context.WithTimeout(ctx, trendsWaitStale)
+		defer cancel()
+	}
+	select {
+	case r := <-ch:
+		if r.Err == nil {
+			return true, nil
+		}
+		if stale && ctx.Err() == nil {
+			s.Log.Warn("trends refresh failed; answering from the previous sums", "err", r.Err)
+			return false, nil
+		}
+		return false, r.Err
+	case <-wait.Done():
+		switch {
+		case ctx.Err() == nil: // waited long enough: the previous sums answer
+			return false, nil
+		case errors.Is(ctx.Err(), context.DeadlineExceeded):
+			return false, huma.Error503ServiceUnavailable("trends are still being computed, retry shortly")
+		}
+		return false, ctx.Err()
+	}
 }

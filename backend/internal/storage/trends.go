@@ -48,15 +48,23 @@ var Regions = []string{"Nord-Norge", "Trøndelag", "Vestlandet", "Østlandet", "
 // no summary table is added (invariant 2), and a restart costs one
 // scan. Daily, weekly and monthly totals in any whole-hour time zone are
 // unions of hours.
+//
+// One refresh runs at a time (refreshing); the summaries themselves are
+// only locked (mu) while read or while a refreshed range replaces its
+// hours, so sums can be taken while a refresh reads the log: they are then
+// the previous refresh's, some hours already newer.
 type TrendHours struct {
-	mu     sync.Mutex
-	hours  map[time.Time]*HourSummary
-	oldest *time.Time // the oldest retained row at the last refresh
-	last   time.Time  // wall clock of the last refresh
+	refreshing sync.Mutex
 	// The highest packet_log id at the last refresh and at the one before:
 	// ids come from a sequence, so rows stored since then, in whatever hour
-	// (imported history), have higher ids (D-151).
+	// (imported history), have higher ids (D-151). Under refreshing.
 	seenID, olderID int64
+
+	mu       sync.Mutex
+	hours    map[time.Time]*HourSummary
+	oldest   *time.Time // the oldest retained row at the last refresh
+	last     time.Time  // wall clock of the last complete refresh counted fresh
+	complete bool       // some refresh (or warm-up) has completed
 }
 
 // Rows that failed verification never count (D-093); rows stored as "other"
@@ -88,26 +96,29 @@ var trendRangeSQL = `
 // batch still uncommitted at one refresh is caught by the next one (after
 // the first refresh, which reads everything, only in the recent hours).
 func (t *TrendHours) Refresh(ctx context.Context, pool *pgxpool.Pool, now time.Time) error {
-	t.mu.Lock()
-	defer t.mu.Unlock()
+	t.refreshing.Lock()
+	defer t.refreshing.Unlock()
 	return t.refresh(ctx, pool, now)
 }
 
-// refresh is Refresh with t.mu held.
+// refresh is Refresh with t.refreshing held; t.mu is taken only to look at
+// and replace the summaries, never across a query.
 func (t *TrendHours) refresh(ctx context.Context, pool *pgxpool.Pool, now time.Time) error {
-	if t.hours == nil {
-		t.hours = map[time.Time]*HourSummary{}
-	}
 	var oldest, newest *time.Time
 	var maxID *int64
 	if err := pool.QueryRow(ctx, `SELECT min(observed_at), max(observed_at), max(id) FROM packet_log`).Scan(&oldest, &newest, &maxID); err != nil {
 		return err
 	}
+	t.mu.Lock()
+	if t.hours == nil {
+		t.hours = map[time.Time]*HourSummary{}
+	}
 	t.oldest = oldest
 	if oldest == nil {
 		t.hours = map[time.Time]*HourSummary{}
+		t.last, t.complete = time.Now(), true
+		t.mu.Unlock()
 		t.seenID, t.olderID = 0, 0
-		t.last = time.Now()
 		return nil
 	}
 	first := oldest.UTC().Truncate(time.Hour)
@@ -124,6 +135,7 @@ func (t *TrendHours) refresh(ctx context.Context, pool *pgxpool.Pool, now time.T
 			stale = h
 		}
 	}
+	t.mu.Unlock()
 	if newest.After(now) {
 		now = *newest // a clock behind the data (tests): still sum every row
 	}
@@ -173,7 +185,9 @@ func (t *TrendHours) refresh(ctx context.Context, pool *pgxpool.Pool, now time.T
 	// Fresh only once complete: a refresh cut short (an error, the request
 	// ending) leaves the hours it read, and the next request carries on
 	// from the last of them instead of serving partial sums as fresh.
-	t.last = time.Now()
+	t.mu.Lock()
+	t.last, t.complete = time.Now(), true
+	t.mu.Unlock()
 	return nil
 }
 
@@ -234,6 +248,8 @@ func (t *TrendHours) readRange(ctx context.Context, pool *pgxpool.Pool, lo, hi t
 	if err := rows.Err(); err != nil {
 		return err
 	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
 	for h := lo; h.Before(hi); h = h.Add(time.Hour) {
 		delete(t.hours, h)
 	}
@@ -243,15 +259,30 @@ func (t *TrendHours) readRange(ctx context.Context, pool *pgxpool.Pool, lo, hi t
 	return nil
 }
 
-// RefreshEvery refreshes at most once per every (wall clock): requests in
-// between, whatever bucket or zone they ask for, reuse the summaries. The
-// look and the refresh share the lock, so requests arriving while one
-// refreshes wait for it and then find the summaries fresh, instead of each
-// reading the log again in turn; if it failed, the next one carries it on.
-func (t *TrendHours) RefreshEvery(ctx context.Context, pool *pgxpool.Pool, now time.Time, every time.Duration) error {
+// Fresh reports whether the summaries were refreshed within every.
+func (t *TrendHours) Fresh(every time.Duration) bool {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	if t.hours != nil && time.Since(t.last) < every {
+	return t.hours != nil && !t.last.IsZero() && time.Since(t.last) < every
+}
+
+// Complete reports whether some refresh has completed: the sums cover the
+// whole retained log as of then, if not what arrived since.
+func (t *TrendHours) Complete() bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.complete
+}
+
+// RefreshEvery refreshes at most once per every (wall clock): requests in
+// between, whatever bucket or zone they ask for, reuse the summaries. The
+// look comes after waiting for any refresh already running, so callers
+// arriving meanwhile find the summaries fresh once it ends, instead of each
+// reading the log again in turn; if it failed, the next one carries it on.
+func (t *TrendHours) RefreshEvery(ctx context.Context, pool *pgxpool.Pool, now time.Time, every time.Duration) error {
+	t.refreshing.Lock()
+	defer t.refreshing.Unlock()
+	if t.Fresh(every) {
 		return nil
 	}
 	return t.refresh(ctx, pool, now)
@@ -261,10 +292,12 @@ func (t *TrendHours) RefreshEvery(ctx context.Context, pool *pgxpool.Pool, now t
 // still looks again, but only at what arrived since (an empty log at start
 // must not answer for the next every).
 func (t *TrendHours) Warm(ctx context.Context, pool *pgxpool.Pool, now time.Time) error {
-	t.mu.Lock()
-	defer t.mu.Unlock()
+	t.refreshing.Lock()
+	defer t.refreshing.Unlock()
 	err := t.refresh(ctx, pool, now)
+	t.mu.Lock()
 	t.last = time.Time{}
+	t.mu.Unlock()
 	return err
 }
 

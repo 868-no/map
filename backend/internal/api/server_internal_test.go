@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -64,5 +65,38 @@ func TestTrendsMemoIsBounded(t *testing.T) {
 	c.put("newer", TrendsBody{Computed: t0.Add(2 * time.Minute)})
 	if _, ok := c.byKey["z1"]; ok || len(c.byKey) != trendsMemoMax {
 		t.Fatalf("oldest kept or size %d", len(c.byKey))
+	}
+}
+
+// A request waits for a running trends refresh only as long as its own
+// context allows (503 when out of time, with no earlier sums to answer),
+// while the refresh carries on and is shared by every waiter.
+func TestTrendsWaitersRespectTheirDeadline(t *testing.T) {
+	gate := make(chan struct{})
+	var runs atomic.Int32
+	s := &Server{Log: slog.New(slog.DiscardHandler), trendsRefresh: func(context.Context) error { runs.Add(1); <-gate; return nil }}
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	_, err := s.refreshTrends(ctx)
+	var se huma.StatusError
+	if !errors.As(err, &se) || se.GetStatus() != 503 || time.Since(start) > time.Second {
+		t.Fatalf("out of time: %v after %v", err, time.Since(start))
+	}
+	// The refresh the first request started is still running, and a second
+	// request joins it rather than starting another.
+	done := make(chan bool)
+	go func() { fresh, err := s.refreshTrends(context.Background()); done <- fresh && err == nil }()
+	select {
+	case <-done:
+		t.Fatal("answered before the refresh ended")
+	case <-time.After(50 * time.Millisecond):
+	}
+	if n := runs.Load(); n != 1 {
+		t.Fatalf("%d refreshes running", n)
+	}
+	close(gate)
+	if !<-done {
+		t.Fatal("the refresh did not answer its waiter")
 	}
 }

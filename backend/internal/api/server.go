@@ -71,6 +71,10 @@ type Server struct {
 	trendsMemo trendsCache
 	histMemo   historyMemo
 	trendHours storage.TrendHours // hourly summaries for trends (D-112)
+	// trendsFlight runs one refresh of trendHours at a time for every
+	// request waiting on it; trendsRefresh replaces the refresh (tests).
+	trendsFlight  singleflight.Group
+	trendsRefresh func(context.Context) error
 	once       sync.Once
 }
 
