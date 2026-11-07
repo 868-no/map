@@ -4,7 +4,8 @@
 #     BASEMAP_IMAGE=ghcr.io/868-no/map-basemap:latest \
 #     docker compose pull backend web basemap && docker compose up -d   production, published images
 #   deploy/compose.production.yaml               production configured entirely in one Compose file
-#   DEMO_MODE=true docker compose --profile demo up -d --build   offline demo
+#   DEMO_MODE=true docker compose --profile demo up -d --build   demo: a simulated mesh on a local broker
+#     (the basemap service still downloads several GB for its first build; add --scale basemap=0 to skip it)
 name: meshmap
 
 x-backend: &backend

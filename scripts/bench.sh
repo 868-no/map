@@ -3,7 +3,7 @@
 # synthetic observations, then measure API latency. Database and Redis are
 # limited to 4 vCPU / 8 GiB like the spec's reference machine.
 # Each window's rows are saved to frontend/.bench/rows-<h>h.json for the
-# engine benchmark (frontend/bench/engine.test.ts).
+# engine benchmark (frontend/bench/engine.mjs).
 #   scripts/bench.sh [rows] [nodes]
 set -euo pipefail
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

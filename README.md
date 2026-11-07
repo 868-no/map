@@ -66,9 +66,9 @@ The default is a self-hosted PMTiles archive, built on first start (and refreshe
 The host needs only Docker; Go and Node run in containers.
 
 ```sh
-scripts/go.sh go test ./...           # backend unit tests (incl. real-capture replay)
+scripts/go.sh go test -race ./...     # backend unit tests (incl. real-capture replay), with the race detector as in CI
 scripts/integration.sh                # Postgres/Redis/Mosquitto integration tests (time isolation, pipeline, retention)
-scripts/node.sh npx vitest run        # frontend unit tests
+scripts/node.sh npx vitest run        # frontend unit tests (after scripts/node.sh npm ci)
 scripts/wasm.sh test                  # engine (Rust) tests, incl. the golden 12 h fixture
 scripts/wasm.sh                       # build the engine to WebAssembly (needed before frontend tests/builds)
 docker run --rm --network host --ipc=host -v "$PWD":/src -w /src/frontend \
@@ -81,14 +81,16 @@ scripts/bench.sh                      # 2M-row reference benchmark
 Linters (CI runs them all; fix what they report before pushing):
 
 ```sh
-scripts/go.sh go vet ./... && scripts/go.sh gofmt -l .          # Go basics
+scripts/go.sh go vet ./... && scripts/go.sh gofmt -l ./cmd ./internal ./test   # Go basics (gofmt lists unformatted files)
 scripts/go.sh golangci-lint run ./...  # Go linters (backend/.golangci.yml); --fix applies the safe fixes
 scripts/go.sh govulncheck ./...        # Go: known vulnerabilities in code paths actually called
 scripts/wasm.sh clippy                 # Rust: clippy, warnings as errors (lint set in frontend/engine/Cargo.toml)
 scripts/wasm.sh deny                   # Rust: dependency advisories, bans and sources (frontend/engine/deny.toml)
+scripts/node.sh npm run typecheck      # TypeScript: type check
 scripts/node.sh npm run lint           # TypeScript/React: ESLint (frontend/eslint.config.js)
 scripts/node.sh npm run knip           # unused files, exports and dependencies (frontend/knip.json); --fix removes them
 scripts/node.sh npm audit              # npm: known vulnerabilities in any dependency
+scripts/node.sh npm run gen:api && git diff --exit-code frontend/src/api/schema.d.ts   # API types current with docs/api-openapi.yaml
 ```
 
 A known vulnerability found by govulncheck, cargo-deny or npm audit fails CI, and with it the image build and the production deploy.
