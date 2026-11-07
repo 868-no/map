@@ -178,6 +178,23 @@ describe('RowStore', () => {
     expect(await new RowStore(new ArrayRows(), fail).fromCache({ live: true, durationH: 1 })).toBe(false) // no cache
   })
 
+  it('offline with a shorter window held, adds what the cache has before it', async () => {
+    const all = Array.from({ length: 120 }, (_, k) => row(k + 1, T0 + k * 60_000))
+    const now = T0 + 2 * H
+    const s = server(all, () => now)
+    let online = true
+    const rows = new ArrayRows()
+    const store = new RowStore(rows, (p) => (online ? s.fetch(p) : Promise.reject(new Error('offline'))), async () => ({
+      window: { start: '', end: '', rolling: true }, generation: 'g1', batch: all, covered: { lo: T0, hi: now },
+    }))
+    await store.sync({ live: true, durationH: 1 }, now)
+    online = false
+    await expect(store.sync({ live: true, durationH: 2 }, now)).rejects.toThrow('offline')
+    expect(await store.fromCache({ live: true, durationH: 2 }, now)).toBe(true)
+    expect(store.cov).toEqual({ lo: T0, hi: now })
+    expect(rows.count()).toBe(120)
+  })
+
   it('serves held rows offline, clipped to the window', async () => {
     const all = Array.from({ length: 60 }, (_, k) => row(k + 1, T0 + k * 60_000))
     const store = newStore(server(all, () => T0 + H).fetch)

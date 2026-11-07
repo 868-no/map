@@ -164,9 +164,12 @@ export class RowStore<B, L> {
       }
     }
     this.trim(E - KEEP_MS)
-    if (this.rows.count() > MAX_ROWS) {
-      this.rows.keepOnly(S, E)
-      this.cov = { lo: S, hi: E }
+    // Over the cap with rows from before the window: only the window stays (a
+    // rolling one with the streamed rows past its end). Not when the window
+    // alone is over it: that would copy the engine again on every sync.
+    if (this.rows.count() > MAX_ROWS && this.cov && this.cov.lo < S) {
+      this.rows.keepOnly(S, rolling ? Infinity : E)
+      this.cov = { lo: S, hi: rolling ? this.cov.hi : E }
     }
     this.last = { req, start: S, end: E }
     return { start: S, end: E, rolling }
@@ -194,17 +197,29 @@ export class RowStore<B, L> {
   }
 
   /**
-   * Offline with nothing held (a cold start without the network): takes what
-   * the cache has of the window from its start. Returns whether anything is held.
+   * Offline, when what is held does not reach back to the window's start (a
+   * cold start, or a longer window than the one held): takes what the cache
+   * has of the window from its start, next to what is held when they meet,
+   * else instead of it when it covers more. Returns whether anything is held.
    */
-  async fromCache(req: WindowReq): Promise<boolean> {
-    if (this.cov) return true
+  async fromCache(req: WindowReq, now = Date.now()): Promise<boolean> {
+    const cov = this.cov
+    const lo = req.live ? now - req.durationH * 3_600_000 : Date.parse(req.start)
+    if (cov && cov.lo <= lo) return true
     const f = await this.fetchCached?.(baseParams(req))
-    if (!f) return false
-    this.rows.reset()
-    this.generation = f.generation
-    this.commit(f.batch)
-    this.cov = f.covered
+    if (!f) return !!cov
+    const c = f.covered
+    if (cov && f.generation === this.generation && c.lo <= cov.hi && c.hi >= cov.lo) {
+      this.commit(f.batch)
+      this.cov = { lo: Math.min(cov.lo, c.lo), hi: Math.max(cov.hi, c.hi) }
+    } else if (!cov || c.hi - c.lo > cov.hi - cov.lo) {
+      this.rows.reset()
+      this.generation = f.generation
+      this.commit(f.batch)
+      this.cov = c
+    } else {
+      this.rows.discard(f.batch)
+    }
     return true
   }
 
