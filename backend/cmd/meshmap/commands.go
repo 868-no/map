@@ -338,6 +338,9 @@ func serveCmd() *cobra.Command {
 			mqttCtx, stopMQTT := context.WithCancel(context.Background())
 			defer stopMQTT()
 			var mqttWG sync.WaitGroup
+			// Live rows to API-only processes. Not ended with ingestCtx: rows
+			// the pipeline commits while draining are published too.
+			var live *livePublisher
 			if !noIngest {
 				chs := c.SecurityChannels()
 				brokers := c.Brokers
@@ -379,7 +382,8 @@ func serveCmd() *cobra.Command {
 				pubs := multiPublisher{hub}
 				if rc != nil {
 					dd = rc
-					pubs = append(pubs, newLivePublisher(ingestCtx, rc, log))
+					live = newLivePublisher(rc, log)
+					pubs = append(pubs, live)
 				}
 				var pub ingest.Publisher = pubs
 				pipe := ingest.New(ingest.Config{
@@ -510,6 +514,9 @@ func serveCmd() *cobra.Command {
 			_ = srv.Shutdown(sctx)
 			_ = msrv.Shutdown(sctx)
 			wg.Wait()
+			if live != nil {
+				live.close(3 * time.Second)
+			}
 			if rc != nil {
 				_ = rc.Close()
 			}
