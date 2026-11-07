@@ -171,16 +171,17 @@ func TestRevisionHashesAcceptPlaintextByValue(t *testing.T) {
 	}
 }
 
-// Each /observations read holds an API pool connection; reads may not take
-// the connections health checks and light queries need.
+// Each /observations read holds a request-pool connection; reads may not take
+// the connections health checks and light queries need, nor those set
+// aside for background work.
 func TestReadSlotsFitTheAPIPool(t *testing.T) {
 	setup(t, goodBrokers, goodChannels)
 	t.Setenv("DB_API_CONNS", "10")
-	t.Setenv("API_READ_SLOTS", "9")
-	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "API_READ_SLOTS (9) must be at most DB_API_CONNS - 2 (8)") {
+	t.Setenv("API_READ_SLOTS", "7")
+	if _, err := Load(); err == nil || !strings.Contains(err.Error(), "API_READ_SLOTS (7) must be at most DB_API_CONNS - 4 (6)") {
 		t.Fatalf("got %v", err)
 	}
-	t.Setenv("API_READ_SLOTS", "8")
+	t.Setenv("API_READ_SLOTS", "6")
 	if _, err := Load(); err != nil {
 		t.Fatal(err)
 	}

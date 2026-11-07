@@ -40,14 +40,17 @@ type GeoOptions struct {
 
 // Server holds API dependencies.
 type Server struct {
-	Pool      *pgxpool.Pool
-	Hub       *Hub
-	Env       config.Env
-	ConfigRev string // hash of channel/key config and policy flags (no secrets)
-	Metrics   *observability.Metrics
-	Log       *slog.Logger
-	Now       func() time.Time
-	Geo       GeoOptions
+	Pool *pgxpool.Pool
+	// Background is the pool for background work (trend summary refreshes,
+	// config.BackgroundConns); nil: Pool.
+	Background *pgxpool.Pool
+	Hub        *Hub
+	Env        config.Env
+	ConfigRev  string // hash of channel/key config and policy flags (no secrets)
+	Metrics    *observability.Metrics
+	Log        *slog.Logger
+	Now        func() time.Time
+	Geo        GeoOptions
 	// HeavySlots bounds concurrent /observations reads (database
 	// connections held while rows stream); default 8.
 	HeavySlots int
@@ -81,6 +84,13 @@ type Server struct {
 // CloseStreams ends every open live stream, so a shutdown need not wait
 // for SSE clients to leave.
 func (s *Server) CloseStreams() { s.once.Do(func() { close(s.closing) }) }
+
+func (s *Server) background() *pgxpool.Pool {
+	if s.Background != nil {
+		return s.Background
+	}
+	return s.Pool
+}
 
 func (s *Server) now() time.Time {
 	if s.Now != nil {

@@ -152,9 +152,22 @@ func (c *Config) GeoParams() geo.Params {
 	return p
 }
 
-// APIReservedConns is how many API pool connections /observations reads
-// leave free for health checks, node keys, trends and capabilities.
+// BackgroundConns of DB_API_CONNS form a pool of their own for the API
+// process's background work: trend summary refreshes (one may hold a
+// connection for minutes), the roster the terrain warmer and weather
+// keeper read, and, without ingest, the stored-encoding backfill. However
+// busy that work, it never takes a connection requests or health checks need.
+const BackgroundConns = 2
+
+// APIReservedConns is how many connections of the request pool (DB_API_CONNS
+// minus BackgroundConns) /observations reads leave free for every other
+// request: health checks, the history state, node keys, retention bounds,
+// place searches (at most a few at once), terrain and weather lookups and
+// the writes of their fetchers.
 const APIReservedConns = 2
+
+// APIRequestConns is the size of the request pool.
+func (e Env) APIRequestConns() int { return e.DBAPIConns - BackgroundConns }
 
 var idRe = regexp.MustCompile(`^[A-Za-z0-9_.-]{1,64}$`)
 
@@ -270,11 +283,12 @@ func (c *Config) validate() error {
 		add("API limits: API_RATE_PER_SECOND > 0, API_RATE_BURST >= 1, API_REQUEST_TIMEOUT >= 1s, API_STREAMS_PER_CLIENT >= 1, " +
 			"API_STREAMS_TOTAL >= API_STREAMS_PER_CLIENT, API_READS_PER_CLIENT >= 1, API_READ_SLOTS >= API_READS_PER_CLIENT")
 	}
-	if e.DBIngestConns < 2 || e.DBAPIConns < 3 {
-		add("DB_INGEST_CONNS >= 2 and DB_API_CONNS >= 3 required")
-	} else if e.APIReadSlots > e.DBAPIConns-APIReservedConns {
-		add("API_READ_SLOTS (%d) must be at most DB_API_CONNS - %d (%d): each /observations read holds an API connection, "+
-			"and health checks and light queries need the rest", e.APIReadSlots, APIReservedConns, e.DBAPIConns-APIReservedConns)
+	if minAPI := BackgroundConns + APIReservedConns + 1; e.DBIngestConns < 2 || e.DBAPIConns < minAPI {
+		add("DB_INGEST_CONNS >= 2 and DB_API_CONNS >= %d required", minAPI)
+	} else if most := e.APIRequestConns() - APIReservedConns; e.APIReadSlots > most {
+		add("API_READ_SLOTS (%d) must be at most DB_API_CONNS - %d (%d): %d connections serve background work, each /observations "+
+			"read holds one of the rest, and %d are left for health checks and every other request", e.APIReadSlots,
+			BackgroundConns+APIReservedConns, most, BackgroundConns, APIReservedConns)
 	}
 	if e.DefaultMapLat < -90 || e.DefaultMapLat > 90 || e.DefaultMapLon < -180 || e.DefaultMapLon > 180 {
 		add("DEFAULT_MAP_LAT/LON out of range")

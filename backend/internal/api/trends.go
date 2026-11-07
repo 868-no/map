@@ -126,7 +126,7 @@ func (s *Server) WarmTrends(ctx context.Context) {
 	defer cancel()
 	// Not when the server is stopping; a warm-up cut short by its own limit is
 	// worth knowing about (the first request carries on from where it got).
-	if err := s.trendHours.Warm(wctx, s.Pool, s.now()); err != nil && ctx.Err() == nil {
+	if err := s.trendHours.Warm(wctx, s.background(), s.now()); err != nil && ctx.Err() == nil {
 		s.Log.Warn("trends warm-up incomplete", "err", err)
 	}
 }
@@ -183,7 +183,7 @@ func (s *Server) refreshTrends(ctx context.Context) (fresh bool, err error) {
 		if s.trendsRefresh != nil {
 			return nil, s.trendsRefresh(rctx)
 		}
-		return nil, s.trendHours.RefreshEvery(rctx, s.Pool, s.now(), TrendsTTL)
+		return nil, s.trendHours.RefreshEvery(rctx, s.background(), s.now(), TrendsTTL)
 	})
 	stale := s.trendHours.Complete()
 	wait := ctx

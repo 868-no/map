@@ -300,11 +300,19 @@ func serveCmd() *cobra.Command {
 			m := observability.NewMetrics()
 			// API reads and ingest get separate pools, so slow readers can
 			// never hold the connections the writer needs (D-115).
-			pool, err := openDB(ctx, c.Env, log, "api", c.Env.DBAPIConns)
+			// DB_API_CONNS is split: requests and health checks, and a small
+			// pool of its own for background work, so neither can take the
+			// other's connections.
+			pool, err := openDB(ctx, c.Env, log, "api", c.Env.APIRequestConns())
 			if err != nil {
 				return err
 			}
 			defer pool.Close()
+			bgPool, err := openDB(ctx, c.Env, log, "api-background", config.BackgroundConns)
+			if err != nil {
+				return err
+			}
+			defer bgPool.Close()
 			if err := storage.InitSchema(ctx, pool); err != nil {
 				return err
 			}
@@ -322,7 +330,7 @@ func serveCmd() *cobra.Command {
 			if noIngest {
 				// Ingesting processes rebuild encodings after decoding old rows again (below).
 				go func() {
-					if _, err := storage.BackfillObsRows(ctx, pool, log); err != nil && ctx.Err() == nil {
+					if _, err := storage.BackfillObsRows(ctx, bgPool, log); err != nil && ctx.Err() == nil {
 						log.Error("rebuilding stored row encodings failed; rows are built per request", "err", err)
 					}
 				}()
@@ -436,7 +444,7 @@ func serveCmd() *cobra.Command {
 				// Retention notices always; live events too in API-only mode.
 				go hub.FeedFromRedis(ingestCtx, rc, noIngest, log)
 			}
-			apiSrv := &api.Server{Pool: pool,
+			apiSrv := &api.Server{Pool: pool, Background: bgPool,
 				Hub: hub, Env: c.Env, ConfigRev: c.Revision(), Metrics: m, Log: log, HeavySlots: c.Env.APIReadSlots,
 				Geo: api.GeoOptions{Enabled: c.Env.GeolocationEnabled, MinPrecisionBits: c.Env.GeolocationMinPrec, Exclude: c.Exclude, Params: c.GeoParams()}}
 			if rc != nil {
@@ -446,7 +454,7 @@ func serveCmd() *cobra.Command {
 			// Routers, read once for the terrain warmer and
 			// the weather keeper alike (D-133, D-144), over the longer of their
 			// windows.
-			roster := &storage.Roster{Pool: pool, Window: max(terrain.WarmWindow, time.Duration(c.Env.MaxWindowHours)*time.Hour), Alive: 24 * time.Hour, TTL: 20 * time.Minute}
+			roster := &storage.Roster{Pool: bgPool, Window: max(terrain.WarmWindow, time.Duration(c.Env.MaxWindowHours)*time.Hour), Alive: 24 * time.Hour, TTL: 20 * time.Minute}
 			if c.Env.PlacesEnabled {
 				apiSrv.Places = &places.Store{Pool: pool}
 			}
