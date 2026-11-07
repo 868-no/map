@@ -290,7 +290,10 @@ func Process(m RawMessage, o Options) (Observation, error) {
 	obs.LogicalKey = logicalKey(p, channelName, data)
 	if mapReport {
 		// Every report has packet id 0: tell periodic reports apart by
-		// time, while copies delivered by several brokers still collide.
+		// time, while copies delivered by several brokers still collide,
+		// unless they arrive either side of a bucket boundary. Nothing
+		// steadier to key on: the packet has no id or rx_time and the
+		// report no time (design §2.5).
 		obs.LogicalKey = h16(obs.LogicalKey[:], u32(uint32(obs.ObservedAt.Truncate(5*time.Minute).Unix())))
 	}
 	obs.ObservationKey = observationKey(obs, env.Gateway, data)
