@@ -64,6 +64,44 @@ func TestInsertBatchRecreatesADroppedPartition(t *testing.T) {
 	}
 }
 
+// A start with every index in place takes no lock on the partitions: it
+// must not queue behind a VACUUM (SHARE UPDATE EXCLUSIVE) on one of them, as
+// CREATE INDEX IF NOT EXISTS on the partitioned table did. A missing index
+// is created.
+func TestInitSchemaLeavesPartitionsAlone(t *testing.T) {
+	pool := freshDB(t)
+	ctx := context.Background()
+	months, err := storage.Partitions(ctx, pool)
+	if err != nil || len(months) == 0 {
+		t.Fatalf("partitions %v %v", months, err)
+	}
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback(ctx) //nolint:errcheck
+	if _, err := tx.Exec(ctx, `LOCK TABLE `+storage.PartitionName(months[0])+` IN SHARE UPDATE EXCLUSIVE MODE`); err != nil {
+		t.Fatal(err)
+	}
+	ictx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	if err := storage.InitSchema(ictx, pool); err != nil {
+		t.Fatalf("schema init behind a VACUUM-class lock on a partition: %v", err)
+	}
+	if err := tx.Rollback(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `DROP INDEX packet_log_time_idx`); err != nil {
+		t.Fatal(err)
+	}
+	if err := storage.InitSchema(ctx, pool); err != nil {
+		t.Fatal(err)
+	}
+	if n := count(t, pool, `SELECT count(*) FROM pg_indexes WHERE tablename = 'packet_log' AND indexname = 'packet_log_time_idx'`); n != 1 {
+		t.Fatal("a missing index was not created")
+	}
+}
+
 // D-056: a schema-1 table (plain, identity id) becomes the partitioned
 // table at startup, keeping ids, one row per reception, and the sequence.
 func TestMigrateSchema1(t *testing.T) {

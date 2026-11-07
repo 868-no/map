@@ -3,7 +3,8 @@
 -- months instead of deleting and vacuuming rows. Partitions are created by
 -- storage.EnsurePartitions, never by hand.
 -- Every statement is idempotent; init-schema runs it under an advisory lock
--- (after migrating an unpartitioned table from schema 1, see migrate.go).
+-- and a lock timeout (after migrating an unpartitioned table from schema 1,
+-- see partitions.go).
 -- The schema version lives in the table comment, not in a migrations table.
 -- The two other tables hold no mesh data: weather_hour weather (D-133),
 -- terrain_height terrain heights (D-143).
@@ -61,23 +62,12 @@ ALTER SEQUENCE packet_log_id_seq OWNED BY packet_log.id;
 -- table: it survives a rebuilt packet_log, and so never goes back.
 CREATE SEQUENCE IF NOT EXISTS packet_log_history_rev AS BIGINT;
 
--- Serves every /observations page ((observed_at, id) keyset order, D-038)
--- and the retention delete inside the oldest kept month.
-CREATE INDEX IF NOT EXISTS packet_log_time_idx        ON packet_log (observed_at DESC, id DESC);
--- NodeInfo rows per node in id order: the identity rebuild (verified rows)
--- and a node's latest announced public key. Partial, so other inserts never
--- touch it. It replaces two full indexes on (source_node_id, observed_at) and
--- (packet_type, observed_at), and a narrower verified-only one.
-CREATE INDEX IF NOT EXISTS packet_log_nodeinfo_idx ON packet_log (source_node_id, id)
-  WHERE packet_type = 'nodeinfo';
+-- packet_log's indexes are created from Go, only when missing (stale.go):
+-- CREATE INDEX IF NOT EXISTS would lock every partition on every start.
+-- Indexes it no longer has:
 DROP INDEX IF EXISTS packet_log_verified_nodeinfo_idx;
 DROP INDEX IF EXISTS packet_log_source_time_idx;
 DROP INDEX IF EXISTS packet_log_type_time_idx;
--- One row per reception (D-056): a batch retried after a commit whose
--- outcome was lost inserts nothing twice. Also the ingest dedupe lookup.
-CREATE UNIQUE INDEX IF NOT EXISTS packet_log_observation_key ON packet_log (observation_key, observed_at);
--- The partial indexes on stale rows carry version numbers in their predicate
--- and name, so they are created from Go (stale.go, D-116).
 
 -- Weather at stationary routers (D-133): MET Norway's MET Nordic analysis
 -- with gusts from MEPS, one row per 1 km analysis grid cell and hour, fetched once and kept for the

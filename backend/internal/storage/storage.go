@@ -51,7 +51,8 @@ func Open(ctx context.Context, url, role string, maxConns int) (*pgxpool.Pool, e
 }
 
 // InitSchema applies schema.sql under a session advisory lock so concurrent
-// starters do not race. Idempotent; no migrations table.
+// starters do not race, then creates packet_log's missing indexes.
+// Idempotent; no migrations table.
 func InitSchema(ctx context.Context, pool *pgxpool.Pool) error {
 	conn, err := pool.Acquire(ctx)
 	if err != nil {
@@ -68,11 +69,14 @@ func InitSchema(ctx context.Context, pool *pgxpool.Pool) error {
 	} else if n > 0 {
 		slog.Default().Info("packet_log partitioned by month", "rows", n)
 	}
-	if _, err := conn.Exec(ctx, schemaSQL); err != nil {
+	// Under the partition DDL's lock timeout (D-166): a statement queued for
+	// a lock behind a long VACUUM or read would hold up every insert queued
+	// behind it.
+	if err := execDDL(ctx, conn, schemaSQL); err != nil {
 		return fmt.Errorf("apply schema: %w", err)
 	}
-	if err := ensureStaleIndexes(ctx, conn); err != nil {
-		return fmt.Errorf("stale-row indexes: %w", err)
+	if err := ensureIndexes(ctx, conn); err != nil {
+		return fmt.Errorf("packet_log indexes: %w", err)
 	}
 	now := time.Now()
 	return EnsurePartitions(ctx, conn, now.AddDate(0, -1, 0), now.AddDate(0, 2, 0))

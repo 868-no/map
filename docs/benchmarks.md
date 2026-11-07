@@ -71,7 +71,7 @@ Three runs each, 2026-11-07, against the local stack; the heap is read from DevT
 ## Observations and follow-ups
 
 - The engine's row representation could shrink further (about 560 bytes per row held, including the id index and vector growth); not needed at reference density.
-- `packet_log_time_idx` serves every `/observations` page. The BRIN index was dropped in D-056: it was never scanned, and retention now drops whole monthly partitions. The two indexes that only served the retired server views were dropped (D-045); every remaining index serves a named query (see the comments in `schema.sql`).
+- `packet_log_time_idx` serves every `/observations` page. The BRIN index was dropped in D-056: it was never scanned, and retention now drops whole monthly partitions. The two indexes that only served the retired server views were dropped (D-045); every remaining index serves a named query (see the comments in `storage/stale.go`).
 - The JS heap figure excludes WebAssembly memory (see the derivation table).
 
 ## Streamed pages (2026-11-01, dev stack, live data)
