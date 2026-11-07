@@ -42,6 +42,46 @@ func TestHubEncodesOnceAndFlagsDrops(t *testing.T) {
 	}
 }
 
+// A change of availability reaches a subscriber whose event queue is full,
+// and one that went down and up again before the stream looked is flagged,
+// so the stream reports the outage and the client syncs.
+func TestHubStatusBypassesAFullQueue(t *testing.T) {
+	h := NewHub(true)
+	ch, sub, unsub := h.subscribe()
+	defer unsub()
+	ev, _ := json.Marshal([]ingest.LiveEvent{{ID: 1, T: time.UnixMilli(1_800_000_000_000).UTC(), Row: json.RawMessage(`{}`)}})
+	for range cap(ch) + 1 {
+		h.PublishLive(context.Background(), ev)
+	}
+	if !sub.dropped.Load() {
+		t.Fatal("queue not full")
+	}
+	h.setAvailable(false)
+	select {
+	case <-sub.status:
+	default:
+		t.Fatal("going down not signalled to a full subscriber")
+	}
+	if h.Available() || !sub.wentDown.Load() {
+		t.Fatal("outage not recorded")
+	}
+	h.setAvailable(true)
+	h.setAvailable(true) // no change: no second signal
+	select {
+	case <-sub.status:
+	default:
+		t.Fatal("coming back not signalled")
+	}
+	select {
+	case <-sub.status:
+		t.Fatal("signalled without a change")
+	default:
+	}
+	if !h.Available() || !sub.wentDown.Swap(false) {
+		t.Fatal("the outage meanwhile was forgotten")
+	}
+}
+
 // The pipeline's hand-encoded live batch reads exactly as the documented
 // LiveEvent would encode, so the two types cannot drift apart.
 func TestLiveBatchMatchesDocumentedEvent(t *testing.T) {

@@ -126,23 +126,32 @@ func (s *Server) stream(ctx context.Context, in *StreamInput, send sse.Sender) {
 		case <-t.C:
 			// Events lost in a burst followed by quiet: told now, not with
 			// a next delta that may be long in coming.
-			if sub.dropped.Swap(false) && send.Data(LiveStatus{Live: true, Reason: LaggedReason}) != nil {
+			if sub.dropped.Swap(false) && send.Data(LiveStatus{Live: s.Hub.Available(), Reason: LaggedReason}) != nil {
 				return
 			}
 			if !heartbeat() {
 				return
 			}
+		case <-sub.status:
+			// Availability changed, perhaps more than once: the current
+			// state, after an "unavailable" when live went down meanwhile,
+			// so the client syncs what it missed.
+			live := s.Hub.Available()
+			if sub.wentDown.Swap(false) && live && send.Data(LiveStatus{Live: false}) != nil {
+				return
+			}
+			if send.Data(LiveStatus{Live: live}) != nil {
+				return
+			}
 		case m := <-ch:
 			var err error
 			switch {
-			case m.status != "":
-				err = send.Data(LiveStatus{Live: m.status == "live-available"})
 			case m.retention != nil:
 				err = send.Data(*m.retention)
 			case len(m.delta) > 0:
 				if sub.dropped.Swap(false) {
 					// Events were lost while this client was slow: it syncs.
-					if err = send.Data(LiveStatus{Live: true, Reason: LaggedReason}); err != nil {
+					if err = send.Data(LiveStatus{Live: s.Hub.Available(), Reason: LaggedReason}); err != nil {
 						return
 					}
 				}

@@ -15,6 +15,9 @@ import (
 // pipeline publishes into it directly; in API-only mode it is fed from
 // Redis pub/sub. Slow subscribers lose events rather than blocking
 // ingestion, and are told so on their next delivery (they then sync).
+// Changes of availability are never lost that way: they bypass the event
+// queue (subscriber.status), so a client that fell behind still learns that
+// live went down, and is never told it is up while it is not.
 type Hub struct {
 	mu        sync.Mutex
 	subs      map[chan hubMsg]*subscriber
@@ -23,12 +26,18 @@ type Hub struct {
 
 type subscriber struct {
 	dropped atomic.Bool // events were dropped since the last delivery
+	// status is signalled (never blocking) when availability changed since
+	// the stream last reported it; the stream then reports the hub's
+	// current state, so only the latest counts.
+	status chan struct{}
+	// wentDown: live was unavailable at some point since the stream last
+	// reported it, so the client must sync even if live is back by then.
+	wentDown atomic.Bool
 }
 
 type hubMsg struct {
 	delta     json.RawMessage // a LiveDelta, encoded once for every subscriber
 	retention *maintenance.Status
-	status    string // "live-available" / "live-unavailable"
 }
 
 // NewHub creates a hub; available reports whether live data flows.
@@ -66,15 +75,19 @@ func (h *Hub) broadcast(m hubMsg) {
 
 func (h *Hub) setAvailable(ok bool) {
 	h.mu.Lock()
-	changed := h.available != ok
+	defer h.mu.Unlock()
+	if h.available == ok {
+		return
+	}
 	h.available = ok
-	h.mu.Unlock()
-	if changed {
-		s := "live-unavailable"
-		if ok {
-			s = "live-available"
+	for _, s := range h.subs {
+		if !ok {
+			s.wentDown.Store(true)
 		}
-		h.broadcast(hubMsg{status: s})
+		select {
+		case s.status <- struct{}{}:
+		default: // already signalled: the stream reads the state when it gets to it
+		}
 	}
 }
 
@@ -87,7 +100,7 @@ func (h *Hub) Available() bool {
 
 func (h *Hub) subscribe() (chan hubMsg, *subscriber, func()) {
 	ch := make(chan hubMsg, 256)
-	s := &subscriber{}
+	s := &subscriber{status: make(chan struct{}, 1)}
 	h.mu.Lock()
 	h.subs[ch] = s
 	h.mu.Unlock()
