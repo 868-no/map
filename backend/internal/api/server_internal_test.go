@@ -27,7 +27,8 @@ func TestInternalErrorsAreNotSent(t *testing.T) {
 }
 
 // A request whose client went away (its context canceled, possibly wrapped
-// by the driver) is answered 499 and not logged as an error; a deadline is.
+// by the driver) is answered 499 and not logged as an error; one out of
+// time is answered 503, to be asked again.
 func TestClientGoneIsNotAnError(t *testing.T) {
 	hideInternalErrors(slog.New(slog.DiscardHandler))
 	for _, err := range []error{context.Canceled, fmt.Errorf("query: %w", context.Canceled)} {
@@ -35,7 +36,7 @@ func TestClientGoneIsNotAnError(t *testing.T) {
 			t.Errorf("%v: status %d", err, s)
 		}
 	}
-	if s := huma.NewError(500, "unexpected error occurred", context.DeadlineExceeded).GetStatus(); s != 500 {
+	if s := huma.NewError(500, "unexpected error occurred", fmt.Errorf("query: %w", context.DeadlineExceeded)).GetStatus(); s != 503 {
 		t.Errorf("deadline: status %d", s)
 	}
 }

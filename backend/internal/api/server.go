@@ -182,6 +182,12 @@ func hideInternalErrors(log *slog.Logger) {
 					// not a fault, and nobody reads the answer.
 					return orig(statusClientClosed, "client closed request")
 				}
+				if errors.Is(err, context.DeadlineExceeded) {
+					// Out of time (a slow query, or waiting on a day being
+					// built): the server is busy, not broken; asking again helps.
+					log.Warn("api request timed out", "status", status, "msg", msg, "err", err)
+					return orig(http.StatusServiceUnavailable, "timed out, retry shortly")
+				}
 				log.Error("api error", "status", status, "msg", msg, "err", err)
 				return orig(status, msg)
 			}
