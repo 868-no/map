@@ -13,6 +13,8 @@ const ignore = async (f: () => unknown) => {
 
 export async function resetEverything(): Promise<void> {
   // The worker holds the database open; deleting it would wait on the worker.
+  // Stopped for good: no live row or view starts another, which would open
+  // the database again (or create it anew) while it is being deleted.
   stopDerive()
   await ignore(() => localStorage.clear())
   await ignore(() => sessionStorage.clear())

@@ -17,6 +17,7 @@ let generation: string | null = null // likewise
 let maxNodes: number | null = null // likewise
 let restarts: number[] = [] // recent restart times
 let broken: string | null = null // gave up restarting: views fail with this
+let stopped = false // stopDerive: no worker is started again in this page
 
 /**
  * The worker died (a script error) or its engine trapped: fail what waits,
@@ -38,7 +39,7 @@ function restart(why: string): void {
     return
   }
   if (caps) initDerive(caps) // with the terrain classes and node limit
-  if (generation) get().postMessage({ type: 'generation', generation } satisfies Request)
+  if (generation && usable()) get().postMessage({ type: 'generation', generation } satisfies Request)
   onChanged?.()
 }
 
@@ -67,8 +68,16 @@ function get(): Worker {
   return worker
 }
 
-/** Stops the worker (and so its database connection); views fail until reload. */
+/** Whether a message may start (or reach) a worker. */
+const usable = () => !broken && !stopped
+
+/**
+ * Stops the worker (and so its database connection) for good: no streamed
+ * row, setting or view starts another one, so none opens the database again
+ * while it is being deleted. Views fail until the page reloads.
+ */
 export function stopDerive(): void {
+  stopped = true
   worker?.terminate()
   worker = null
   for (const w of waiting.values()) w.reject(new ViewError('unavailable', 'stopped'))
@@ -100,11 +109,12 @@ export function onTransmissions(fn: (t: Transmission[]) => void): () => void {
 
 /** Hand rows from the live stream to the worker; ping lists the indexes to animate. */
 export function sendLiveRows(rows: ObsRow[], ping: number[]): void {
-  if (rows.length && !broken) get().postMessage({ type: 'rows', rows, ping } satisfies Request)
+  if (rows.length && usable()) get().postMessage({ type: 'rows', rows, ping } satisfies Request)
 }
 
 export function initDerive(c: Capabilities): void {
   caps = c
+  if (!usable()) return
   const msg: Request = { type: 'init', geo: c.geolocation, liveQuantumMs: c.live_quantum_seconds * 1000, maxNodes: maxNodes ?? undefined, terrain }
   get().postMessage(msg)
 }
@@ -112,7 +122,7 @@ export function initDerive(c: Capabilities): void {
 /** The server's generation from a live (not offline) /retention answer (D-170). */
 export function hintGeneration(g: string): void {
   generation = g
-  if (!broken) get().postMessage({ type: 'generation', generation: g } satisfies Request)
+  if (usable()) get().postMessage({ type: 'generation', generation: g } satisfies Request)
 }
 
 /**
@@ -122,18 +132,19 @@ export function hintGeneration(g: string): void {
 export function setMaxNodes(n: number): void {
   if (n === maxNodes) return
   maxNodes = n
-  if (caps && !broken) get().postMessage({ type: 'options', maxNodes: n } satisfies Request)
+  if (caps && usable()) get().postMessage({ type: 'options', maxNodes: n } satisfies Request)
 }
 
 /** Line-of-sight classes of router links (D-143); views are rebuilt with them. */
 export function sendTerrain(links: TerrainLinkClass[]): void {
   terrain = links
-  if (caps && !broken) get().postMessage({ type: 'terrain', links } satisfies Request)
+  if (caps && usable()) get().postMessage({ type: 'terrain', links } satisfies Request)
 }
 
 /** Ask the worker for a view; resolves with the view body (with meta). An abort stops waiting, and the build if it has not begun. */
 export function deriveView(req: Omit<ViewRequest, 'type' | 'id'>, signal?: AbortSignal): Promise<{ body: unknown; offline: boolean }> {
   const id = nextId++
+  if (stopped) return Promise.reject(new ViewError('unavailable', 'stopped: reload the page'))
   if (broken) return Promise.reject(new ViewError('internal', `the derivation engine cannot run in this browser (${broken}); reload to try again`))
   return new Promise((resolve, reject) => {
     const onAbort = () => {
