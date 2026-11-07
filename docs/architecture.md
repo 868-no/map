@@ -19,20 +19,23 @@ This page shows the components and where the code lives. The rules the system fo
 │  identity index (in memory, rebuilt from packet_log)                             │
 │                                                                                  │
 │  HTTP API (huma, OpenAPI 3.1): capabilities, retention, observations (paged,     │
-│  streamed rows), stream (SSE: every new row), nodes/{id}/public-key, trends,     │
-│  weather · health · metrics                                                      │
+│  streamed rows), observations/day/{date} (whole days, cached), stream (SSE:      │
+│  every new row), nodes/{id}/public-key, trends, weather, places (search),        │
+│  terrain/profile, terrain/classes · health · metrics                             │
 │  query layer: every SQL via window.Predicate                                     │
 └───────────────┬───────────────────────────────┬──────────────────────────────────┘
                 │                               │
         PostgreSQL 16                     Redis 7 (ephemeral)
         packet_log (mesh data,            dedupe keys, live pub/sub,
-        monthly partitions)               maintenance status
-        weather_hour (weather, D-133)
+        monthly partitions)               maintenance status,
+        weather_hour (weather, D-133)     cached days (D-158)
         terrain_height (terrain, D-143)
+        place_name, place_key (D-193)
                 ▲
                 │
    maintenance (meshmap maintenance)
-   daily retention under advisory lock (drops whole months, trims weather_hour)
+   daily retention under advisory lock (drops whole months, trims weather_hour);
+   loads Kartverket's place-name register from Geonorge, monthly (D-193)
 
 ┌──────────── web (Caddy) :WEB_PORT ────────────┐
 │  /            React app (MapLibre + deck.gl)  │
@@ -46,13 +49,13 @@ This page shows the components and where the code lives. The rules the system fo
 └───────────────────────────────────────────────┘
 ```
 
-Compose network: only `web` publishes a port. `backend:9100` serves Prometheus metrics inside the network. The `basemap` service builds `basemap.pmtiles` into the volume `web` serves `/tiles` from ([basemap.md](basemap.md)). The `demo` profile adds `mosquitto` (compose network only) and `demo-publisher`.
+Compose network: only `web` publishes a port, on the host's loopback by default (`WEB_BIND`). `backend:9100` serves Prometheus metrics inside the network. The `basemap` service builds `basemap.pmtiles` into the volume `web` serves `/tiles` from ([basemap.md](basemap.md)). The `demo` profile adds `mosquitto` (compose network only) and `demo-publisher`.
 
 Scaled out (`deploy/stack.swarm.yaml`, D-157), the one process above becomes two services: `ingest` (`meshmap serve`, exactly one: MQTT ingest, the weather and terrain fetching and warming, broker health) and `backend` (`meshmap serve --no-ingest`, several replicas: the API, weather and terrain off, live rows over Redis pub/sub). `web` sends `/api/v1/weather`, `/api/v1/terrain*`, `/api/v1/capabilities` and `/health/*` to `FETCH_UPSTREAM` and the rest of `/api/*` to `API_UPSTREAM`; both default to `backend:8000`. See [operations.md](operations.md#scaling-horizontally-swarm).
 
 ## Data model
 
-One table of mesh data, `packet_log` (`backend/internal/storage/schema.sql`), and one of weather, `weather_hour` (MET Norway's analysis per grid cell and hour, for chart bands; design §3.7, D-133). `packet_log`: one row per accepted gateway reception, range-partitioned by calendar month of `observed_at` (D-056). Partitions are created ahead by `storage.EnsurePartitions` and dropped whole by retention. The row is append-mostly; only `decoded_metadata.also_via` (broker provenance, D-013) and the stored row encoding below are ever updated. Keys:
+One table of mesh data, `packet_log` (`backend/internal/storage/schema.sql`). Beside it, tables that say nothing about the mesh: `weather_hour` (MET Norway's analysis per grid cell and hour, for chart bands; design §3.7, D-133; trimmed by retention), `terrain_height` (Kartverket's terrain heights per grid point, fetched once and kept, for link cross sections; D-143) and `place_name` with `place_key` (Kartverket's place-name register and its word-prefix keys, for the place search, loaded whole by maintenance; D-193). `packet_log`: one row per accepted gateway reception, range-partitioned by calendar month of `observed_at` (D-056). Partitions are created ahead by `storage.EnsurePartitions` and dropped whole by retention. The row is append-mostly; only `decoded_metadata.also_via` (broker provenance, D-013) and the stored row encoding below are ever updated. Keys:
 
 - `logical_packet_key`: the RF packet (sender, packet id, destination, channel, port, canonical payload — payload excluded for traceroutes, which every hop rewrites).
 - `observation_key`: one gateway's reception (logical key + gateway + receive metadata + payload hash). It is the dedupe key; a unique index on `(observation_key, observed_at)` makes a retried batch store nothing twice (D-056).
@@ -66,7 +69,7 @@ One table of mesh data, `packet_log` (`backend/internal/storage/schema.sql`), an
 
 `internal/window` is the single definition of the interval `[start, end)`. All window-scoped SQL is built by `query.where()`, which starts with `window.Predicate`; a test fails if any other code compares `observed_at` (allowlist: ingestion dedupe fallback and the retention delete). `/observations` returns exactly the rows inside the interval; the `cursor` only positions within it (D-038). Pages are streamed from the database cursor, never collected in memory (D-057).
 
-The browser's engine computes node identity, positions, telemetry, links, estimates, counts and traffic buckets from the rows inside the selected window only; its isolation test covers the derived fields (D-041). `/observations` reports a `generation` (decoder version, `obsrow.Version` and configuration hash); a browser holding rows of another generation discards them and refetches. Whole past days are the one cached result: `/observations/day/{date}` keeps each settled day gzipped in Redis and answers it immutable, so browsers and Cloudflare keep it too (D-158); imports advance a history revision that is part of the generation.
+The browser's engine computes node identity, positions, telemetry, links, estimates, counts and traffic buckets from the rows inside the selected window only; its isolation test covers the derived fields (D-041). `/observations` reports a `generation` (decoder version, `obsrow.Version` and configuration hash); a browser holding rows of another generation discards them and refetches. Whole past days are the one cached result: `/observations/day/{date}` keeps each settled day compressed (gzip and brotli) in Redis and answers it immutable, so browsers and Cloudflare keep it too (D-158); imports advance a history revision that is part of the generation.
 
 ## Trust model
 
@@ -80,7 +83,7 @@ The browser's engine computes node identity, positions, telemetry, links, estima
 ```text
 backend/
   cmd/meshmap/            CLI: serve, maintenance, check-config, init-schema, demo-publish, inspect,
-                          import-envelopes, healthcheck, openapi, seed, bench
+                          import-envelopes, import-places, healthcheck, openapi, seed, bench
   internal/config         env + YAML, validation, redaction, config revision
   internal/mqtt           read-only broker clients (autopaho v5, paho v3.1.1)
   internal/protocol       topic + envelope parsing; ports/ payload decoders; pb/ generated bindings
@@ -98,9 +101,13 @@ backend/
   internal/maintenance    retention runner (drops expired months, trims the boundary month and weather_hour)
   internal/weather        MET Norway client (OPeNDAP, grid cells), weather_hour store, fetch queue
   internal/terrain        Kartverket height client, terrain_height store, cross sections and line-of-sight classes
+  internal/upstream       what the weather and terrain clients share: fetch queue (visitors first), bounded cache
+  internal/places         place-name register: Geonorge download, GML parsing, import into place_name/place_key
+                          (run by maintenance and import-places), prefix search
   internal/envimport      import-envelopes: replays recorded MQTT history through ingest.Process (D-137)
   internal/observability  logging and Prometheus metrics
   internal/demo           simulator, scenarios, demo publisher
+  internal/testutil       fixture builders shared by tests and the demo simulator (keys, independent of the code under test)
   test/integration        Postgres/Redis/Mosquitto integration tests
   test/fixtures           real MQTT captures (public RF traffic) replayed by unit tests
 frontend/                 React + MapLibre GL 5 + deck.gl 9 (Vite); e2e/ Playwright
@@ -108,9 +115,17 @@ frontend/                 React + MapLibre GL 5 + deck.gl 9 (Vite); e2e/ Playwri
                           node details, packet logs and routes, ping attribution (D-040)
   src/derive/             Web Worker: sync and coverage, IndexedDB chunks and deltas, drives the engine;
                           view types (views.ts)
-  src/state/              store, window queries, live stream (live.ts)
+  src/state/              store, window queries, live stream (live.ts), watchlist, weather and terrain fetches
+  src/map/                MapLibre map, deck.gl mesh and ping layers, basemap styles, regions layer, camera
+  src/features/           tool rail panels: nodes, node details (node/), links, health, regions, trends, menu
+  src/components/         shared charts (time, bar, cross section), node icons, column resizing
+  src/timeline/           the period: live indicator and Period panel
+  src/api/                API client and types generated from docs/api-openapi.yaml (schema.d.ts)
+  src/lib/                small helpers: polling, server clock, sun position, time formatting
+  sw/                     service worker (offline app shell and last-known data)
 web/                      Caddyfile, dark and light OpenMapTiles styles, image build (fonts)
 basemap/                  basemap service image: Planetiler + run.sh (builds and refreshes basemap.pmtiles)
 deploy/                   compose.production.yaml, stack.swarm.yaml (split for Swarm), Mosquitto config for the demo, caddy-auth snippets
-scripts/                  go.sh, node.sh, wasm.sh, integration.sh, bench.sh, basemap_import.sh, regions.sh/regions.js
+scripts/                  go.sh, node.sh, wasm.sh, integration.sh, bench.sh, basemap_import.sh, regions.sh/regions.js,
+                          outdated.sh (lists newer dependency releases)
 ```
