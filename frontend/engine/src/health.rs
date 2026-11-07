@@ -64,6 +64,17 @@ pub const STORE_FORWARD_SHARE: f64 = 0.02;
 pub const SPOOF_MIN: usize = 3;
 /// Distinct nodes refusing its remote-admin requests before it is noted.
 pub const ADMIN_REFUSALS_MIN: usize = 2;
+/// Silent infrastructure (D-188): a router or gateway counts as silent once
+/// nothing was heard from it for SILENT_GAP_FACTOR times its usual gap
+/// between transmissions or uplinks, and at least SILENT_MIN_MS, before the
+/// newest data in the window; its usual gap needs SILENT_MIN_EVENTS of them.
+pub const SILENT_MIN_MS: i64 = 3 * 3_600_000;
+pub const SILENT_GAP_FACTOR: i64 = 4;
+pub const SILENT_MIN_EVENTS: usize = 4;
+/// Battery (%) that, last reported before a silence, suggests it ran flat.
+pub const SILENT_BATTERY_LOW: f64 = 20.0;
+/// Roles that keep the mesh together: their silence is worth a warning.
+pub const INFRA_ROLES: [&str; 4] = ["ROUTER", "ROUTER_LATE", "ROUTER_CLIENT", "REPEATER"];
 
 #[derive(Serialize, Debug, Clone, PartialEq)]
 pub struct Issue {
@@ -73,6 +84,21 @@ pub struct Issue {
     pub severity: &'static str,
     pub summary: String,
     pub detail: String,
+    /// Orders issues of one kind, highest first (a silence's length); 0 for most.
+    #[serde(skip)]
+    pub weight: f64,
+}
+
+/// A duration in words: minutes, hours or days.
+pub fn span_words(ms: i64) -> String {
+    let h = ms as f64 / 3_600_000.0;
+    if h < 1.0 {
+        format!("{:.0} min", (h * 60.0).max(1.0))
+    } else if h < 48.0 {
+        if h < 10.0 { format!("{h:.1} h") } else { format!("{h:.0} h") }
+    } else {
+        format!("{:.0} days", h / 24.0)
+    }
 }
 
 /// One node's share of the window's estimated airtime.
@@ -135,6 +161,17 @@ pub struct Airtime {
 pub struct Health {
     pub issues: Vec<Issue>,
     pub airtime: Airtime,
+}
+
+/// A role as a word for the start of a sentence.
+fn role_word(role: &str) -> &'static str {
+    match role {
+        "ROUTER" => "Router",
+        "ROUTER_LATE" => "Router (late)",
+        "ROUTER_CLIENT" => "Router/client",
+        "REPEATER" => "Repeater",
+        _ => "Node",
+    }
 }
 
 fn rank(severity: &str) -> u8 {
@@ -288,7 +325,8 @@ pub fn health(rows: &[&Row], invalid: &[&Row], nodes: &[Node], copies: &Copies, 
     let span = if hi > lo { (hi - lo) as f64 / 3_600_000.0 } else { 0.0 };
     let hours = hours.min(span).max(1.0);
     let mut out: Vec<Issue> = Vec::new();
-    let mut add = |n: u32, kind: &'static str, severity: &'static str, summary: String, detail: String| out.push(Issue { node: node_id(n), kind, severity, summary, detail });
+    let mut weighted: Vec<Issue> = Vec::new();
+    let mut add = |n: u32, kind: &'static str, severity: &'static str, summary: String, detail: String| out.push(Issue { node: node_id(n), kind, severity, summary, detail, weight: 0.0 });
 
     // Own packets, first copy each, and per-node counts by type.
     let mut own: FxMap<u32, FxMap<u64, &Row>> = map();
@@ -610,6 +648,70 @@ pub fn health(rows: &[&Row], invalid: &[&Row], nodes: &[Node], copies: &Copies, 
         add(n, "spoofed", "warning", format!("{} packets in its name failed verification", packets.len()), format!("{} packets claiming to come from it ({}), reported by {} gateway{}. {why}", packets.len(), list.join(", "), gws.len(), if gws.len() == 1 { "" } else { "s" }));
     }
 
+    // Silent infrastructure (D-188): routers and gateways heard in the
+    // window that then went quiet for much longer than their usual rhythm.
+    let mut heard: FxMap<u32, Vec<i64>> = map();
+    for (&n, pk) in &own {
+        heard.entry(n).or_default().extend(pk.values().map(|r| r.t));
+    }
+    for &r in rows {
+        if let Some(g) = r.gw {
+            heard.entry(g).or_default().push(r.t);
+        }
+    }
+    for x in nodes {
+        let role = x.identity.as_ref().map_or("", |id| id.role.as_str());
+        let infra = INFRA_ROLES.contains(&role);
+        // A node on the move (a car, a hike) comes and goes by design.
+        if !(infra || x.is_gateway) || x.moved_at.is_some() {
+            continue;
+        }
+        let Some(ts) = heard.get_mut(&x.num) else { continue };
+        ts.sort_unstable();
+        ts.dedup_by(|b, a| *b - *a < 60_000); // copies and bursts are one event
+        if ts.len() < SILENT_MIN_EVENTS {
+            continue;
+        }
+        let mut gaps: Vec<i64> = ts.windows(2).map(|w| w[1] - w[0]).collect();
+        gaps.sort_unstable();
+        let usual = gaps[gaps.len() / 2];
+        let last = ts[ts.len() - 1];
+        let silent = hi - last;
+        if silent < SILENT_MIN_MS.max(SILENT_GAP_FACTOR * usual) {
+            continue;
+        }
+        let what = match (infra, x.is_gateway) {
+            (true, true) => format!("{} and gateway", role_word(role)),
+            (true, false) => role_word(role).to_string(),
+            _ => "Gateway".to_string(),
+        };
+        let mut detail = format!("{what}, last heard {} ({} before the newest data in the window); it was usually heard every {}.", crate::util::iso(last), span_words(silent), span_words(usual.max(60_000)));
+        if let Some(t) = &x.telemetry {
+            let mut parts: Vec<String> = Vec::new();
+            if let Some(b) = t.battery {
+                parts.push(if b > 100.0 { "external power".into() } else { format!("battery {b:.0} %") });
+            }
+            if let Some(v) = t.voltage.filter(|&v| v > 0.0) {
+                parts.push(format!("{v:.2} V"));
+            }
+            if let Some(u) = t.uptime {
+                parts.push(format!("up {}", span_words(u as i64 * 1000)));
+            }
+            if !parts.is_empty() {
+                detail.push_str(&format!(" Its last device telemetry ({}): {}.", t.observed_at, parts.join(", ")));
+            }
+            if t.battery.is_some_and(|b| b <= SILENT_BATTERY_LOW) {
+                detail.push_str(" The battery was low then: it may have run flat.");
+            }
+        }
+        detail.push_str(if x.is_gateway {
+            " As a gateway it also stopped uplinking: its power, internet connection or broker login may be down."
+        } else {
+            " Gateways stopped hearing it: it may be off or out of power, or the gateways that heard it may be down themselves."
+        });
+        weighted.push(Issue { node: node_id(x.num), kind: "silent", severity: "warning", summary: format!("Silent for {}", span_words(silent)), detail, weight: silent as f64 });
+    }
+
     // Airtime.
     let air = airtime(copies, rows, i, hours);
     for a in air.nodes.iter().filter(|a| a.caused >= AIRTIME_WARN_SHARE) {
@@ -621,7 +723,8 @@ pub fn health(rows: &[&Row], invalid: &[&Row], nodes: &[Node], copies: &Copies, 
         let kinds: Vec<String> = f.by_kind.iter().take(3).map(|(k, c)| format!("{c} {}", k.replace('_', " "))).collect();
         add(f.num, "store_forward", "notice", format!("Store-and-forward takes {} of the airtime", pct(f.share)), format!("{} store-and-forward packets ({}), {:.1} heartbeats per hour, {} history replays. Each heartbeat and replay is flooded like any packet; a longer heartbeat interval or a smaller history window would free airtime.", f.packets, kinds.join(", "), f.heartbeats_per_hour, f.replays));
     }
-    out.sort_unstable_by(|a, b| rank(a.severity).cmp(&rank(b.severity)).then(a.kind.cmp(b.kind)).then(a.node.cmp(&b.node)).then(a.summary.cmp(&b.summary)).then(a.detail.cmp(&b.detail)));
+    out.extend(weighted);
+    out.sort_unstable_by(|a, b| rank(a.severity).cmp(&rank(b.severity)).then(a.kind.cmp(b.kind)).then(b.weight.total_cmp(&a.weight)).then(a.node.cmp(&b.node)).then(a.summary.cmp(&b.summary)).then(a.detail.cmp(&b.detail)));
     Health { issues: out, airtime: air }
 }
 
@@ -661,6 +764,42 @@ mod tests {
         // Swinging around a level, as a solar node does, is not.
         let steady: Vec<Row> = (0..12).map(|k| telemetry(&mut i, k, if k % 2 == 0 { 90.0 } else { 70.0 }, 1000 + k as u32 * 10_800)).collect();
         assert!(issues(&steady, &i).iter().all(|x| x.kind != "battery_falling"));
+    }
+
+    /// A node `n` with `role` sending one packet at each of `times` (ms).
+    fn sender(i: &mut Interner, n: u32, role: &str, times: &[i64]) -> (crate::views::Node, Vec<Row>) {
+        let mut x = crate::views::Node::new(n);
+        x.identity = Some(crate::views::Identity { role: role.into(), ..Default::default() });
+        let rows = times
+            .iter()
+            .enumerate()
+            .map(|(k, &t)| {
+                let text = format!(r#"{{"i":{},"t":{t},"b":"x","g":99,"s":{n},"y":"text","l":"{:016x}","o":"{:016x}","sg":"unsigned"}}"#, n as usize * 1000 + k, n as usize * 1000 + k, n as usize * 1000 + k);
+                serde_json::from_str::<JRow>(&text).unwrap().into_row(i)
+            })
+            .collect();
+        (x, rows)
+    }
+
+    #[test]
+    fn infrastructure_that_goes_quiet_for_long_is_listed_longest_first() {
+        let mut i = Interner::default();
+        let m = 60_000;
+        // Heard every 30 minutes for a day; the rows run on to hour 48 (another node).
+        let every = |from: i64, to: i64| (0..).map(move |k| from + k * 30 * m).take_while(move |&t| t <= to).collect::<Vec<_>>();
+        let (a, ra) = sender(&mut i, 1, "ROUTER", &every(0, 24 * H)); // silent 24 h
+        let (b, rb) = sender(&mut i, 2, "ROUTER_LATE", &every(0, 40 * H)); // silent 8 h
+        let (c, rc) = sender(&mut i, 3, "ROUTER", &every(0, 47 * H)); // 1 h: not yet
+        let (d, rd) = sender(&mut i, 4, "CLIENT", &every(0, 10 * H)); // a client: never listed
+        let (mut e, re) = sender(&mut i, 5, "ROUTER", &every(0, 10 * H));
+        e.moved_at = Some("2026-11-05T00:00:00Z".into()); // on the move: comes and goes
+        let (f, rf) = sender(&mut i, 6, "CLIENT", &every(0, 48 * H));
+        let rows: Vec<Row> = [ra, rb, rc, rd, re, rf].into_iter().flatten().collect();
+        let refs: Vec<&Row> = rows.iter().collect();
+        let got = health(&refs, &[], &[a, b, c, d, e, f], &Copies::default(), &PresetIndex::default(), &i, 48.0, &crate::landsdel::Regions::default()).issues;
+        let silent: Vec<(&str, &str)> = got.iter().filter(|x| x.kind == "silent").map(|x| (x.node.as_str(), x.summary.as_str())).collect();
+        assert_eq!(silent, [("!00000001", "Silent for 24 h"), ("!00000002", "Silent for 8.0 h")]);
+        assert!(got.iter().find(|x| x.node == "!00000001" && x.kind == "silent").unwrap().detail.contains("usually heard every 30 min"));
     }
 
     /// A gateway at (lat, lon) and one uplink of it under `topic`.

@@ -8,7 +8,7 @@ use crate::graph::{distance_m, max_distance_m, LatLon};
 use crate::row::{ty, HeardFrom, Interner, Position as RowPos, Row};
 use crate::util::{iso, map, node_id, set, FxMap, FxSet, BROADCAST};
 
-#[derive(Serialize, Clone, Debug)]
+#[derive(Serialize, Clone, Debug, Default)]
 pub struct Identity {
     #[serde(skip_serializing_if = "String::is_empty")]
     pub long_name: String,

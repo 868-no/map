@@ -16,6 +16,7 @@ const SEVERITY: Record<Issue['severity'], { label: string; plural: string; icon:
 
 /** Issue kinds as section headings in the Health panel. */
 const KIND: Record<string, string> = {
+  silent: 'Silent routers and gateways',
   spoofed: 'Packets in its name failed verification',
   shared_key: 'Shared public key',
   traceroute_flood: 'Traceroute flooding',

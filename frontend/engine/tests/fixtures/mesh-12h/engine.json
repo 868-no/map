@@ -3818,6 +3818,20 @@
         "summary": "Uses Long Fast while the mesh uses Narrow Fast"
       },
       {
+        "detail": "Gateway, last heard 2026-10-31T08:57:13.953Z (6.3 h before the newest data in the window); it was usually heard every 60 min. As a gateway it also stopped uplinking: its power, internet connection or broker login may be down.",
+        "kind": "silent",
+        "node": "!f1a8f63f",
+        "severity": "warning",
+        "summary": "Silent for 6.3 h"
+      },
+      {
+        "detail": "Router, last heard 2026-10-31T09:38:36.271Z (5.6 h before the newest data in the window); it was usually heard every 18 min. Gateways stopped hearing it: it may be off or out of power, or the gateways that heard it may be down themselves.",
+        "kind": "silent",
+        "node": "!9365c6cd",
+        "severity": "warning",
+        "summary": "Silent for 5.6 h"
+      },
+      {
         "detail": "More often than needed (the default is one every 3 hours); each one is flooded through the mesh.",
         "kind": "chatty_nodeinfo",
         "node": "!3317a3bc",
