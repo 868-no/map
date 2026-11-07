@@ -83,7 +83,10 @@ func (c *Client) listenOnce(ctx context.Context, channels []string, l Listener) 
 		case err == nil:
 			pinged = false
 		case errors.As(err, &ne) && ne.Timeout() && !pinged:
-			if err := sub.Ping(ctx); err != nil {
+			pctx, cancel := context.WithTimeout(ctx, time.Second)
+			err := sub.Ping(pctx)
+			cancel()
+			if err != nil {
 				return true, err
 			}
 			pinged = true

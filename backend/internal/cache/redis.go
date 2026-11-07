@@ -32,8 +32,12 @@ func New(url string) (*Client, error) {
 		return nil, err
 	}
 	opt.DialTimeout = 2 * time.Second
-	opt.ReadTimeout = time.Second
-	opt.WriteTimeout = time.Second
+	// Each call's context deadline bounds its socket reads and writes (go-redis
+	// ignores it otherwise): opTimeout for small operations, blobTimeout for a
+	// day. The socket timeouts are only the ceiling, for calls without one.
+	opt.ContextTimeoutEnabled = true
+	opt.ReadTimeout = blobTimeout
+	opt.WriteTimeout = blobTimeout
 	opt.PoolSize = 32
 	return &Client{R: redis.NewClient(opt)}, nil
 }
