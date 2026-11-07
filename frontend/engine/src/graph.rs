@@ -425,7 +425,7 @@ impl RelayContext {
         r.rr == crate::row::ty::VIA_MQTT
     }
 
-    /// Engine::resolve, also telling whether a tie between candidates was
+    /// RelayContext::resolve, also telling whether a tie between candidates was
     /// broken by confirmed evidence to the gateway: such a resolution leans
     /// on the link it would point at, so it must not count as corroborating
     /// that link (or add to its SNR).

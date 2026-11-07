@@ -52,10 +52,14 @@ struct Reading {
 }
 
 /// Every link's measured readings (D-105), each RF event once (as the link
-/// statistics count them), sorted by direction and time: one direction's
-/// history is a slice found by binary search.
+/// statistics count them). Sorted by direction and time on the first link
+/// view of a build (most builds never show one), so one direction's history
+/// is a slice found by binary search.
 #[derive(Default)]
-pub struct LinkReadings(Vec<Reading>);
+pub struct LinkReadings {
+    readings: std::cell::RefCell<Vec<Reading>>,
+    sorted: std::cell::Cell<bool>,
+}
 
 /// Signals are whole or quarter dB (firmware integers, or SNR in quarters),
 /// which f32 holds exactly; to hundredths, so any other value reads as sent.
@@ -68,28 +72,26 @@ impl LinkReadings {
     pub fn new(samples: &[Sample]) -> Self {
         let mut r = LinkReadings::default();
         crate::graph::reduce_kept(samples, |s| r.push(s));
-        r.sorted()
+        r
     }
 
     /// Adds a sample reduce kept (counted once), if it measured a signal.
     pub fn push(&mut self, s: &Sample) {
         if s.snr.is_some() || s.rssi.is_some() {
-            self.0.push(Reading { src: s.src, dst: s.dst, t: s.t, snr: s.snr.map_or(f32::NAN, |x| x as f32), rssi: s.rssi.map_or(f32::NAN, |x| x as f32), ev: s.ev });
+            self.readings.get_mut().push(Reading { src: s.src, dst: s.dst, t: s.t, snr: s.snr.map_or(f32::NAN, |x| x as f32), rssi: s.rssi.map_or(f32::NAN, |x| x as f32), ev: s.ev });
         }
-    }
-
-    /// Sorted by direction and time, once every sample is in. Stable: equal
-    /// times keep the samples' order, as the view did.
-    pub fn sorted(mut self) -> Self {
-        self.0.sort_by_key(|r| (r.src, r.dst, r.t));
-        self
     }
 
     /// The readings from `src` to `dst`, oldest first, the newest MAX_LINK_POINTS.
     fn direction(&self, src: u32, dst: u32) -> Vec<LinkPoint> {
-        let lo = self.0.partition_point(|r| (r.src, r.dst) < (src, dst));
-        let hi = self.0.partition_point(|r| (r.src, r.dst) <= (src, dst));
-        let run = &self.0[lo.max(hi.saturating_sub(MAX_LINK_POINTS))..hi];
+        if !self.sorted.replace(true) {
+            // Stable: equal times keep the samples' order, as the view did.
+            self.readings.borrow_mut().sort_by_key(|r| (r.src, r.dst, r.t));
+        }
+        let v = self.readings.borrow();
+        let lo = v.partition_point(|r| (r.src, r.dst) < (src, dst));
+        let hi = v.partition_point(|r| (r.src, r.dst) <= (src, dst));
+        let run = &v[lo.max(hi.saturating_sub(MAX_LINK_POINTS))..hi];
         run.iter().map(|r| LinkPoint { t: r.t, snr: wide(r.snr), rssi: wide(r.rssi), ev: ev_name(r.ev) }).collect()
     }
 }

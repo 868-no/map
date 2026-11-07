@@ -317,7 +317,9 @@ impl Row {
     /// The known nodes a valid traceroute copy records on the way it took
     /// (forward for a request, back for a reply), less its own gateway.
     pub fn traced_relays(&self) -> impl Iterator<Item = u32> + '_ {
-        let hops = self.traceroute().filter(|t| t.valid).map_or(&[][..], |t| if t.is_reply { &t.route_back[..] } else { &t.route[..] });
+        // The type first: most copies have a detail of another kind, and reading it is a pointer chase.
+        let t = if self.ty == ty::TRACEROUTE { self.traceroute() } else { None };
+        let hops = t.filter(|t| t.valid).map_or(&[][..], |t| if t.is_reply { &t.route_back[..] } else { &t.route[..] });
         hops.iter().filter(move |h| !h.unknown && Some(h.id) != self.gw).map(|h| h.id)
     }
 

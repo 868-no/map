@@ -9,8 +9,6 @@ use serde::{Deserialize, Serialize};
 use crate::row::{parse_rows, to_json, Interner, JRow, Row, RowsSeed};
 use crate::util::{FxMap, FxSet};
 
-pub const HOUR_MS: i64 = 3_600_000;
-
 #[derive(Default)]
 pub struct Store {
     // Rows are buf[start..]: trimming advances start, and the dropped prefix
@@ -287,6 +285,8 @@ impl Store {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const HOUR_MS: i64 = 3_600_000;
 
     fn row(i: i64, t: i64) -> String {
         format!(r#"{{"i":{i},"t":{t},"b":"x","s":1,"y":"text","l":"{i:016x}","o":"{:016x}","sg":"unsigned"}}"#, i + 1000)
