@@ -127,9 +127,9 @@ pub fn sig_rank(s: &str) -> u8 {
 /// Relaying is known from a gateway's last-hop byte resolving to the node
 /// (same narrowing as links) or from the node in a traceroute's recorded
 /// route; the uplinking gateway's own trailing entry only received it.
-/// replies: made from the start of `rows` (the window's rows; the node's
-/// invalid rows may follow).
-pub fn packet_log(rows: &[&Row], num: u32, ctx: &RelayContext, replies: &ReplyIndex, i: &Interner) -> PacketLog {
+/// replies: made from `rows` (the window's); invalid: the node's invalid
+/// rows, which the filters always leave out of them (D-093).
+pub fn packet_log(rows: &[&Row], invalid: &[&Row], num: u32, ctx: &RelayContext, replies: &ReplyIndex, i: &Interner) -> PacketLog {
     let mut own: FxMap<u64, Vec<&Row>> = map();
     struct Rel<'a> {
         first: i64,
@@ -142,8 +142,8 @@ pub fn packet_log(rows: &[&Row], num: u32, ctx: &RelayContext, replies: &ReplyIn
     let routing_ty = i.get("routing");
     let dm_ty = i.get("direct_message");
     let mut inbound: FxMap<u64, &Row> = map();
-    let more = replies.more_ids(&rows[replies.rows.min(rows.len())..]);
-    for &r in rows {
+    let more = replies.more_ids(invalid);
+    for &r in rows.iter().chain(invalid) {
         if r.src == num {
             own.entry(r.lp).or_default().push(r);
             continue;
@@ -210,7 +210,7 @@ pub fn packet_log(rows: &[&Row], num: u32, ctx: &RelayContext, replies: &ReplyIn
                     downlinked: others.iter().any(|r| RelayContext::downlinked(r)),
                     receptions: rs.iter().map(|r| r.ok).collect::<FxSet<u64>>().len(),
                     signature: best.to_string(),
-                    replies: first.pid.map_or(vec![], |p| replies.replies(p, num, &rows[..replies.rows.min(rows.len())], i)),
+                    replies: first.pid.map_or(vec![], |p| replies.replies(p, num, rows, i)),
                     answers: replies.answer(first, &more, i),
                     in_response_to: in_response_to(first).map(node_id),
                     invalid: first.invalid().map(|v| i.s(v).to_string()),
@@ -1001,7 +1001,7 @@ mod tests {
         let request = Row { dst: Some(C), pid: Some(503), lp: 4, ..traceroute(row(A, GW), &[]) };
         let rows = [reply, acked, own, request];
         let refs: Vec<&Row> = rows.iter().collect();
-        let log = packet_log(&refs, A, &ctx(&[A, C, GW], &[]), &ReplyIndex::new(&refs), &it);
+        let log = packet_log(&refs, &[], A, &ctx(&[A, C, GW], &[]), &ReplyIndex::new(&refs), &it);
         let by = |lp: u64| log.own.iter().find(|p| p.lp == key_hex(lp)).unwrap().in_response_to.clone();
         assert_eq!((by(1), by(2), by(3), by(4)), (Some(id(C)), Some(id(C)), None, None));
     }
@@ -1016,13 +1016,13 @@ mod tests {
         let answer = |src: u32, lp: u64, kind: u32, error: u32| Row { ty: routing, dst: Some(A), pid: Some(lp as u32 + 1000), lp, detail: Some(Box::new(Detail::Routing(Routing { kind, error, request: 77 }))), ..row(src, GW) };
         let rows = [msg, answer(C, 2, ack, 0), answer(C, 3, ack, 0), Row { ok: 9, ..answer(C, 3, ack, 0) }, answer(GW, 4, err, nr)];
         let refs: Vec<&Row> = rows.iter().collect();
-        let log = packet_log(&refs, A, &ctx(&[A, C, GW], &[]), &ReplyIndex::new(&refs), &it);
+        let log = packet_log(&refs, &[], A, &ctx(&[A, C, GW], &[]), &ReplyIndex::new(&refs), &it);
         let sent = log.own.iter().find(|p| p.lp == key_hex(1)).unwrap();
         assert_eq!(sent.replies, vec![Reply { from: id(C), kind: "ack".into(), error: None, count: 2 }, Reply { from: id(GW), kind: "error".into(), error: Some("NO_RESPONSE".into()), count: 1 }]);
         assert_eq!(log.inbound.len(), 3, "routing packets addressed to it, one per packet");
         assert!(log.inbound.iter().all(|p| p.answers.as_ref().unwrap().re.as_deref() == Some(key_hex(1).as_str())));
         // C's view: its ACKs say what they answer.
-        let clog = packet_log(&refs, C, &ctx(&[A, C, GW], &[]), &ReplyIndex::new(&refs), &it);
+        let clog = packet_log(&refs, &[], C, &ctx(&[A, C, GW], &[]), &ReplyIndex::new(&refs), &it);
         assert_eq!(clog.own[0].answers.as_ref().map(|a| (a.kind.as_str(), a.request_id)), Some(("ack", 77)));
         assert_eq!(delivery(&refs, A, &it), Some(Delivery { acks_sent: 0, acks_received: 2, errors_sent: vec![], errors_received: vec![("NO_RESPONSE".into(), 1)] }));
         assert_eq!(delivery(&refs, C, &it).map(|d| d.acks_sent), Some(2));
@@ -1035,7 +1035,7 @@ mod tests {
         // C took A's packet from MQTT and transmitted it; GW heard C (relay byte 0xcc).
         let copy = Row { rr: crate::row::ty::VIA_MQTT, ..relayed(row(A, GW), 0xcc, 0) };
         let refs = vec![&copy];
-        let log = packet_log(&refs, C, &c, &ReplyIndex::new(&refs), &it);
+        let log = packet_log(&refs, &[], C, &c, &ReplyIndex::new(&refs), &it);
         assert_eq!(log.relayed.iter().map(|p| (p.origin.as_str(), p.evidence.clone())).collect::<Vec<_>>(), vec![(id(A).as_str(), vec!["relay_byte"])]);
     }
 

@@ -151,10 +151,10 @@ impl Engine {
                 // Its invalid rows too, which the filters always leave out (D-093).
                 let invalid = self.i.get("invalid");
                 let (a, z) = self.store.range(start, end);
-                let mut rows = self.rows();
+                let rows = self.rows();
                 let replies = b.replies.get_or_init(|| packets::ReplyIndex::new(&rows));
-                rows.extend(self.store.rows()[a..z].iter().filter(|r| Some(r.ty) == invalid && r.src == num));
-                Ok(json(&packets::packet_log(&rows, num, &b.ctx, replies, &self.i)))
+                let own_invalid: Vec<&row::Row> = self.store.rows()[a..z].iter().filter(|r| Some(r.ty) == invalid && r.src == num).collect();
+                Ok(json(&packets::packet_log(&rows, &own_invalid, num, &b.ctx, replies, &self.i)))
             }
             "route" => {
                 let lp = key64(arg);
