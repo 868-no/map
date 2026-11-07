@@ -10,7 +10,7 @@ import (
 
 // ---- long-term trends (D-104) ----
 //
-// Views are derived in the browser from at most a week of rows (D-031); trends
+// Views are derived in the browser from at most 14 days of rows (D-031); trends
 // over the whole retained log are the exception: a few numbers per day, week
 // or month, aggregated here because no browser should load months of rows.
 
@@ -118,10 +118,12 @@ const trendsRefreshLimit = 2 * time.Minute
 // WarmTrends reads the hourly summaries once at start, so the first visitor
 // to ask for trends does not wait for the whole retained log to be read.
 func (s *Server) WarmTrends(ctx context.Context) {
-	ctx, cancel := context.WithTimeout(ctx, trendsRefreshLimit)
+	wctx, cancel := context.WithTimeout(ctx, trendsRefreshLimit)
 	defer cancel()
-	if err := s.trendHours.Warm(ctx, s.Pool, s.now()); err != nil && ctx.Err() == nil {
-		s.Log.Warn("trends warm-up failed", "err", err)
+	// Not when the server is stopping; a warm-up cut short by its own limit is
+	// worth knowing about (the first request carries on from where it got).
+	if err := s.trendHours.Warm(wctx, s.Pool, s.now()); err != nil && ctx.Err() == nil {
+		s.Log.Warn("trends warm-up incomplete", "err", err)
 	}
 }
 
