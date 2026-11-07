@@ -62,7 +62,7 @@ export function NodeList({ snapshot }: { snapshot: SnapshotView | undefined }) {
   )
   return (
     <div className="panel">
-      <WatchList now={endMs} />
+      <WatchList />
       <input className="search" type="search" placeholder="Search nodes (id or name) or places" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search nodes and places" />
       <PlaceResults search={search} />
       {hidden > 0 && (
@@ -87,7 +87,7 @@ export function NodeList({ snapshot }: { snapshot: SnapshotView | undefined }) {
  * search, with what matters at a glance; optionally a notification when
  * one goes quiet, comes back, gets a problem or runs low.
  */
-function WatchList({ now }: { now: number }) {
+function WatchList() {
   const ids = useWatch((s) => s.ids)
   const toggle = useWatch((s) => s.toggle)
   const notify = useWatch((s) => s.notify)
@@ -104,6 +104,8 @@ function WatchList({ now }: { now: number }) {
     setNotify(on)
   }
   const nodes = watched.data?.nodes ?? []
+  // Ages count from the end of the window the watch view was built for, not the snapshot's, which may not be there yet.
+  const now = watched.data ? Date.parse(watched.data.meta.window.end) : 0
   return (
     <section className="watch-list" aria-label="Watched nodes">
       <h3>Watched ({ids.length})</h3>
