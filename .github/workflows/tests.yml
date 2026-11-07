@@ -106,26 +106,18 @@ jobs:
       - name: generated API types are current
         run: scripts/node.sh npm run gen:api && git diff --exit-code frontend/src/api/schema.d.ts
 
-  e2e:
-    # The map renders in software on these runners, so the suite is split
-    # across parallel jobs, each with its own stack, running one test at a
-    # time: two at once starve the page, and the map takes clicks for long
-    # presses.
-    name: end-to-end ${{ matrix.shard }}/4 (demo stack, Playwright)
+  # The end-to-end stack's images (the web image with the test hook), built
+  # once for all shards: they would otherwise each build the same images and
+  # write the same layer caches. Shared as an artifact, which works for pull
+  # requests from forks too (they cannot push to the registry).
+  e2e-images:
+    name: end-to-end images (backend, web with the test hook)
     runs-on: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.RUNNER_LABELS && fromJSON(vars.RUNNER_LABELS) || 'ubuntu-24.04' }}
-    timeout-minutes: 45
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: [1, 2, 3, 4]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: ./.github/actions/toolchain-cache
-        with:
-          name: e2e
-          hash: ${{ hashFiles('frontend/package-lock.json') }}
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
-      - run: printf 'POSTGRES_PASSWORD=ci\nDEMO_MODE=true\nE2E_HOOKS=true\nDEMO_RATE=10\n' > .env
+      # compose.yaml requires POSTGRES_PASSWORD even to read its build targets.
+      - run: printf 'POSTGRES_PASSWORD=ci\nE2E_HOOKS=true\n' > .env
       # The stack's images from compose.yaml, with layers cached between runs.
       - name: build the stack's images
         uses: docker/bake-action@59cb1203cd42bcefd40a1b6d73b589e48c86040e # v7.5.0
@@ -140,6 +132,41 @@ jobs:
             backend.cache-to=type=gha,mode=max,scope=e2e-backend
             web.cache-from=type=gha,scope=e2e-web
             web.cache-to=type=gha,mode=max,scope=e2e-web
+      # The tags compose.yaml gives them, so the shards' `up --no-build` finds them.
+      - run: docker save -o e2e-images.tar meshmap-backend:local meshmap-web:local
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: e2e-images
+          path: e2e-images.tar
+          retention-days: 1
+          if-no-files-found: error
+
+  e2e:
+    # The map renders in software on these runners, so the suite is split
+    # across parallel jobs, each with its own stack, running one test at a
+    # time: two at once starve the page, and the map takes clicks for long
+    # presses.
+    name: end-to-end ${{ matrix.shard }}/4 (demo stack, Playwright)
+    needs: e2e-images
+    runs-on: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.RUNNER_LABELS && fromJSON(vars.RUNNER_LABELS) || 'ubuntu-24.04' }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/toolchain-cache
+        with:
+          name: e2e
+          hash: ${{ hashFiles('frontend/package-lock.json') }}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: e2e-images
+          path: ${{ runner.temp }}/e2e-images
+      - name: load the stack's images
+        run: docker load -i "$RUNNER_TEMP/e2e-images/e2e-images.tar"
+      - run: printf 'POSTGRES_PASSWORD=ci\nDEMO_MODE=true\nE2E_HOOKS=true\nDEMO_RATE=10\n' > .env
       # A fresh database: on a self-hosted runner the named volume of an
       # earlier run's stack (meshmap_pgdata) is still there, and seeding on
       # top of its rows would change what the tests see.

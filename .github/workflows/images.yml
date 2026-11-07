@@ -26,12 +26,16 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # e2e: the end-to-end images' layer cache (tests.yml), which shares
+          # every layer up to the test hook's build argument.
           - image: map-backend
             context: backend
             dockerfile: backend/Dockerfile
+            e2e: e2e-backend
           - image: map-web
             context: .
             dockerfile: web/Dockerfile
+            e2e: e2e-web
           - image: map-basemap
             context: basemap
             dockerfile: basemap/Dockerfile
@@ -79,5 +83,7 @@ jobs:
             SOURCE_REVISION=${{ github.sha }}
           provenance: mode=max
           sbom: true
-          cache-from: type=gha,scope=${{ matrix.image }}
+          cache-from: |
+            type=gha,scope=${{ matrix.image }}
+            ${{ matrix.e2e && format('type=gha,scope={0}', matrix.e2e) || '' }}
           cache-to: type=gha,mode=max,scope=${{ matrix.image }}
