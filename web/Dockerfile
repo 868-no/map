@@ -68,4 +68,12 @@ COPY web/Caddyfile /etc/caddy/Caddyfile
 COPY --from=app /src/frontend/dist /srv/app
 COPY --from=fonts /out /srv/fonts
 COPY web/styles /srv/styles
+# Unprivileged, still on port 80: Docker lets any user bind ports below 1024
+# in a container's own network namespace (net.ipv4.ip_unprivileged_port_start
+# is 0 there), and the image's caddy binary has cap_net_bind_service besides.
+# Keeping 80 keeps every proxy, tunnel and compose file that reaches web:80.
+# Caddy's state directories (XDG_DATA_HOME=/data/caddy, XDG_CONFIG_HOME=
+# /config/caddy) are writable by any user in the base image. Mounted files
+# (/srv/tiles, /etc/caddy/auth) must be readable by this user.
+USER 65532:65532
 EXPOSE 80

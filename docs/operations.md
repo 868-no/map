@@ -147,7 +147,7 @@ Every new visitor then reads past days from Cloudflare, and the backend reads ea
 
 ## Access control
 
-Public by default. For basic auth, create `deploy/caddy-auth/basic.caddy` (see the README there) and restart `web`. `compose.production.yaml` does not mount that directory; add a volume for `/etc/caddy/auth` to `web` there if you need it.
+Public by default. For basic auth, create `deploy/caddy-auth/basic.caddy` (see the README there), readable by uid 65532 (Caddy does not run as root), and restart `web`. `compose.production.yaml` does not mount that directory; add a volume for `/etc/caddy/auth` to `web` there if you need it.
 
 ## Health and metrics
 

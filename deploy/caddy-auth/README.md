@@ -7,3 +7,6 @@ directory is imported into the site block. Example `basic.caddy`:
     }
 
 No `*.caddy` file means the map is public (the default).
+
+Caddy runs as uid 65532, not root: the files must be readable by it
+(e.g. `chmod 644`, or `chgrp 65532` and `chmod 640`).
