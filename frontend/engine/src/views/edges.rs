@@ -91,8 +91,7 @@ pub fn build_edges(rows: &[&Row], neighborinfo: &[&Row], hops: &[Sample], known:
         None => samples.extend_from_slice(hops),
     }
     // C/D. Gateway receptions: zero-hop RF -> source->gateway; relayed with a hint -> resolved after.
-    let mut rx = first_per_reception(rows, |r| matches!(r.heard_from(), HeardFrom::Direct | HeardFrom::Relayed(Some(_))) && (r.snr.is_some() || r.rssi.is_some()));
-    rx.sort_unstable_by_key(|r| r.id);
+    let rx = first_per_reception(rows, |r| matches!(r.heard_from(), HeardFrom::Direct | HeardFrom::Relayed(Some(_))) && (r.snr.is_some() || r.rssi.is_some()));
     let mut pending: Vec<(Sample, u8, u32, u32, i64)> = Vec::new();
     for r in &rx {
         let s = Sample { src: 0, dst: r.gw.unwrap(), ev: Ev::DirectRf, t: r.t, snr: r.snr, rssi: r.rssi.map(|v| v as f64), key: SKey::Ok(r.ok) };
@@ -102,7 +101,15 @@ pub fn build_edges(rows: &[&Row], neighborinfo: &[&Row], hops: &[Sample], known:
         }
     }
     samples.retain(|s| current(s));
-    let confirmed: Vec<(u32, u32)> = samples.iter().filter(|s| s.ev != Ev::RelayHint).map(|s| (s.src, s.dst)).collect();
+    // Each RF event once, as the link statistics count them: the range rule
+    // (D-177) needs a pair seen more than once, and copies of one traceroute
+    // (several gateways, or a reply repeating its request's hops) are one sighting.
+    let mut seen: FxSet<(u32, u32, Ev, SKey)> = crate::util::set();
+    let confirmed: Vec<(u32, u32)> = samples
+        .iter()
+        .filter(|s| s.ev != Ev::RelayHint && (s.key == SKey::None || seen.insert((s.src, s.dst, s.ev, s.key))))
+        .map(|s| (s.src, s.dst))
+        .collect();
     let mut ctx = RelayContext::new(known.iter().copied(), pos, confirmed, silent, mobile);
     ctx.signal_rule = rules.signal;
     ctx.origin_rule = rules.origin;
@@ -129,7 +136,6 @@ pub fn build_edges(rows: &[&Row], neighborinfo: &[&Row], hops: &[Sample], known:
     }
     let mut readings = super::link::LinkReadings::default();
     let mut edges = graph::reduce_kept(&samples, |s| readings.push(s));
-    let readings = readings.sorted();
     let truncated = edges.len() > MAX_EDGES;
     edges.truncate(MAX_EDGES);
     edges.extend(graph::reduce_mqtt(&mqtt));
