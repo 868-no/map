@@ -54,7 +54,7 @@ func TestWeatherStore(t *testing.T) {
 	if len(hs) != 6 || *hs[0].TempC != -2.5 || *hs[0].PrecipMM != 0.3 {
 		t.Fatalf("%+v", hs)
 	}
-	time.Sleep(50 * time.Millisecond) // the last write
+	eventually(t, "the last write", func() bool { return count(t, pool, `SELECT count(*) FROM weather_hour`) == 6 })
 	if n := count(t, pool, `SELECT count(*) FROM weather_hour`); n != 6 {
 		t.Fatalf("%d rows stored", n)
 	}

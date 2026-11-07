@@ -179,7 +179,15 @@ func TestTerrainStore(t *testing.T) {
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
-	time.Sleep(50 * time.Millisecond) // the last write
+	// Wait for the last write: a client that fetches nothing (no Run) finds
+	// everything in the store.
+	eventually(t, "heights stored", func() bool {
+		s := terrain.New(up.URL, "test")
+		s.Store = &terrain.Store{Pool: pool}
+		_, inc := s.Profile(ctx, a, b)
+		_, incFar := s.Heights(ctx, []terrain.Point{far})
+		return !inc && !incFar
+	})
 	before := hits.Load()
 	c2 := client()
 	again, inc := c2.Profile(ctx, a, b)

@@ -116,10 +116,17 @@ func count(t *testing.T, pool *pgxpool.Pool, q string, args ...any) int {
 
 func waitRows(t *testing.T, pool *pgxpool.Pool, atLeast int) int {
 	t.Helper()
+	return waitCount(t, pool, `SELECT count(*) FROM packet_log`, atLeast)
+}
+
+// waitCount waits, up to 10 s, until the count q returns is at least
+// atLeast and the same three looks in a row, 100 ms apart, and returns it.
+func waitCount(t *testing.T, pool *pgxpool.Pool, q string, atLeast int) int {
+	t.Helper()
 	deadline := time.Now().Add(10 * time.Second)
 	last, stable := -1, 0
 	for time.Now().Before(deadline) {
-		n := count(t, pool, `SELECT count(*) FROM packet_log`)
+		n := count(t, pool, q)
 		if n >= atLeast && n == last {
 			stable++
 			if stable >= 3 {
@@ -131,7 +138,7 @@ func waitRows(t *testing.T, pool *pgxpool.Pool, atLeast int) int {
 		last = n
 		time.Sleep(100 * time.Millisecond)
 	}
-	t.Fatalf("rows did not settle (last %d, want >= %d)", last, atLeast)
+	t.Fatalf("%s did not settle (last %d, want >= %d)", q, last, atLeast)
 	return 0
 }
 
@@ -158,7 +165,9 @@ func TestPipelineDemoStream(t *testing.T) {
 		}
 	}
 	n := waitRows(t, pool, 100)
-	time.Sleep(300 * time.Millisecond) // let the writer apply queued provenance updates
+	// The writer applies queued provenance updates after the rows: wait
+	// until the rows naming another broker stop changing.
+	waitCount(t, pool, `SELECT count(*) FROM packet_log WHERE decoded_metadata ? 'also_via'`, 1)
 	cancel()
 	<-done
 
