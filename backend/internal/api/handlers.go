@@ -50,7 +50,7 @@ type CapabilitiesBody struct {
 	} `json:"features"`
 	// Geolocation carries the estimator settings so browsers deriving views
 	// themselves apply the operator's rules (D-031).
-	Geolocation     GeoSettings `json:"geolocation"`
+	Geolocation GeoSettings `json:"geolocation"`
 	// Shown in the privacy policy; empty when the operator has not set them.
 	Operator struct {
 		Name    string `json:"name,omitempty" doc:"Who runs this deployment"`

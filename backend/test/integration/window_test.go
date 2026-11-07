@@ -364,9 +364,9 @@ func TestObservationsEndpoint(t *testing.T) {
 	c := newAPI(t, pool, rc, testNow)
 
 	type obs struct {
-		Since time.Time
-		Generation   string
-		Rows         []struct {
+		Since      time.Time
+		Generation string
+		Rows       []struct {
 			Tp string           `json:"tp"`
 			ID int64            `json:"i"`
 			T  int64            `json:"t"`
