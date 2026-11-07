@@ -487,3 +487,18 @@ button.danger:hover { background: var(--err); color: var(--bg); }
 .conf.los-blocked { background: color-mix(in srgb, var(--err) 18%, transparent); color: var(--err); }
 .conf.los-unknown { background: var(--panel2); color: var(--muted); }
 .line-of-sight h3 { display: flex; gap: 8px; align-items: center; }
+
+/* The watchlist (D-192), at the top of the Nodes panel. */
+.watch-hint { margin: 0 0 8px; }
+.watch-list { margin-bottom: 10px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+.watch-list h3 { margin-top: 0; }
+.watch-row { display: flex; align-items: flex-start; gap: 4px; }
+.watch-row .node-row { grid-template-columns: 1fr auto; row-gap: 0; }
+.watch-row .node-row:disabled { cursor: default; opacity: 0.7; }
+.watch-row .watch-state { grid-column: 1 / -1; font-size: 11px; color: var(--muted); }
+.watch-row.quiet .watch-state { color: var(--warn); }
+.watch-flag { color: var(--warn); }
+.watch-flag.bad { color: var(--err); font-weight: 600; }
+.watch-remove { flex: none; padding: 4px 6px; font-size: 15px; line-height: 1; color: var(--muted); }
+.watch-notify { display: block; font-size: 12px; margin-top: 6px; }
+.node-title .watch-toggle { flex: none; font-size: 13px; }

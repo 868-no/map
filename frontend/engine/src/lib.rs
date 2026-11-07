@@ -18,6 +18,7 @@ pub mod row;
 pub mod store;
 pub mod util;
 pub mod views;
+pub mod watch;
 pub mod zerocost;
 
 use serde::Deserialize;
@@ -126,9 +127,9 @@ fn json<T: serde::Serialize>(v: &T) -> String {
 
 impl Engine {
     /// A view as JSON (Engine::view_bytes for the page; tests read it as
-    /// text): kind is snapshot, traffic, node, packetlog, route, reach,
+    /// text): kind is snapshot, traffic, node, packetlog, route, reach, watch,
     /// health or link; arg is the node id (node, packetlog, reach), packet key
-    /// (route) or "a|b" node ids (link). "null"
+    /// (route), "a|b" node ids (link) or comma-separated ids (watch). "null"
     /// means the node is neither observed nor referenced in the window.
     pub fn view(&mut self, kind: &str, start: f64, end: f64, filters: &str, arg: &str) -> Result<String, JsError> {
         let (start, end) = (start as i64, end as i64);
@@ -200,6 +201,14 @@ impl Engine {
                 self.build(start, end, filters)?;
                 let built = &self.built.as_ref().unwrap().1;
                 Ok(json(&views::link::link_history(&built.readings, a, b)))
+            }
+            "watch" => {
+                // The watchlist's nodes (D-192): arg is their ids, comma-separated.
+                let ids: Vec<u32> = arg.split(',').filter(|s| !s.is_empty()).map(|s| parse_node(s).ok_or_else(|| err("invalid node id"))).collect::<Result<_, _>>()?;
+                self.build(start, end, filters)?;
+                let b = &self.built.as_ref().unwrap().1;
+                let rows = self.rows();
+                Ok(json(&serde_json::json!({ "nodes": watch::watch(&ids, &rows, b.snapshot.nodes.iter().chain(&b.beyond)) })))
             }
             "health" => {
                 self.build(start, end, filters)?;

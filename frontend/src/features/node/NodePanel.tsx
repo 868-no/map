@@ -1,4 +1,5 @@
 import { Fragment, useMemo } from 'react'
+import { useWatch } from '../../state/watch'
 import { useFlash } from '../../lib/useFlash'
 import { NodeHealth } from '../health'
 import { ViewError, type SnapshotView } from '../../derive/views'
@@ -27,6 +28,7 @@ export function NodePanel({ id, snapshot }: { id: string; snapshot: SnapshotView
     <div className="panel node-panel">
       <div className="node-title">
         <h2>{d.identity?.long_name || d.id}</h2>
+        <WatchButton id={d.id} />
         <ShareNode id={d.id} name={d.identity?.long_name || d.id} />
       </div>
       <p className="muted node-id">{d.id} · #{d.num}</p>
@@ -99,6 +101,17 @@ function DetailTabs({ counts }: { counts: Partial<Record<DetailTab, number>> }) 
       ))}
       <span className="tab-edge end" aria-hidden />
     </div>
+  )
+}
+
+/** Keeps the node on the watchlist (D-192), in the Nodes panel. */
+function WatchButton({ id }: { id: string }) {
+  const on = useWatch((s) => s.ids.includes(id))
+  const toggle = useWatch((s) => s.toggle)
+  return (
+    <button className="linkish watch-toggle" aria-pressed={on} onClick={() => toggle(id)} title={on ? 'Stop watching this node' : 'Watch this node: it is listed at the top of the Nodes panel, with when it was last heard and its battery'}>
+      {on ? '★ Watching' : '☆ Watch'}
+    </button>
   )
 }
 

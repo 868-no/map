@@ -198,6 +198,29 @@ export interface LinkHistory {
   ba: LinkPoint[]
 }
 
+/** A watched node's state (D-192). */
+export interface Watched {
+  id: string
+  status: 'observed' | 'referenced' | 'absent' // absent: not in the window
+  long_name?: string
+  short_name?: string
+  role?: string
+  last_seen?: string
+  quiet_ms?: number // from last heard to the newest data in the window
+  usual_gap_ms?: number // its median gap between transmissions or uplinks
+  quiet: boolean // quiet for much longer than usual
+  battery?: number
+  voltage?: number
+  telemetry_at?: string
+  packets: number
+  gateways: number // distinct gateways that got its packets
+  is_gateway: boolean
+}
+export interface WatchView {
+  meta: ViewMeta
+  nodes: Watched[]
+}
+
 /** How far a node's packets reach at each hop limit (D-069). */
 export interface ReachView {
   meta: ViewMeta

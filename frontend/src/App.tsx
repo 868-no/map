@@ -11,7 +11,8 @@ import { SettingsPanel } from './features/menu'
 import { HealthPanel } from './features/health'
 import { Dock, Rail, type PanelId } from './features/rail'
 import { TrendsPanel } from './features/trends'
-import { useCapabilities, useHealth, useRetention, useSnapshot } from './state/data'
+import { useCapabilities, useHealth, useRetention, useSnapshot, useWatched } from './state/data'
+import { useWatch, useWatchAlerts } from './state/watch'
 import { useTerrainClasses } from './state/terrain'
 import type { Counts } from './derive/views'
 import { useLiveStream } from './state/live'
@@ -25,6 +26,7 @@ export default function App() {
   const snap = useSnapshot()
   const health = useHealth()
   const serious = (health.data?.issues ?? []).filter((i) => i.severity !== 'notice').length
+  const watched = useWatched(useWatch((s) => s.ids))
   const win = useStore((s) => s.win)
   const filters = useStore((s) => s.filters)
   const selection = useStore((s) => s.selection)
@@ -38,6 +40,7 @@ export default function App() {
     setPingPositions(pos) // pings follow the markers as estimates move
   }, [])
   const liveOK = useLiveStream(geo, setNotice)
+  useWatchAlerts(watched.data?.nodes, health.data?.issues, win.live)
   useTerrainClasses(snap.data) // line of sight of router links, for the engine's ranging (D-143)
 
   // The derivation worker applies the operator's geolocation settings.

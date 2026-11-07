@@ -1,6 +1,9 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import type { MeshNode, SnapshotView } from '../derive/views'
 import { useStore } from '../state/store'
+import { useHealth, useWatched } from '../state/data'
+import { allowNotifications, canNotify, useWatch, WATCH_BATTERY_LOW } from '../state/watch'
+import { relativeAge } from '../lib/time'
 import { ageColor, lastHeardAge, matchesSearch, nodeName, passesNodeFilters } from '../map/model'
 import { PALETTES } from '../map/palette'
 import { useTheme } from '../theme'
@@ -56,6 +59,7 @@ export function NodeList({ snapshot }: { snapshot: SnapshotView | undefined }) {
   )
   return (
     <div className="panel">
+      <WatchList now={endMs} />
       <input className="search" type="search" placeholder="Search in-window nodes (id or name)" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search nodes" />
       {hidden > 0 && (
         <p className="node-filter-alert" role="status">
@@ -71,5 +75,68 @@ export function NodeList({ snapshot }: { snapshot: SnapshotView | undefined }) {
       <p className="muted">Observed or referenced in this window, but no in-window position or estimate.</p>
       <ul className="node-list">{unpositioned.slice(0, 300).map(row)}</ul>
     </div>
+  )
+}
+
+/**
+ * The watchlist (D-192): nodes this browser keeps an eye on, above the
+ * search, with what matters at a glance; optionally a notification when
+ * one goes quiet, comes back, gets a problem or runs low.
+ */
+function WatchList({ now }: { now: number }) {
+  const ids = useWatch((s) => s.ids)
+  const toggle = useWatch((s) => s.toggle)
+  const notify = useWatch((s) => s.notify)
+  const setNotify = useWatch((s) => s.setNotify)
+  const select = useStore((s) => s.select)
+  const live = useStore((s) => s.win.live)
+  const watched = useWatched(ids)
+  const issues = useHealth().data?.issues ?? []
+  const [refused, setRefused] = useState(false)
+  if (ids.length === 0) return <p className="muted small watch-hint">Watch a node (☆ in its Details) to keep it here, with when it was last heard and its battery.</p>
+  const onNotify = async (on: boolean) => {
+    if (on && !(await allowNotifications())) return setRefused(true)
+    setRefused(false)
+    setNotify(on)
+  }
+  const nodes = watched.data?.nodes ?? []
+  return (
+    <section className="watch-list" aria-label="Watched nodes">
+      <h3>Watched ({ids.length})</h3>
+      <ul className="node-list">
+        {nodes.map((w) => {
+          const own = issues.filter((i) => i.node === w.id && i.severity !== 'notice')
+          const bad = own.some((i) => i.severity === 'problem')
+          const name = w.long_name || w.short_name || w.id
+          const parts: string[] = []
+          if (w.status === 'absent') parts.push('not heard in the selected period')
+          else if (w.quiet) parts.push(`quiet for ${relativeAge(new Date(now - (w.quiet_ms ?? 0)).toISOString(), now).replace(/ ago$/, '')} (usually every ${Math.max(1, Math.round((w.usual_gap_ms ?? 0) / 60_000))} min)`)
+          else if (w.last_seen) parts.push(`heard ${relativeAge(w.last_seen, now)}`)
+          if (w.battery !== undefined) parts.push(w.battery > 100 ? 'external power' : `battery ${Math.round(w.battery)} %`)
+          if (w.status !== 'absent') parts.push(`${w.gateways} gateway${w.gateways === 1 ? '' : 's'}`)
+          const low = w.battery !== undefined && w.battery <= WATCH_BATTERY_LOW
+          return (
+            <li key={w.id} className={`watch-row${w.quiet || w.status === 'absent' ? ' quiet' : ''}`}>
+              <button className="node-row" onClick={() => select({ kind: 'node', id: w.id })} disabled={w.status === 'absent'} title={w.status === 'absent' ? 'Not in the selected period' : 'Show its details'}>
+                <span className="nm">{name}</span>
+                {name !== w.id && <span className="id">{w.id}</span>}
+                <span className="watch-state">
+                  {parts.join(' · ')}
+                  {low && <span className="watch-flag"> · low battery</span>}
+                  {own.length > 0 && <span className={`watch-flag${bad ? ' bad' : ''}`}> · {own.length} {bad ? 'problem' : 'warning'}{own.length === 1 ? '' : 's'}</span>}
+                </span>
+              </button>
+              <button className="linkish watch-remove" onClick={() => toggle(w.id)} aria-label={`Stop watching ${name}`} title="Stop watching">×</button>
+            </li>
+          )
+        })}
+      </ul>
+      {canNotify() && (
+        <label className="watch-notify" title={live ? 'A browser notification when a watched node goes quiet for much longer than usual, is heard again, gets a problem or warning, or its battery drops to 20 %. Only while this page is open in a live period: nothing runs on the server.' : 'Notifications follow the live period only.'}>
+          <input type="checkbox" checked={notify} disabled={!live} onChange={(e) => void onNotify(e.target.checked)} /> Notify me while this page is open
+        </label>
+      )}
+      {refused && <p className="muted small">The browser did not allow notifications for this site; its site settings can.</p>}
+    </section>
   )
 }
