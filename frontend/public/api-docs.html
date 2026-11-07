@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark light" />
+    <meta name="theme-color" content="#0e1116" />
+    <title>API · 868.no Map</title>
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <script src="/theme-boot.js"></script>
+    <style>
+      :root { color-scheme: dark; --bg: #0e1116; --panel: #151a21; --line: #2a323c; --text: #e6edf3; --muted: #8b949e; --accent: #4cc9f0; --get: #3fb950; --post: #d29922; }
+      :root[data-theme='light'] { color-scheme: light; --bg: #f6f7f9; --panel: #ffffff; --line: #d0d7de; --text: #1f2328; --muted: #59636e; --accent: #0a7ea4; --get: #1a7f37; --post: #9a6700; }
+      @media (prefers-color-scheme: light) {
+        :root:not([data-theme]) { color-scheme: light; --bg: #f6f7f9; --panel: #ffffff; --line: #d0d7de; --text: #1f2328; --muted: #59636e; --accent: #0a7ea4; --get: #1a7f37; --post: #9a6700; }
+      }
+      html, body { margin: 0; background: var(--bg); color: var(--text); }
+      body { font: 15px/1.6 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; }
+      main { max-width: 52rem; margin: 0 auto; padding: 24px 16px 48px; }
+      h1 { font-size: 1.6rem; margin: 0.4em 0 0.2em; }
+      h2 { font-size: 1.15rem; margin: 1.8em 0 0.4em; padding-top: 0.6em; border-top: 1px solid var(--line); }
+      h3 { font-size: 1rem; margin: 0 0 0.3em; overflow-wrap: anywhere; }
+      h4 { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin: 1em 0 0.3em; }
+      a { color: var(--accent); }
+      code { font: 0.9em ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; overflow-wrap: anywhere; }
+      .muted { color: var(--muted); }
+      .summary { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 4px 18px; }
+      ul { padding-left: 1.3em; }
+      li { margin: 0.25em 0; }
+      .op { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px 16px; margin: 14px 0; scroll-margin-top: 12px; }
+      .method { display: inline-block; min-width: 3.2em; margin-right: 0.5em; padding: 0 6px; border-radius: 4px; border: 1px solid currentColor; font-size: 0.75rem; font-weight: 600; text-align: center; vertical-align: 0.1em; }
+      .method.get { color: var(--get); }
+      .method.post { color: var(--post); }
+      .toc { columns: 2 16rem; padding-left: 1.1em; }
+      .toc li { break-inside: avoid; }
+      .fields { list-style: none; padding-left: 0; margin: 0.2em 0; }
+      .fields .fields { padding-left: 1em; border-left: 1px solid var(--line); margin-left: 0.2em; }
+      .fields > li { margin: 0.35em 0; }
+      .name { font-weight: 600; }
+      .type { color: var(--muted); font-size: 0.9em; }
+      .req { color: var(--post); font-size: 0.8em; }
+      .desc { display: block; }
+      details > summary { cursor: pointer; color: var(--muted); font-size: 0.9em; }
+      [hidden] { display: none !important; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <p><a href="/">← Back to the map</a></p>
+      <h1>API</h1>
+      <p class="muted" id="intro">The data behind the map, as a public HTTP API.</p>
+
+      <div class="summary">
+        <ul>
+          <li>Base address: <code data-fill="base">/api/v1</code>. No keys or accounts; every endpoint is a plain HTTP <code>GET</code> but one <code>POST</code>, answered in JSON.</li>
+          <li>Times are RFC 3339 in UTC. A time window is half-open, <code>[start, end)</code>, given as <code>start</code> and <code>end</code>, or as a rolling <code>duration</code> ending now.</li>
+          <li>Errors are <a href="https://www.rfc-editor.org/rfc/rfc9457" rel="noreferrer">problem details</a> (<code>application/problem+json</code>) with a status and a short reason. 429 means slow down; 503 means the server is busy, so ask again shortly.</li>
+          <li>Requests are rate limited per client (an IPv4 address or an IPv6 /64), by default to 20 a second with bursts of 60.</li>
+          <li>The data is what Meshtastic radios broadcast publicly and what reached the MQTT brokers this site listens to. Message contents are never stored or served.</li>
+          <li>Machine-readable description: <a href="/api/openapi.json">OpenAPI 3.1, JSON</a> or <a href="/api/openapi.yaml">YAML</a>. This page is built from it, so it always matches the running server.</li>
+        </ul>
+      </div>
+
+      <p id="status" class="muted">Loading the API description…</p>
+      <nav id="toc" aria-label="Endpoints" hidden>
+        <h2>Endpoints</h2>
+        <ul class="toc"></ul>
+      </nav>
+      <div id="ops"></div>
+
+      <h2>About this software</h2>
+      <p>
+        This site runs 868.no Map, free software under the GNU GPL v3. Its <a href="https://github.com/868-no/map" rel="noreferrer">source code</a> includes the server answering these requests.
+      </p>
+    </main>
+    <script src="/api-docs.js"></script>
+  </body>
+</html>

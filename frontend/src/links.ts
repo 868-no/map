@@ -11,3 +11,5 @@ export const REVISION_HREF = SOURCE_REVISION ? `${REPO_URL}/commit/${SOURCE_REVI
 export const LICENSE_HREF = `${REPO_URL}/blob/${SOURCE_REVISION || 'main'}/LICENSE`
 /** The privacy policy: a static page next to the app (public/privacy.html). */
 export const PRIVACY_URL = '/privacy.html'
+/** The public API's documentation: a static page rendering the server's OpenAPI description (public/api-docs.html). */
+export const API_DOCS_URL = '/api-docs.html'

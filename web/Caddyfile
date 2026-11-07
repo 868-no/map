@@ -80,7 +80,7 @@
 		# Entry points must revalidate so a new deploy is picked up: the pages,
 		# the service worker (which carries the precache list), the manifest and
 		# the unhashed scripts next to the pages.
-		@entry path / /index.html /sw.js /manifest.webmanifest /theme-boot.js /privacy.html /privacy.js
+		@entry path / /index.html /sw.js /manifest.webmanifest /theme-boot.js /privacy.html /privacy.js /api-docs.html /api-docs.js
 		header @entry Cache-Control "no-cache"
 		@manifest path /manifest.webmanifest
 		header @manifest Content-Type "application/manifest+json"

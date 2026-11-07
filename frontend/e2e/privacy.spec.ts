@@ -2,12 +2,13 @@ import { expect, test } from '@playwright/test'
 
 // D-051, D-066: Settings on the tool rail holds the theme and the links
 // about the site; the policy states this deployment's own settings.
-test('settings hold the theme, source code, license and privacy policy', async ({ page }) => {
+test('settings hold the theme, source code, API docs, license and privacy policy', async ({ page }) => {
   await page.goto('/')
   await page.getByRole('button', { name: 'Settings', exact: true }).click()
   const menu = page.getByRole('complementary', { name: 'Settings' })
   await expect(menu.getByRole('radiogroup', { name: 'Theme' })).toBeVisible()
   await expect(menu.getByRole('link', { name: /Source code on GitHub/ })).toHaveAttribute('href', /^https:\/\/github\.com\/868-no\/map/)
+  await expect(menu.getByRole('link', { name: /API documentation/ })).toHaveAttribute('href', '/api-docs.html')
   await expect(menu.getByRole('link', { name: /License/ })).toHaveAttribute('href', /\/LICENSE$/)
   await expect(menu.getByRole('link', { name: /Privacy policy/ })).toHaveAttribute('href', '/privacy.html')
   // The version: the commit the image was built from, or a development build.
@@ -31,4 +32,15 @@ test('the privacy policy fills in retention and operator details from the API', 
   if (caps.operator?.contact) await expect(page.locator('[data-show="contact"]').first()).toBeVisible()
   else await expect(page.locator('[data-show="no-contact"]')).toBeVisible()
   await expect(page.getByRole('link', { name: '← Back to the map' })).toHaveAttribute('href', '/')
+})
+
+// The API page renders the running server's OpenAPI description.
+test('the API page lists every endpoint the server describes', async ({ page, request }) => {
+  const spec = await (await request.get('/api/openapi.json')).json()
+  const ops = Object.values(spec.paths as Record<string, object>).flatMap((p) => Object.keys(p).filter((m) => ['get', 'post', 'put', 'delete'].includes(m)))
+  await page.goto('/api-docs.html')
+  await expect(page.getByRole('heading', { name: 'API', exact: true })).toBeVisible()
+  await expect(page.locator('section.op')).toHaveCount(ops.length)
+  await expect(page.locator('#observations')).toContainText('next_cursor')
+  await expect(page.locator('#stream')).toContainText('heartbeat')
 })

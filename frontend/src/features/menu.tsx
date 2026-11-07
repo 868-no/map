@@ -1,9 +1,9 @@
 // The Settings panel (tool rail, D-066): display settings, installing the
-// app, and what the site is: source code, license and privacy policy.
+// app, and what the site is: source code, API docs, license and privacy policy.
 import { useState } from 'react'
 import { DEFAULT_MAX_NODES, MAX_NODES_RANGE, useStore } from '../state/store'
 import type { ThemeChoice } from '../theme'
-import { LICENSE_HREF, PRIVACY_URL, REVISION_HREF, SOURCE_HREF, SOURCE_REVISION } from '../links'
+import { API_DOCS_URL, LICENSE_HREF, PRIVACY_URL, REVISION_HREF, SOURCE_HREF, SOURCE_REVISION } from '../links'
 import { resetEverything } from '../reset'
 
 const THEMES: [ThemeChoice, string][] = [['system', 'Auto'], ['light', 'Light'], ['dark', 'Dark']]
@@ -76,6 +76,7 @@ export function SettingsPanel({ canInstall, install }: { canInstall: boolean; in
       <h3>About</h3>
       <nav aria-label="About this site">
         <a className="menu-item" href={SOURCE_HREF} target="_blank" rel="noreferrer">Source code on GitHub ↗</a>
+        <a className="menu-item" href={API_DOCS_URL} target="_blank" rel="noreferrer">API documentation ↗</a>
         <a className="menu-item" href={LICENSE_HREF} target="_blank" rel="noreferrer">License: GNU GPL v3 ↗</a>
         <a className="menu-item" href={PRIVACY_URL} target="_blank" rel="noreferrer">Privacy policy ↗</a>
       </nav>

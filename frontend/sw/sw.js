@@ -55,7 +55,7 @@ self.addEventListener('fetch', (event) => {
     return
   }
   if (req.mode === 'navigate') {
-    // Pages of their own (the privacy policy) are cached under their own
+    // Pages of their own (the privacy policy, the API docs) are cached under their own
     // path; every other navigation is the app, whose offline copy is /index.html.
     event.respondWith(networkFirst(req, SHELL, p !== '/' && PRECACHE.includes(p) ? p : '/index.html'))
     return
