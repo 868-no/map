@@ -39,9 +39,10 @@ else
 fi
 mkdir -p "$binaryen_dir" # before Docker would create the mount point as root
 case "${1:-build}" in
-  test) run "cargo test --release" ;;
+  # --locked: a Cargo.toml change without its lockfile fails here, not later in an image build.
+  test) run "cargo test --locked --profile test-fast" ;;
   clippy) run "rustup component add clippy >/dev/null &&
-      cargo clippy --release --all-targets -- -D warnings" ;;
+      cargo clippy --locked --release --all-targets -- -D warnings" ;;
   # The full image: cargo-deny clones the advisory database with git, which slim lacks.
   deny) image="${RUST_FULL_IMAGE:-rust:1.99.1-bookworm}"
     run "[ -x /cache/cargo/bin/cargo-deny ] && /cache/cargo/bin/cargo-deny --version | grep -q $deny \
@@ -62,7 +63,7 @@ case "${1:-build}" in
     run "rustup target add wasm32-unknown-unknown >/dev/null 2>&1 || true
       [ -x /cache/cargo/bin/wasm-bindgen ] && /cache/cargo/bin/wasm-bindgen --version | grep -q $bindgen \
         || cargo install --locked wasm-bindgen-cli --version $bindgen
-      cargo build --release --target wasm32-unknown-unknown
+      cargo build --locked --release --target wasm32-unknown-unknown
       /cache/cargo/bin/wasm-bindgen --target web --experimental-reset-state-function --out-dir /src/frontend/src/engine/pkg --out-name engine \
         /cache/target/wasm32-unknown-unknown/release/meshmap_engine.wasm
       /binaryen/wasm-opt -O3 --strip-debug --strip-producers \

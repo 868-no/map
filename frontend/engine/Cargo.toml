@@ -23,6 +23,13 @@ lto = true
 codegen-units = 1
 panic = "abort"
 
+# Tests: release speed (the golden fixture replays a 12 h window) without
+# the shipped wasm's whole-program link for every test binary.
+[profile.test-fast]
+inherits = "release"
+lto = false
+codegen-units = 16
+
 # Clippy's default groups (warnings are errors in scripts/wasm.sh clippy),
 # plus the pedantic and nursery lints that point at waste or a smell rather
 # than style: copies and clones not needed, needless wrapping, hand-written
