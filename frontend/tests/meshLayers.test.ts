@@ -51,16 +51,23 @@ describe('mesh layer builder', () => {
     expect(glyphs.sort()).toEqual(['!b:down', '!b:up', '!d:down', '!d:upAll', '!g:up', '!o:down', '!u:upAll'])
   })
 
-  it('stacks a marker drawn later above an earlier node and its glyphs (D-072)', () => {
+  it('draws a marker drawn later above an earlier node and its glyphs, by depth (D-187)', () => {
     // A downlinking gateway listed first, a plain node at the same position after it.
     const gw: PlacedNode = { node: { ...node('!g'), is_gateway: true, mqtt_downlink: { zero_snr: 3, traceroutes: 4 } }, kind: 'reported', lon: 10, lat: 60, age: 0 }
     const plain: PlacedNode = { node: node('!p'), kind: 'reported', lon: 10, lat: 60, age: 0 }
     const ls = byId(meshLayerBuilder()({ ...base, placed: [gw, plain] }))
-    // Every node has a glyph now (its role): the later one stacks above the first, glyph and all.
-    expect((ls.nodes.data as PlacedNode[]).map((p) => p.node.id)).toEqual(['!g', '!p'])
-    expect((ls['node-glyphs'].data as { part: string }[]).map((g) => g.part)).toEqual(['role', 'rim', 'badge', 'uplink', 'down'])
-    expect((ls['nodes-over-1'].data as PlacedNode[]).map((p) => p.node.id)).toEqual(['!p'])
-    expect((ls['node-glyphs-1'].data as { p: PlacedNode; part: string }[]).map((g) => `${g.p.node.id}:${g.part}`)).toEqual(['!p:role'])
+    const order = (props: Record<string, unknown>, d: unknown, index: number) => (props.getDrawOrder as (d: unknown, o: { index: number }) => number)(d, { index })
+    // One layer of markers and one of glyphs, whatever overlaps.
+    expect(Object.keys(ls).filter((id) => id.startsWith('node'))).toEqual(['nodes', 'node-glyphs'])
+    const markers = ls.nodes.data as PlacedNode[]
+    expect(markers.map((p) => p.node.id)).toEqual(['!g', '!p'])
+    const glyphs = ls['node-glyphs'].data as { p: PlacedNode; part: string }[]
+    expect(glyphs.map((g) => `${g.p.node.id}:${g.part}`)).toEqual(['!g:role', '!g:rim', '!g:badge', '!g:uplink', '!g:down', '!p:role'])
+    // The gateway's glyphs are above its disc and below the later node's disc; that node's glyph above both.
+    const disc = markers.map((p, k) => order(ls.nodes, p, k))
+    const glyph = glyphs.map((g, k) => order(ls['node-glyphs'], g, k))
+    expect(glyph.slice(0, 5).every((d) => d > disc[0] && d < disc[1])).toBe(true)
+    expect(glyph[5]).toBeGreaterThan(disc[1])
   })
 
   it('draws a fading trail with arrows behind a moving node, and a plane badge when airborne (D-073)', () => {

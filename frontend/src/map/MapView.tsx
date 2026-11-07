@@ -13,6 +13,7 @@ import { frameArrived, onPingAdded, pingCount } from './pings'
 import { BASEMAP_GROUPS } from './layers'
 import { meshLayerBuilder, type ReachGeom, type RouteGeom } from './meshLayers'
 import { buildPingLayers } from './pingLayers'
+import { OVER_MARKERS } from './drawOrder'
 import { useCamera } from './camera'
 import { clusterLabels, type Cluster, type LabelDatum } from './labels'
 import { usePacketRoute, useReach } from '../state/data'
@@ -100,7 +101,7 @@ const PICK_RADIUS = 6
 /** The marker on the selected link where its cross section is hovered. */
 function probeLayer(probe: [number, number], palette: MapPalette) {
   return new ScatterplotLayer<[number, number]>({
-    id: 'terrain-probe', data: [probe], getPosition: (p) => p, radiusUnits: 'pixels', getRadius: 6,
+    id: 'terrain-probe', ...OVER_MARKERS, data: [probe], getPosition: (p) => p, radiusUnits: 'pixels', getRadius: 6,
     filled: true, getFillColor: palette.selected, stroked: true, lineWidthUnits: 'pixels', getLineWidth: 2.5,
     // An outline in the opposite tone: the marker sits on the selected link, drawn in the same colour.
     getLineColor: palette.selected[0] + palette.selected[1] + palette.selected[2] > 384 ? [14, 17, 22, 255] : [255, 255, 255, 255], pickable: false,

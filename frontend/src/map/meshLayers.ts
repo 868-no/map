@@ -10,8 +10,8 @@ import type { Layer } from '@deck.gl/core'
 import type { Selection, Toggles } from '../state/store'
 import { ageColor, CONFIDENCE_ALPHA, glyphInk, matchesSearch, LINK_WIDTH, MQTT_ARROW, mqttDownlink, mqttUplink, PLANE, type MqttFlow, OPT_OUT_RING, ROUTE_COLOR, TRACE_COLOR, precisionErrorM, type LinkGeom, type PlacedNode } from './model'
 import { dashExt, dashOffsetExt, UNDER_LABELS, type RGBA } from './deckShared'
-import { labelData, toPixels, type Cluster } from './labels'
-import { stackLevels } from './stacking'
+import { labelData, type Cluster } from './labels'
+import { drawOrder, OVER_MARKERS, type DrawOrderProps } from './drawOrder'
 import { mercY } from './pings'
 import type { RouteSegment } from '../derive/views'
 import type { MapPalette } from './palette'
@@ -149,16 +149,20 @@ function memoLast<A extends unknown[], R>(fn: (...a: A) => R): (...a: A) => R {
 }
 
 type Circle = { pos: [number, number]; r: number; est: boolean }
-/** One icon drawn for a node; `part` says which: its role glyph, the uplink badge's rim, disc and arrow, or a badge beside it. */
-type Glyph = { p: PlacedNode; icon: GlyphIcon; part: 'role' | 'rim' | 'badge' | 'uplink' | Badge }
+/**
+ * One icon drawn for a node; `part` says which: its role glyph, the uplink
+ * badge's rim, disc and arrow, or a badge beside it. `k` is the node's place
+ * in the draw order.
+ */
+type Glyph = { p: PlacedNode; k: number; icon: GlyphIcon; part: 'role' | 'rim' | 'badge' | 'uplink' | Badge }
 /** A node's glyphs, bottom to top: its role, its uplink badge if a gateway, and the downlink and airplane badges (see MqttFlow). */
-const glyphsFor = (p: PlacedNode): Glyph[] => {
+const glyphsFor = (p: PlacedNode, k: number): Glyph[] => {
   const up = mqttUplink(p.node)
   return [
-    { p, icon: roleIcon(p.node.identity?.role), part: 'role' },
-    ...(up ? [{ p, icon: 'disc' as const, part: 'rim' as const }, { p, icon: 'disc' as const, part: 'badge' as const }, { p, icon: up, part: 'uplink' as const }] : []),
-    ...(mqttDownlink(p.node) ? [{ p, icon: 'down' as const, part: 'down' as const }] : []),
-    ...(p.node.airborne ? [{ p, icon: 'plane' as const, part: 'plane' as const }] : []),
+    { p, k, icon: roleIcon(p.node.identity?.role), part: 'role' },
+    ...(up ? [{ p, k, icon: 'disc' as const, part: 'rim' as const }, { p, k, icon: 'disc' as const, part: 'badge' as const }, { p, k, icon: up, part: 'uplink' as const }] : []),
+    ...(mqttDownlink(p.node) ? [{ p, k, icon: 'down' as const, part: 'down' as const }] : []),
+    ...(p.node.airborne ? [{ p, k, icon: 'plane' as const, part: 'plane' as const }] : []),
   ]
 }
 /** Glyph sizes in pixels: the role glyph covers the disc; the uplink badge sits on the rim (D-186). */
@@ -215,24 +219,10 @@ export function meshLayerBuilder(): (input: MeshLayerInput) => Layer[] {
   // Draw order: plain clients first, then home stations, then routers, so
   // where markers overlap the infrastructure is on top (stable otherwise).
   const RANK: Record<RoleIcon, number> = { client: 0, base: 1, routerLate: 2, router: 2 }
-  const drawOrder = memoLast((placed: PlacedNode[]) => [...placed].sort((a, b) => RANK[roleIcon(a.node.identity?.role)] - RANK[roleIcon(b.node.identity?.role)]))
-  // Stacking levels at this zoom (D-072): per level, the markers drawn again
-  // (level > 0) and the glyphs; level 0 markers are the base 'nodes' layer.
-  const stackOf = memoLast((placed: PlacedNode[], zoom: number) => {
-    const levels = stackLevels(placed.map((p) => {
-      const [x, y] = toPixels(p.lon, p.lat, zoom)
-      return { x, y, r: NODE_RADIUS + 2, glyph: true }
-    }))
-    let top = 0
-    for (const l of levels) top = Math.max(top, l)
-    const markers: PlacedNode[][] = Array.from({ length: top + 1 }, () => [])
-    const glyphs: Glyph[][] = Array.from({ length: top + 1 }, () => [])
-    placed.forEach((p, k) => {
-      markers[levels[k]].push(p)
-      glyphs[levels[k]].push(...glyphsFor(p))
-    })
-    return { markers, glyphs }
-  })
+  const byRank = memoLast((placed: PlacedNode[]) => [...placed].sort((a, b) => RANK[roleIcon(a.node.identity?.role)] - RANK[roleIcon(b.node.identity?.role)]))
+  // Every node's glyphs, in draw order: a glyph is above its own disc and
+  // below the discs of nodes drawn after it, by depth (D-187).
+  const glyphsOf = memoLast((ordered: PlacedNode[]) => ordered.flatMap((p, k) => glyphsFor(p, k)))
   const optOutOf = memoLast((placed: PlacedNode[]) => placed.filter((p) => p.node.mqtt_opt_out))
   const hollowOf = memoLast((placed: PlacedNode[]) => placed.filter((p) => p.kind === 'estimated'))
   // Trails behind moving nodes (D-073): segments between consecutive
@@ -456,6 +446,8 @@ export function meshLayerBuilder(): (input: MeshLayerInput) => Layer[] {
     // (scaled to the window); estimated nodes are hollow rings in the same colour.
     const marker = {
       ...UNDER_LABELS, getPosition: (p: PlacedNode) => [p.lon, p.lat] as [number, number],
+      // The node's place in the draw order: index in `ordered`, kept with its glyphs.
+      extensions: [drawOrder], getDrawOrder: (_p: PlacedNode, { index }: { index: number }) => index * 2,
       radiusUnits: 'pixels' as const, getRadius: NODE_RADIUS,
       filled: true, stroked: true, lineWidthUnits: 'pixels' as const,
       getFillColor: (p: PlacedNode) => (p.kind === 'estimated' ? [0, 0, 0, 0] : matches(p) ? [...ageColor(p.age, c.ageStops), 255] : c.dimmed) as RGBA,
@@ -471,6 +463,7 @@ export function meshLayerBuilder(): (input: MeshLayerInput) => Layer[] {
     // probably downlinks (traceroutes reach it at exactly 0 dB). D-054, D-084.
     const glyph = {
       ...UNDER_LABELS, getPosition: ({ p }: Glyph) => [p.lon, p.lat] as [number, number],
+      extensions: [drawOrder], getDrawOrder: ({ k }: Glyph) => k * 2 + 1,
       getIcon: ({ icon }: Glyph) => icon, sizeUnits: 'pixels' as const,
       getSize: ({ part }: Glyph) => GLYPH_SIZE[part],
       getPixelOffset: ({ part }: Glyph) => GLYPH_OFFSET[part],
@@ -491,15 +484,11 @@ export function meshLayerBuilder(): (input: MeshLayerInput) => Layer[] {
       pickable: false,
       updateTriggers: { getColor: [q, c, reach] },
     }
-    // Every marker, pickable, in one layer; then per stacking level its
-    // glyphs, and the markers of the next level drawn again above them.
-    const ordered = drawOrder(placed)
-    layers.push(new ScatterplotLayer<PlacedNode>({ id: 'nodes', data: ordered, pickable: true, autoHighlight: true, highlightColor: [...c.gateway, 160], ...marker }))
-    const stack = stackOf(ordered, zoom)
-    stack.glyphs.forEach((g, level) => {
-      if (level > 0) layers.push(new ScatterplotLayer<PlacedNode>({ id: `nodes-over-${level}`, data: stack.markers[level], pickable: false, ...marker }))
-      if (g.length) layers.push(new IconLayer<Glyph>({ id: level ? `node-glyphs-${level}` : 'node-glyphs', data: g, ...arrowIcons(), ...glyph }))
-    })
+    // Every marker, pickable, in one layer, then every glyph in another; the
+    // depth of each says what it is drawn above (D-187).
+    const ordered = byRank(placed)
+    layers.push(new ScatterplotLayer<PlacedNode, DrawOrderProps<PlacedNode>>({ id: 'nodes', data: ordered, pickable: true, autoHighlight: true, highlightColor: [...c.gateway, 160], ...marker }))
+    layers.push(new IconLayer<Glyph, DrawOrderProps<Glyph>>({ id: 'node-glyphs', data: glyphsOf(ordered), ...arrowIcons(), ...glyph }))
 
     // Nodes that did not allow MQTT uplink (their packets reached us through
     // another gateway): always ringed in red, never named (D-032).
@@ -507,7 +496,7 @@ export function meshLayerBuilder(): (input: MeshLayerInput) => Layer[] {
     if (optOut.length) {
       layers.push(
         new ScatterplotLayer<PlacedNode>({
-          id: 'mqtt-opt-out', ...UNDER_LABELS, data: optOut, getPosition: (p) => [p.lon, p.lat],
+          id: 'mqtt-opt-out', ...UNDER_LABELS, ...OVER_MARKERS, data: optOut, getPosition: (p) => [p.lon, p.lat],
           radiusUnits: 'pixels', getRadius: NODE_RADIUS + 4,
           filled: false, stroked: true, lineWidthUnits: 'pixels', getLineWidth: 2, getLineColor: OPT_OUT_RING, pickable: false,
         }),
@@ -520,14 +509,14 @@ export function meshLayerBuilder(): (input: MeshLayerInput) => Layer[] {
       if (leaders.length) {
         layers.push(
           new LineLayer<(typeof leaders)[number]>({
-            id: 'label-leaders', ...UNDER_LABELS, data: leaders, getSourcePosition: (l) => l.from, getTargetPosition: (l) => l.to,
+            id: 'label-leaders', ...UNDER_LABELS, ...OVER_MARKERS, data: leaders, getSourcePosition: (l) => l.from, getTargetPosition: (l) => l.to,
             widthUnits: 'pixels', getWidth: 1, getColor: c.leader, pickable: false,
           }),
         )
       }
       layers.push(
         new TextLayer<(typeof labels)[number]>({
-          id: 'node-labels', ...UNDER_LABELS, data: labels, getPosition: (l) => l.pos,
+          id: 'node-labels', ...UNDER_LABELS, ...OVER_MARKERS, data: labels, getPosition: (l) => l.pos,
           getText: (l) => l.text, getSize: 18,
           // Collapsed names sit above their marker; fanned-out names centre on their slot.
           getPixelOffset: (l) => (l.exploded ? [0, 0] : [0, -(NODE_RADIUS + 12)]),

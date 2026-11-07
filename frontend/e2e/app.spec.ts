@@ -731,7 +731,7 @@ test('only online nodes: offline ones leave the map, and Details says which a no
   // test checks what is drawn: with the filter on, only nodes heard in the last 3 h.
   const drawn = () => page.evaluate(() => {
     const mm = window as unknown as { __meshmap: Hook }
-    // 'nodes' holds every marker once; 'nodes-over-N' only redraws stacked ones.
+    // 'nodes' holds every marker once.
     const ps = (mm.__meshmap.layers().find((l) => l.id === 'nodes')?.data ?? []) as { node: { last_seen?: string } }[]
     const offline = ps.filter((p) => !p.node.last_seen || Date.now() - Date.parse(p.node.last_seen) > 3 * 3_600_000).length
     return { all: ps.length, offline }
