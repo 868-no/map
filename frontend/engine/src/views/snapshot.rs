@@ -211,9 +211,14 @@ pub fn build_snapshot(rows: &[&Row], i: &Interner, g: &GeoOptions, rules: Rules)
     for (n, r) in latest_by(&by.telemetry, is_device_telemetry, |r| r.src) {
         nodes.entry(n).or_insert_with(|| Node::new(n)).telemetry = Some(telemetry_of(r));
     }
-    // Channel utilisation over the window, for the Regions panel (D-194).
+    // Channel utilisation over the window, for the Regions panel (D-194):
+    // each report once (its first copy), however many gateways heard it.
+    let mut first: FxMap<u64, &Row> = map();
+    for &r in by.telemetry.iter().filter(|r| is_device_telemetry(r)) {
+        first.entry(r.lp).and_modify(|c| if (r.t, r.id) < (c.t, c.id) { *c = r }).or_insert(r);
+    }
     let mut ch: FxMap<u32, Vec<f64>> = map();
-    for r in by.telemetry.iter().filter(|r| is_device_telemetry(r)) {
+    for r in first.into_values() {
         if let Some(c) = r.telemetry().and_then(|t| t.ch_util).filter(|c| c.is_finite() && *c >= 0.0) {
             ch.entry(r.src).or_default().push(c);
         }
@@ -221,7 +226,7 @@ pub fn build_snapshot(rows: &[&Row], i: &Interner, g: &GeoOptions, rules: Rules)
     for (n, mut v) in ch {
         v.sort_unstable_by(f64::total_cmp);
         let median = if v.len() % 2 == 1 { v[v.len() / 2] } else { f64::midpoint(v[v.len() / 2 - 1], v[v.len() / 2]) };
-        nodes.entry(n).or_insert_with(|| Node::new(n)).ch_util = Some(super::ChUtil { median, max: v[v.len() - 1], reports: v.len() });
+        nodes.entry(n).or_insert_with(|| Node::new(n)).ch_util = Some(median);
     }
     for (n, t) in referenced(by.neighborinfo.iter().chain(&by.traceroute)) {
         let x = nodes.entry(n).or_insert_with(|| {
@@ -368,5 +373,22 @@ mod tests {
         assert_eq!(n.status, "referenced");
         assert!(n.last_referenced.is_some());
         assert_eq!(b.snapshot.counts.nodes, 4, "only the three senders and gateway 7 were heard");
+    }
+
+    #[test]
+    fn channel_utilisation_counts_each_report_once() {
+        // Node 5 reports 10 % once, heard by 8 gateways, then 30 % and 40 %
+        // once each: the median is 30, not 10 (eight copies of one report).
+        let mut i = Interner::default();
+        let mut text: Vec<String> = (0..8).map(|g| format!(r#"{{"i":{},"t":1000,"b":"x","g":{},"s":5,"y":"telemetry","l":"{:016x}","o":"{:016x}","sg":"unsigned","te":{{"kind":"device","ch_util":10.0}}}}"#, 100 + g, 20 + g, 1, 1)).collect();
+        for (k, c) in [(2, 30.0), (3, 40.0)] {
+            text.push(format!(r#"{{"i":{k},"t":{},"b":"x","g":20,"s":5,"y":"telemetry","l":"{k:016x}","o":"{k:016x}","sg":"unsigned","te":{{"kind":"device","ch_util":{c}}}}}"#, k * 1000));
+        }
+        let rows: Vec<Row> = text.iter().map(|t| serde_json::from_str::<JRow>(t).unwrap().into_row(&mut i)).collect();
+        let refs: Vec<&Row> = rows.iter().collect();
+        let g = GeoOptions { enabled: false, min_precision_bits: 15, exclude: set(), params: Default::default(), terrain: map() };
+        let b = build_snapshot(&refs, &i, &g, Rules::default());
+        let n = b.snapshot.nodes.iter().find(|n| n.num == 5).expect("node 5 is listed");
+        assert_eq!(n.ch_util, Some(30.0));
     }
 }

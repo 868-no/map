@@ -67,16 +67,6 @@ pub struct Telemetry {
     pub observed_at: String,
 }
 
-/// Channel utilisation (%) a node reported in its device telemetry over
-/// the window: the median and highest of its reports, and how many (for
-/// the Regions panel, D-194).
-#[derive(Serialize, Clone, Copy, Debug, PartialEq)]
-pub struct ChUtil {
-    pub median: f64,
-    pub max: f64,
-    pub reports: usize,
-}
-
 #[derive(Serialize, Clone, Copy, Default, Debug)]
 pub struct Signatures {
     pub verified: usize,
@@ -176,10 +166,11 @@ pub struct Node {
     /// Routers: how often it is seen relaying what it should relay (D-078).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub relaying: Option<crate::reliability::Relaying>,
-    /// The channel utilisation it reported in the window, for the Regions
-    /// panel (D-194); not sent with the node.
+    /// The median channel utilisation (%) of its device telemetry reports in
+    /// the window, each report once, for the Regions panel (D-194); not sent
+    /// with the node.
     #[serde(skip)]
-    pub ch_util: Option<ChUtil>,
+    pub ch_util: Option<f64>,
     #[serde(skip)]
     pub(super) first: i64,
     #[serde(skip)]

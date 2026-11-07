@@ -77,9 +77,9 @@ pub fn regions<'a>(regions: &Regions, nodes: impl Iterator<Item = &'a Node>, row
             r.gateways += 1;
         }
         if let Some(c) = x.ch_util {
-            util[at(name)].push(c.median);
-            if r.busiest.as_ref().is_none_or(|b| c.median > b.1) {
-                r.busiest = Some((x.id.clone(), c.median));
+            util[at(name)].push(c);
+            if r.busiest.as_ref().is_none_or(|b| c > b.1) {
+                r.busiest = Some((x.id.clone(), c));
             }
         }
     }
@@ -114,7 +114,7 @@ mod tests {
         x.identity = Some(crate::views::Identity { role: role.into(), ..Default::default() });
         x.position = Some(crate::views::Position { lat, lon, alt: None, precision_bits: 32, precision_known: true, signature: "unsigned".into(), observed_at: "2026-11-05T00:00:00Z".into(), source: "position".into() });
         x.is_gateway = gateway;
-        x.ch_util = ch.map(|median| crate::views::ChUtil { median, max: median, reports: 3 });
+        x.ch_util = ch;
         x
     }
 
