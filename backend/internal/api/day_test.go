@@ -103,10 +103,12 @@ type fakeRows struct {
 	rows      []string
 	reads     atomic.Int32
 	settledQs atomic.Int32
+	historyQs atomic.Int32
 	gate      chan struct{} // when set, reads wait for it to close
 }
 
 func (f *fakeRows) History(context.Context) (storage.HistoryState, error) {
+	f.historyQs.Add(1)
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.state, nil
@@ -581,5 +583,28 @@ func TestDayTooLargeStreamsWithoutRebuilding(t *testing.T) {
 	}
 	if r, q := db2.reads.Load(), db2.settledQs.Load(); r != 1 || q != 0 {
 		t.Fatalf("other replica: database reads %d, settled queries %d; want only the stream", r, q)
+	}
+}
+
+// Revalidations and pages share one read of the history state a second;
+// a build still checks it afresh before keeping a day as final.
+func TestHistoryIsReadOnceASecond(t *testing.T) {
+	db := &fakeRows{settled: true, rows: []string{`{"i":1,"t":1}`}}
+	s, h := dayServer(t, db, newBlobs())
+	gen := s.generation(0)
+	for range 3 {
+		if w := getDay(h, testDay, gen, map[string]string{"If-None-Match": dayETag(gen, testDay, "")}); w.Code != http.StatusNotModified {
+			t.Fatalf("revalidation: %d", w.Code)
+		}
+	}
+	if n := db.historyQs.Load(); n != 1 {
+		t.Fatalf("%d reads of the history state for three revalidations", n)
+	}
+	if w := getDay(h, testDay, gen, nil); w.Code != 200 || db.historyQs.Load() != 2 {
+		t.Fatalf("a build: %d, %d history reads; want the one after reading the rows", w.Code, db.historyQs.Load())
+	}
+	s.histMemo.at = time.Now().Add(-historyTTL)
+	if _, err := s.history(context.Background()); err != nil || db.historyQs.Load() != 3 {
+		t.Fatalf("an expired read is not reused: %v %d", err, db.historyQs.Load())
 	}
 }

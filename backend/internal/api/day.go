@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/andybalholm/brotli"
@@ -113,6 +114,41 @@ func (s *Server) rowsDB() rowsDB {
 	return pgRows{s.Pool}
 }
 
+// historyTTL is how long a read of the history state is reused.
+const historyTTL = time.Second
+
+// historyMemo is the last history state read, and when.
+type historyMemo struct {
+	mu sync.Mutex
+	at time.Time
+	st storage.HistoryState
+}
+
+// history is the history state as every /observations page, /retention
+// and /observations/day request reports it, read at most once a second per
+// process (it looks through pg_locks). A second-old state is safe: a day
+// built under it is only kept as final if the state read again after the
+// build (buildDay, uncached) is unchanged, and a generation is only ever a
+// second behind, as if the request had come a second earlier.
+func (s *Server) history(ctx context.Context) (storage.HistoryState, error) {
+	m := &s.histMemo
+	m.mu.Lock()
+	if !m.at.IsZero() && time.Since(m.at) < historyTTL {
+		st := m.st
+		m.mu.Unlock()
+		return st, nil
+	}
+	m.mu.Unlock()
+	st, err := s.rowsDB().History(ctx)
+	if err != nil {
+		return st, err
+	}
+	m.mu.Lock()
+	m.at, m.st = time.Now(), st
+	m.mu.Unlock()
+	return st, nil
+}
+
 // generation names everything that decides what a stored row is served as:
 // decoder, row format, configuration and history revision (D-041, D-158).
 func (s *Server) generation(rev int64) string {
@@ -200,7 +236,7 @@ func (s *Server) observationsDay(ctx context.Context, in *DayInput) (*DayOutput,
 		return nil, err
 	}
 	db := s.rowsDB()
-	st, err := db.History(ctx)
+	st, err := s.history(ctx)
 	if err != nil {
 		return nil, err
 	}

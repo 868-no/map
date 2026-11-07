@@ -69,6 +69,7 @@ type Server struct {
 	heavy      chan struct{}
 	closing    chan struct{}
 	trendsMemo trendsCache
+	histMemo   historyMemo
 	trendHours storage.TrendHours // hourly summaries for trends (D-112)
 	once       sync.Once
 }

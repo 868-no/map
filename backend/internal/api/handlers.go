@@ -135,7 +135,7 @@ func (s *Server) retention(ctx context.Context, _ *struct{}) (*RetentionOutput, 
 	if out.EarliestObservation, out.LatestObservation, err = storage.ObservedRange(ctx, s.Pool); err != nil {
 		return nil, err
 	}
-	hist, err := s.rowsDB().History(ctx)
+	hist, err := s.history(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -260,7 +260,7 @@ func (s *Server) observations(ctx context.Context, in *ObservationsInput) (*Obse
 		}
 		after = &c
 	}
-	hist, err := s.rowsDB().History(ctx)
+	hist, err := s.history(ctx)
 	if err != nil {
 		return nil, err
 	}

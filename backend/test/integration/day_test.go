@@ -154,10 +154,12 @@ func TestDayMatchesObservations(t *testing.T) {
 	if err != nil || !during.Importing || during.Rev != before.Rev+1 {
 		t.Fatalf("during an import: %+v (before %+v) %v", during, before, err)
 	}
+	// The server reads the history state at most once a second.
+	var gen2 string
+	eventually(t, "the generation to move", func() bool { _, gen2 = c.rawRows(win(d2, d2.Add(time.Hour))); return gen2 != gen })
 	if b := c.day("2026-10-31", gen); b.code != http.StatusConflict {
 		t.Fatalf("old generation during an import: HTTP %d", b.code)
 	}
-	_, gen2 := c.rawRows(win(d2, d2.Add(time.Hour)))
 	if gen2 == gen {
 		t.Fatal("the generation did not move")
 	}
@@ -174,7 +176,8 @@ func TestDayMatchesObservations(t *testing.T) {
 	if err != nil || after.Importing || after.Rev != before.Rev+2 {
 		t.Fatalf("after the import: %+v %v", after, err)
 	}
-	_, gen3 := c.rawRows(win(d2, d2.Add(time.Hour)))
+	var gen3 string
+	eventually(t, "the generation to move again", func() bool { _, gen3 = c.rawRows(win(d2, d2.Add(time.Hour))); return gen3 != gen2 })
 	if b := c.day("2026-10-31", gen3); gen3 == gen2 || b.code != 200 || b.cc != "public, max-age=31536000, immutable" || !sameRows(b.rows, want2) {
 		t.Fatalf("after the import: HTTP %d %q, generation %q", b.code, b.cc, gen3)
 	}
