@@ -67,6 +67,9 @@ services:
   backend:
     <<: *backend
     command: ["serve"]
+    # Time to drain MQTT input, flush the writer and finish requests on
+    # shutdown (default 10 s), as in deploy/compose.production.yaml.
+    stop_grace_period: 30s
     healthcheck:
       test: ["CMD", "/usr/local/bin/meshmap", "healthcheck", "--live"]
       interval: 10s
