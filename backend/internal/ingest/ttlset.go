@@ -22,7 +22,11 @@ type ttlSet struct {
 	ttl   time.Duration
 	max   int
 	items map[[16]byte]*recentEntry
-	order [][16]byte // insertion order for eviction
+	// order is insertion order for eviction, one entry per item. Evicting
+	// reslices it from the front, which shrinks its capacity too, so the
+	// next append that outgrows it copies the live entries to a new array:
+	// it never holds more than about twice max.
+	order [][16]byte
 }
 
 func newTTLSet(ttl time.Duration, max int) *ttlSet {
@@ -67,8 +71,5 @@ func (s *ttlSet) add(k [16]byte, id int64, brokers []string, now time.Time) {
 		old := s.order[0]
 		s.order = s.order[1:]
 		delete(s.items, old)
-	}
-	if cap(s.order) > 4*s.max && len(s.order) < s.max {
-		s.order = append([][16]byte(nil), s.order...)
 	}
 }

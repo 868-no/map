@@ -36,7 +36,8 @@ type Sink interface {
 
 // Dedupe is the shared recent-observation index (Redis). May be nil.
 type Dedupe interface {
-	// LookupObservations returns the row id per key, 0 when not seen.
+	// LookupObservations returns the row id per key: 0 when not seen, -1
+	// when seen but the id is unknown.
 	LookupObservations(ctx context.Context, keys [][16]byte) ([]int64, error)
 	MarkObservations(ctx context.Context, keys [][16]byte, ids []int64, ttl time.Duration) error
 }
@@ -316,8 +317,8 @@ func (p *Pipeline) takeAlsoVia(batch []*Observation) {
 	}
 }
 
-// committed looks up a recently stored observation and its row id (0 if
-// only existence is known); local: found in the in-process set, which knows
+// committed looks up a recently stored observation and its row id (-1 when
+// Redis knows only that it was stored, not the row); local: found in the in-process set, which knows
 // the brokers that delivered it.
 func (p *Pipeline) committed(o Observation) (id int64, found, local bool) {
 	now := time.Now()
