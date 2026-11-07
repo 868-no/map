@@ -558,7 +558,10 @@ test('the reach simulator counts nodes per hop limit and draws the reach on the 
   await slider.fill('0')
   const direct = Number(/Reaches (\d+)/.exec((await reach.textContent()) ?? '')![1])
   expect(direct).toBeGreaterThan(0) // it has links: someone hears it directly
-  await slider.fill('7')
+  // One button per hop limit, in a list (buttons keep their role).
+  await expect(reach.getByRole('list', { name: 'Nodes added at each hop limit' }).getByRole('listitem')).toHaveCount(8)
+  await reach.getByRole('list', { name: 'Nodes added at each hop limit' }).getByRole('button', { name: /^7/ }).click()
+  await expect(slider).toHaveValue('7')
   expect(Number(/Reaches (\d+)/.exec((await reach.textContent()) ?? '')![1])).toBeGreaterThanOrEqual(direct)
   await reach.getByLabel('Show on the map').check()
   await expect.poll(async () => (await layers()).reach ?? 0).toBeGreaterThan(0)
