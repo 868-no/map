@@ -51,6 +51,8 @@ ARG E2E_HOOKS=false
 ARG SOURCE_URL=https://github.com/868-no/map
 ARG SOURCE_REVISION=
 RUN VITE_E2E_HOOKS=$E2E_HOOKS VITE_SOURCE_URL=$SOURCE_URL VITE_SOURCE_REVISION=$SOURCE_REVISION npx vite build # typechecked in CI's frontend job
+# Served at /version.txt: the deploy job waits until production serves this commit.
+RUN mkdir -p /src/version && printf '%s\n' "$SOURCE_REVISION" > /src/version/version.txt
 
 # Map glyphs: OpenMapTiles fonts v2.0 (SIL OFL), pinned by checksum.
 FROM --platform=$BUILDPLATFORM alpine:3.24 AS fonts
@@ -66,6 +68,7 @@ FROM caddy:2.10-alpine
 COPY --from=fonts /dirs/ /
 COPY web/Caddyfile /etc/caddy/Caddyfile
 COPY --from=app /src/frontend/dist /srv/app
+COPY --from=app /src/version /srv/version
 COPY --from=fonts /out /srv/fonts
 COPY web/styles /srv/styles
 # Unprivileged, still on port 80: Docker lets any user bind ports below 1024

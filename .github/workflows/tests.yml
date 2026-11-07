@@ -235,3 +235,30 @@ jobs:
         run: |
           if [ -z "$HOOK" ]; then echo "DEPLOY_WEBHOOK_URL is not set: nothing deployed"; exit 1; fi
           curl -fsS -X POST --retry 3 --retry-all-errors --max-time 30 -o /dev/null -w 'webhook: HTTP %{http_code}\n' "$HOOK"
+      # The webhook answering is not a deploy: wait until the site serves the
+      # web image of this commit (/version.txt) and the backend answers
+      # /health/ready with 200 (ready, or degraded but serving). The site is
+      # the repository variable PRODUCTION_URL; `none` skips this check.
+      - name: wait for production to serve this commit
+        env:
+          SITE: ${{ vars.PRODUCTION_URL || 'https://beta-map.868.no' }}
+          SHA: ${{ github.sha }}
+        run: |
+          if [ "$SITE" = none ]; then echo "PRODUCTION_URL is none: not checked"; exit 0; fi
+          SITE="${SITE%/}"
+          deadline=$((SECONDS + 900))
+          while :; do
+            # A query string of its own: no cache in front of the site answers it.
+            served=$(curl -fsS --max-time 10 "$SITE/version.txt?deploy=$GITHUB_RUN_ID-$SECONDS" 2>/dev/null | head -c 100 | tr -d '[:space:]' || true)
+            ready=$(curl -sS --max-time 10 -o /dev/null -w '%{http_code}' "$SITE/health/ready" 2>/dev/null || true)
+            if [ "$served" = "$SHA" ] && [ "$ready" = 200 ]; then
+              echo "$SITE serves $SHA; /health/ready:"
+              curl -fsS --max-time 10 "$SITE/health/ready" || true; echo
+              exit 0
+            fi
+            if [ "$SECONDS" -ge "$deadline" ]; then
+              echo "::error::after 15 minutes $SITE serves web revision '${served:0:40}' (expected $SHA) and /health/ready answers HTTP ${ready:-none}"
+              exit 1
+            fi
+            sleep 15
+          done

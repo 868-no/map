@@ -65,6 +65,13 @@
 		header Cache-Control "public, max-age=300, stale-while-revalidate=86400"
 		file_server
 	}
+	# The commit this image was built from (empty for local builds): CI's
+	# deploy job polls it until production serves the new images.
+	handle /version.txt {
+		root * /srv/version
+		header Cache-Control "no-store"
+		file_server
+	}
 	# Content-hashed build output: cache forever. Its own block with no
 	# fallback, so a file from an older deploy is a 404, never the app's HTML
 	# stored under an asset URL for a year.
