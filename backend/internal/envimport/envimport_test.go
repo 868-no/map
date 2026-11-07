@@ -165,6 +165,71 @@ func TestRebuildTopicRejectsControlCharacters(t *testing.T) {
 	}
 }
 
+// sqlStateErr is a database error with a SQLSTATE, as the driver's.
+type sqlStateErr string
+
+func (e sqlStateErr) Error() string    { return "SQLSTATE " + string(e) }
+func (e sqlStateErr) SQLState() string { return string(e) }
+
+// A row the database refuses on its data is skipped and counted; the rest
+// of its batch is stored and the import goes on. A batch refused whole is
+// the database's fault, and stops the import.
+func TestImportSkipsRowsTheDatabaseRefuses(t *testing.T) {
+	kr, err := security.NewKeyring([]security.ChannelConfig{{Name: "LongFast", PSKs: []string{"AQ=="}, AcceptPlaintext: true}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t0 := time.Date(2026, 10, 31, 12, 0, 0, 0, time.UTC)
+	var in strings.Builder
+	for i := range 7 {
+		env, err := proto.Marshal(&pb.ServiceEnvelope{ChannelId: "LongFast", GatewayId: "!aabbccdd", Packet: &pb.MeshPacket{
+			From: 0x11111111, To: 0xffffffff, Id: uint32(100 + i), HopStart: 3, HopLimit: 3,
+			PayloadVariant: &pb.MeshPacket_Decoded{Decoded: &pb.Data{Portnum: pb.PortNum_TEXT_MESSAGE_APP, Payload: []byte("hi")}},
+		}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		fmt.Fprintf(&in, "%d,%x\n", t0.Add(time.Duration(i)*time.Minute).Unix(), env)
+	}
+	bad := func(o *ingest.Observation) bool { return o.PacketID == 102 || o.PacketID == 105 }
+	var stored []uint32
+	inserts := 0
+	im := &Importer{Broker: "b", Root: "msh/EU_868", Batch: 4, Opts: ingest.Options{Keyring: kr, Identities: noIDs{}, KeyBudget: 4}, Log: slog.New(slog.DiscardHandler)}
+	im.insert = func(_ context.Context, rows []*ingest.Observation) ([]int64, error) {
+		inserts++
+		for _, o := range rows {
+			if bad(o) {
+				return nil, fmt.Errorf("copy: %w", sqlStateErr("22021"))
+			}
+		}
+		for _, o := range rows {
+			stored = append(stored, o.PacketID)
+		}
+		return make([]int64, len(rows)), nil
+	}
+	if err := im.Run(context.Background(), strings.NewReader(in.String())); err != nil {
+		t.Fatal(err)
+	}
+	if fmt.Sprint(stored) != "[100 101 103 104 106]" || im.Stats["skipped: the database refused the row"] != 2 ||
+		im.Stats["stored (new, or already there from an earlier run)"] != 5 {
+		t.Fatalf("stored %v, stats %v", stored, im.Stats)
+	}
+	// Every row of a batch refused: not skipped one by one, but an error.
+	im = &Importer{Broker: "b", Root: "msh/EU_868", Batch: 4, Opts: im.Opts, Log: im.Log}
+	im.insert = func(context.Context, []*ingest.Observation) ([]int64, error) {
+		return nil, sqlStateErr("23502")
+	}
+	if err := im.Run(context.Background(), strings.NewReader(in.String())); err == nil || im.Stats["skipped: the database refused the row"] != 0 {
+		t.Fatalf("a batch refused whole: err %v, stats %v", err, im.Stats)
+	}
+	// Any other error stops the import at once.
+	im = &Importer{Broker: "b", Root: "msh/EU_868", Batch: 4, Opts: im.Opts, Log: im.Log}
+	im.insert = func(context.Context, []*ingest.Observation) ([]int64, error) { return nil, errors.New("db down") }
+	if err := im.Run(context.Background(), strings.NewReader(in.String())); err == nil {
+		t.Fatal("an outage did not stop the import")
+	}
+}
+
 type noIDs struct{}
 
 func (noIDs) Lookup(uint32) (security.Identity, bool) { return security.Identity{}, false }

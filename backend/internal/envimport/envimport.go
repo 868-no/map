@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -97,6 +98,9 @@ type Importer struct {
 
 	Stats       map[string]int
 	First, Last time.Time // span of what was decoded
+
+	// insert stores a batch: storage.InsertBatch on Pool unless set (tests).
+	insert func(context.Context, []*ingest.Observation) ([]int64, error)
 
 	seen      map[[16]byte]time.Time // observation keys within the dedupe window
 	lastPrune time.Time
@@ -257,10 +261,15 @@ func (im *Importer) flush(ctx context.Context) error {
 		// Rows a previous run stored are skipped by the insert itself; with
 		// the default bound (FirstRow ignores imported rows) a re-run after
 		// an interruption therefore adds only what is missing.
-		if _, err := storage.InsertBatch(ctx, im.Pool, batch); err != nil {
+		stored, err := im.store(ctx, batch)
+		if err != nil {
 			return fmt.Errorf("insert: %w", err)
 		}
-		im.Stats["stored (new, or already there from an earlier run)"] += len(batch)
+		im.Stats["stored (new, or already there from an earlier run)"] += len(stored)
+		if n := len(batch) - len(stored); n > 0 {
+			im.Stats["skipped: the database refused the row"] += n
+		}
+		batch = stored
 	} else {
 		im.Stats["would be stored (dry run)"] += len(batch)
 	}
@@ -270,6 +279,58 @@ func (im *Importer) flush(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+// store inserts rows and returns those stored. When the database refuses a
+// batch on its data (ingest.Permanent: SQLSTATE class 22 or 23, or a row
+// that cannot be encoded), the batch is halved until the refused rows stand
+// alone, and those are skipped and logged, so one row cannot abort an
+// import, as at ingest (D-165). If it refuses every row of a batch of
+// several, the cause is the database (a schema out of step), and the import
+// stops as for any other error; a re-run resumes where it stopped.
+func (im *Importer) store(ctx context.Context, rows []*ingest.Observation) ([]*ingest.Observation, error) {
+	stored, refused, err := im.storeHalving(ctx, rows)
+	if err != nil {
+		return stored, err
+	}
+	if len(stored) == 0 && len(rows) > 1 {
+		return nil, fmt.Errorf("the database refused all %d rows of a batch: %w", len(rows), refused[0].err)
+	}
+	for _, r := range refused {
+		im.Log.Warn("the database refused a row; skipped", "at", FormatTime(r.o.ObservedAt), "type", r.o.PacketType, "err", r.err)
+	}
+	return stored, nil
+}
+
+type refusedRow struct {
+	o   *ingest.Observation
+	err error
+}
+
+func (im *Importer) storeHalving(ctx context.Context, rows []*ingest.Observation) (stored []*ingest.Observation, refused []refusedRow, err error) {
+	insert := im.insert
+	if insert == nil {
+		insert = func(ctx context.Context, rows []*ingest.Observation) ([]int64, error) {
+			return storage.InsertBatch(ctx, im.Pool, rows)
+		}
+	}
+	_, err = insert(ctx, rows)
+	switch {
+	case err == nil:
+		return rows, nil, nil
+	case !ingest.Permanent(err):
+		return nil, nil, err
+	case len(rows) == 1:
+		return nil, []refusedRow{{rows[0], err}}, nil
+	}
+	h := len(rows) / 2
+	s1, r1, err := im.storeHalving(ctx, rows[:h])
+	if err != nil {
+		return s1, r1, err
+	}
+	s2, r2, err := im.storeHalving(ctx, rows[h:])
+	// Into new slices: s1 may be rows[:h] itself, whose spare capacity is rows[h:].
+	return slices.Concat(s1, s2), slices.Concat(r1, r2), err
 }
 
 // Report prints the counts.
