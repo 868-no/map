@@ -56,13 +56,20 @@ func TestInfrastructure(t *testing.T) {
 	row(5, "position", time.Hour, pos(63.34, 10.69, 20))
 	row(6, "nodeinfo", 20*24*time.Hour, router) // older than the 14-day window
 	row(6, "position", 20*24*time.Hour, pos(63.0, 10.0, 10))
+	// Unsigned NodeInfo from a node with a known key is never used for its
+	// role (§2.4): a forged one neither demotes a router nor makes one.
+	row(7, "nodeinfo", 3*time.Hour, router)
+	row(7, "nodeinfo", time.Hour, `{"nodeinfo": {"role": "CLIENT", "identity_untrusted": true}}`)
+	row(7, "position", time.Hour, pos(63.45, 10.4, 5))
+	row(8, "nodeinfo", time.Hour, `{"nodeinfo": {"role": "ROUTER", "identity_untrusted": true}}`)
+	row(8, "position", time.Hour, pos(63.46, 10.41, 5))
 
 	got, err := storage.Infrastructure(ctx, pool, window.Window{Start: now.Add(-terrain.WarmWindow), End: now.Add(time.Second)}, now.Add(-24*time.Hour))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != 3 {
-		t.Fatalf("got %+v, want nodes 1, 3 and 5", got)
+	if len(got) != 4 {
+		t.Fatalf("got %+v, want nodes 1, 3, 5 and 7", got)
 	}
 	if n := got[0]; n.Node != 1 || n.Lat != 63.26 || n.Alt == nil || *n.Alt != 708 {
 		t.Fatalf("node 1: %+v", n)
@@ -72,6 +79,9 @@ func TestInfrastructure(t *testing.T) {
 	}
 	if n := got[2]; n.Node != 5 || n.Lat != 63.34 || n.Role != "CLIENT_BASE" || n.Router() {
 		t.Fatalf("node 5 (newest position): %+v", n)
+	}
+	if n := got[3]; n.Node != 7 || n.Role != "ROUTER" {
+		t.Fatalf("node 7 (untrusted NodeInfo ignored): %+v", n)
 	}
 }
 

@@ -32,7 +32,9 @@ func (n InfraNode) Router() bool { return n.Role == "ROUTER" || n.Role == "ROUTE
 var InfraRoles = []string{"ROUTER", "ROUTER_LATE", "CLIENT_BASE"}
 
 // Infrastructure returns every node whose newest role announcement (NodeInfo
-// or map report) in w is one of InfraRoles and that reported a position in w
+// or map report; never an unsigned NodeInfo marked identity_untrusted, which
+// is not used for roles, §2.4) in w is one of InfraRoles and that reported a
+// position in w
 // (Position packets and map reports, the newest by time then id; 0,0 is no
 // position). Heard is whether it sent anything but an invalid packet since
 // alive. One definition serves the weather kept ready for live routers
@@ -44,6 +46,7 @@ func Infrastructure(ctx context.Context, pool *pgxpool.Pool, w window.Window, al
 		SELECT DISTINCT ON (source_node_id) source_node_id AS node, %[1]s AS role
 		FROM packet_log
 		WHERE %[2]s AND packet_type IN ('%[3]s', '%[4]s') AND %[1]s <> ''
+		  AND NOT COALESCE((decoded_metadata->'nodeinfo'->>'identity_untrusted')::boolean, false)
 		ORDER BY source_node_id, observed_at DESC, id DESC
 	), infra AS (
 		SELECT node, role FROM roles WHERE role = ANY($3)
