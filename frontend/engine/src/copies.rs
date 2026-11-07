@@ -52,22 +52,12 @@ impl Copies {
     /// `resolved`: relays already resolved with `ctx`, by row id
     /// (views::EdgeResult::resolved); other relayed copies resolve here.
     pub fn new(rows: &[&Row], ctx: &RelayContext, resolved: &FxMap<i64, Option<u32>>) -> Self {
-        // Sorting (packet, position) pairs groups the copies with no map or
+        // Senders worked out in row order (rows sit in time order in memory),
+        // then sorting (packet, position) groups the copies with no map or
         // per-packet allocation, in row order within each packet.
-        let mut keyed: Vec<(u64, u32)> = Vec::new();
+        let mut keyed: Vec<(u64, u32, Option<u32>)> = Vec::new();
         for (k, &r) in rows.iter().enumerate() {
-            if r.gw.is_some() && r.ty != ty::MAPREPORT && r.over_radio() {
-                keyed.push((r.lp, k as u32));
-            }
-        }
-        keyed.sort_unstable();
-        let mut c = Copies { heard: Vec::with_capacity(keyed.len()), ends: Vec::new() };
-        for (k, &(lp, p)) in keyed.iter().enumerate() {
-            if k > 0 && keyed[k - 1].0 != lp {
-                c.ends.push(k as u32);
-            }
-            let r = rows[p as usize];
-            let gw = r.gw.unwrap();
+            let Some(gw) = r.gw.filter(|_| r.ty != ty::MAPREPORT && r.over_radio()) else { continue };
             let sender = match (r.hl, r.heard_from()) {
                 (Some(_), HeardFrom::Direct) => Some(r.src),
                 (Some(_), HeardFrom::Relayed(Some(b))) => match resolved.get(&r.id) {
@@ -76,6 +66,14 @@ impl Copies {
                 },
                 _ => None,
             };
+            keyed.push((r.lp, k as u32, sender));
+        }
+        keyed.sort_unstable_by_key(|&(lp, p, _)| (lp, p));
+        let mut c = Copies { heard: Vec::with_capacity(keyed.len()), ends: Vec::new() };
+        for (k, &(lp, p, sender)) in keyed.iter().enumerate() {
+            if k > 0 && keyed[k - 1].0 != lp {
+                c.ends.push(k as u32);
+            }
             c.heard.push((p, sender));
         }
         if !keyed.is_empty() {
