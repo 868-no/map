@@ -397,6 +397,13 @@ func TestDayNotFinalIsNotCached(t *testing.T) {
 		if blobs.sets != 0 || (c.db.settledQs.Load() > 0) != c.checked {
 			t.Errorf("%s: stored %d, settled checks %d", c.name, blobs.sets, c.db.settledQs.Load())
 		}
+		if c.checked && !c.db.settled {
+			// Asked again a moment later: streamed without checking again.
+			before := c.db.settledQs.Load()
+			if w := getDay(h, c.date, s.generation(c.db.state.Rev), hdr); w.Code != 200 || c.db.settledQs.Load() != before {
+				t.Errorf("%s again: %d, settled checks %d then %d", c.name, w.Code, before, c.db.settledQs.Load())
+			}
+		}
 	}
 }
 

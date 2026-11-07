@@ -61,6 +61,7 @@ type Server struct {
 	db         rowsDB // the database as the day endpoint reads it; nil: Pool
 	dayFlight  singleflight.Group
 	dayLarge   sync.Map     // keys of final days too large to build (noteLargeDay)
+	unsettled  sync.Map     // keys of final days found not settled -> until when they are streamed without asking again
 	dayLargeN  atomic.Int32 // entries in dayLarge, to bound it
 	heavy      chan struct{}
 	closing    chan struct{}

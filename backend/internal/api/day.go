@@ -243,12 +243,20 @@ func (s *Server) observationsDay(ctx context.Context, in *DayInput) (*DayOutput,
 		s.dayCount("large")
 		return s.streamDay(ctx, db, p, head, gz)
 	}
+	if until, ok := s.unsettled.Load(key); ok && s.now().Before(until.(time.Time)) {
+		// Found not settled a moment ago: streamed without the cache lookups,
+		// the lock and a read slot for the check (while a redecode runs, every
+		// day with stale rows is asked for this way).
+		s.dayCount("uncached")
+		return s.streamDay(ctx, db, p, head, gz)
+	}
 	res, err := s.sharedDay(ctx, db, p, head, st, key, br)
 	if err != nil {
 		return nil, err
 	}
 	if res.unsettled {
 		// Rows still to be decoded again, or the writer not past the day yet.
+		s.noteUnsettled(key)
 		s.dayCount("uncached")
 		return s.streamDay(ctx, db, p, head, gz)
 	}
@@ -273,7 +281,14 @@ func (s *Server) observationsDay(ctx context.Context, in *DayInput) (*DayOutput,
 		if enc != "" {
 			hc.SetHeader("Content-Encoding", enc)
 			hc.SetHeader("Content-Length", strconv.Itoa(len(body)))
-			_, _ = dst.Write(body)
+			// In chunks: the stall guard moves the deadline per write, so one
+			// write of the whole body would give a slow client stallLimit for
+			// all of it rather than for each stall.
+			for off := 0; off < len(body); off += writeChunk {
+				if _, err := dst.Write(body[off:min(off+writeChunk, len(body))]); err != nil {
+					return
+				}
+			}
 			return
 		}
 		zr, err := gzip.NewReader(bytes.NewReader(res.gz))
@@ -291,6 +306,27 @@ func (s *Server) observationsDay(ctx context.Context, in *DayInput) (*DayOutput,
 // this process streams it from then on instead of building (and discarding)
 // it per request. Bounded: a process sees few such days, but each
 // generation renames them.
+// unsettledFor: how long a day found not settled is streamed without asking
+// again; writeChunk: the most a cached day's body is written at once.
+const (
+	unsettledFor = time.Minute
+	writeChunk   = 128 << 10
+)
+
+// noteUnsettled remembers, for unsettledFor, that a final day is not settled
+// yet. The keys are few (a day each, per generation); expired ones are
+// dropped as new ones are noted.
+func (s *Server) noteUnsettled(key string) {
+	now := s.now()
+	s.unsettled.Range(func(k, v any) bool {
+		if !now.Before(v.(time.Time)) {
+			s.unsettled.Delete(k)
+		}
+		return true
+	})
+	s.unsettled.Store(key, now.Add(unsettledFor))
+}
+
 func (s *Server) noteLargeDay(key string) {
 	if _, known := s.dayLarge.LoadOrStore(key, struct{}{}); known {
 		return // every request that shared the build notes it: count it once
