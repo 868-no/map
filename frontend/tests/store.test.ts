@@ -106,3 +106,22 @@ describe('window changes', () => {
     expect(useStore.getState().win).toMatchObject({ live: true, durationH: 48 })
   })
 })
+
+describe('place search (D-193)', () => {
+  it('drops the ringed place when the search is cleared, from anywhere', () => {
+    const s = useStore.getState()
+    s.setSearch('Hamar')
+    s.goToPlace({ lon: 11.07, lat: 60.79, zoom: 11, name: 'Hamar' })
+    s.setSearch('Hama')
+    expect(useStore.getState().place?.name).toBe('Hamar')
+    s.setSearch('  ')
+    expect(useStore.getState().place).toBeNull()
+  })
+  it('keeps a region shown on the map, which is not ringed', () => {
+    const s = useStore.getState()
+    s.goToPlace({ lon: 10, lat: 63, zoom: 6, name: 'Trøndelag', ring: false })
+    s.setSearch('')
+    expect(useStore.getState().place?.name).toBe('Trøndelag')
+    s.goToPlace(null)
+  })
+})

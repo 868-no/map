@@ -161,9 +161,6 @@ function PlaceResults({ search }: { search: string }) {
     const t = setTimeout(() => setQ(search.trim()), 300)
     return () => clearTimeout(t)
   }, [search])
-  useEffect(() => {
-    if (!search.trim()) goToPlace(null) // the ring goes with the search
-  }, [search, goToPlace])
   const places = useQuery({
     queryKey: ['places', q.toLowerCase()],
     queryFn: ({ signal }) => getJSON<{ places: Place[] | null; attribution: string }>('/api/v1/places', new URLSearchParams({ q }), signal),

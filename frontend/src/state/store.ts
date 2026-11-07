@@ -177,7 +177,8 @@ export const useStore = create<Store>((set) => ({
   setProbe: (probe) => set({ probe }),
   goToPlace: (place) => set({ place }),
   setRegion: (region) => set({ region }),
-  setSearch: (search) => set({ search }),
+  // A place picked from the search is ringed until the search is cleared, wherever that happens (D-193).
+  setSearch: (search) => set((s) => (!search.trim() && s.place && s.place.ring !== false ? { search, place: null } : { search })),
   setDetailTab: (detailTab) => set({ detailTab }),
 }))
 
