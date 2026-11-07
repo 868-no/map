@@ -40,11 +40,11 @@ describe('whole-day planning (D-158)', () => {
     expect(requestedRange(new URLSearchParams({ duration: 'soon' }), now).lo).toBeNaN()
   })
 
-  it('takes the settled days of a rolling window, the first one whole when enough of it is needed', () => {
-    // 72 h at 14:00: 10 h of Nov 2 are needed, so all of it; Nov 5 is today.
+  it('takes every settled day a rolling window touches, whole', () => {
+    // 72 h at 14:00: Nov 2 from 14:00 is needed, all of it is fetched; Nov 5 is today.
     expect(names(planDays(t('2026-11-02T14:00:00Z'), t('2026-11-05T14:00:00Z'), t('2026-11-05T14:00:00Z')))).toEqual(['2026-11-02', '2026-11-03', '2026-11-04'])
-    // At 20:00 only 4 h of Nov 2 are needed: those come paged.
-    expect(names(planDays(t('2026-11-02T20:00:00Z'), t('2026-11-05T20:00:00Z'), t('2026-11-05T20:00:00Z')))).toEqual(['2026-11-03', '2026-11-04'])
+    // At 20:00 only 4 h of Nov 2 are needed: the day still comes whole.
+    expect(names(planDays(t('2026-11-02T20:00:00Z'), t('2026-11-05T20:00:00Z'), t('2026-11-05T20:00:00Z')))).toEqual(['2026-11-02', '2026-11-03', '2026-11-04'])
   })
 
   it('waits for a day to settle', () => {
@@ -53,12 +53,14 @@ describe('whole-day planning (D-158)', () => {
     expect(names(planDays(lo, t('2026-11-05T00:30:00Z'), t('2026-11-05T00:30:00Z')))).toEqual(['2026-11-03', '2026-11-04'])
   })
 
-  it('never takes a day reaching past the range or into the future', () => {
+  it('takes past days whole however little of them is needed, and never a day not settled', () => {
     const now = t('2026-11-05T12:00:00Z')
-    // A fixed window ending mid-day: the last day is partly fetched paged.
-    expect(names(planDays(t('2026-10-01T00:00:00Z'), t('2026-10-03T06:00:00Z'), now))).toEqual(['2026-10-01', '2026-10-02'])
-    expect(planDays(t('2026-11-05T01:00:00Z'), now, now)).toEqual([])
-    expect(planDays(t('2026-11-04T23:00:00Z'), t('2026-11-05T01:00:00Z'), now)).toEqual([]) // a 2-hour window
+    // A fixed window ending mid-day: its last day comes whole too.
+    expect(names(planDays(t('2026-10-01T00:00:00Z'), t('2026-10-03T06:00:00Z'), now))).toEqual(['2026-10-01', '2026-10-02', '2026-10-03'])
+    // A window inside one past day: that day.
+    expect(names(planDays(t('2026-10-01T12:00:00Z'), t('2026-10-01T18:00:00Z'), now))).toEqual(['2026-10-01'])
+    expect(planDays(t('2026-11-05T01:00:00Z'), now, now)).toEqual([]) // today
+    expect(names(planDays(t('2026-11-04T23:00:00Z'), t('2026-11-05T01:00:00Z'), now))).toEqual(['2026-11-04']) // a 2-hour window: yesterday whole, today paged
     expect(planDays(NaN, now, now)).toEqual([])
     expect(planDays(now, now, now)).toEqual([])
   })

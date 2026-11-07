@@ -29,14 +29,6 @@ export const DAY_MS = 86_400_000
  * /observations/day, which every visitor shares through HTTP caches (D-158).
  */
 const SETTLE_MS = 30 * 60_000
-/**
- * The first day of a range is fetched whole, and trimmed by the window, when
- * at least this much of it is needed; less goes through the paged endpoint.
- * A whole day comes from a cache, so the extra rows cost transfer, not the
- * database; for a sliver of a day the paged read is cheaper all round.
- */
-const PARTIAL_DAY_MIN_MS = 6 * 3_600_000
-
 /** The UTC day of ms as YYYY-MM-DD (the day endpoint's path). */
 export function dayName(ms: number): string {
   return new Date(ms).toISOString().slice(0, 10)
@@ -64,18 +56,17 @@ export function requestedRange(params: URLSearchParams, now: number): { lo: numb
 
 /**
  * The UTC days (start instants, ascending) of [lo, hi) to fetch whole: every
- * day that ended at least SETTLE_MS before now and lies within the range,
- * and the range's first day too when at least PARTIAL_DAY_MIN_MS of it is
- * needed. The rest of the range (before the first day, after the last) goes
- * through the paged endpoint.
+ * day the range touches that ended at least SETTLE_MS before now, however
+ * little of it is needed. A whole day comes from a shared cache (the
+ * browser's, Cloudflare, the server's Redis), so its rows outside the range
+ * cost transfer, never the database; only what is not settled yet (today)
+ * goes through the paged endpoint.
  */
 export function planDays(lo: number, hi: number, now: number): number[] {
   if (!Number.isFinite(lo) || !Number.isFinite(hi) || hi <= lo) return []
   const settled = Math.floor((now - SETTLE_MS) / DAY_MS) * DAY_MS // days ending here or earlier are final
-  let d = Math.floor(lo / DAY_MS) * DAY_MS
-  if (d < lo && d + DAY_MS - lo < PARTIAL_DAY_MIN_MS) d += DAY_MS
   const days: number[] = []
-  for (; d + DAY_MS <= Math.min(hi, settled); d += DAY_MS) days.push(d)
+  for (let d = Math.floor(lo / DAY_MS) * DAY_MS; d < hi && d + DAY_MS <= settled; d += DAY_MS) days.push(d)
   return days
 }
 
