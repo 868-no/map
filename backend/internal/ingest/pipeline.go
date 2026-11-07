@@ -428,66 +428,88 @@ func (p *Pipeline) flushProvenance() {
 	p.m.ProvenanceUpdates.WithLabelValues("updated").Add(float64(n))
 }
 
+// Refused rows (D-165). The database refusing a row on its data (Permanent)
+// looks the same as it refusing every row because it is out of step with
+// them (a schema mismatch during a deploy). A refused row is therefore
+// dropped only once the database has taken another row after refusing it:
+// part of the same batch, found by halving it, or a row that arrived while
+// the refused ones were held. Until then the rows are kept and retried as in
+// an outage, with the writer degraded; at a few rows a second most batches
+// hold one row, and a lone row refused must not be dropped on the spot.
+const (
+	// refusedPoll is the least time between attempts while held rows are
+	// refused and new rows arrive to test the database with.
+	refusedPoll = 250 * time.Millisecond
+	// isolateEvery is how often held refused rows are halved again without
+	// new evidence (2n-1 inserts), in case the database recovered while one
+	// of them is refused for good and no new row arrives to show it.
+	isolateEvery = time.Minute
+	// warnEvery spaces out the warnings of a write that keeps failing.
+	warnEvery = 30 * time.Second
+)
+
 // flush commits a batch, retrying with backoff until it succeeds. While it
 // retries, workers block on toWriter and the bounded queue absorbs input.
+// While the database refuses every held row, rows that arrive are taken in
+// and tried on their own first: if it takes them, the held rows' refusal is
+// down to their own data and they are dropped.
 func (p *Pipeline) flush(batch []*Observation) {
+	// No two copies of one observation reach the writer: claim holds a key
+	// in flight until afterCommit.
+	batch = p.encodable(batch)
 	if len(batch) == 0 {
 		return
 	}
-	// No two copies of one observation reach the writer: claim holds a key
-	// in flight until afterCommit.
 	backoff := 250 * time.Millisecond
-	halveAt := 0 // the retry from which a refused batch is halved again
-	for retry := 0; ; retry++ {
+	var fresh []*Observation // taken in while every held row was refused
+	var isolated, warned time.Time
+	for {
 		// Shutting down: no attempt may outlast the drain deadline, and past
 		// it the rows are given up as a gap without trying (D-059).
 		timeout := 30 * time.Second
 		if left, closing := p.drainLeft(); closing {
 			if left <= 0 {
-				p.giveUp(batch, errors.New("drain deadline passed"))
+				p.giveUp(slices.Concat(batch, fresh), errors.New("drain deadline passed"))
 				return
 			}
 			timeout = min(timeout, left)
 		}
-		p.takeAlsoVia(batch)
-		start := time.Now()
-		ctx, cancel := context.WithTimeout(context.Background(), timeout)
-		ids, err := p.sink.InsertBatch(ctx, batch)
-		cancel()
+		accepted := false // the database took other rows since refusing these
+		if fresh = p.encodable(fresh); len(fresh) > 0 {
+			if p.insert(fresh, timeout) == nil {
+				accepted = true
+			} else {
+				p.m.WriterErrors.Inc()
+				batch = append(batch, fresh...) // no evidence: held with the rest
+			}
+			fresh = nil
+		}
+		err := p.insert(batch, timeout)
 		if err == nil {
-			p.degraded.Store(false)
-			p.m.WriterLatency.Observe(time.Since(start).Seconds())
-			p.m.WriterBatches.Inc()
-			p.m.WriterRows.Add(float64(len(batch)))
-			p.afterCommit(batch, ids)
 			return
 		}
 		p.m.WriterErrors.Inc()
-		if Permanent(err) && len(batch) == 1 {
-			p.reject(batch[0], err) // refused on its own: no second attempt
-			return
-		}
-		if Permanent(err) && retry >= halveAt {
-			// The database refuses rows (hostile input it cannot hold):
-			// retrying cannot help and would stall ingest. Halve the batch
-			// until the bad rows stand alone and drop those, keeping the rest.
-			// When it refuses every row of a batch of several, the cause is
-			// the database rather than the data (a schema out of step during
-			// a deploy): keep the rows and retry, as for any outage.
-			refused, again := p.isolate(batch, timeout)
-			if len(refused) < len(batch) {
+		refusing := false
+		if Permanent(err) {
+			refused, again := batch, []*Observation(nil)
+			if len(batch) > 1 && (accepted || time.Since(isolated) >= isolateEvery) {
+				// Halve the batch until the refused rows stand alone, storing
+				// the rest; that the database took some is evidence too.
+				refused, again = p.isolate(batch, timeout)
+				isolated = time.Now()
+				accepted = accepted || len(refused)+len(again) < len(batch)
+			}
+			if accepted {
 				for _, o := range refused {
-					p.reject(o, err)
+					p.reject(o, "db_refused_row", err)
 				}
 				if len(again) == 0 {
 					return
 				}
-				batch = again // stored or dropped the rest; retry what failed transiently
+				batch = again // retry what failed for another reason
 				continue
 			}
-			// Every row refused: retry the batch whole until the database
-			// takes rows again, halving it (2n-1 inserts) only every 10th time.
-			halveAt = retry + 10
+			refusing = true // every row refused: kept, as in an outage
 		}
 		p.degraded.Store(true)
 		// Shutting down: retry only until the drain deadline, then give the
@@ -500,10 +522,81 @@ func (p *Pipeline) flush(batch []*Observation) {
 			}
 			wait = min(wait, left)
 		}
-		p.log.Warn("batch insert failed; retrying", "rows", len(batch), "err", err, "backoff", wait)
-		time.Sleep(wait)
+		if time.Since(warned) >= warnEvery {
+			p.log.Warn("batch insert failed; retrying", "rows", len(batch), "err", err, "backoff", wait, "refused", refusing)
+			warned = time.Now()
+		}
+		fresh = p.pause(wait, refusing, p.cfg.BatchSize-len(batch))
 		backoff = min(backoff*2, 30*time.Second)
 	}
+}
+
+// insert tries one insert of rows and on success completes their commit.
+func (p *Pipeline) insert(rows []*Observation, timeout time.Duration) error {
+	p.takeAlsoVia(rows)
+	start := time.Now()
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ids, err := p.sink.InsertBatch(ctx, rows)
+	cancel()
+	if err != nil {
+		return err
+	}
+	p.degraded.Store(false)
+	p.m.WriterLatency.Observe(time.Since(start).Seconds())
+	p.m.WriterBatches.Inc()
+	p.m.WriterRows.Add(float64(len(rows)))
+	p.afterCommit(rows, ids)
+	return nil
+}
+
+// encodable drops the rows that cannot be encoded for storage: their own
+// fault whatever the database says, so they never wait for evidence.
+func (p *Pipeline) encodable(rows []*Observation) []*Observation {
+	out := rows[:0]
+	for _, o := range rows {
+		if _, _, err := o.Encoded(); err != nil {
+			p.reject(o, "unencodable_row", err)
+			continue
+		}
+		out = append(out, o)
+	}
+	return out
+}
+
+// pause waits d before the next attempt. While every held row is refused
+// (refusing), rows the workers hand over meanwhile, at most room of them,
+// are taken in and end the wait early (after refusedPoll at least), so they
+// can show soon whether the database takes rows at all.
+func (p *Pipeline) pause(d time.Duration, refusing bool, room int) []*Observation {
+	if !refusing || room <= 0 {
+		time.Sleep(d)
+		return nil
+	}
+	t := time.NewTimer(d)
+	defer t.Stop()
+	time.Sleep(min(d, refusedPoll))
+	var got []*Observation
+	select {
+	case <-t.C:
+	case o, ok := <-p.toWriter:
+		if !ok {
+			<-t.C // shutting down: no more rows will come
+			return nil
+		}
+		got = append(got, o)
+	}
+	for len(got) < room {
+		select {
+		case o, ok := <-p.toWriter:
+			if !ok {
+				return got
+			}
+			got = append(got, o)
+		default:
+			return got
+		}
+	}
+	return got
 }
 
 // drainLeft is how long the shutdown drain may still take, and whether the
@@ -533,15 +626,9 @@ func (p *Pipeline) isolate(rows []*Observation, timeout time.Duration) (refused,
 // isolate1 tries one insert of rows, recursing through isolate when the
 // database refuses it.
 func (p *Pipeline) isolate1(rows []*Observation, timeout time.Duration) (refused, again []*Observation) {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	ids, err := p.sink.InsertBatch(ctx, rows)
-	cancel()
+	err := p.insert(rows, timeout)
 	switch {
 	case err == nil:
-		p.degraded.Store(false)
-		p.m.WriterBatches.Inc()
-		p.m.WriterRows.Add(float64(len(rows)))
-		p.afterCommit(rows, ids)
 		return nil, nil
 	case !Permanent(err):
 		return nil, rows
@@ -568,10 +655,11 @@ func Permanent(err error) bool {
 	return strings.HasPrefix(c, "22") || strings.HasPrefix(c, "23")
 }
 
-// reject drops one row the database refused and releases its claim.
-func (p *Pipeline) reject(o *Observation, err error) {
-	p.log.Warn("database refused a row; dropped", "broker", o.BrokerID, "topic", o.Topic, "err", err)
-	p.m.Rejected.WithLabelValues("db_refused_row").Inc()
+// reject drops one row that cannot be stored, counted under category, and
+// releases its claim.
+func (p *Pipeline) reject(o *Observation, category string, err error) {
+	p.log.Warn("row cannot be stored; dropped", "broker", o.BrokerID, "topic", o.Topic, "reason", category, "err", err)
+	p.m.Rejected.WithLabelValues(category).Inc()
 	p.inflightMu.Lock()
 	delete(p.inflight, o.ObservationKey)
 	delete(p.alsoVia, o.ObservationKey)

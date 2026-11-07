@@ -440,19 +440,11 @@ func TestFlushDropsRowsTheDatabaseRefuses(t *testing.T) {
 	if whole.count() != 4 {
 		t.Fatalf("stored %d rows after the database recovered, want 4", whole.count())
 	}
-	// Halved once (1+6 inserts), then retried whole: attempts 8 and 9 are
-	// refused and the 10th stores the batch.
+	// Halved once (1+6 inserts), then retried whole without halving again
+	// (that waits a minute): attempts 8 and 9 are refused and the 10th
+	// stores the batch.
 	if whole.attempts != 10 {
 		t.Fatalf("%d insert attempts, want 10 (the batch halved once)", whole.attempts)
-	}
-	// A lone refused row is dropped on the spot, not inserted a second time.
-	lone := &memSink{refuse: func(*Observation) bool { return true }}
-	r, _ := newTestPipeline(t, lone, 10)
-	one := &Observation{Topic: "bad", BrokerID: "a", ObservedAt: time.Now()}
-	r.inflight[one.ObservationKey] = "a"
-	r.flush([]*Observation{one})
-	if lone.attempts != 1 || len(r.inflight) != 0 {
-		t.Fatalf("%d attempts and %d claims for a lone refused row, want 1 and 0", lone.attempts, len(r.inflight))
 	}
 	// Transient and partition errors stay retryable.
 	if Permanent(errors.New("db down")) || Permanent(sqlStateErr("08006")) || Permanent(fmt.Errorf("%w: %w", ErrNoPartition, sqlStateErr("23514"))) {
@@ -466,6 +458,101 @@ func TestFlushDropsRowsTheDatabaseRefuses(t *testing.T) {
 	nan := &Observation{Meta: Metadata{Decoded: ports.Decoded{Position: &ports.Position{Lat: math.NaN()}}}}
 	if _, _, err := nan.Encoded(); !errors.Is(err, ErrUnencodable) || !Permanent(fmt.Errorf("copy: %w", err)) {
 		t.Fatalf("encoding failure %v not classed as permanent", err)
+	}
+}
+
+// rejected reads the pipeline's rejected-row counter for category.
+func rejected(t *testing.T, p *Pipeline, category string) float64 {
+	t.Helper()
+	var m dto.Metric
+	if err := p.m.Rejected.WithLabelValues(category).Write(&m); err != nil {
+		t.Fatal(err)
+	}
+	return m.GetCounter().GetValue()
+}
+
+// claimed builds an observation already claimed in flight, as the writer gets it.
+func claimed(p *Pipeline, topic string, key byte) *Observation {
+	o := &Observation{Topic: topic, BrokerID: "a", ObservedAt: time.Now()}
+	o.ObservationKey[0] = key
+	p.inflightMu.Lock()
+	p.inflight[o.ObservationKey] = "a"
+	p.inflightMu.Unlock()
+	return o
+}
+
+// At live traffic most batches hold one row. A lone row the database
+// refuses may be refused for the database's sake (a schema out of step
+// during a deploy): it is kept and retried, with the writer degraded, and
+// stored once the database takes rows again.
+func TestFlushHoldsALoneRefusedRow(t *testing.T) {
+	sink := &memSink{}
+	sink.refuse = func(*Observation) bool { return sink.attempts < 3 } // called under sink.mu
+	p, _ := newTestPipeline(t, sink, 10)
+	one := claimed(p, "ok", 1)
+	done := make(chan struct{})
+	go func() { p.flush([]*Observation{one}); close(done) }()
+	waitFor(t, func() bool { ok, _ := p.Healthy(); return !ok })
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("a lone refused row was never stored after the database recovered")
+	}
+	if sink.count() != 1 || rejected(t, p, "db_refused_row") != 0 || len(p.inflight) != 0 {
+		t.Fatalf("stored %d, dropped %v, claims %d; want 1, 0, 0", sink.count(), rejected(t, p, "db_refused_row"), len(p.inflight))
+	}
+	if ok, why := p.Healthy(); !ok {
+		t.Fatalf("still degraded after the row was stored: %s", why)
+	}
+}
+
+// A held lone row is dropped once the database takes a row that arrived
+// after it: then the refusal is down to its own data. The new row is stored
+// at once, not after the held row's backoff.
+func TestFlushDropsAHeldRowOnceAnotherIsTaken(t *testing.T) {
+	sink := &memSink{refuse: func(o *Observation) bool { return o.Topic == "bad" }}
+	p, _ := newTestPipeline(t, sink, 10)
+	bad := claimed(p, "bad", 1)
+	done := make(chan struct{})
+	go func() { p.flush([]*Observation{bad}); close(done) }()
+	waitFor(t, func() bool { ok, _ := p.Healthy(); return !ok })
+	if rejected(t, p, "db_refused_row") != 0 {
+		t.Fatal("a lone refused row was dropped before the database took any other")
+	}
+	p.toWriter <- claimed(p, "ok", 2)
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the held row was kept after the database took a newer one")
+	}
+	if sink.count() != 1 || sink.row(0).Topic != "ok" || rejected(t, p, "db_refused_row") != 1 {
+		t.Fatalf("stored %d, dropped %v; want the new row stored and the held one dropped", sink.count(), rejected(t, p, "db_refused_row"))
+	}
+	if len(p.inflight) != 0 {
+		t.Fatalf("claims left in flight: %d", len(p.inflight))
+	}
+	if ok, why := p.Healthy(); !ok {
+		t.Fatalf("still degraded: %s", why)
+	}
+}
+
+// A row that cannot be encoded is dropped without an insert, even alone:
+// no database could take it.
+func TestFlushDropsUnencodableRows(t *testing.T) {
+	sink := &memSink{}
+	p, _ := newTestPipeline(t, sink, 10)
+	nan := claimed(p, "nan", 1)
+	nan.Meta.Position = &ports.Position{Lat: math.NaN()}
+	ok := claimed(p, "ok", 2)
+	p.flush([]*Observation{nan, ok})
+	alone := claimed(p, "nan", 3)
+	alone.Meta.Position = &ports.Position{Lon: math.Inf(1)}
+	p.flush([]*Observation{alone})
+	if sink.count() != 1 || sink.row(0).Topic != "ok" || sink.attempts != 1 {
+		t.Fatalf("stored %d rows in %d inserts; want only the encodable one, in one", sink.count(), sink.attempts)
+	}
+	if n := rejected(t, p, "unencodable_row"); n != 2 || len(p.inflight) != 0 {
+		t.Fatalf("%v unencodable rows counted, %d claims left; want 2, 0", n, len(p.inflight))
 	}
 }
 
