@@ -4050,51 +4050,23 @@
       "heard_by": [
         {
           "direct_rf": 0,
-          "last_at": "2026-10-31T14:32:27.752Z",
           "node": "!5dca6801",
-          "receptions": 3,
-          "rssi": {
-            "n": 0
-          },
-          "snr": {
-            "n": 0
-          }
+          "receptions": 3
         },
         {
           "direct_rf": 0,
-          "last_at": "2026-10-31T14:32:33.946Z",
           "node": "!a1d77a98",
-          "receptions": 2,
-          "rssi": {
-            "n": 0
-          },
-          "snr": {
-            "n": 0
-          }
+          "receptions": 2
         },
         {
           "direct_rf": 0,
-          "last_at": "2026-10-31T05:45:53.637Z",
           "node": "!699cb4a0",
-          "receptions": 1,
-          "rssi": {
-            "n": 0
-          },
-          "snr": {
-            "n": 0
-          }
+          "receptions": 1
         },
         {
           "direct_rf": 0,
-          "last_at": "2026-10-31T11:32:22.093Z",
           "node": "!b2a114e3",
-          "receptions": 1,
-          "rssi": {
-            "n": 0
-          },
-          "snr": {
-            "n": 0
-          }
+          "receptions": 1
         }
       ],
       "id": "!1224405f",
@@ -4148,47 +4120,20 @@
       "heard_by": [
         {
           "direct_rf": 0,
-          "last_at": "2026-10-31T15:13:38.849Z",
           "node": "!9b0f4bd5",
-          "receptions": 8,
-          "rssi": {
-            "n": 0
-          },
-          "snr": {
-            "n": 0
-          }
+          "receptions": 8
         },
         {
           "direct_rf": 0,
-          "last_at": "2026-10-31T15:13:37.009Z",
           "node": "!f6a6fd67",
-          "receptions": 8,
-          "rssi": {
-            "n": 0
-          },
-          "snr": {
-            "n": 0
-          }
+          "receptions": 8
         },
         {
           "direct_rf": 5,
-          "last_at": "2026-10-31T15:13:37.817Z",
           "node": "!b1610d41",
           "receptions": 7,
-          "rssi": {
-            "last": -105.0,
-            "max": -104.0,
-            "median": -105.0,
-            "min": -106.0,
-            "n": 5
-          },
-          "snr": {
-            "last": -4.5,
-            "max": -1.75,
-            "median": -2.5,
-            "min": -4.5,
-            "n": 5
-          }
+          "rssi": -105.0,
+          "snr": -2.5
         }
       ],
       "id": "!3afab911",
@@ -4252,63 +4197,28 @@
       "heard_by": [
         {
           "direct_rf": 0,
-          "last_at": "2026-10-31T14:07:31.509Z",
           "node": "!da75a898",
-          "receptions": 33,
-          "rssi": {
-            "n": 0
-          },
-          "snr": {
-            "n": 0
-          }
+          "receptions": 33
         },
         {
           "direct_rf": 0,
-          "last_at": "2026-10-31T13:52:24.292Z",
           "node": "!699cb4a0",
-          "receptions": 20,
-          "rssi": {
-            "n": 0
-          },
-          "snr": {
-            "n": 0
-          }
+          "receptions": 20
         },
         {
           "direct_rf": 0,
-          "last_at": "2026-10-31T13:22:23.802Z",
           "node": "!b2a114e3",
-          "receptions": 16,
-          "rssi": {
-            "n": 0
-          },
-          "snr": {
-            "n": 0
-          }
+          "receptions": 16
         },
         {
           "direct_rf": 0,
-          "last_at": "2026-10-31T13:57:22.240Z",
           "node": "!a1d77a98",
-          "receptions": 4,
-          "rssi": {
-            "n": 0
-          },
-          "snr": {
-            "n": 0
-          }
+          "receptions": 4
         },
         {
           "direct_rf": 0,
-          "last_at": "2026-10-31T13:57:10.850Z",
           "node": "!1224405f",
-          "receptions": 3,
-          "rssi": {
-            "n": 0
-          },
-          "snr": {
-            "n": 0
-          }
+          "receptions": 3
         }
       ],
       "id": "!5dca6801",
@@ -4372,47 +4282,20 @@
       "heard_by": [
         {
           "direct_rf": 0,
-          "last_at": "2026-10-31T14:41:18.637Z",
           "node": "!3afab911",
-          "receptions": 3,
-          "rssi": {
-            "n": 0
-          },
-          "snr": {
-            "n": 0
-          }
+          "receptions": 3
         },
         {
           "direct_rf": 1,
-          "last_at": "2026-10-31T14:41:17.538Z",
           "node": "!b1610d41",
           "receptions": 3,
-          "rssi": {
-            "last": -110.0,
-            "max": -110.0,
-            "median": -110.0,
-            "min": -110.0,
-            "n": 1
-          },
-          "snr": {
-            "last": -8.25,
-            "max": -8.25,
-            "median": -8.25,
-            "min": -8.25,
-            "n": 1
-          }
+          "rssi": -110.0,
+          "snr": -8.25
         },
         {
           "direct_rf": 0,
-          "last_at": "2026-10-31T14:41:19.019Z",
           "node": "!f6a6fd67",
-          "receptions": 3,
-          "rssi": {
-            "n": 0
-          },
-          "snr": {
-            "n": 0
-          }
+          "receptions": 3
         }
       ],
       "id": "!9b0f4bd5",
@@ -4477,63 +4360,28 @@
       "heard_by": [
         {
           "direct_rf": 0,
-          "last_at": "2026-10-31T15:08:23.258Z",
           "node": "!da75a898",
-          "receptions": 92,
-          "rssi": {
-            "n": 0
-          },
-          "snr": {
-            "n": 0
-          }
+          "receptions": 92
         },
         {
           "direct_rf": 0,
-          "last_at": "2026-10-31T13:31:01.668Z",
           "node": "!b2a114e3",
-          "receptions": 42,
-          "rssi": {
-            "n": 0
-          },
-          "snr": {
-            "n": 0
-          }
+          "receptions": 42
         },
         {
           "direct_rf": 0,
-          "last_at": "2026-10-31T14:16:00.256Z",
           "node": "!699cb4a0",
-          "receptions": 16,
-          "rssi": {
-            "n": 0
-          },
-          "snr": {
-            "n": 0
-          }
+          "receptions": 16
         },
         {
           "direct_rf": 0,
-          "last_at": "2026-10-31T12:44:21.148Z",
           "node": "!1224405f",
-          "receptions": 5,
-          "rssi": {
-            "n": 0
-          },
-          "snr": {
-            "n": 0
-          }
+          "receptions": 5
         },
         {
           "direct_rf": 0,
-          "last_at": "2026-10-31T09:44:24.013Z",
           "node": "!5dca6801",
-          "receptions": 3,
-          "rssi": {
-            "n": 0
-          },
-          "snr": {
-            "n": 0
-          }
+          "receptions": 3
         }
       ],
       "id": "!a1d77a98",
@@ -4587,75 +4435,29 @@
       "heard_by": [
         {
           "direct_rf": 51,
-          "last_at": "2026-10-31T15:13:16.203Z",
           "node": "!9b0f4bd5",
           "receptions": 54,
-          "rssi": {
-            "last": -119.0,
-            "max": -117.0,
-            "median": -119.0,
-            "min": -124.0,
-            "n": 51
-          },
-          "snr": {
-            "last": -3.0,
-            "max": -1.25,
-            "median": -3.0,
-            "min": -8.0,
-            "n": 51
-          }
+          "rssi": -119.0,
+          "snr": -3.0
         },
         {
           "direct_rf": 41,
-          "last_at": "2026-10-31T15:13:16.011Z",
           "node": "!3afab911",
           "receptions": 49,
-          "rssi": {
-            "last": -116.0,
-            "max": -112.0,
-            "median": -117.0,
-            "min": -118.0,
-            "n": 41
-          },
-          "snr": {
-            "last": -7.5,
-            "max": -7.0,
-            "median": -8.0,
-            "min": -10.0,
-            "n": 41
-          }
+          "rssi": -117.0,
+          "snr": -8.0
         },
         {
           "direct_rf": 29,
-          "last_at": "2026-10-31T15:13:16.612Z",
           "node": "!f6a6fd67",
           "receptions": 48,
-          "rssi": {
-            "last": -108.0,
-            "max": -105.0,
-            "median": -107.0,
-            "min": -109.0,
-            "n": 29
-          },
-          "snr": {
-            "last": 5.0,
-            "max": 7.75,
-            "median": 5.75,
-            "min": -3.0,
-            "n": 29
-          }
+          "rssi": -107.0,
+          "snr": 5.75
         },
         {
           "direct_rf": 0,
-          "last_at": "2026-10-31T14:58:19.730Z",
           "node": "!2c14bd59",
-          "receptions": 21,
-          "rssi": {
-            "n": 0
-          },
-          "snr": {
-            "n": 0
-          }
+          "receptions": 21
         }
       ],
       "id": "!b1610d41",
@@ -4724,51 +4526,23 @@
       "heard_by": [
         {
           "direct_rf": 0,
-          "last_at": "2026-10-31T11:50:03.474Z",
           "node": "!b2a114e3",
-          "receptions": 14,
-          "rssi": {
-            "n": 0
-          },
-          "snr": {
-            "n": 0
-          }
+          "receptions": 14
         },
         {
           "direct_rf": 0,
-          "last_at": "2026-10-31T14:50:07.861Z",
           "node": "!1224405f",
-          "receptions": 5,
-          "rssi": {
-            "n": 0
-          },
-          "snr": {
-            "n": 0
-          }
+          "receptions": 5
         },
         {
           "direct_rf": 0,
-          "last_at": "2026-10-31T11:50:10.488Z",
           "node": "!5dca6801",
-          "receptions": 4,
-          "rssi": {
-            "n": 0
-          },
-          "snr": {
-            "n": 0
-          }
+          "receptions": 4
         },
         {
           "direct_rf": 0,
-          "last_at": "2026-10-31T11:50:20.012Z",
           "node": "!a1d77a98",
-          "receptions": 1,
-          "rssi": {
-            "n": 0
-          },
-          "snr": {
-            "n": 0
-          }
+          "receptions": 1
         }
       ],
       "id": "!da75a898",
@@ -4832,75 +4606,29 @@
       "heard_by": [
         {
           "direct_rf": 11,
-          "last_at": "2026-10-31T14:28:55.776Z",
           "node": "!3afab911",
           "receptions": 19,
-          "rssi": {
-            "last": -117.0,
-            "max": -117.0,
-            "median": -117.0,
-            "min": -118.0,
-            "n": 11
-          },
-          "snr": {
-            "last": -7.75,
-            "max": -7.75,
-            "median": -8.5,
-            "min": -9.75,
-            "n": 11
-          }
+          "rssi": -117.0,
+          "snr": -8.5
         },
         {
           "direct_rf": 17,
-          "last_at": "2026-10-31T14:28:52.171Z",
           "node": "!9b0f4bd5",
           "receptions": 19,
-          "rssi": {
-            "last": -104.0,
-            "max": -102.0,
-            "median": -103.0,
-            "min": -104.0,
-            "n": 17
-          },
-          "snr": {
-            "last": 8.75,
-            "max": 10.0,
-            "median": 9.5,
-            "min": 8.75,
-            "n": 17
-          }
+          "rssi": -103.0,
+          "snr": 9.5
         },
         {
           "direct_rf": 14,
-          "last_at": "2026-10-31T14:28:52.499Z",
           "node": "!b1610d41",
           "receptions": 19,
-          "rssi": {
-            "last": -89.0,
-            "max": -86.0,
-            "median": -88.0,
-            "min": -92.0,
-            "n": 14
-          },
-          "snr": {
-            "last": 7.75,
-            "max": 7.75,
-            "median": 7.0,
-            "min": -7.0,
-            "n": 14
-          }
+          "rssi": -88.0,
+          "snr": 7.0
         },
         {
           "direct_rf": 0,
-          "last_at": "2026-10-31T13:09:36.281Z",
           "node": "!2c14bd59",
-          "receptions": 11,
-          "rssi": {
-            "n": 0
-          },
-          "snr": {
-            "n": 0
-          }
+          "receptions": 11
         }
       ],
       "id": "!f6a6fd67",
@@ -5032,11 +4760,9 @@
         {
           "at": "2026-10-31T14:32:19.559Z",
           "by_itself": true,
-          "channel": "NarrowFast",
           "gateways": 2,
           "hops": 3,
           "lp": "bada41eeb2cf8794",
-          "receptions": 3,
           "signature": "verified",
           "to": "broadcast",
           "type": "nodeinfo"
@@ -5044,11 +4770,9 @@
         {
           "at": "2026-10-31T11:32:19.447Z",
           "by_itself": true,
-          "channel": "NarrowFast",
           "gateways": 3,
           "hops": 1,
           "lp": "d7f1fb8285013a2f",
-          "receptions": 4,
           "signature": "verified",
           "to": "broadcast",
           "type": "nodeinfo"
@@ -5056,22 +4780,18 @@
         {
           "at": "2026-10-31T08:32:19.286Z",
           "by_itself": true,
-          "channel": "NarrowFast",
           "gateways": 0,
           "lp": "0f9175cd895af5d1",
-          "receptions": 1,
           "signature": "verified",
           "to": "broadcast",
           "type": "nodeinfo"
         },
         {
           "at": "2026-10-31T05:45:53.637Z",
-          "channel": "NarrowFast",
           "gateways": 1,
           "hops": 2,
           "in_response_to": "!3a714b32",
           "lp": "9e2e8b05beb5cba5",
-          "receptions": 1,
           "signature": "not-applicable",
           "to": "!3a714b32",
           "type": "traceroute"
@@ -5079,11 +4799,9 @@
         {
           "at": "2026-10-31T05:32:19.146Z",
           "by_itself": true,
-          "channel": "NarrowFast",
           "gateways": 1,
           "hops": 3,
           "lp": "ac0810d1aa18cda7",
-          "receptions": 2,
           "signature": "verified",
           "to": "broadcast",
           "type": "nodeinfo"
@@ -5098,11 +4816,9 @@
         {
           "at": "2026-10-31T14:41:16.687Z",
           "by_itself": true,
-          "channel": "NarrowFast",
           "gateways": 3,
           "hops": 0,
           "lp": "e0dac0acc61b1884",
-          "receptions": 4,
           "signature": "verified",
           "to": "broadcast",
           "type": "nodeinfo"
@@ -5110,10 +4826,8 @@
         {
           "at": "2026-10-31T14:01:02.923Z",
           "by_itself": true,
-          "channel": "NarrowFast",
           "gateways": 0,
           "lp": "e7e7f81bbceab328",
-          "receptions": 1,
           "signature": "verified",
           "to": "broadcast",
           "type": "position"
@@ -5121,11 +4835,9 @@
         {
           "at": "2026-10-31T08:41:16.463Z",
           "by_itself": true,
-          "channel": "NarrowFast",
           "gateways": 3,
           "hops": 1,
           "lp": "2f5b5f60b96238c7",
-          "receptions": 4,
           "signature": "verified",
           "to": "broadcast",
           "type": "nodeinfo"
@@ -5133,10 +4845,8 @@
         {
           "at": "2026-10-31T08:01:08.570Z",
           "by_itself": true,
-          "channel": "NarrowFast",
           "gateways": 0,
           "lp": "3d7ca84e15f97d1b",
-          "receptions": 1,
           "signature": "unsigned",
           "to": "!a46468d1",
           "type": "nodeinfo"
@@ -5144,11 +4854,9 @@
         {
           "at": "2026-10-31T08:01:02.314Z",
           "by_itself": true,
-          "channel": "NarrowFast",
           "gateways": 3,
           "hops": 1,
           "lp": "de7f0f1c74048a68",
-          "receptions": 4,
           "signature": "verified",
           "to": "broadcast",
           "type": "position"
@@ -5160,9 +4868,7 @@
           "evidence": [
             "relay_byte"
           ],
-          "gateways": [
-            "!f6a6fd67"
-          ],
+          "gateways": 1,
           "lp": "004650e8a16ae571",
           "origin": "!02638f1c",
           "to": "!268a1248",
@@ -5173,9 +4879,7 @@
           "evidence": [
             "relay_byte"
           ],
-          "gateways": [
-            "!f6a6fd67"
-          ],
+          "gateways": 1,
           "lp": "7d79db724711f1e1",
           "origin": "!f4a2ee7c",
           "to": "broadcast",
@@ -5187,9 +4891,7 @@
             "relay_byte",
             "traceroute"
           ],
-          "gateways": [
-            "!f6a6fd67"
-          ],
+          "gateways": 1,
           "lp": "b30b1c2f41925cae",
           "origin": "!98f71d7d",
           "to": "!6e9f1e6c",
@@ -5229,11 +4931,9 @@
         {
           "at": "2026-10-31T15:13:14.700Z",
           "by_itself": true,
-          "channel": "NarrowFast",
           "gateways": 3,
           "hops": 0,
           "lp": "db9eab64969a075e",
-          "receptions": 4,
           "signature": "not-applicable",
           "to": "!ba6a5968",
           "type": "traceroute"
@@ -5241,11 +4941,9 @@
         {
           "at": "2026-10-31T14:58:14.521Z",
           "by_itself": true,
-          "channel": "NarrowFast",
           "gateways": 4,
           "hops": 0,
           "lp": "015686c548527982",
-          "receptions": 5,
           "signature": "not-applicable",
           "to": "!24932177",
           "type": "traceroute"
@@ -5253,11 +4951,9 @@
         {
           "at": "2026-10-31T14:43:14.645Z",
           "by_itself": true,
-          "channel": "NarrowFast",
           "gateways": 3,
           "hops": 0,
           "lp": "59dadf15c946c3d3",
-          "receptions": 4,
           "signature": "not-applicable",
           "to": "!538621b2",
           "type": "traceroute"
@@ -5265,11 +4961,9 @@
         {
           "at": "2026-10-31T13:56:47.852Z",
           "by_itself": true,
-          "channel": "NarrowFast",
           "gateways": 3,
           "hops": 0,
           "lp": "66b020bec40eeb61",
-          "receptions": 4,
           "signature": "not-applicable",
           "to": "!f9ad38c8",
           "type": "traceroute"
@@ -5277,11 +4971,9 @@
         {
           "at": "2026-10-31T13:41:47.713Z",
           "by_itself": true,
-          "channel": "NarrowFast",
           "gateways": 4,
           "hops": 0,
           "lp": "d4ebef7b48605182",
-          "receptions": 5,
           "signature": "not-applicable",
           "to": "!48415f7e",
           "type": "traceroute"
@@ -5289,11 +4981,9 @@
         {
           "at": "2026-10-31T13:26:47.744Z",
           "by_itself": true,
-          "channel": "NarrowFast",
           "gateways": 3,
           "hops": 0,
           "lp": "3d03ff5022f53608",
-          "receptions": 4,
           "signature": "not-applicable",
           "to": "!935ab592",
           "type": "traceroute"
@@ -5301,11 +4991,9 @@
         {
           "at": "2026-10-31T13:11:47.834Z",
           "by_itself": true,
-          "channel": "NarrowFast",
           "gateways": 4,
           "hops": 0,
           "lp": "1a2981eee17f9112",
-          "receptions": 5,
           "signature": "not-applicable",
           "to": "!8fa20cb0",
           "type": "traceroute"
@@ -5313,11 +5001,9 @@
         {
           "at": "2026-10-31T12:56:47.661Z",
           "by_itself": true,
-          "channel": "NarrowFast",
           "gateways": 2,
           "hops": 0,
           "lp": "8a613349f5a7300c",
-          "receptions": 3,
           "signature": "not-applicable",
           "to": "!79bab314",
           "type": "traceroute"
@@ -5325,11 +5011,9 @@
         {
           "at": "2026-10-31T12:41:47.741Z",
           "by_itself": true,
-          "channel": "NarrowFast",
           "gateways": 4,
           "hops": 0,
           "lp": "9cda1171fcdee127",
-          "receptions": 5,
           "signature": "not-applicable",
           "to": "!4bb71c56",
           "type": "traceroute"
@@ -5337,11 +5021,9 @@
         {
           "at": "2026-10-31T12:28:35.764Z",
           "by_itself": true,
-          "channel": "NarrowFast",
           "gateways": 3,
           "hops": 0,
           "lp": "f7f5761e7f8da924",
-          "receptions": 4,
           "signature": "verified",
           "to": "broadcast",
           "type": "nodeinfo"
@@ -5349,11 +5031,9 @@
         {
           "at": "2026-10-31T12:26:47.841Z",
           "by_itself": true,
-          "channel": "NarrowFast",
           "gateways": 4,
           "hops": 0,
           "lp": "e5918e5a350dd5b6",
-          "receptions": 5,
           "signature": "not-applicable",
           "to": "!7446616a",
           "type": "traceroute"
@@ -5361,11 +5041,9 @@
         {
           "at": "2026-10-31T11:25:25.967Z",
           "by_itself": true,
-          "channel": "NarrowFast",
           "gateways": 3,
           "hops": 0,
           "lp": "4f17f214e2c1037b",
-          "receptions": 4,
           "signature": "not-applicable",
           "to": "!40cb5898",
           "type": "traceroute"
@@ -5373,11 +5051,9 @@
         {
           "at": "2026-10-31T11:10:25.873Z",
           "by_itself": true,
-          "channel": "NarrowFast",
           "gateways": 4,
           "hops": 0,
           "lp": "bdf4f136c9515a12",
-          "receptions": 5,
           "signature": "not-applicable",
           "to": "!ff409734",
           "type": "traceroute"
@@ -5385,11 +5061,9 @@
         {
           "at": "2026-10-31T10:55:25.902Z",
           "by_itself": true,
-          "channel": "NarrowFast",
           "gateways": 3,
           "hops": 0,
           "lp": "699f22419d7375ec",
-          "receptions": 4,
           "signature": "not-applicable",
           "to": "!56aaea55",
           "type": "traceroute"
@@ -5397,11 +5071,9 @@
         {
           "at": "2026-10-31T10:40:25.989Z",
           "by_itself": true,
-          "channel": "NarrowFast",
           "gateways": 3,
           "hops": 0,
           "lp": "09c7156c4aad8ad3",
-          "receptions": 4,
           "signature": "not-applicable",
           "to": "!98644b01",
           "type": "traceroute"
@@ -5409,11 +5081,9 @@
         {
           "at": "2026-10-31T10:25:25.768Z",
           "by_itself": true,
-          "channel": "NarrowFast",
           "gateways": 3,
           "hops": 0,
           "lp": "73ef84695f01d0d6",
-          "receptions": 4,
           "signature": "not-applicable",
           "to": "!0745f838",
           "type": "traceroute"
@@ -5421,11 +5091,9 @@
         {
           "at": "2026-10-31T09:28:35.867Z",
           "by_itself": true,
-          "channel": "NarrowFast",
           "gateways": 3,
           "hops": 0,
           "lp": "7b3f3039b6af0345",
-          "receptions": 4,
           "signature": "verified",
           "to": "broadcast",
           "type": "nodeinfo"
@@ -5433,10 +5101,8 @@
         {
           "at": "2026-10-31T09:28:05.131Z",
           "by_itself": true,
-          "channel": "NarrowFast",
           "gateways": 0,
           "lp": "98a1287dd0010ff1",
-          "receptions": 1,
           "signature": "verified",
           "to": "!00000001",
           "type": "neighborinfo"
@@ -5444,11 +5110,9 @@
         {
           "at": "2026-10-31T09:24:30.448Z",
           "by_itself": true,
-          "channel": "NarrowFast",
           "gateways": 4,
           "hops": 0,
           "lp": "3cd6986ddfbd5931",
-          "receptions": 5,
           "signature": "not-applicable",
           "to": "!02638f1c",
           "type": "traceroute"
@@ -5456,11 +5120,9 @@
         {
           "at": "2026-10-31T09:09:30.397Z",
           "by_itself": true,
-          "channel": "NarrowFast",
           "gateways": 3,
           "hops": 0,
           "lp": "c2110ae23169801f",
-          "receptions": 4,
           "signature": "not-applicable",
           "to": "!323e7bd8",
           "type": "traceroute"
@@ -5468,11 +5130,9 @@
         {
           "at": "2026-10-31T09:00:14.219Z",
           "by_itself": true,
-          "channel": "NarrowFast",
           "gateways": 3,
           "hops": 0,
           "lp": "87e828e9479a5520",
-          "receptions": 4,
           "signature": "not-applicable",
           "to": "!8a84e409",
           "type": "traceroute"
@@ -5480,11 +5140,9 @@
         {
           "at": "2026-10-31T08:54:30.385Z",
           "by_itself": true,
-          "channel": "NarrowFast",
           "gateways": 2,
           "hops": 0,
           "lp": "f89f9048ed3e1ea7",
-          "receptions": 3,
           "signature": "not-applicable",
           "to": "!f43a16ea",
           "type": "traceroute"
@@ -5492,11 +5150,9 @@
         {
           "at": "2026-10-31T08:39:30.456Z",
           "by_itself": true,
-          "channel": "NarrowFast",
           "gateways": 3,
           "hops": 0,
           "lp": "72684cee1d2fc6cc",
-          "receptions": 4,
           "signature": "not-applicable",
           "to": "!a142e814",
           "type": "traceroute"
@@ -5504,11 +5160,9 @@
         {
           "at": "2026-10-31T08:24:30.328Z",
           "by_itself": true,
-          "channel": "NarrowFast",
           "gateways": 3,
           "hops": 0,
           "lp": "d5d0993bbc566ef8",
-          "receptions": 4,
           "signature": "not-applicable",
           "to": "!268a1248",
           "type": "traceroute"
@@ -5516,11 +5170,9 @@
         {
           "at": "2026-10-31T08:11:53.197Z",
           "by_itself": true,
-          "channel": "NarrowFast",
           "gateways": 3,
           "hops": 0,
           "lp": "31d0bcb479714626",
-          "receptions": 4,
           "signature": "not-applicable",
           "to": "!8a84e409",
           "type": "traceroute"
@@ -5528,11 +5180,9 @@
         {
           "at": "2026-10-31T08:10:46.629Z",
           "by_itself": true,
-          "channel": "NarrowFast",
           "gateways": 3,
           "hops": 0,
           "lp": "0a198617f6c0c97b",
-          "receptions": 4,
           "signature": "not-applicable",
           "to": "!8a84e409",
           "type": "traceroute"
@@ -5540,11 +5190,9 @@
         {
           "at": "2026-10-31T08:09:30.347Z",
           "by_itself": true,
-          "channel": "NarrowFast",
           "gateways": 3,
           "hops": 0,
           "lp": "bea8b57f79884aa9",
-          "receptions": 4,
           "signature": "not-applicable",
           "to": "!a46468d1",
           "type": "traceroute"
@@ -5552,11 +5200,9 @@
         {
           "at": "2026-10-31T07:54:30.283Z",
           "by_itself": true,
-          "channel": "NarrowFast",
           "gateways": 4,
           "hops": 0,
           "lp": "4ceadcd94bd3d459",
-          "receptions": 5,
           "signature": "not-applicable",
           "to": "!2c14bd59",
           "type": "traceroute"
@@ -5564,11 +5210,9 @@
         {
           "at": "2026-10-31T07:39:30.415Z",
           "by_itself": true,
-          "channel": "NarrowFast",
           "gateways": 4,
           "hops": 0,
           "lp": "c69eef3d915a9df5",
-          "receptions": 5,
           "signature": "not-applicable",
           "to": "!7e6b4638",
           "type": "traceroute"
@@ -5576,22 +5220,18 @@
         {
           "at": "2026-10-31T07:38:40.898Z",
           "by_itself": true,
-          "channel": "NarrowFast",
           "gateways": 4,
           "hops": 0,
           "lp": "dc22715c3dcc419c",
-          "receptions": 5,
           "signature": "not-applicable",
           "to": "!8a84e409",
           "type": "traceroute"
         },
         {
           "at": "2026-10-31T07:38:20.778Z",
-          "channel": "NarrowFast",
           "gateways": 1,
           "hops": 2,
           "lp": "39528e387c315243",
-          "receptions": 1,
           "signature": "unsigned",
           "to": "!8a84e409",
           "type": "nodeinfo"
@@ -5599,11 +5239,9 @@
         {
           "at": "2026-10-31T07:38:14.219Z",
           "by_itself": true,
-          "channel": "NarrowFast",
           "gateways": 2,
           "hops": 0,
           "lp": "398e719a1c7705d4",
-          "receptions": 3,
           "signature": "unsigned",
           "to": "!8a84e409",
           "type": "nodeinfo"
@@ -5611,11 +5249,9 @@
         {
           "at": "2026-10-31T07:37:14.343Z",
           "by_itself": true,
-          "channel": "NarrowFast",
           "gateways": 3,
           "hops": 0,
           "lp": "290b2ea6ede569c1",
-          "receptions": 4,
           "signature": "unsigned",
           "to": "!8a84e409",
           "type": "position"
@@ -5623,11 +5259,9 @@
         {
           "at": "2026-10-31T07:36:38.988Z",
           "by_itself": true,
-          "channel": "NarrowFast",
           "gateways": 4,
           "hops": 0,
           "lp": "e9d09f37628379e3",
-          "receptions": 5,
           "signature": "not-applicable",
           "to": "!8a84e409",
           "type": "traceroute"
@@ -5635,11 +5269,9 @@
         {
           "at": "2026-10-31T07:29:09.870Z",
           "by_itself": true,
-          "channel": "NarrowFast",
           "gateways": 3,
           "hops": 0,
           "lp": "39e99547a3daf3ea",
-          "receptions": 4,
           "signature": "not-applicable",
           "to": "!8a84e409",
           "type": "traceroute"
@@ -5647,10 +5279,8 @@
         {
           "at": "2026-10-31T07:24:33.981Z",
           "by_itself": true,
-          "channel": "NarrowFast",
           "gateways": 2,
           "lp": "1e44335df6659508",
-          "receptions": 3,
           "signature": "unsigned",
           "to": "!f86df836",
           "type": "routing"
@@ -5658,11 +5288,9 @@
         {
           "at": "2026-10-31T07:24:30.283Z",
           "by_itself": true,
-          "channel": "NarrowFast",
           "gateways": 2,
           "hops": 0,
           "lp": "212edb60cf0b3c7b",
-          "receptions": 3,
           "signature": "not-applicable",
           "to": "!f86df836",
           "type": "traceroute"
@@ -5670,10 +5298,8 @@
         {
           "at": "2026-10-31T07:23:36.979Z",
           "by_itself": true,
-          "channel": "NarrowFast",
           "gateways": 1,
           "lp": "d0bde798ae041d66",
-          "receptions": 2,
           "signature": "unsigned",
           "to": "!672f1873",
           "type": "routing"
@@ -5681,11 +5307,9 @@
         {
           "at": "2026-10-31T06:39:30.371Z",
           "by_itself": true,
-          "channel": "NarrowFast",
           "gateways": 4,
           "hops": 0,
           "lp": "9fd7e64f1f384b98",
-          "receptions": 5,
           "signature": "not-applicable",
           "to": "!878b82c5",
           "type": "traceroute"
@@ -5693,11 +5317,9 @@
         {
           "at": "2026-10-31T06:28:35.795Z",
           "by_itself": true,
-          "channel": "NarrowFast",
           "gateways": 3,
           "hops": 0,
           "lp": "439853f794abdc17",
-          "receptions": 4,
           "signature": "verified",
           "to": "broadcast",
           "type": "nodeinfo"
@@ -5705,11 +5327,9 @@
         {
           "at": "2026-10-31T06:24:30.446Z",
           "by_itself": true,
-          "channel": "NarrowFast",
           "gateways": 3,
           "hops": 0,
           "lp": "2663e214884feb87",
-          "receptions": 4,
           "signature": "not-applicable",
           "to": "!1ba5ae00",
           "type": "traceroute"
@@ -5717,11 +5337,9 @@
         {
           "at": "2026-10-31T06:18:53.116Z",
           "by_itself": true,
-          "channel": "NarrowFast",
           "gateways": 4,
           "hops": 0,
           "lp": "d61f7a61ed2a3a8b",
-          "receptions": 5,
           "signature": "verified",
           "to": "broadcast",
           "type": "position"
@@ -5729,11 +5347,9 @@
         {
           "at": "2026-10-31T06:09:30.507Z",
           "by_itself": true,
-          "channel": "NarrowFast",
           "gateways": 3,
           "hops": 0,
           "lp": "37aff877f2a94442",
-          "receptions": 4,
           "signature": "not-applicable",
           "to": "!b2a114e3",
           "type": "traceroute"
@@ -5741,11 +5357,9 @@
         {
           "at": "2026-10-31T05:54:30.310Z",
           "by_itself": true,
-          "channel": "NarrowFast",
           "gateways": 3,
           "hops": 0,
           "lp": "c806ddad9c30614e",
-          "receptions": 4,
           "signature": "not-applicable",
           "to": "!4cdf7cca",
           "type": "traceroute"
@@ -5753,11 +5367,9 @@
         {
           "at": "2026-10-31T05:39:30.400Z",
           "by_itself": true,
-          "channel": "NarrowFast",
           "gateways": 4,
           "hops": 0,
           "lp": "e2f9a313c971f745",
-          "receptions": 5,
           "signature": "not-applicable",
           "to": "!54e1f598",
           "type": "traceroute"
@@ -5765,11 +5377,9 @@
         {
           "at": "2026-10-31T05:24:30.347Z",
           "by_itself": true,
-          "channel": "NarrowFast",
           "gateways": 4,
           "hops": 0,
           "lp": "95de68351ee37949",
-          "receptions": 5,
           "signature": "not-applicable",
           "to": "!0ccc6889",
           "type": "traceroute"
@@ -5777,11 +5387,9 @@
         {
           "at": "2026-10-31T05:09:30.470Z",
           "by_itself": true,
-          "channel": "NarrowFast",
           "gateways": 3,
           "hops": 0,
           "lp": "c3f6be92559362d2",
-          "receptions": 4,
           "signature": "not-applicable",
           "to": "!c381830d",
           "type": "traceroute"
@@ -5789,10 +5397,8 @@
         {
           "at": "2026-10-31T04:54:31.578Z",
           "by_itself": true,
-          "channel": "NarrowFast",
           "gateways": 1,
           "lp": "19e5709eebe6e359",
-          "receptions": 2,
           "signature": "unsigned",
           "to": "!2fb7352c",
           "type": "routing"
@@ -5800,11 +5406,9 @@
         {
           "at": "2026-10-31T04:54:30.453Z",
           "by_itself": true,
-          "channel": "NarrowFast",
           "gateways": 4,
           "hops": 0,
           "lp": "555d6599c6778ae4",
-          "receptions": 5,
           "signature": "not-applicable",
           "to": "!2fb7352c",
           "type": "traceroute"
@@ -5812,11 +5416,9 @@
         {
           "at": "2026-10-31T04:39:30.335Z",
           "by_itself": true,
-          "channel": "NarrowFast",
           "gateways": 3,
           "hops": 0,
           "lp": "c8280113db257577",
-          "receptions": 4,
           "signature": "not-applicable",
           "to": "!a9339946",
           "type": "traceroute"
@@ -5824,11 +5426,9 @@
         {
           "at": "2026-10-31T04:24:30.347Z",
           "by_itself": true,
-          "channel": "NarrowFast",
           "gateways": 3,
           "hops": 0,
           "lp": "8ec6c7f49b128472",
-          "receptions": 4,
           "signature": "not-applicable",
           "to": "!94ed7591",
           "type": "traceroute"
@@ -5836,11 +5436,9 @@
         {
           "at": "2026-10-31T04:09:30.511Z",
           "by_itself": true,
-          "channel": "NarrowFast",
           "gateways": 3,
           "hops": 0,
           "lp": "b72f1ae0f649dc76",
-          "receptions": 4,
           "signature": "not-applicable",
           "to": "!6e9f1e6c",
           "type": "traceroute"
@@ -5848,11 +5446,9 @@
         {
           "at": "2026-10-31T03:54:30.485Z",
           "by_itself": true,
-          "channel": "NarrowFast",
           "gateways": 3,
           "hops": 0,
           "lp": "5f15e1c618622412",
-          "receptions": 4,
           "signature": "not-applicable",
           "to": "!da92736a",
           "type": "traceroute"
@@ -5860,11 +5456,9 @@
         {
           "at": "2026-10-31T03:39:30.499Z",
           "by_itself": true,
-          "channel": "NarrowFast",
           "gateways": 4,
           "hops": 0,
           "lp": "eb4b54d6981e4fe9",
-          "receptions": 5,
           "signature": "not-applicable",
           "to": "!0afeb1cd",
           "type": "traceroute"
@@ -5872,11 +5466,9 @@
         {
           "at": "2026-10-31T03:28:35.748Z",
           "by_itself": true,
-          "channel": "NarrowFast",
           "gateways": 4,
           "hops": 0,
           "lp": "ddebb30412103808",
-          "receptions": 5,
           "signature": "verified",
           "to": "broadcast",
           "type": "nodeinfo"
@@ -5884,10 +5476,8 @@
         {
           "at": "2026-10-31T03:28:05.119Z",
           "by_itself": true,
-          "channel": "NarrowFast",
           "gateways": 0,
           "lp": "89baa38030d702df",
-          "receptions": 1,
           "signature": "unverifiable",
           "to": "!00000001",
           "type": "neighborinfo"
@@ -5895,11 +5485,9 @@
         {
           "at": "2026-10-31T03:24:30.339Z",
           "by_itself": true,
-          "channel": "NarrowFast",
           "gateways": 3,
           "hops": 0,
           "lp": "6f86bfdbf768770e",
-          "receptions": 4,
           "signature": "not-applicable",
           "to": "!d788b85d",
           "type": "traceroute"
@@ -5911,7 +5499,7 @@
           "evidence": [
             "traceroute"
           ],
-          "gateways": [],
+          "gateways": 0,
           "lp": "5b183f9a5eda8a24",
           "origin": "!6e9f1e6c",
           "to": "!24932177",
@@ -5922,9 +5510,7 @@
           "evidence": [
             "relay_byte"
           ],
-          "gateways": [
-            "!3afab911"
-          ],
+          "gateways": 1,
           "lp": "6d56465f5dec6de5",
           "origin": "!4e95f741",
           "to": "broadcast",
@@ -5936,9 +5522,7 @@
             "relay_byte",
             "traceroute"
           ],
-          "gateways": [
-            "!9b0f4bd5"
-          ],
+          "gateways": 1,
           "lp": "cfad293b363dece8",
           "origin": "!84965cf6",
           "to": "!a82cfc89",
@@ -5949,9 +5533,7 @@
           "evidence": [
             "relay_byte"
           ],
-          "gateways": [
-            "!9b0f4bd5"
-          ],
+          "gateways": 1,
           "lp": "eb543914ad9b6564",
           "origin": "!3afab911",
           "to": "broadcast",
@@ -5962,9 +5544,7 @@
           "evidence": [
             "relay_byte"
           ],
-          "gateways": [
-            "!9b0f4bd5"
-          ],
+          "gateways": 1,
           "lp": "b00fbf2387fc4e33",
           "origin": "!a142e814",
           "to": "broadcast",
@@ -5975,7 +5555,7 @@
           "evidence": [
             "traceroute"
           ],
-          "gateways": [],
+          "gateways": 0,
           "lp": "d0964fc90b0ce0c6",
           "origin": "!6e9f1e6c",
           "to": "!f9ad38c8",
@@ -5986,9 +5566,7 @@
           "evidence": [
             "relay_byte"
           ],
-          "gateways": [
-            "!9b0f4bd5"
-          ],
+          "gateways": 1,
           "lp": "35dc65a4509b7421",
           "origin": "!94ed7591",
           "to": "broadcast",
@@ -5999,9 +5577,7 @@
           "evidence": [
             "relay_byte"
           ],
-          "gateways": [
-            "!9b0f4bd5"
-          ],
+          "gateways": 1,
           "lp": "2f1d5c712830d668",
           "origin": "!5028b360",
           "to": "broadcast",
@@ -6012,9 +5588,7 @@
           "evidence": [
             "relay_byte"
           ],
-          "gateways": [
-            "!3afab911"
-          ],
+          "gateways": 1,
           "lp": "57d624f894729f74",
           "origin": "!4e95f741",
           "to": "broadcast",
@@ -6025,7 +5599,7 @@
           "evidence": [
             "traceroute"
           ],
-          "gateways": [],
+          "gateways": 0,
           "lp": "147225ae4026cf39",
           "origin": "!1ba5ae00",
           "to": "!84965cf6",
@@ -6036,7 +5610,7 @@
           "evidence": [
             "traceroute"
           ],
-          "gateways": [],
+          "gateways": 0,
           "lp": "f58fbf1f9f245ba2",
           "origin": "!268a1248",
           "to": "!98f71d7d",
@@ -6048,9 +5622,7 @@
             "relay_byte",
             "traceroute"
           ],
-          "gateways": [
-            "!9b0f4bd5"
-          ],
+          "gateways": 1,
           "lp": "39ca6a1c1591bf02",
           "origin": "!98f71d7d",
           "to": "!268a1248",
@@ -6061,7 +5633,7 @@
           "evidence": [
             "traceroute"
           ],
-          "gateways": [],
+          "gateways": 0,
           "lp": "d292f7f59689c74e",
           "origin": "!84965cf6",
           "to": "!7446616a",
@@ -6072,9 +5644,7 @@
           "evidence": [
             "relay_byte"
           ],
-          "gateways": [
-            "!9b0f4bd5"
-          ],
+          "gateways": 1,
           "lp": "f75691f6576962c9",
           "origin": "!d788b85d",
           "to": "broadcast",
@@ -6086,9 +5656,7 @@
             "relay_byte",
             "traceroute"
           ],
-          "gateways": [
-            "!9b0f4bd5"
-          ],
+          "gateways": 1,
           "lp": "06bd11ad2a955b54",
           "origin": "!935ab592",
           "to": "!56aaea55",
@@ -6099,7 +5667,7 @@
           "evidence": [
             "traceroute"
           ],
-          "gateways": [],
+          "gateways": 0,
           "lp": "534e4c79985d8309",
           "origin": "!a9339946",
           "to": "!84965cf6",
@@ -6110,9 +5678,7 @@
           "evidence": [
             "relay_byte"
           ],
-          "gateways": [
-            "!9b0f4bd5"
-          ],
+          "gateways": 1,
           "lp": "ed3d475674110532",
           "origin": "!98f71d7d",
           "to": "!da92736a",
@@ -6123,9 +5689,7 @@
           "evidence": [
             "relay_byte"
           ],
-          "gateways": [
-            "!9b0f4bd5"
-          ],
+          "gateways": 1,
           "lp": "ca0acfdf6230df62",
           "origin": "!98f71d7d",
           "to": "!da92736a",
@@ -6136,9 +5700,7 @@
           "evidence": [
             "relay_byte"
           ],
-          "gateways": [
-            "!9b0f4bd5"
-          ],
+          "gateways": 1,
           "lp": "36f84354fd481227",
           "origin": "!98f71d7d",
           "to": "!f43a16ea",
@@ -6149,9 +5711,7 @@
           "evidence": [
             "relay_byte"
           ],
-          "gateways": [
-            "!9b0f4bd5"
-          ],
+          "gateways": 1,
           "lp": "68f9af97741b47a1",
           "origin": "!98f71d7d",
           "to": "!935ab592",
@@ -6163,9 +5723,7 @@
             "relay_byte",
             "traceroute"
           ],
-          "gateways": [
-            "!9b0f4bd5"
-          ],
+          "gateways": 1,
           "lp": "619c0e1684c70d19",
           "origin": "!98f71d7d",
           "to": "!ab8ecd74",
@@ -6176,9 +5734,7 @@
           "evidence": [
             "relay_byte"
           ],
-          "gateways": [
-            "!9b0f4bd5"
-          ],
+          "gateways": 1,
           "lp": "600cf3b7218b8db2",
           "origin": "!98f71d7d",
           "to": "!f6a6fd67",
@@ -6190,9 +5746,7 @@
             "relay_byte",
             "traceroute"
           ],
-          "gateways": [
-            "!9b0f4bd5"
-          ],
+          "gateways": 1,
           "lp": "0d9b3a26e1b51266",
           "origin": "!98f71d7d",
           "to": "!f6a6fd67",
@@ -6203,9 +5757,7 @@
           "evidence": [
             "relay_byte"
           ],
-          "gateways": [
-            "!9b0f4bd5"
-          ],
+          "gateways": 1,
           "lp": "87e5ba6c4da81103",
           "origin": "!98f71d7d",
           "to": "broadcast",
@@ -6216,9 +5768,7 @@
           "evidence": [
             "relay_byte"
           ],
-          "gateways": [
-            "!9b0f4bd5"
-          ],
+          "gateways": 1,
           "lp": "379e68076d9cce52",
           "origin": "!94ed7591",
           "to": "!98f71d7d",
@@ -6230,9 +5780,7 @@
             "relay_byte",
             "traceroute"
           ],
-          "gateways": [
-            "!9b0f4bd5"
-          ],
+          "gateways": 1,
           "lp": "06e1c4600abe2b57",
           "origin": "!98f71d7d",
           "to": "!04414588",
@@ -6243,9 +5791,7 @@
           "evidence": [
             "relay_byte"
           ],
-          "gateways": [
-            "!9b0f4bd5"
-          ],
+          "gateways": 1,
           "lp": "fc7f6a063f8050cb",
           "origin": "!98f71d7d",
           "to": "!8a84e409",
@@ -6257,9 +5803,7 @@
             "relay_byte",
             "traceroute"
           ],
-          "gateways": [
-            "!9b0f4bd5"
-          ],
+          "gateways": 1,
           "lp": "baa2acd021a58e9b",
           "origin": "!98f71d7d",
           "to": "!672f1873",
@@ -6271,9 +5815,7 @@
             "relay_byte",
             "traceroute"
           ],
-          "gateways": [
-            "!9b0f4bd5"
-          ],
+          "gateways": 1,
           "lp": "cf89eb4d8e693415",
           "origin": "!98f71d7d",
           "to": "!94ed7591",
@@ -6285,9 +5827,7 @@
             "relay_byte",
             "traceroute"
           ],
-          "gateways": [
-            "!9b0f4bd5"
-          ],
+          "gateways": 1,
           "lp": "ad28ccf32d516136",
           "origin": "!84965cf6",
           "to": "!323e7bd8",
@@ -6298,9 +5838,7 @@
           "evidence": [
             "relay_byte"
           ],
-          "gateways": [
-            "!9b0f4bd5"
-          ],
+          "gateways": 1,
           "lp": "dd8fd9a954ad57f9",
           "origin": "!94ed7591",
           "to": "broadcast",
@@ -6311,9 +5849,7 @@
           "evidence": [
             "relay_byte"
           ],
-          "gateways": [
-            "!9b0f4bd5"
-          ],
+          "gateways": 1,
           "lp": "d63bc974064a45f8",
           "origin": "!5028b360",
           "to": "broadcast",
@@ -6324,9 +5860,7 @@
           "evidence": [
             "relay_byte"
           ],
-          "gateways": [
-            "!9b0f4bd5"
-          ],
+          "gateways": 1,
           "lp": "31666dc524974228",
           "origin": "!98f71d7d",
           "to": "!8a84e409",
@@ -6337,7 +5871,7 @@
           "evidence": [
             "traceroute"
           ],
-          "gateways": [],
+          "gateways": 0,
           "lp": "617babfb143afb9b",
           "origin": "!40cb5898",
           "to": "!a46468d1",
@@ -6349,9 +5883,7 @@
             "relay_byte",
             "traceroute"
           ],
-          "gateways": [
-            "!9b0f4bd5"
-          ],
+          "gateways": 1,
           "lp": "25fe833937a1fbe0",
           "origin": "!98f71d7d",
           "to": "!a46468d1",
@@ -6362,9 +5894,7 @@
           "evidence": [
             "relay_byte"
           ],
-          "gateways": [
-            "!9b0f4bd5"
-          ],
+          "gateways": 1,
           "lp": "31897961fa20024f",
           "origin": "!a142e814",
           "to": "broadcast",
@@ -6376,9 +5906,7 @@
             "relay_byte",
             "traceroute"
           ],
-          "gateways": [
-            "!9b0f4bd5"
-          ],
+          "gateways": 1,
           "lp": "f42cef06fba2316d",
           "origin": "!8a84e409",
           "to": "!98f71d7d",
@@ -6389,9 +5917,7 @@
           "evidence": [
             "relay_byte"
           ],
-          "gateways": [
-            "!9b0f4bd5"
-          ],
+          "gateways": 1,
           "lp": "0dabc3b1a54639c2",
           "origin": "!5028b360",
           "to": "broadcast",
@@ -6402,9 +5928,7 @@
           "evidence": [
             "relay_byte"
           ],
-          "gateways": [
-            "!9b0f4bd5"
-          ],
+          "gateways": 1,
           "lp": "d2c18cd0cd85aa1d",
           "origin": "!7e6b4638",
           "to": "broadcast",
@@ -6415,9 +5939,7 @@
           "evidence": [
             "relay_byte"
           ],
-          "gateways": [
-            "!9b0f4bd5"
-          ],
+          "gateways": 1,
           "lp": "60cb3e0c31361f7f",
           "origin": "!98f71d7d",
           "to": "broadcast",
@@ -6428,9 +5950,7 @@
           "evidence": [
             "relay_byte"
           ],
-          "gateways": [
-            "!9b0f4bd5"
-          ],
+          "gateways": 1,
           "lp": "ebc7e8d63dde5829",
           "origin": "!a142e814",
           "to": "broadcast",
@@ -6441,9 +5961,7 @@
           "evidence": [
             "relay_byte"
           ],
-          "gateways": [
-            "!9b0f4bd5"
-          ],
+          "gateways": 1,
           "lp": "5bb5b4765004f8ea",
           "origin": "!d788b85d",
           "to": "broadcast",
@@ -6454,9 +5972,7 @@
           "evidence": [
             "relay_byte"
           ],
-          "gateways": [
-            "!9b0f4bd5"
-          ],
+          "gateways": 1,
           "lp": "d6bf16c39ed97eed",
           "origin": "!5028b360",
           "to": "broadcast",
@@ -6468,9 +5984,7 @@
             "relay_byte",
             "traceroute"
           ],
-          "gateways": [
-            "!9b0f4bd5"
-          ],
+          "gateways": 1,
           "lp": "b30b1c2f41925cae",
           "origin": "!98f71d7d",
           "to": "!6e9f1e6c",
@@ -6481,9 +5995,7 @@
           "evidence": [
             "relay_byte"
           ],
-          "gateways": [
-            "!9b0f4bd5"
-          ],
+          "gateways": 1,
           "lp": "ca3691dfa56f3506",
           "origin": "!a142e814",
           "to": "broadcast",
@@ -6494,9 +6006,7 @@
           "evidence": [
             "relay_byte"
           ],
-          "gateways": [
-            "!9b0f4bd5"
-          ],
+          "gateways": 1,
           "lp": "1164fb8fe2f14542",
           "origin": "!98f71d7d",
           "to": "broadcast",
@@ -6509,8 +6019,6 @@
   "routes": {
     "5b183f9a5eda8a24": {
       "at": "2026-10-31T14:56:34.987Z",
-      "origin": "!6e9f1e6c",
-      "receptions": 4,
       "segments": [
         {
           "a": "!6e9f1e6c",
@@ -6547,13 +6055,10 @@
           "leg": "forward",
           "why": "traceroute"
         }
-      ],
-      "type": "traceroute"
+      ]
     },
     "6d56465f5dec6de5": {
       "at": "2026-10-31T14:51:32.134Z",
-      "origin": "!4e95f741",
-      "receptions": 5,
       "segments": [
         {
           "a": "!672f1873",
@@ -6609,13 +6114,10 @@
           "dashed": true,
           "why": "gap"
         }
-      ],
-      "type": "telemetry"
+      ]
     },
     "cfad293b363dece8": {
       "at": "2026-10-31T14:47:15.588Z",
-      "origin": "!84965cf6",
-      "receptions": 5,
       "segments": [
         {
           "a": "!84965cf6",
@@ -6659,13 +6161,10 @@
           "leg": "forward",
           "why": "traceroute"
         }
-      ],
-      "type": "traceroute"
+      ]
     },
     "e57c03ceeb34b221": {
       "at": "2026-10-31T06:44:17.187Z",
-      "origin": "!a1d77a98",
-      "receptions": 4,
       "segments": [
         {
           "a": "!1d913813",
@@ -6703,8 +6202,7 @@
           "dashed": true,
           "why": "gap"
         }
-      ],
-      "type": "nodeinfo"
+      ]
     }
   },
   "snapshot": {

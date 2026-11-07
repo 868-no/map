@@ -28,7 +28,7 @@ describe('Links in window', () => {
 
 describe('Heard by gateways', () => {
   it('sorts by the radio link confidence, then SNR, relayed-only gateways last', () => {
-    const hear = (node: string, snr?: number) => ({ node, receptions: 1, direct_rf: 0, snr: { median: snr }, rssi: {}, last_at: '' }) as unknown as Hearing
+    const hear = (node: string, snr?: number) => ({ node, receptions: 1, direct_rf: 0, snr }) as Hearing
     const rows = sortHearings(
       [hear('!g1', 9), hear('!g2', 3), hear('!g3', 12), hear('!g4', 15), hear('!g5', 1)],
       '!a',

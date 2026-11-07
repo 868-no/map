@@ -3,7 +3,7 @@
 use serde::Serialize;
 
 use super::{first_per_reception, is_device_telemetry, Built, Node};
-use crate::graph::{self, Stats};
+use crate::graph;
 use crate::row::{Interner, Row};
 use crate::util::{iso, map, node_id, set, FxMap, FxSet};
 
@@ -64,9 +64,11 @@ pub struct Hearing {
     pub node: String,
     pub receptions: usize,
     pub direct_rf: usize,
-    pub snr: Stats,
-    pub rssi: Stats,
-    pub last_at: String,
+    /// Medians over the direct receptions: a relayed copy's measures the last relay.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub snr: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rssi: Option<f64>,
 }
 
 #[derive(Serialize)]
@@ -236,7 +238,7 @@ fn hearings(rows: &[&Row], keep: impl Fn(&Row) -> bool, other: impl Fn(&Row) -> 
             let direct: Vec<&&Row> = rs.iter().filter(|r| r.dr).collect();
             let snr: Vec<(i64, f64)> = direct.iter().filter_map(|r| r.snr.map(|v| (r.t, v))).collect();
             let rssi: Vec<(i64, f64)> = direct.iter().filter_map(|r| r.rssi.map(|v| (r.t, v as f64))).collect();
-            (k, Hearing { node: node_id(k), receptions: rs.len(), direct_rf: direct.len(), snr: graph::stats(&snr, false), rssi: graph::stats(&rssi, false), last_at: iso(rs.iter().map(|r| r.t).max().unwrap()) })
+            (k, Hearing { node: node_id(k), receptions: rs.len(), direct_rf: direct.len(), snr: graph::stats(&snr, false).median, rssi: graph::stats(&rssi, false).median })
         })
         .collect();
     out.sort_unstable_by(|a, b| b.1.receptions.cmp(&a.1.receptions).then(a.0.cmp(&b.0)));

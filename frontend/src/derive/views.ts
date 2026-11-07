@@ -244,9 +244,8 @@ export interface Hearing {
   node: string
   receptions: number
   direct_rf: number
-  snr: Stats
-  rssi: Stats
-  last_at: string
+  snr?: number // median of the direct receptions
+  rssi?: number
 }
 
 /** One way a node was heard: an MQTT topic root and channel name. */
@@ -318,12 +317,10 @@ export interface OwnPacket {
   at: string
   type: string
   to?: string
-  channel?: string
   hops?: number // fewest hops any other gateway's radio copy shows (not its own uplink, not downlinked copies)
   gateways: number // other gateways that uplinked it
   by_itself?: boolean // it uplinked it itself, as a gateway
   downlinked?: boolean // some copy reached a gateway through an MQTT downlink (D-087)
-  receptions: number
   signature: string
   replies?: Reply[] // ACKs and errors answering it (D-092)
   answers?: Answer // for a routing packet: what it says
@@ -371,7 +368,7 @@ export interface RelayedPacket {
   type: string
   to?: string
   evidence: ('relay_byte' | 'traceroute')[]
-  gateways: string[] // heard this node's rebroadcast
+  gateways: number // how many heard this node's rebroadcast
 }
 
 /** Most entries per list the engine sends in a packet log (engine packets.rs MAX_LOG). */
@@ -396,9 +393,6 @@ export interface RouteSegment {
 export interface PacketRoute {
   at: string // when it was first heard: where moved nodes were then (D-073)
   meta: ViewMeta
-  origin: string
-  type: string
   segments: RouteSegment[]
-  receptions: number
   delivered?: string[] // nodes whose ACK confirms they received it (D-096)
 }

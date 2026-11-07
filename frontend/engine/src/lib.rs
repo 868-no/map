@@ -179,7 +179,7 @@ impl Engine {
                     None => vec![],
                 };
                 let b = &self.built.as_ref().unwrap().1;
-                Ok(json(&packets::packet_route(&rows, &b.ctx, &b.roles, &self.i, &acked, &replies)))
+                Ok(json(&packets::packet_route(&rows, &b.ctx, &b.roles, &acked, &replies)))
             }
             "reach" => {
                 // arg: node id, with "|internet" to follow MQTT links too (D-069).
@@ -421,7 +421,7 @@ impl Engine {
                         }
                     }
                     copies.push(r);
-                    t.extend(packets::delivery_ping(r, ack, &original, &copies, &b.ctx, &b.roles, &self.i));
+                    t.extend(packets::delivery_ping(r, ack, &original, &copies, &b.ctx, &b.roles));
                 }
                 t
             })

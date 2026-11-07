@@ -136,7 +136,7 @@ function PacketLogs({ id, names, positioned, moved }: { id: string; names: Reado
   const built = useMemo(() => {
     const all: Entry[] = [
       ...(data?.own ?? []).map((p) => ({ ...p, kind: 'own' as const })),
-      ...(withRelayed ? (data?.relayed ?? []).map((p) => ({ ...p, kind: 'relayed' as const, gateways: p.gateways.length })) : []),
+      ...(withRelayed ? (data?.relayed ?? []).map((p) => ({ ...p, kind: 'relayed' as const })) : []),
       ...(data?.inbound ?? []).map((p) => ({ ...p, kind: 'inbound' as const, to: id, gateways: 0 })),
     ]
     const ms = new Map(all.map((e) => [e, Date.parse(e.at)]))

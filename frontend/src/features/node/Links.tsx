@@ -50,7 +50,7 @@ export function LinksTab({ d, id, snapshot, names, neighbours }: {
             <tr key={h.node}>
               <td>{names.get(h.node) ?? h.node}</td>
               <td>{link ? <span className={`conf conf-${link.confidence}`} title={link.reason}>{link.confidence}</span> : <span className="muted" title="No radio link: only relayed copies, or its links were reset by a move">—</span>}</td>
-              <td>{h.receptions}</td><td>{h.direct_rf}</td><td>{fmt(h.snr.median, 'dB')}</td><td>{fmt(h.rssi.median, 'dBm', 0)}</td>
+              <td>{h.receptions}</td><td>{h.direct_rf}</td><td>{fmt(h.snr, 'dB')}</td><td>{fmt(h.rssi, 'dBm', 0)}</td>
             </tr>
           ))}
         </tbody>

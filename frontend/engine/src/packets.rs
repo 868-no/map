@@ -18,8 +18,6 @@ pub struct OwnPacket {
     pub ty: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub to: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub channel: Option<String>,
     /// The fewest hops any other gateway's copy shows (hop start minus hop
     /// limit; 0-cost relays do not count). Its own uplink and copies taken
     /// from MQTT (downlinked) are left out: they say nothing about the path.
@@ -33,7 +31,6 @@ pub struct OwnPacket {
     /// Some copy reached a gateway through an MQTT downlink (D-087).
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub downlinked: bool,
-    pub receptions: usize,
     pub signature: String,
     /// ACKs and errors answering it, by who sent them (D-092).
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -102,7 +99,8 @@ pub struct RelayedPacket {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub to: Option<String>,
     pub evidence: Vec<&'static str>,
-    pub gateways: Vec<String>,
+    /// How many gateways heard its rebroadcast.
+    pub gateways: usize,
 }
 
 #[derive(Serialize)]
@@ -203,12 +201,10 @@ pub fn packet_log(rows: &[&Row], invalid: &[&Row], num: u32, ctx: &RelayContext,
                     at: iso(first.t),
                     ty: i.s(first.ty).to_string(),
                     to: dest(first.dst),
-                    channel: (first.channel != 0).then(|| i.s(first.channel).to_string()),
                     hops,
                     gateways: others.iter().filter_map(|r| r.gw).collect::<FxSet<u32>>().len(),
                     by_itself: rs.iter().any(|r| r.gw == Some(num)),
                     downlinked: others.iter().any(|r| RelayContext::downlinked(r)),
-                    receptions: rs.iter().map(|r| r.ok).collect::<FxSet<u64>>().len(),
                     signature: best.to_string(),
                     replies: first.pid.map_or(vec![], |p| replies.replies(p, num, rows, i)),
                     answers: replies.answer(first, &more, i),
@@ -219,8 +215,6 @@ pub fn packet_log(rows: &[&Row], invalid: &[&Row], num: u32, ctx: &RelayContext,
         .collect();
     let rel_list: Vec<RelayedPacket> = relayed
         .map(|e| {
-            let mut gws: Vec<u32> = e.gateways.into_iter().collect();
-            gws.sort_unstable();
             let mut evidence = vec![];
             if e.byte {
                 evidence.push("relay_byte");
@@ -228,7 +222,7 @@ pub fn packet_log(rows: &[&Row], invalid: &[&Row], num: u32, ctx: &RelayContext,
             if e.route {
                 evidence.push("traceroute");
             }
-            RelayedPacket { lp: key_hex(e.row.lp), at: iso(e.first), origin: node_id(e.row.src), ty: i.s(e.row.ty).to_string(), to: dest(e.row.dst), evidence, gateways: gws.into_iter().map(node_id).collect() }
+            RelayedPacket { lp: key_hex(e.row.lp), at: iso(e.first), origin: node_id(e.row.src), ty: i.s(e.row.ty).to_string(), to: dest(e.row.dst), evidence, gateways: e.gateways.len() }
         })
         .collect();
     let in_list: Vec<InboundPacket> = inbound.map(|r| InboundPacket { lp: key_hex(r.lp), at: iso(r.t), origin: node_id(r.src), ty: i.s(r.ty).to_string(), answers: replies.answer(r, &more, i) }).collect();
@@ -393,13 +387,9 @@ pub struct RouteSegment {
 
 #[derive(Serialize)]
 pub struct PacketRoute {
-    pub origin: String,
-    #[serde(rename = "type")]
-    pub ty: String,
     /// When it was first heard: where moved nodes were then (D-073).
     pub at: String,
     pub segments: Vec<RouteSegment>,
-    pub receptions: usize,
     /// Nodes whose ACK confirms they received it (D-096).
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub delivered: Vec<String>,
@@ -414,9 +404,9 @@ pub struct PacketRoute {
 /// (each reply records the request's whole way to the target, which no
 /// gateway's copy of the request may have seen past where it was uplinked)
 /// and the way back (the replies' own copies).
-pub fn packet_route(rows: &[&Row], ctx: &RelayContext, roles: &FxMap<u32, String>, i: &Interner, acked: &[u32], replies: &[&Row]) -> PacketRoute {
+pub fn packet_route(rows: &[&Row], ctx: &RelayContext, roles: &FxMap<u32, String>, acked: &[u32], replies: &[&Row]) -> PacketRoute {
     let Some(first) = rows.first() else {
-        return PacketRoute { origin: String::new(), ty: String::new(), at: String::new(), segments: vec![], receptions: 0, delivered: vec![] };
+        return PacketRoute { at: String::new(), segments: vec![], delivered: vec![] };
     };
     let origin = first.src;
     type Key = (u32, u32, Option<&'static str>);
@@ -510,14 +500,11 @@ pub fn packet_route(rows: &[&Row], ctx: &RelayContext, roles: &FxMap<u32, String
         add(origin, n, true, "delivered", None);
     }
     PacketRoute {
-        origin: node_id(origin),
-        ty: i.s(first.ty).to_string(),
         at: iso(rows.iter().map(|r| r.t).min().unwrap_or(first.t)),
         segments: order.into_iter().map(|(a, b, leg)| {
             let (dashed, why) = segs[&(a, b, leg)];
             RouteSegment { a: node_id(a), b: node_id(b), dashed, why, leg }
         }).collect(),
-        receptions: rows.iter().map(|r| r.ok).collect::<FxSet<u64>>().len(),
         delivered: acked.iter().map(|&n| node_id(n)).collect(),
     }
 }
@@ -654,13 +641,13 @@ pub fn forward_route(r: &Row, ctx: &RelayContext) -> Vec<Transmission> {
 /// routing graph gives the way it took to the acknowledging node; `copies`:
 /// the ACK's own copies (this one included), whose graph gives the way it
 /// took back to the sender (D-172).
-pub fn delivery_ping(r: &Row, ack: Option<u32>, original: &[&Row], copies: &[&Row], ctx: &RelayContext, roles: &FxMap<u32, String>, i: &Interner) -> Option<Transmission> {
+pub fn delivery_ping(r: &Row, ack: Option<u32>, original: &[&Row], copies: &[&Row], ctx: &RelayContext, roles: &FxMap<u32, String>) -> Option<Transmission> {
     let rt = r.routing().filter(|rt| Some(rt.kind) == ack && rt.request != 0)?;
     let sender = r.dst.filter(|&d| d != r.src && d != u32::MAX)?;
     let (from, to) = (node_id(sender), node_id(r.src));
-    let segments = if original.is_empty() { vec![] } else { packet_route(original, ctx, roles, i, &[], &[]).segments };
+    let segments = if original.is_empty() { vec![] } else { packet_route(original, ctx, roles, &[], &[]).segments };
     let path = delivery_path(&segments, &from, &to);
-    let segments = if copies.is_empty() { vec![] } else { packet_route(copies, ctx, roles, i, &[], &[]).segments };
+    let segments = if copies.is_empty() { vec![] } else { packet_route(copies, ctx, roles, &[], &[]).segments };
     let back = delivery_path(&segments, &to, &from);
     Some(Transmission { key: format!("{:08x}|{from}|delivered", rt.request), tx: from, rx: Some(to), rebroadcast: false, strength: None, delivered: true, packet: Some(packet_ref(sender, rt.request)), replay: false, after: None, path, back, gap: None })
 }
@@ -1046,13 +1033,13 @@ mod tests {
         let (routing, ack, err) = (it.id("routing"), it.id("ack"), it.id("error"));
         let answer = |kind: u32| Row { ty: routing, dst: Some(A), detail: Some(Box::new(Detail::Routing(Routing { kind, error: 0, request: 77 }))), ..row(C, GW) };
         let c = ctx(&[A, C, GW], &[]);
-        let d = delivery_ping(&answer(ack), Some(ack), &[], &[], &c, &map(), &it).unwrap();
+        let d = delivery_ping(&answer(ack), Some(ack), &[], &[], &c, &map()).unwrap();
         assert_eq!((d.tx.as_str(), d.rx.as_deref(), d.delivered), (id(A).as_str(), Some(id(C).as_str()), true));
-        assert_eq!(delivery_ping(&answer(err), Some(ack), &[], &[], &c, &map(), &it), None, "an error is no delivery");
-        assert_eq!(delivery_ping(&row(A, GW), Some(ack), &[], &[], &c, &map(), &it), None, "not a routing packet");
+        assert_eq!(delivery_ping(&answer(err), Some(ack), &[], &[], &c, &map()), None, "an error is no delivery");
+        assert_eq!(delivery_ping(&row(A, GW), Some(ack), &[], &[], &c, &map()), None, "not a routing packet");
         // The route of the answered packet gains a dashed "delivered" segment to the acker.
         let msg = Row { pid: Some(77), dst: Some(C), dr: true, ..row(A, GW) };
-        let route = packet_route(&[&msg], &ctx(&[A, C, GW], &[]), &map(), &it, &[C], &[]);
+        let route = packet_route(&[&msg], &ctx(&[A, C, GW], &[]), &map(), &[C], &[]);
         assert_eq!(route.delivered, vec![id(C)]);
         assert!(route.segments.iter().any(|s| s.a == id(A) && s.b == id(C) && s.why == "delivered" && s.dashed));
     }
@@ -1065,7 +1052,7 @@ mod tests {
         // A's DM 77 to C2, acknowledged by C2, which is no gateway.
         let answer = Row { ty: routing, dst: Some(A), detail: Some(Box::new(Detail::Routing(Routing { kind: ack, error: 0, request: 77 }))), ..row(C2, GW) };
         let seg = |s: &RouteSegment| (s.a.clone(), s.b.clone(), s.dashed, s.why);
-        let path = |original: &[&Row], c: &RelayContext| delivery_ping(&answer, Some(ack), original, &[], c, &map(), &it).unwrap().path.iter().map(seg).collect::<Vec<_>>();
+        let path = |original: &[&Row], c: &RelayContext| delivery_ping(&answer, Some(ack), original, &[], c, &map()).unwrap().path.iter().map(seg).collect::<Vec<_>>();
         // No copy of the DM: where C2 heard it from is unknown, one dashed hop from A.
         let unknown = vec![(id(A), id(C2), true, "delivered")];
         assert_eq!(path(&[], &ctx(&[A, C, C2, GW], &[])), unknown);
@@ -1085,12 +1072,12 @@ mod tests {
         let c = ctx(&[A, C, C2, GW], &[]);
         // C2's ACK to A, heard by GW straight from C2: from GW on, the way to A is not known.
         let answer = Row { ty: routing, dst: Some(A), detail: Some(Box::new(Detail::Routing(Routing { kind: ack, error: 0, request: 77 }))), ..hops(row(C2, GW), 0) };
-        let d = delivery_ping(&answer, Some(ack), &[], &[&answer], &c, &map(), &it).unwrap();
+        let d = delivery_ping(&answer, Some(ack), &[], &[&answer], &c, &map()).unwrap();
         assert_eq!(d.back, vec![RouteSegment { a: id(C2), b: id(A), dashed: true, why: "delivered", leg: None }], "GW is no stop on the way to A");
         assert_eq!(d.packet.as_deref(), Some("000000aa:0000004d"), "names the packet it answers");
         // Heard by A itself, a gateway, straight from C2: the way back is known.
         let at_a = Row { ty: routing, dst: Some(A), detail: Some(Box::new(Detail::Routing(Routing { kind: ack, error: 0, request: 77 }))), ..hops(row(C2, A), 0) };
-        let d = delivery_ping(&at_a, Some(ack), &[], &[&answer, &at_a], &c, &map(), &it).unwrap();
+        let d = delivery_ping(&at_a, Some(ack), &[], &[&answer, &at_a], &c, &map()).unwrap();
         assert_eq!(d.back.iter().map(|s| (s.a.clone(), s.b.clone(), s.dashed)).collect::<Vec<_>>(), vec![(id(C2), id(A), false)]);
     }
 
@@ -1108,8 +1095,6 @@ mod tests {
 
     #[test]
     fn a_traceroute_requests_route_runs_to_the_target_as_its_reply_recorded() {
-        use crate::row::Interner;
-        let it = Interner::default();
         // C asks A (request 77). The only gateway copy, at GW, saw it go C -> GW;
         // A's reply records the whole way: C -> GW -> C2 -> A.
         let request = Row { dst: Some(A), pid: Some(77), ..traceroute(row(C, GW), &[]) };
@@ -1120,7 +1105,7 @@ mod tests {
             detail: Some(Box::new(Detail::Traceroute(Traceroute { valid: true, is_reply: true, route: vec![Hop { id: GW, unknown: false }, Hop { id: C2, unknown: false }], snr_towards: vec![Some(4.0), Some(2.0), Some(-6.0)], route_back: vec![], snr_back: vec![], request: 77 }))),
             ..row(A, GW)
         };
-        let segs = |rows: &[&Row], replies: &[&Row]| packet_route(rows, &ctx(&[A, C, C2, GW], &[]), &map(), &it, &[], replies).segments.iter().map(|s| (s.a.clone(), s.b.clone(), s.dashed, s.leg)).collect::<Vec<_>>();
+        let segs = |rows: &[&Row], replies: &[&Row]| packet_route(rows, &ctx(&[A, C, C2, GW], &[]), &map(), &[], replies).segments.iter().map(|s| (s.a.clone(), s.b.clone(), s.dashed, s.leg)).collect::<Vec<_>>();
         let f = Some("forward");
         assert_eq!(segs(&[&request], &[]), vec![(id(C), id(GW), false, f)]);
         // The way there as the reply recorded it, and the way back as its copy shows: A -> GW.

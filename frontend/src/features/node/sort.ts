@@ -42,7 +42,7 @@ export function linkNeighbours(edges: Edge[], id: string, names: ReadonlyMap<str
 export function sortHearings(heardBy: Hearing[], id: string, edges: Edge[], names: ReadonlyMap<string, string>): { h: Hearing; link?: Edge }[] {
   const links = new Map(edges.filter((e) => !e.mqtt && e.src === id).map((e) => [e.dst, e]))
   const rank = (x: { link?: Edge }) => (x.link ? CONF_RANK[x.link.confidence] ?? 0 : 0)
-  const snr = (x: { h: Hearing }) => x.h.snr.median ?? -999
+  const snr = (x: { h: Hearing }) => x.h.snr ?? -999
   const name = (x: { h: Hearing }) => names.get(x.h.node) ?? x.h.node
   return heardBy.map((h) => ({ h, link: links.get(h.node) })).sort((a, b) => rank(b) - rank(a) || snr(b) - snr(a) || name(a).localeCompare(name(b)))
 }

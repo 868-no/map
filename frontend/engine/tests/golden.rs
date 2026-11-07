@@ -106,6 +106,23 @@ fn slim(v: &Value) -> Value {
     v
 }
 
+/// A server node view as the engine sends it: "uplinked by" entries carry
+/// only their SNR and RSSI medians, not the whole statistics or last time.
+fn medians(v: &Value) -> Value {
+    let mut v = v.clone();
+    for h in v.get_mut("heard_by").and_then(Value::as_array_mut).into_iter().flatten() {
+        let Some(o) = h.as_object_mut() else { continue };
+        o.remove("last_at");
+        for k in ["snr", "rssi"] {
+            match o.get(k).and_then(|s| s.get("median")).cloned() {
+                Some(m) => o.insert(k.to_string(), m),
+                None => o.remove(k),
+            };
+        }
+    }
+    v
+}
+
 fn server_views() -> Value {
     serde_json::from_str(&EXPECTED.replace(r#""observed_at":"2026-10-31T13:54:52.30196Z""#, r#""observed_at":"2026-10-31T13:52:55.174Z""#)).unwrap()
 }
@@ -125,7 +142,7 @@ fn engine_matches_the_recorded_server_views() {
     let nodes = expected["nodes"].as_object().unwrap();
     assert_eq!(nodes.len(), 10);
     for (id, want) in nodes {
-        assert_eq!(normalize(&view(&mut e, "node", json!({}), id)), normalize(want), "node {id}");
+        assert_eq!(normalize(&view(&mut e, "node", json!({}), id)), normalize(&medians(want)), "node {id}");
     }
 }
 
