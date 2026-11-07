@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { dayUrl, GenerationMoved, RangeFetcher, type Stager } from '../src/derive/range'
+import type { RowCache, Span } from '../src/derive/cache'
 
 const NOW = Date.parse('2026-11-02T12:00:00Z')
 const D1 = Date.parse('2026-10-31T00:00:00Z')
@@ -150,5 +151,127 @@ describe('range fetch with a generation hint (D-170)', () => {
     const r = await f.fetchRange(params())
     expect(r.generation).toBe('g2')
     expect(eng.staged.get(r.batch)?.sort()).toEqual(['day 2026-10-31', 'day 2026-11-01', `page 2026-11-02T00:00:00.000Z`])
+  })
+})
+
+/** The read-through cache in memory: days by date, and one stretch of pages. */
+class MemCache implements RowCache {
+  generation: string | null = null
+  days = new Map<number, string>()
+  stretch: Span | null = null
+  texts: string[] = []
+  cleared = 0
+  has(d: number) {
+    return this.days.has(d)
+  }
+  async day(d: number) {
+    return this.days.get(d) ?? null
+  }
+  putDay(d: number, text: string, generation: string) {
+    if (generation !== this.generation) this.wipe(generation)
+    this.days.set(d, text)
+  }
+  recent() {
+    return this.stretch && { ...this.stretch }
+  }
+  async recentTexts() {
+    return this.texts
+  }
+  putRecent(lo: number, hi: number, texts: string[], generation: string) {
+    if (generation !== this.generation) this.wipe(generation)
+    this.stretch = this.stretch && lo <= this.stretch.hi ? { lo: this.stretch.lo, hi: Math.max(hi, this.stretch.hi) } : { lo, hi }
+    this.texts.push(...texts)
+  }
+  clear() {
+    this.cleared++
+    this.wipe(null)
+  }
+  private wipe(generation: string | null) {
+    this.generation = generation
+    this.days.clear()
+    this.stretch = null
+    this.texts = []
+  }
+}
+
+describe('range fetch through the cache (D-184)', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(NOW)
+  })
+  afterEach(() => vi.useRealTimers())
+  const today = Date.parse('2026-11-02T00:00:00Z')
+
+  it('stores the days it fetched and the paged part, then takes them from the cache', async () => {
+    const s = server(() => 'g1')
+    const eng = new FakeEngine()
+    const f = new RangeFetcher(() => eng, s.get)
+    const cache = new MemCache()
+    f.cache = cache
+    await f.fetchRange(params())
+    expect([...cache.days.keys()].sort()).toEqual([D1, D2])
+    expect(cache.stretch).toEqual({ lo: today, hi: NOW })
+    // Later the same window: no day is fetched, and the paged part starts near the stretch's end.
+    vi.setSystemTime(NOW + 30 * 60_000)
+    s.log.length = 0
+    const r = await f.fetchRange(params())
+    expect(s.log).toEqual([`/api/v1/observations?duration=60h&since=${encodeURIComponent(new Date(NOW - 2 * 60_000).toISOString())}`])
+    expect(eng.staged.get(r.batch)).toEqual(expect.arrayContaining(['day 2026-10-31', 'day 2026-11-01', `page ${new Date(today).toISOString()}`]))
+  })
+
+  it('serves a range the cache holds whole without a request, once the server named its generation', async () => {
+    const s = server(() => 'g1')
+    const eng = new FakeEngine()
+    const f = new RangeFetcher(() => eng, s.get)
+    f.cache = new MemCache()
+    await f.fetchRange(params())
+    s.log.length = 0
+    const past = new URLSearchParams({ start: new Date(D1).toISOString(), end: new Date(D2 + 6 * 3_600_000).toISOString() })
+    const r = await f.fetchRange(past)
+    expect(s.log).toEqual([])
+    expect(eng.staged.get(r.batch)).toEqual(['day 2026-10-31', 'day 2026-11-01'])
+    expect(r.generation).toBe('g1')
+    // Without the server's word on the generation, it asks (the answer names it).
+    f.hint = null
+    await f.fetchRange(past)
+    expect(s.log.length).toBe(1)
+  })
+
+  it('a cache of another generation is emptied and fetched around', async () => {
+    const s = server(() => 'g2')
+    const eng = new FakeEngine()
+    const f = new RangeFetcher(() => eng, s.get)
+    const cache = new MemCache()
+    cache.putDay(D1, JSON.stringify({ tag: 'old day', generation: 'g1', more: false, window: { start: '', end: '', rolling: false } }), 'g1')
+    cache.cleared = 0
+    f.cache = cache
+    // No hint: the cached day is staged, found to be of another generation, and the range fetched again without the cache.
+    const r = await f.fetchRange(params())
+    expect(r.generation).toBe('g2')
+    expect(eng.staged.get(r.batch)).not.toContain('old day')
+    expect(cache.generation).toBe('g2')
+    expect([...cache.days.keys()].sort()).toEqual([D1, D2])
+    // With a hint that differs, the cache is emptied before anything is read.
+    cache.generation = 'g1'
+    f.hint = 'g2'
+    const before = cache.cleared
+    await f.fetchRange(params())
+    expect(cache.cleared).toBe(before + 1)
+  })
+
+  it('offline, builds a range from the cache alone, as far as it reaches from the start', async () => {
+    const s = server(() => 'g1')
+    const eng = new FakeEngine()
+    const f = new RangeFetcher(() => eng, s.get)
+    const cache = new MemCache()
+    f.cache = cache
+    await f.fetchRange(params())
+    const r = (await f.fetchCached(params(), NOW))!
+    expect(r.covered).toEqual({ lo: D1, hi: NOW })
+    expect(eng.staged.get(r.batch)?.length).toBe(3) // two days and the stretch
+    cache.days.delete(D2) // a gap: the stretch no longer continues the days
+    const r2 = (await f.fetchCached(params(), NOW))!
+    expect(r2.covered).toEqual({ lo: D1, hi: D2 })
+    expect(await new RangeFetcher(() => eng, s.get).fetchCached(params(), NOW)).toBeNull() // no cache
   })
 })

@@ -17,7 +17,7 @@ export async function resetEverything(): Promise<void> {
   await ignore(() => localStorage.clear())
   await ignore(() => sessionStorage.clear())
   await ignore(async () => {
-    const dbs = indexedDB.databases ? await indexedDB.databases() : [{ name: 'meshmap-derive' }]
+    const dbs = indexedDB.databases ? await indexedDB.databases() : [{ name: 'meshmap-cache' }, { name: 'meshmap-derive' }]
     await Promise.all(
       dbs.map((d) => d.name && new Promise<void>((done) => {
         const r = indexedDB.deleteDatabase(d.name!)

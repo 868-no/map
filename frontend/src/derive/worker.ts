@@ -4,11 +4,11 @@
 // (D-031, D-040). Rows travel as JSON text straight into the engine; views
 // come back as UTF-8 JSON bytes, handed to the page as transferables.
 import init, { Engine, __wbg_reset_state as newInstance } from '../engine/pkg/engine.js'
-// Content-hashed in builds: names this engine build for the saved row copy (D-102).
+// Content-hashed in builds, so a new engine is fetched with each deploy that changes it.
 import engineUrl from '../engine/pkg/engine_bg.wasm?url'
 // The map's Regions layer outlines (content-hashed), for health's topic-root rule (D-161).
 import regionsUrl from '../assets/regions.geojson?url'
-import { gunzip, openPersistence, type Persistence, type Source } from './persist'
+import { openCache } from './cache'
 import { baseParams, RowStore, type Backend, type Synced, type WindowReq } from './rowStore'
 import { debounce, rebuildDelay } from './debounce'
 import { RangeFetcher } from './range'
@@ -17,11 +17,10 @@ import { ViewError, type ViewMeta } from './views'
 import { ViewMemo } from './memo'
 
 const ready = init({ module_or_path: engineUrl })
-// The saved copy is opened while the engine instantiates (it needs no engine).
-const opened = openPersistence(engineUrl).catch(() => null)
+// The read-through cache (D-184) is opened while the engine instantiates (it needs no engine).
+const opened = openCache().catch(() => null)
 let engine: Engine
 let store: RowStore<number, string>
-let persist: Persistence | null = null
 
 // What the engine was told, so a fresh instance is told the same.
 const options: Record<string, unknown> = {}
@@ -96,46 +95,12 @@ class EngineRows implements Backend<number, string> {
 
 const fetcher = new RangeFetcher(() => engine)
 
-const source: Source = {
-  takeDirty: () => Array.from(engine.take_dirty()),
-  exportRange: (lo, hi) => engine.export(lo, hi),
-  newestT: () => engine.newest_t(),
-}
-const flushSoon = debounce(() => void persist?.flush(source), 2000, 5000)
-
 const started = (async () => {
   await ready
   engine = new Engine()
-  store = new RowStore(new EngineRows(), fetcher.fetchRange)
-  persist = await opened
-  if (persist) {
-    // One chunk decompressed at a time, straight into the engine: the history
-    // is never held as text all at once, nor kept in the worker's heap (§9).
-    try {
-      for (const chunk of persist.restored.chunks) engine.add_rows(await gunzip(chunk), -Infinity)
-    } catch {
-      // An unreadable copy is no copy: start afresh.
-      engine.reset()
-      persist.reset()
-      persist.restored.cov = null
-      persist.restored.generation = null
-    }
-    persist.restored.chunks = []
-    engine.take_dirty() // restored rows are already stored
-    persist.attach(source)
-    store.load(persist.restored.cov, persist.restored.generation)
-    const p = persist
-    store.sink = {
-      changed: flushSoon,
-      removedBefore: (t) => p.removedBefore(t, source),
-      reset: () => p.reset(),
-      // Rows first, then the coverage record that describes them.
-      meta: (cov, generation) => {
-        void p.flush(source)
-        p.meta(cov, generation)
-      },
-    }
-  }
+  store = new RowStore(new EngineRows(), fetcher.fetchRange, fetcher.fetchCached)
+  // Nothing is loaded from the cache here: each window reads what it needs through it.
+  fetcher.cache = await opened
 })()
 
 let quantumMs = 10_000
@@ -165,16 +130,16 @@ let pendingLive: string[] = [] // streamed before the first sync established cov
 
 // Whole days of the first window are fetched as soon as the page has passed
 // the server's generation (from /retention) and asked for a window, while the
-// engine instantiates; the first sync takes them (D-170). Not when the saved
-// copy is of that generation: the store then asks only for what is new.
+// engine instantiates; the first sync takes them (D-170). Days the cache
+// holds under that generation are not fetched (D-184).
 let firstWin: WindowReq | null = null
 let prefetched = false
 let syncing = false // the first sync began: the store asks for itself
 async function prefetch() {
   if (prefetched || syncing || !firstWin || !fetcher.hint) return
   prefetched = true
-  const held = (await opened)?.restored
-  if (syncing || (held?.cov && held.generation === fetcher.hint)) return
+  fetcher.cache = await opened
+  if (syncing) return
   fetcher.prefetchDays(baseParams(firstWin))
 }
 function synced(win: WindowReq, epoch: string): Promise<{ synced: Synced; offline: boolean }> {
@@ -190,6 +155,8 @@ function synced(win: WindowReq, epoch: string): Promise<{ synced: Synced; offlin
       return { synced: s, offline: false }
     } catch (e) {
       if (e instanceof ViewError) throw e // the API answered, with an error (a gateway's 502/503/504 is no answer)
+      // Nothing held yet (a cold start offline): what the cache has of the window.
+      await store.fromCache(win).catch(() => false)
       const s = store.offline(win, Date.now(), quantumMs)
       if (!s) throw new ViewError('unavailable', 'offline and no saved data for this window')
       return { synced: s, offline: true }

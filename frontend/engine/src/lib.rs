@@ -369,11 +369,7 @@ impl Engine {
         let (n, m) = self.store.stats(start as i64, end as i64);
         format!("n{n}.m{m}")
     }
-    /// Hours (start ms) that gained rows since the last call.
-    pub fn take_dirty(&mut self) -> Vec<f64> {
-        self.store.take_dirty().into_iter().map(|h| h as f64).collect()
-    }
-    /// Rows in [lo, hi) as the API's JSON array (the persisted copy).
+    /// Rows in [lo, hi) as the API's JSON array (copied into a fresh instance, D-183).
     pub fn export(&self, lo: f64, hi: f64) -> String {
         self.store.export(lo as i64, hi as i64, &self.i)
     }

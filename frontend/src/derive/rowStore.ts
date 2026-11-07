@@ -48,13 +48,8 @@ export interface Coverage {
   hi: number
 }
 
-/** Persistence hooks (IndexedDB in the worker; absent in tests). */
-export interface StoreSink {
-  changed(): void // rows were added: persist what is new
-  removedBefore(t: number): void
-  reset(): void
-  meta(cov: Coverage | null, generation: string | null): void
-}
+/** What a cache has of a range, offline: a batch, and the range it holds every row of. */
+export type FetchCached<B> = (params: URLSearchParams) => Promise<(Fetched<B> & { covered: Coverage }) | null>
 
 export interface Synced {
   start: number
@@ -75,31 +70,23 @@ export class RowStore<B, L> {
   /** The window last synced: the next one releases what it cannot use unless it contains it. */
   private last: { req: WindowReq; start: number; end: number } | null = null
 
-  constructor(public rows: Backend<B, L>, private fetchRange: FetchRange<B>, public sink?: StoreSink) {}
-
-  /** Restore persisted state (rows already loaded into the backend). */
-  load(cov: Coverage | null, generation: string | null) {
-    this.cov = this.rows.count() || cov ? cov : null
-    this.generation = generation
-  }
+  constructor(public rows: Backend<B, L>, private fetchRange: FetchRange<B>, private fetchCached?: FetchCached<B>) {}
 
   private reset(f: Fetched<B>, cov: Coverage) {
     this.rows.reset()
-    this.sink?.reset()
     this.generation = f.generation
     this.commit(f.batch)
     this.cov = cov
   }
 
   private commit(batch: B) {
-    if (this.rows.commit(batch) > 0) this.sink?.changed()
+    this.rows.commit(batch)
   }
 
   private trim(before: number) {
     if (!this.cov || this.cov.lo >= before) return
     this.rows.trimBefore(before)
     this.cov.lo = before
-    this.sink?.removedBefore(before)
   }
 
   private get(params: URLSearchParams, extra: Record<string, string> = {}): Promise<Fetched<B>> {
@@ -132,8 +119,6 @@ export class RowStore<B, L> {
       this.rows.keepOnly(lo, lo) // nothing held is usable
       this.cov = null
     }
-    this.sink?.reset()
-    if (this.cov) this.sink?.changed()
   }
 
   /** Bring the store up to date for req; returns the window's bounds. */
@@ -181,11 +166,8 @@ export class RowStore<B, L> {
     this.trim(E - KEEP_MS)
     if (this.rows.count() > MAX_ROWS) {
       this.rows.keepOnly(S, E)
-      this.sink?.reset()
-      this.sink?.changed()
       this.cov = { lo: S, hi: E }
     }
-    this.sink?.meta(this.cov, this.generation)
     this.last = { req, start: S, end: E }
     return { start: S, end: E, rolling }
   }
@@ -208,9 +190,22 @@ export class RowStore<B, L> {
    */
   addLive(rows: L): boolean {
     if (!this.cov) return false
-    const added = this.rows.addLive(rows, this.cov.lo) > 0
-    if (added) this.sink?.changed()
-    return added
+    return this.rows.addLive(rows, this.cov.lo) > 0
+  }
+
+  /**
+   * Offline with nothing held (a cold start without the network): takes what
+   * the cache has of the window from its start. Returns whether anything is held.
+   */
+  async fromCache(req: WindowReq): Promise<boolean> {
+    if (this.cov) return true
+    const f = await this.fetchCached?.(baseParams(req))
+    if (!f) return false
+    this.rows.reset()
+    this.generation = f.generation
+    this.commit(f.batch)
+    this.cov = f.covered
+    return true
   }
 
   /** The window's bounds from what is held, without the network (offline). */

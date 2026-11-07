@@ -21,7 +21,6 @@ pub struct Store {
     ids: FxSet<i64>,
     staged: FxMap<u32, Vec<Row>>,
     next_batch: u32,
-    dirty: FxSet<i64>,  // hour starts with rows added since the last take_dirty
     pub version: u64,   // bumped on every change (memo key)
     max_id: Option<i64>, // newest id among rows, kept up to date (revisions)
     stats_memo: Cell<Option<(usize, usize, u64, i64)>>, // (from, to, version, newest id) of a partial range
@@ -148,9 +147,6 @@ impl Store {
             return 0;
         }
         fresh.sort_unstable_by(by_time);
-        for r in &fresh {
-            self.dirty.insert(r.t.div_euclid(HOUR_MS) * HOUR_MS);
-        }
         let n = fresh.len();
         self.max_id = fresh.iter().map(|r| r.id).chain(self.max_id).max();
         let append = self.rows().last().is_none_or(|tail| by_time(&fresh[0], tail).is_ge());
@@ -195,7 +191,6 @@ impl Store {
         self.buf = Vec::new();
         self.start = 0;
         self.ids.clear();
-        self.dirty.clear();
         self.max_id = None;
         self.version += 1;
     }
@@ -258,13 +253,6 @@ impl Store {
 
     pub fn newest_t(&self) -> i64 {
         self.rows().last().map_or(0, |r| r.t)
-    }
-
-    /// Hours that gained rows since the last call (persisted as chunks).
-    pub fn take_dirty(&mut self) -> Vec<i64> {
-        let mut v: Vec<i64> = self.dirty.drain().collect();
-        v.sort_unstable();
-        v
     }
 
     /// Rows with observed_at in [lo, hi) as the API's JSON array.
@@ -433,7 +421,6 @@ mod tests {
         let mut i = Interner::default();
         let mut s = Store::default();
         s.add_json(&format!("[{},{}]", row(1, 10), row(2, HOUR_MS + 5)), 0, &mut i).unwrap();
-        assert_eq!(s.take_dirty(), vec![0, HOUR_MS]);
         let text = s.export(0, HOUR_MS, &i);
         let mut t = Store::default();
         assert_eq!(t.add_json(&text, 0, &mut i).unwrap(), 1);

@@ -1,7 +1,8 @@
 // The worker's range fetch: every row of a window into one staged batch of
 // the engine (kept apart from the worker so tests can run it without
 // WebAssembly).
-import type { Fetched } from './rowStore'
+import { OVERLAP_MS, type Coverage, type Fetched } from './rowStore'
+import type { RowCache } from './cache'
 import { Abandoned, abandonable, cursorMs, DAY_MS, dayName, limiter, planDays, rangeEnd, requestedRange, settleFirst, sliceBounds } from './slices'
 import { ViewError } from './views'
 import { backendBusy, gatewayDown, retryDelay } from './httpStatus'
@@ -14,6 +15,9 @@ const PARALLEL = 4
 const PAGE_TIMEOUT_MS = 30_000
 /** Retries of a page answered 429 or busy, each after its Retry-After (at most 10 s). */
 const RATE_RETRIES = 3
+
+/** The cache's stretch is read only when it covers more than this of a range's paged part. */
+const STRETCH_MIN_MS = 10 * 60_000
 
 /** A whole day was asked for under a generation the server no longer has (409): refetch the range. */
 export class GenerationMoved extends Error {}
@@ -73,6 +77,9 @@ export class RangeFetcher {
   private prefetched = new Map<string, Promise<string>>()
   private slots = limiter(PARALLEL)
 
+  /** The read-through cache (D-184): set once it is open, absent without storage. */
+  cache: RowCache | null = null
+
   constructor(private engine: () => Stager, private get: (url: string) => Promise<string> = fetchText) {}
 
   /**
@@ -85,7 +92,7 @@ export class RangeFetcher {
     const { lo, hi } = requestedRange(params, now)
     for (const d of planDays(lo, hi, now)) {
       const url = dayUrl(d, this.hint)
-      if (this.prefetched.has(url)) continue
+      if (this.prefetched.has(url) || (this.cache?.generation === this.hint && this.cache.has(d))) continue
       const p = this.slots(() => this.get(url))
       p.catch(() => {}) // a failure is the range's when it is taken
       this.prefetched.set(url, p)
@@ -118,32 +125,66 @@ export class RangeFetcher {
    */
   fetchRange = async (params: URLSearchParams, retry = true): Promise<Fetched<number>> => {
     const engine = this.engine()
+    // After a generation moved: straight from the server (the cache starts over).
+    const cache = retry ? this.cache : null
+    if (cache?.generation && this.hint && cache.generation !== this.hint) cache.clear()
+    const cached = !!cache?.generation && (!this.hint || this.hint === cache.generation)
     // A failed request fails the range: the others stop before their next
     // request (even one still waiting for a slot) or at their next page, and the
     // batch is discarded, so no staged rows are stranded in the engine.
     let failed = false
     const run = abandonable(this.slots, () => failed)
-    const page = (extra: Record<string, string>) => {
+    const page = (extra: Record<string, string>, keep?: string[]) => {
       const p = new URLSearchParams(params)
       for (const [k, v] of Object.entries(extra)) p.set(k, v)
-      return run(() => this.get(`/api/v1/observations?${p}`))
+      const text = run(() => this.get(`/api/v1/observations?${p}`))
+      if (keep) void text.then((t) => keep.push(t), () => {})
+      return text
     }
-    // A day's text: prefetched (asked again if that failed), or fetched now.
-    const day = (url: string) => {
+    // A day's text: cached, prefetched (asked again if that failed), or fetched now.
+    const fetchedDays = new Map<number, string>() // from the server, for the cache
+    const day = async (d: number, generation: string) => {
+      if (cached) {
+        const text = await cache!.day(d)
+        if (text !== null) return text
+      }
+      const url = dayUrl(d, generation)
       const pre = this.prefetched.get(url)
       this.prefetched.delete(url)
-      return pre ? pre.catch(() => run(() => this.get(url))) : run(() => this.get(url))
+      const text = await (pre ? pre.catch(() => run(() => this.get(url))) : run(() => this.get(url)))
+      fetchedDays.set(d, text)
+      return text
     }
     const iso = (ms: number) => new Date(ms).toISOString()
     const now = Date.now()
     const { lo, hi } = requestedRange(params, now)
     const days = planDays(lo, hi, now)
-    // With whole days, the first request is the part after them (empty when the range ends there).
-    const tail: Record<string, string> = days.length ? { since: iso(days[days.length - 1] + DAY_MS) } : {}
-    const firstText = page(tail)
+    // The paged part follows the last whole day. When the cache's newest
+    // stretch covers its start (D-184), only rows after the stretch are asked
+    // for, with an overlap for rows committed late.
+    const tailLo = days.length ? days[days.length - 1] + DAY_MS : lo
+    const stretch = cached ? cache!.recent() : null
+    // Only when it saves real paging: a rolling window's minute syncs ask from just before the stretch's end anyway.
+    const fromStretch = !!stretch && tailLo < hi && stretch.lo <= tailLo && stretch.hi - tailLo > STRETCH_MIN_MS
+    const stretchTexts = fromStretch ? cache!.recentTexts() : null
+    const tailSince = fromStretch ? Math.max(tailLo, stretch!.hi - OVERLAP_MS) : tailLo
+    // All of it cached, under the generation the server last reported: no request at all.
+    if (cached && this.hint === cache!.generation && tailSince >= hi && days.every((d) => cache!.has(d))) {
+      const texts = [...(await Promise.all(days.map((d) => cache!.day(d)))), ...((await stretchTexts) ?? [])]
+      if (texts.length && texts.every((t) => t !== null)) {
+        const batch = (JSON.parse(engine.stage(texts[0]!, 0)) as Meta).batch
+        for (const t of texts.slice(1)) engine.stage(t!, batch)
+        const window = { start: params.get('start') ?? iso(lo), end: params.get('end') ?? iso(hi), rolling: !params.has('start') }
+        return { window, generation: cache!.generation!, batch }
+      }
+    }
+    // With whole days or the stretch, the first request is the part after them (empty when the range ends there).
+    const tail: Record<string, string> = days.length || fromStretch ? { since: iso(tailSince) } : {}
+    const tailTexts: string[] = [] // the paged part's pages, for the cache's stretch
+    const firstText = page(tail, tailTexts)
     // Not after a 409: the hint is then known to be stale.
     const hint = retry ? this.hint : null
-    const early = new Map(hint ? days.map((d) => [d, day(dayUrl(d, hint))]) : [])
+    const early = new Map(hint ? days.map((d) => [d, day(d, hint)]) : [])
     for (const p of early.values()) p.catch(() => {}) // unused when the hint is stale
     let first: Meta
     try {
@@ -158,8 +199,12 @@ export class RangeFetcher {
       if (failed) throw new Abandoned('observations: range abandoned')
       return JSON.parse(engine.stage(text, batch)) as Meta
     }
-    const drain = async (meta: Meta, extra: Record<string, string>) => {
-      while (meta.more) meta = stage(await page({ ...extra, cursor: meta.next_cursor ?? '' }))
+    // A day or a cached page of another generation restarts the range without the cache.
+    const stageOwn = (text: string) => {
+      if (stage(text).generation !== first.generation) throw new GenerationMoved('observations: rows of another generation')
+    }
+    const drain = async (meta: Meta, extra: Record<string, string>, keep?: string[]) => {
+      while (meta.more) meta = stage(await page({ ...extra, cursor: meta.next_cursor ?? '' }, keep))
     }
     const tasks: (() => Promise<unknown>)[] = []
     if (first.more) {
@@ -168,12 +213,14 @@ export class RangeFetcher {
       bounds.slice(0, -1).forEach((b, k) =>
         tasks.push(async () => {
           const range = { ...tail, until: iso(bounds[k + 1]) }
-          if (k === 0) return drain(first, range) // continues after the first page
+          if (k === 0) return drain(first, range, tailTexts) // continues after the first page
           if (b >= bounds[k + 1]) return
-          return drain(stage(await page({ ...range, since: iso(b) })), { ...range, since: iso(b) })
+          const since = { ...range, since: iso(b) }
+          return drain(stage(await page(since, tailTexts)), since, tailTexts)
         }),
       )
     }
+    if (stretchTexts) tasks.push(async () => (await stretchTexts).forEach(stageOwn))
     if (days.length) {
       // Before the first whole day: from the window's start as the server set it.
       const start = Math.max(Date.parse(first.window.start), params.has('since') ? Date.parse(params.get('since')!) : -Infinity)
@@ -183,12 +230,7 @@ export class RangeFetcher {
       }
       // Days asked under a stale hint are dropped (the server answers them 409).
       const asked = hint === first.generation ? early : new Map<number, Promise<string>>()
-      for (const d of days) {
-        tasks.push(async () => {
-          const meta = stage(await (asked.get(d) ?? day(dayUrl(d, first.generation))))
-          if (meta.generation !== first.generation) throw new GenerationMoved('observations: a day of another generation')
-        })
-      }
+      for (const d of days) tasks.push(async () => stageOwn(await (asked.get(d) ?? day(d, first.generation))))
     }
     // The range fails with the first failure in time (a 409 to retry under the
     // new generation, a gateway's 502 that sends the page to the saved copy),
@@ -199,11 +241,55 @@ export class RangeFetcher {
       if (err.reason instanceof GenerationMoved) {
         // Decoder, configuration or history changed between our requests:
         // start over once, under the new generation (the store then sees it).
-        if (retry) return this.fetchRange(params, false)
+        if (retry) {
+          this.cache?.clear()
+          return this.fetchRange(params, false)
+        }
         throw new ViewError('upstream', err.reason.message)
       }
       throw err.reason
     }
+    // Into the cache: the days fetched, and a rolling window's paged part, which holds every row of its range.
+    const into = this.cache
+    if (into) {
+      for (const [d, text] of fetchedDays) into.putDay(d, text, first.generation)
+      const since = tail.since ?? params.get('since')
+      const from = Math.max(Date.parse(first.window.start), since ? Date.parse(since) : -Infinity)
+      if (first.window.rolling) into.putRecent(from, rangeEnd(first.window.end, params.get('until')), tailTexts, first.generation, now)
+    }
     return { window: first.window, generation: first.generation, batch }
+  }
+
+  /**
+   * Offline, with nothing held: what the cache has of a range, staged as one
+   * batch: its stored days from the range's start while they follow one
+   * another, then the newest stretch if it continues them. Null when it has
+   * nothing from the start.
+   */
+  fetchCached = async (params: URLSearchParams, now = Date.now()): Promise<(Fetched<number> & { covered: Coverage }) | null> => {
+    const cache = this.cache
+    if (!cache?.generation) return null
+    const { lo, hi } = requestedRange(params, now)
+    if (!Number.isFinite(lo) || !Number.isFinite(hi) || hi <= lo) return null
+    const texts: string[] = []
+    let upTo = lo
+    for (const d of planDays(lo, hi, now)) {
+      const text = d <= upTo ? await cache.day(d) : null
+      if (text === null) break
+      texts.push(text)
+      upTo = d + DAY_MS
+    }
+    const stretch = cache.recent()
+    if (stretch && stretch.lo <= upTo && stretch.hi > upTo) {
+      texts.push(...(await cache.recentTexts()))
+      upTo = stretch.hi
+    }
+    upTo = Math.min(upTo, hi)
+    if (!texts.length || upTo <= lo) return null
+    const engine = this.engine()
+    const batch = (JSON.parse(engine.stage(texts[0], 0)) as Meta).batch
+    for (const t of texts.slice(1)) engine.stage(t, batch)
+    const iso = (ms: number) => new Date(ms).toISOString()
+    return { window: { start: iso(lo), end: iso(hi), rolling: !params.has('start') }, generation: cache.generation, batch, covered: { lo, hi: upTo } }
   }
 }

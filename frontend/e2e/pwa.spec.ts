@@ -2,26 +2,33 @@ import { expect, test, type Page } from '@playwright/test'
 
 test.use({ serviceWorkers: 'allow' })
 
-/** Waits until the derivation worker has saved its rows (and their coverage) to IndexedDB. */
-async function rowsSaved(page: Page) {
-  await expect.poll(() => page.evaluate(() => new Promise<boolean>((resolve) => {
+/** What the read-through cache (D-184) holds: whole days and today's stretch. */
+function cached(page: Page) {
+  return page.evaluate(() => new Promise<{ days: number; recent: boolean }>((resolve) => {
     // Never create or hold the database here: that would block the worker's schema upgrade.
-    const req = indexedDB.open('meshmap-derive')
+    const req = indexedDB.open('meshmap-cache')
     req.onupgradeneeded = () => req.transaction?.abort()
     req.onsuccess = () => {
       const db = req.result
       if (!db.objectStoreNames.contains('meta')) {
         db.close()
-        return resolve(false)
+        return resolve({ days: 0, recent: false })
       }
-      const g = db.transaction('meta').objectStore('meta').get('state')
-      g.onsuccess = () => {
+      const tx = db.transaction(['days', 'meta'])
+      const n = tx.objectStore('days').count()
+      const g = tx.objectStore('meta').get('state')
+      tx.oncomplete = () => {
         db.close()
-        resolve(!!g.result?.cov)
+        resolve({ days: n.result, recent: !!g.result?.recent })
       }
     }
-    req.onerror = () => resolve(false)
-  })), { timeout: 15_000 }).toBe(true)
+    req.onerror = () => resolve({ days: 0, recent: false })
+  }))
+}
+
+/** Waits until the derivation worker has saved the window's rows in its cache. */
+async function rowsSaved(page: Page) {
+  await expect.poll(async () => (await cached(page)).recent, { timeout: 15_000 }).toBe(true)
 }
 
 test('installable: manifest with icons, service worker, static caching headers', async ({ page, request }) => {
@@ -65,28 +72,17 @@ test('works offline with the last data received, and never stores tiles in the w
   // The same nodes; their order follows when each was last heard, which moves on with busy traffic.
   expect((await page.locator('.node-row .nm').allTextContents()).sort()).toEqual([...names].sort())
 
-  const cached = await page.evaluate(async () => {
+  const urls = await page.evaluate(async () => {
     const urls: string[] = []
     for (const k of await caches.keys()) for (const r of await (await caches.open(k)).keys()) urls.push(new URL(r.url).pathname)
     return urls
   })
-  expect(cached.some((u) => u.startsWith('/tiles/'))).toBe(false)
-  expect(cached).toContain('/index.html')
-  // Offline data comes from the derivation worker's IndexedDB copy, not the cache.
-  expect(cached.some((u) => u.startsWith('/api/v1/observations'))).toBe(false)
-  const held = await page.evaluate(() => new Promise<number>((resolve) => {
-    const req = indexedDB.open('meshmap-derive')
-    req.onsuccess = () => {
-      const db = req.result
-      const c = db.transaction('chunks').objectStore('chunks').count()
-      c.onsuccess = () => {
-        db.close()
-        resolve(c.result)
-      }
-    }
-    req.onerror = () => resolve(0)
-  }))
-  expect(held).toBeGreaterThan(0)
+  expect(urls.some((u) => u.startsWith('/tiles/'))).toBe(false)
+  expect(urls).toContain('/index.html')
+  // Offline data comes from the derivation worker's IndexedDB cache, not the service worker's.
+  expect(urls.some((u) => u.startsWith('/api/v1/observations'))).toBe(false)
+  const held = await cached(page)
+  expect(held.days > 0 || held.recent).toBe(true)
   await context.setOffline(false)
 })
 
@@ -132,41 +128,28 @@ test('a busy backend is retried, not taken for one that is down', async ({ page,
   await context.unroute('**/api/v1/observations*')
 })
 
-// D-102: rows are saved as one engine build re-exports them; another build
-// must not trust that copy (it may lack fields the new engine reads).
-test('a saved row copy from another engine build is discarded and the window fetched afresh', async ({ page }) => {
-  const meta = (fn: string) => page.evaluate((fn) => new Promise<unknown>((resolve) => {
-    const req = indexedDB.open('meshmap-derive')
-    req.onupgradeneeded = () => req.transaction?.abort()
-    req.onsuccess = () => {
-      const db = req.result
-      if (!db.objectStoreNames.contains('meta')) {
-        db.close()
-        return resolve(null)
-      }
-      const tx = db.transaction('meta', fn === 'tamper' ? 'readwrite' : 'readonly')
-      const g = tx.objectStore('meta').get('state')
-      g.onsuccess = () => {
-        if (fn === 'tamper' && g.result) tx.objectStore('meta').put({ ...g.result, engine: 'an-older-build.wasm' }, 'state')
-        tx.oncomplete = () => {
-          db.close()
-          resolve(g.result ?? null)
-        }
-      }
-    }
-    req.onerror = () => resolve(null)
-  }), fn)
+// D-184: whole past days and today's stretch are read through the cache, so a
+// reload asks the server only for rows after the stretch, and a longer window
+// after a shorter one reads its older days back instead of fetching them.
+test('the cache is read through: a reload and a longer window ask only for what is new', async ({ page }) => {
   await page.goto('/')
   await page.getByRole('button', { name: 'Nodes', exact: true }).click()
   await expect(page.locator('.node-row').first()).toBeVisible({ timeout: 30_000 })
-  await expect.poll(async () => !!((await meta('read')) as { cov?: unknown } | null)?.cov, { timeout: 15_000 }).toBe(true)
-  await meta('tamper')
+  await rowsSaved(page)
   const fetched: string[] = []
-  page.on('request', (r) => r.url().includes('/api/v1/observations') && fetched.push(r.url()))
+  page.on('request', (r) => /\/api\/v1\/observations(\/day|\?)/.test(r.url()) && fetched.push(r.url()))
   await page.reload()
   await page.getByRole('button', { name: 'Nodes', exact: true }).click()
   await expect(page.locator('.node-row').first()).toBeVisible({ timeout: 30_000 })
-  // A trusted copy would only ask for what is new (since=...); a discarded one fetches the window.
-  await expect.poll(() => fetched.some((u) => !u.includes('since=') && !u.includes('cursor='))).toBe(true)
-  await expect.poll(async () => ((await meta('read')) as { engine?: string } | null)?.engine, { timeout: 15_000 }).not.toBe('an-older-build.wasm')
+  await expect.poll(() => fetched.length).toBeGreaterThan(0)
+  expect(fetched.filter((u) => u.includes('/day/'))).toEqual([])
+  expect(fetched.every((u) => u.includes('since='))).toBe(true)
+  // Shorter, then longer again: the engine let the older rows go, the cache did not.
+  fetched.length = 0
+  await page.getByRole('button', { name: 'Period', exact: true }).click()
+  await page.getByRole('button', { name: '24h', exact: true }).click()
+  await page.getByRole('button', { name: '3d', exact: true }).click()
+  await expect(page).toHaveURL(/^(?!.*duration=24h)/)
+  await page.waitForTimeout(3000)
+  expect(fetched.filter((u) => u.includes('/day/') || u.includes('until='))).toEqual([])
 })

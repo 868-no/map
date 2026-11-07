@@ -29,6 +29,9 @@ export const DAY_MS = 86_400_000
  * /observations/day, which every visitor shares through HTTP caches (D-158).
  */
 const SETTLE_MS = 30 * 60_000
+/** Days ending here or earlier are final (settled): the start of the oldest UTC day that is not. */
+export const settledUntil = (now: number) => Math.floor((now - SETTLE_MS) / DAY_MS) * DAY_MS
+
 /** The UTC day of ms as YYYY-MM-DD (the day endpoint's path). */
 export function dayName(ms: number): string {
   return new Date(ms).toISOString().slice(0, 10)
@@ -64,7 +67,7 @@ export function requestedRange(params: URLSearchParams, now: number): { lo: numb
  */
 export function planDays(lo: number, hi: number, now: number): number[] {
   if (!Number.isFinite(lo) || !Number.isFinite(hi) || hi <= lo) return []
-  const settled = Math.floor((now - SETTLE_MS) / DAY_MS) * DAY_MS // days ending here or earlier are final
+  const settled = settledUntil(now)
   const days: number[] = []
   for (let d = Math.floor(lo / DAY_MS) * DAY_MS; d < hi && d + DAY_MS <= settled; d += DAY_MS) days.push(d)
   return days

@@ -161,6 +161,23 @@ describe('RowStore', () => {
     expect(store.held.slice(r.start, r.end).map((x) => x.i)).toEqual(all.filter((x) => x.t >= r.start && x.t < r.end).map((x) => x.i))
   })
 
+  it('offline with nothing held, takes what the cache has of the window', async () => {
+    const all = Array.from({ length: 60 }, (_, k) => row(k + 1, T0 + k * 60_000))
+    const fail = async (): Promise<Fetched<ObsRow[]>> => {
+      throw new Error('offline')
+    }
+    const covered = { lo: T0, hi: T0 + 30 * 60_000 }
+    const rows = new ArrayRows()
+    const store = new RowStore(rows, fail, async () => ({ window: { start: '', end: '', rolling: true }, generation: 'g1', batch: all.slice(0, 30), covered }))
+    await expect(store.sync({ live: true, durationH: 1 }, T0 + H)).rejects.toThrow('offline')
+    expect(await store.fromCache({ live: true, durationH: 1 })).toBe(true)
+    expect(store.cov).toEqual(covered)
+    expect(store.generation).toBe('g1')
+    const r = store.offline({ live: true, durationH: 1 }, T0 + H)!
+    expect(rows.slice(r.start, r.end).length).toBe(30)
+    expect(await new RowStore(new ArrayRows(), fail).fromCache({ live: true, durationH: 1 })).toBe(false) // no cache
+  })
+
   it('serves held rows offline, clipped to the window', async () => {
     const all = Array.from({ length: 60 }, (_, k) => row(k + 1, T0 + k * 60_000))
     const store = newStore(server(all, () => T0 + H).fetch)
