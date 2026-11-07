@@ -64,7 +64,7 @@ The runners appear under Settings → Actions → Runners as `meshmap-N-<time>`,
 
 ### Published images
 
-GitHub Actions (`.github/workflows/images.yml`, called by the tests workflow once every test job, end-to-end included, has passed) builds the three images for every pull request and publishes them to GitHub Container Registry from `main` and from version tags, so nothing untested is published, for `linux/amd64` and `linux/arm64`, with provenance and SBOM attestations:
+GitHub Actions (`.github/workflows/images.yml`, called by the tests workflow once every test job, end-to-end included, has passed) builds the three images for every pull request and publishes them to GitHub Container Registry from `main` and from version tags, so nothing untested is published, for `linux/amd64` and `linux/arm64`, with provenance and SBOM attestations. Each build pushes only its `sha-<commit>` tag; a last job then points the shared tags (`latest`, `main`, `X.Y.Z`, `X.Y`) at the three new images together, so a failed build never leaves them naming images of different commits. The images workflow has no trigger of its own: to rebuild, run the tests workflow by hand (Actions → tests → Run workflow), which publishes only after its tests pass.
 
 | Image | Tags |
 |---|---|

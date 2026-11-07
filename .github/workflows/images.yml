@@ -1,7 +1,10 @@
 # Build the container images; publish them to GitHub Container Registry from
 # main and from version tags (vX.Y.Z). Called by the tests workflow once every
-# test job has passed, so nothing untested is published; run by hand
-# (workflow_dispatch) only to rebuild deliberately.
+# test job has passed, so nothing untested is published. It has no trigger of
+# its own: to rebuild deliberately, run the tests workflow by hand.
+# Each image is pushed as sha-<commit> only; the tags deployments pull
+# (latest, main, X.Y.Z, X.Y) move to the new images in a last job, once all
+# three are built, so a failed build never leaves them naming a mix of commits.
 #   ghcr.io/868-no/map-backend   backend/Dockerfile (Go API, ingest, maintenance)
 #   ghcr.io/868-no/map-web       web/Dockerfile     (Caddy + built frontend)
 #   ghcr.io/868-no/map-basemap   basemap/Dockerfile (Planetiler basemap builder)
@@ -9,7 +12,6 @@ name: images
 
 on:
   workflow_call:
-  workflow_dispatch:
 
 permissions:
   contents: read
@@ -54,16 +56,12 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      # Only this commit's tag here; the promote job adds the shared ones.
       - id: meta
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
         with:
           images: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
           tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=ref,event=branch
-            type=ref,event=pr
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
             type=sha,prefix=sha-
           labels: |
             org.opencontainers.image.title=${{ matrix.image }}
@@ -87,3 +85,58 @@ jobs:
             type=gha,scope=${{ matrix.image }}
             ${{ matrix.e2e && format('type=gha,scope={0}', matrix.e2e) || '' }}
           cache-to: type=gha,mode=max,scope=${{ matrix.image }}
+
+  # Points the shared tags at this commit's images, all three, once every
+  # build has pushed its sha- tag: copies of the manifest lists (both
+  # platforms, provenance and SBOM included), so nothing is rebuilt.
+  promote:
+    name: tag the images
+    needs: build
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # The tag the builds pushed (sha-<short commit>), as they computed it.
+      - id: source
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/map-backend
+          tags: |
+            type=sha,prefix=sha-
+      # The shared tags, computed once for the backend image and applied to
+      # all three: `latest` and `main` from main, X.Y.Z and X.Y (and latest,
+      # unless a pre-release) from a version tag, the branch name otherwise.
+      - id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ghcr.io/${{ github.repository_owner }}/map-backend
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+      - name: point the shared tags at this commit's images
+        env:
+          OWNER: ${{ github.repository_owner }}
+          SOURCE: ${{ steps.source.outputs.version }}
+          SHARED: ${{ steps.meta.outputs.tags }}
+        run: |
+          [ -n "$SOURCE" ] || { echo "no source tag"; exit 1; }
+          registry="ghcr.io/${OWNER,,}"
+          tags=()
+          for ref in $SHARED; do tags+=("${ref##*:}"); done
+          if [ "${#tags[@]}" -eq 0 ]; then echo "no shared tags for this ref"; exit 0; fi
+          for image in map-backend map-web map-basemap; do
+            args=()
+            for tag in "${tags[@]}"; do args+=(-t "$registry/$image:$tag"); done
+            echo "$image:$SOURCE -> ${tags[*]}"
+            docker buildx imagetools create "${args[@]}" "$registry/$image:$SOURCE"
+          done
