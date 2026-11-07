@@ -6,6 +6,7 @@ import type { HealthView, RegionsView, WatchView, LinkHistory, NodeView, PacketL
 import { apiParams, useStore } from './store'
 import { create } from 'zustand'
 import { deriveView, hintGeneration, onDerivedChange } from '../derive/client'
+import { ViewError } from '../derive/views'
 import type { ViewKind } from '../derive/protocol'
 import { usePwa } from '../pwa'
 import { noteServerTime } from '../lib/serverClock'
@@ -104,8 +105,18 @@ function useWindowQuery<T extends { meta: ViewMeta }>(kind: ViewKind, node?: str
     // would hold dozens of dead parsed views. The observer still keeps the
     // previous result for placeholderData after its query is dropped.
     gcTime: win.live ? 0 : 5 * 60_000,
-    retry: 1,
+    retry: retryView,
   })
+}
+
+/**
+ * Whether to ask for a view again after it failed: once, unless the worker
+ * said the request itself cannot be answered (an unknown node, a bad
+ * filter), which asking again cannot change.
+ */
+export function retryView(failures: number, err: Error): boolean {
+  if (err instanceof ViewError && (err.kind === 'not_found' || err.kind === 'bad_request')) return false
+  return failures < 1
 }
 
 export const useSnapshot = () => useWindowQuery<SnapshotView>('snapshot')
