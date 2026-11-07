@@ -1,10 +1,10 @@
-data
-secrets
-.env
+# Only the web image builds from the repository root (backend and basemap
+# have their own contexts): send it what it copies, nothing else.
+*
+!frontend
+!docs/api-openapi.yaml
+!web
 **/node_modules
 frontend/dist
-backend/.scratch
-backend/protobufs
-.git
 frontend/src/engine/pkg
 frontend/engine/target

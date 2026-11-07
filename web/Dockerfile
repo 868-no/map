@@ -33,7 +33,11 @@ FROM --platform=$BUILDPLATFORM node:22.21.1-bookworm AS app
 WORKDIR /src/frontend
 COPY frontend/package.json frontend/package-lock.json ./
 RUN --mount=type=cache,target=/root/.npm npm ci --no-audit --no-fund
-COPY frontend/ ./
+# What vite builds from only: tests and the engine's sources would rebuild it for nothing.
+COPY frontend/index.html frontend/vite.config.ts frontend/tsconfig.json ./
+COPY frontend/public ./public
+COPY frontend/sw ./sw
+COPY frontend/src ./src
 COPY --from=engine /out ./src/engine/pkg
 COPY docs/api-openapi.yaml /src/docs/api-openapi.yaml
 # true only for end-to-end test stacks: compiles in the window.__meshmap hook.
@@ -41,7 +45,7 @@ ARG E2E_HOOKS=false
 # The page links to its source code (GPL-3.0): set these when building a fork.
 ARG SOURCE_URL=https://github.com/868-no/map
 ARG SOURCE_REVISION=
-RUN VITE_E2E_HOOKS=$E2E_HOOKS VITE_SOURCE_URL=$SOURCE_URL VITE_SOURCE_REVISION=$SOURCE_REVISION npm run build
+RUN VITE_E2E_HOOKS=$E2E_HOOKS VITE_SOURCE_URL=$SOURCE_URL VITE_SOURCE_REVISION=$SOURCE_REVISION npx vite build # typechecked in CI's frontend job
 
 # Map glyphs: OpenMapTiles fonts v2.0 (SIL OFL), pinned by checksum.
 FROM --platform=$BUILDPLATFORM alpine:3.24 AS fonts
@@ -49,11 +53,13 @@ ARG FONTS_URL=https://github.com/openmaptiles/fonts/releases/download/v2.0/v2.0.
 ARG FONTS_SHA256=3a7a6c2dcd940a840aa6ffac8f39758252a667a0b329945b071fb44bf00e7f47
 RUN apk add --no-cache curl unzip && curl -fsSL -o /fonts.zip "$FONTS_URL" \
  && echo "$FONTS_SHA256  /fonts.zip" | sha256sum -c - \
- && mkdir -p /out && unzip -q /fonts.zip "Noto Sans Regular/*" "Noto Sans Bold/*" -d /out
+ && mkdir -p /out && unzip -q /fonts.zip "Noto Sans Regular/*" "Noto Sans Bold/*" -d /out \
+ && mkdir -p /dirs/etc/caddy/auth /dirs/srv/tiles
 
 FROM caddy:2.10-alpine
+# No RUN in this stage: every image builds without emulating its platform.
+COPY --from=fonts /dirs/ /
 COPY web/Caddyfile /etc/caddy/Caddyfile
-RUN mkdir -p /etc/caddy/auth /srv/tiles
 COPY --from=app /src/frontend/dist /srv/app
 COPY --from=fonts /out /srv/fonts
 COPY web/styles /srv/styles
