@@ -8,7 +8,7 @@ import type { Capabilities } from '../api/types'
 import type { Edge, MeshNode, SnapshotView } from '../derive/views'
 import { useStore, type PlaceMark } from '../state/store'
 import { applyStylePaint, loadStyle, registerPMTiles } from './style'
-import { bridgeRoute, edgeKeysOf, namesOf, shortNamesOf, positionAt, filterEdges, passesNodeFilters, linkGeometry, placeNodes, visibleLinks, withSelectedLink, type LinkGeom, type PlacedNode } from './model'
+import { bridgeRoute, edgeKeysOf, matchesSearch, namesOf, shortNamesOf, positionAt, filterEdges, passesNodeFilters, linkGeometry, placeNodes, visibleLinks, withSelectedLink, type LinkGeom, type PlacedNode } from './model'
 import { frameArrived, onPingAdded, pingCount } from './pings'
 import { BASEMAP_GROUPS } from './layers'
 import { meshLayerBuilder, type ReachGeom, type RouteGeom } from './meshLayers'
@@ -138,7 +138,7 @@ export default memo(function MapView({ caps, snapshot, onPositions }: Props) {
   const toggles = useStore((s) => s.toggles)
   const selection = useStore((s) => s.selection)
   const select = useStore((s) => s.select)
-  const search = useStore((s) => s.search)
+  const typed = useStore((s) => s.search)
   const theme = useTheme()
   const palette = PALETTES[theme]
   const styleFor = (t: Theme) => (t === 'light' ? caps.map.style_url_light : caps.map.style_url)
@@ -370,12 +370,18 @@ export default memo(function MapView({ caps, snapshot, onPositions }: Props) {
   // Static layers, rebuilt on data/filter/selection change; pings animate on top.
   // The builder keeps each layer's data array while its inputs are unchanged.
   const [buildMeshLayers] = useState(meshLayerBuilder)
+  // The search dims the nodes it leaves out, but only when it matches one:
+  // a place name being typed (D-193) leaves the map as it is.
+  const dimBy = useMemo(() => {
+    const q = typed.trim().toLowerCase()
+    return q && placed.some((p) => matchesSearch(p.node, q)) ? typed : ''
+  }, [typed, placed])
   const regions = useRegions(toggles.regions)
   const { uncertainty, trails, labels } = toggles
   const layerToggles = useMemo(() => ({ uncertainty, trails, labels }), [uncertainty, trails, labels])
   const baseLayers = useMemo(
-    () => buildMeshLayers({ placed, links: shownLinks, selection, search, toggles: layerToggles, zoom, clusters, exploded, route, routeGhosts, palette, regions, reach }),
-    [buildMeshLayers, placed, shownLinks, selection, search, layerToggles, zoom, clusters, exploded, route, routeGhosts, palette, regions, reach],
+    () => buildMeshLayers({ placed, links: shownLinks, selection, search: dimBy, toggles: layerToggles, zoom, clusters, exploded, route, routeGhosts, palette, regions, reach }),
+    [buildMeshLayers, placed, shownLinks, selection, dimBy, layerToggles, zoom, clusters, exploded, route, routeGhosts, palette, regions, reach],
   )
 
   // The mesh layers change only with data, filters and selection; the
