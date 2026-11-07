@@ -56,10 +56,14 @@ func Infrastructure(ctx context.Context, pool *pgxpool.Pool, w window.Window, al
 		WHERE %[2]s AND packet_type IN ('%[5]s', '%[4]s') AND decoded_metadata ? 'position'
 		  AND source_node_id IN (SELECT node FROM infra)
 		ORDER BY source_node_id, observed_at DESC, id DESC
+	), heard AS (
+		-- One pass over the alive window for every node, not one per node.
+		SELECT DISTINCT source_node_id AS node
+		FROM packet_log
+		WHERE %[7]s AND packet_type <> '%[6]s' AND source_node_id IN (SELECT node FROM infra)
 	)
-	SELECT i.node, i.role, p.lat, p.lon, p.alt,
-	       EXISTS (SELECT 1 FROM packet_log l WHERE l.source_node_id = i.node AND %[7]s AND l.packet_type <> '%[6]s')
-	FROM infra i JOIN pos p USING (node)
+	SELECT i.node, i.role, p.lat, p.lon, p.alt, h.node IS NOT NULL
+	FROM infra i JOIN pos p USING (node) LEFT JOIN heard h USING (node)
 	WHERE NOT (p.lat = 0 AND p.lon = 0)
 	ORDER BY i.node`,
 		role, window.Predicate(1, 2), ports.TypeNodeInfo, ports.TypeMapReport, ports.TypePosition, ports.TypeInvalid, window.Predicate(4, 2))
