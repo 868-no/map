@@ -1,7 +1,7 @@
 # The toolchains' caches between runs on GitHub-hosted runners. scripts/*.sh
 # keep the Go, npm and Rust caches (and wasm-opt) in Docker volumes; with
 # MESHMAP_CACHE set they use directories under it instead, which this action
-# restores and, when the key missed, saves at the end of the job. Self-hosted
+# restores and saves at the end of the job (see below for when). Self-hosted
 # runners keep their Docker volumes between jobs (deploy/runners) and skip it.
 name: toolchain cache
 description: Restore and save scripts/*.sh toolchain caches on GitHub-hosted runners
@@ -18,11 +18,20 @@ runs:
     - if: runner.environment == 'github-hosted'
       shell: bash
       run: echo "MESHMAP_CACHE=$HOME/.cache/meshmap-ci" >> "$GITHUB_ENV"
-    # An older cache of the same job is restored when the hash changed:
-    # most of it (dependencies) still applies.
+    # actions/cache saves only when its key missed, and the hash changes only
+    # with the lock files and scripts: a fixed key would keep the first
+    # run's build caches (Go's GOCACHE, Cargo's target directory) forever.
+    # So main's runs save under a key of their own (run id and attempt),
+    # and every run restores the newest cache of the same hash, else of
+    # the same job. Other refs (pull requests) save once per hash, in their
+    # own scope, and start from main's newest: their caches live only as
+    # long as the branch, and saving every run there would evict main's
+    # caches and the image builds' layer caches from the repository's 10 GB.
     - if: runner.environment == 'github-hosted'
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: ~/.cache/meshmap-ci
-        key: toolchain-${{ inputs.name }}-${{ runner.os }}-${{ runner.arch }}-${{ inputs.hash }}
-        restore-keys: toolchain-${{ inputs.name }}-${{ runner.os }}-${{ runner.arch }}-
+        key: toolchain-${{ inputs.name }}-${{ runner.os }}-${{ runner.arch }}-${{ inputs.hash }}${{ github.ref == 'refs/heads/main' && format('-{0}-{1}', github.run_id, github.run_attempt) || '' }}
+        restore-keys: |
+          toolchain-${{ inputs.name }}-${{ runner.os }}-${{ runner.arch }}-${{ inputs.hash }}
+          toolchain-${{ inputs.name }}-${{ runner.os }}-${{ runner.arch }}-
