@@ -2,7 +2,7 @@
 // the engine (kept apart from the worker so tests can run it without
 // WebAssembly).
 import { OVERLAP_MS, type Coverage, type Fetched } from './rowStore'
-import type { RowCache } from './cache'
+import type { RowCache, Span } from './cache'
 import { Abandoned, abandonable, cursorMs, DAY_MS, dayName, limiter, planDays, rangeEnd, requestedRange, settleFirst, sliceBounds } from './slices'
 import { ViewError } from './views'
 import { backendBusy, gatewayDown, retryDelay } from './httpStatus'
@@ -171,14 +171,17 @@ export class RangeFetcher {
     // stretch covers its start (D-184), only rows after the stretch are asked
     // for, with an overlap for rows committed late.
     const tailLo = days.length ? days[days.length - 1] + DAY_MS : lo
-    const stretch = cached ? cache!.recent() : null
     // Only when it saves real paging: a rolling window's minute syncs ask from just before the stretch's end anyway.
-    const fromStretch = !!stretch && tailLo < hi && stretch.lo <= tailLo && stretch.hi - tailLo > STRETCH_MIN_MS
-    const stretchTexts = fromStretch ? cache!.recentTexts() : null
-    const tailSince = fromStretch ? Math.max(tailLo, stretch!.hi - OVERLAP_MS) : tailLo
+    const worth = (s: Span) => tailLo < hi && s.lo <= tailLo && s.hi - tailLo > STRETCH_MIN_MS
+    // The range and the texts are read together, as stored (another tab may have started the stretch over).
+    const known = cached ? cache!.recent() : null
+    const stretch = known && worth(known) ? await cache!.stretch() : null
+    const fromStretch = !!stretch && worth(stretch.span)
+    const stretchTexts = fromStretch ? stretch!.texts : null
+    const tailSince = fromStretch ? Math.max(tailLo, stretch!.span.hi - OVERLAP_MS) : tailLo
     // All of it cached, under the generation the server last reported: no request at all.
     if (cached && this.hint === cache!.generation && tailSince >= hi && days.every((d) => cache!.has(d))) {
-      const texts = [...(await Promise.all(days.map((d) => cache!.day(d)))), ...((await stretchTexts) ?? [])]
+      const texts = [...(await Promise.all(days.map((d) => cache!.day(d)))), ...(stretchTexts ?? [])]
       if (texts.length && texts.every((t) => t !== null)) {
         const batch = (JSON.parse(engine.stage(texts[0]!, 0)) as Meta).batch
         for (const t of texts.slice(1)) engine.stage(t!, batch)
@@ -228,7 +231,7 @@ export class RangeFetcher {
         }),
       )
     }
-    if (stretchTexts) tasks.push(async () => (await stretchTexts).forEach(stageOwn))
+    if (stretchTexts) tasks.push(async () => stretchTexts.forEach(stageOwn))
     if (days.length) {
       // Before the first whole day: from the window's start as the server set it.
       const start = Math.max(Date.parse(first.window.start), params.has('since') ? Date.parse(params.get('since')!) : -Infinity)
@@ -294,10 +297,10 @@ export class RangeFetcher {
       texts.push(text)
       upTo = d + DAY_MS
     }
-    const stretch = cache.recent()
-    if (stretch && stretch.lo <= upTo && stretch.hi > upTo) {
-      texts.push(...(await cache.recentTexts()))
-      upTo = stretch.hi
+    const stretch = cache.recent() && (await cache.stretch())
+    if (stretch && stretch.span.lo <= upTo && stretch.span.hi > upTo) {
+      texts.push(...stretch.texts)
+      upTo = stretch.span.hi
     }
     upTo = Math.min(upTo, hi)
     if (!texts.length || upTo <= lo) return null

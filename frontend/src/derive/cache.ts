@@ -44,10 +44,14 @@ export interface RowCache {
   day(day: number): Promise<string | null>
   /** A day the server sent as final. */
   putDay(day: number, text: string, generation: string): void
-  /** The range the stretch holds completely, or null. */
+  /** The range the stretch held completely when this tab last looked (another tab may have changed it since), or null. */
   recent(): Span | null
-  /** The stretch's page texts. */
-  recentTexts(): Promise<string[]>
+  /**
+   * The stretch as stored now: the range it holds completely and its page
+   * texts, read together. Null when there is none (or it is of another
+   * generation, or cannot be read).
+   */
+  stretch(): Promise<{ span: Span; texts: string[] } | null>
   /** Pages holding every row of [lo, hi): they join the stretch, or start it again when they do not meet it. */
   putRecent(lo: number, hi: number, texts: string[], generation: string, now: number): void
   clear(): void
@@ -166,14 +170,28 @@ class IdbCache implements IdleCache {
     }
   }
 
-  async recentTexts(): Promise<string[]> {
-    if (this.closed) return []
+  async stretch(): Promise<{ span: Span; texts: string[] } | null> {
+    if (this.closed) return null
     try {
-      const pieces = await settle(this.db.transaction('recent').objectStore('recent').getAll() as IDBRequest<Piece[]>)
-      return await Promise.all(pieces.map((p) => gunzip(p.blob)))
+      // In one transaction: another tab may start the stretch over or merge it between two.
+      const { meta, pieces } = await this.readStretch(this.db.transaction(['recent', 'meta']))
+      if (meta.generation !== this.meta.generation) return null // the next write starts over
+      this.meta = { ...this.meta, recent: meta.recent }
+      if (!meta.recent) return null
+      return { span: { ...meta.recent }, texts: await Promise.all(pieces.map((p) => gunzip(p.blob))) }
     } catch {
-      return []
+      return null
     }
+  }
+
+  /** The record and the stretch's pieces (with their keys), as stored. */
+  private async readStretch(tx: IDBTransaction): Promise<{ meta: Meta; keys: number[]; pieces: Piece[] }> {
+    const [meta, keys, pieces] = await Promise.all([
+      settle(tx.objectStore('meta').get('state') as IDBRequest<Meta | undefined>),
+      settle(tx.objectStore('recent').getAllKeys() as IDBRequest<number[]>),
+      settle(tx.objectStore('recent').getAll() as IDBRequest<Piece[]>),
+    ])
+    return { meta: meta ?? EMPTY, keys, pieces }
   }
 
   /**
@@ -245,22 +263,25 @@ class IdbCache implements IdleCache {
   /**
    * Merges the stretch's pieces into one, keeping only rows from the
    * stretch's start: a piece that straddled midnight would otherwise carry
-   * its settled day's rows on from merge to merge.
+   * its settled day's rows on from merge to merge. The texts are merged
+   * outside a transaction (one cannot wait on compression), so the merge is
+   * written only if the stretch is still the one read: another tab that
+   * started it over or trimmed it meanwhile would otherwise have its piece
+   * overwritten, and the record claim rows nothing holds.
    */
   private compact(generation: string) {
     this.write(async () => {
-      const read = this.db.transaction('recent')
-      const [keys, pieces] = await Promise.all([
-        settle(read.objectStore('recent').getAllKeys() as IDBRequest<number[]>),
-        settle(read.objectStore('recent').getAll() as IDBRequest<Piece[]>),
-      ])
-      const from = this.meta.recent?.lo ?? -Infinity
-      const merged = await gzip(mergePages(await Promise.all(pieces.map((p) => gunzip(p.blob))), from))
+      const read = await this.readStretch(this.db.transaction(['recent', 'meta']))
+      const lo = read.meta.recent?.lo
+      if (read.meta.generation !== generation || lo === undefined || !read.pieces.length) return
+      const merged = await gzip(mergePages(await Promise.all(read.pieces.map((p) => gunzip(p.blob))), lo))
       const tx = this.db.transaction(['recent', 'meta'], 'readwrite')
-      const meta = (await settle(tx.objectStore('meta').get('state') as IDBRequest<Meta | undefined>)) ?? EMPTY
-      if (meta.generation !== generation || !meta.recent) return // another tab moved on meanwhile
-      for (const l of keys) tx.objectStore('recent').delete(l) // pieces another tab added since stay
-      tx.objectStore('recent').put({ hi: Math.max(...pieces.map((p) => p.hi)), blob: merged }, meta.recent.lo)
+      const now = await this.readStretch(tx)
+      const hiOf = new Map(now.keys.map((k, i) => [k, now.pieces[i].hi]))
+      const same = now.meta.generation === generation && now.meta.recent?.lo === lo && read.keys.every((k, i) => hiOf.get(k) === read.pieces[i].hi)
+      if (!same) return // another tab moved on meanwhile: its stretch stays as it wrote it
+      for (const l of read.keys) tx.objectStore('recent').delete(l) // pieces another tab added since stay
+      tx.objectStore('recent').put({ hi: Math.max(...read.pieces.map((p) => p.hi)), blob: merged }, lo)
       await done(tx)
     })
   }

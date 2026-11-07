@@ -158,7 +158,7 @@ describe('range fetch with a generation hint (D-170)', () => {
 class MemCache implements RowCache {
   generation: string | null = null
   days = new Map<number, string>()
-  stretch: Span | null = null
+  held: Span | null = null
   texts: string[] = []
   cleared = 0
   has(d: number) {
@@ -172,14 +172,14 @@ class MemCache implements RowCache {
     this.days.set(d, text)
   }
   recent() {
-    return this.stretch && { ...this.stretch }
+    return this.held && { ...this.held }
   }
-  async recentTexts() {
-    return this.texts
+  async stretch() {
+    return this.held && { span: { ...this.held }, texts: this.texts }
   }
   putRecent(lo: number, hi: number, texts: string[], generation: string) {
     if (generation !== this.generation) this.wipe(generation)
-    this.stretch = this.stretch && lo <= this.stretch.hi ? { lo: this.stretch.lo, hi: Math.max(hi, this.stretch.hi) } : { lo, hi }
+    this.held = this.held && lo <= this.held.hi ? { lo: this.held.lo, hi: Math.max(hi, this.held.hi) } : { lo, hi }
     this.texts.push(...texts)
   }
   clear() {
@@ -189,7 +189,7 @@ class MemCache implements RowCache {
   private wipe(generation: string | null) {
     this.generation = generation
     this.days.clear()
-    this.stretch = null
+    this.held = null
     this.texts = []
   }
 }
@@ -210,7 +210,7 @@ describe('range fetch through the cache (D-184)', () => {
     f.cache = cache
     await f.fetchRange(params())
     expect([...cache.days.keys()].sort()).toEqual([D1, D2])
-    expect(cache.stretch).toEqual({ lo: today, hi: NOW })
+    expect(cache.held).toEqual({ lo: today, hi: NOW })
     // Later the same window: no day is fetched, and the paged part starts near the stretch's end.
     vi.setSystemTime(NOW + 30 * 60_000)
     s.log.length = 0
@@ -289,7 +289,7 @@ describe('range fetch through the cache (D-184)', () => {
     f.cache = cache
     await expect(f.fetchRange(params())).rejects.toThrow('network error')
     expect([...cache.days.keys()]).toEqual([D1])
-    expect(cache.stretch).toBeNull() // the paged part is stored only once the whole range came
+    expect(cache.held).toBeNull() // the paged part is stored only once the whole range came
     failDay2 = false
     s.log.length = 0
     await f.fetchRange(params())

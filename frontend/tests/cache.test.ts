@@ -5,6 +5,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { MAX_DAYS, MAX_PIECES, mergePages, OPEN_TIMEOUT_MS, openCache, UNUSED_MS, type IdleCache } from '../src/derive/cache'
 import { DAY_MS } from '../src/derive/slices'
+import { gzip } from '../src/derive/compress'
 
 type Handler = ((e?: unknown) => void) | null
 
@@ -24,6 +25,8 @@ class FakeDB {
   closed = false
   onversionchange: Handler = null
   objectStoreNames = { contains: (n: string) => this.stores.has(n) }
+  /** Called as a transaction begins: lets a test write as another tab would, in between. */
+  beforeTransaction: ((scope: string[], mode: string) => void) | null = null
   close() {
     this.closed = true
   }
@@ -32,9 +35,10 @@ class FakeDB {
    * the transaction completes once no request is pending, and a failure rolls
    * all of it back.
    */
-  transaction(names: string | string[]) {
+  transaction(names: string | string[], mode = 'readonly') {
     if (this.closed) throw new Error('InvalidStateError: the database is closed')
     const scope = ([] as string[]).concat(names)
+    this.beforeTransaction?.(scope, mode)
     const stores = this.stores, failPuts = this.failPuts
     const snapshot = new Map(scope.map((n) => [n, new Map(stores.get(n)!)]))
     let pending = 0, finished = false, failed = false
@@ -222,7 +226,7 @@ describe('the cache', () => {
     for (let k = 0; k <= MAX_PIECES; k++) c.putRecent(today + k * 60_000, today + (k + 1) * 60_000, [after(k)], 'g1', later)
     await drained(c)
     expect(c.recent()!.lo).toBe(today)
-    const texts = await c.recentTexts()
+    const texts = (await c.stretch())?.texts ?? []
     expect(texts.length).toBe(1)
     expect((JSON.parse(texts[0]) as { rows: { i: number }[] }).rows.some((r) => r.i === 1)).toBe(false)
   })
@@ -255,12 +259,12 @@ describe('the cache', () => {
     c.putRecent(today + 2 * 3_600_000 - 60_000, today + 3 * 3_600_000, [page('g1', [2]), page('g1', [3])], 'g1', now)
     await drained(c)
     expect(c.recent()).toEqual({ lo: today + 3_600_000, hi: today + 3 * 3_600_000 })
-    expect((await c.recentTexts()).length).toBe(2) // the second piece holds its two pages as one
+    expect(((await c.stretch())?.texts ?? []).length).toBe(2) // the second piece holds its two pages as one
     // A gap: the stretch starts again from the new range.
     c.putRecent(today + 5 * 3_600_000, today + 6 * 3_600_000, [page('g1', [4])], 'g1', now)
     await drained(c)
     expect(c.recent()).toEqual({ lo: today + 5 * 3_600_000, hi: today + 6 * 3_600_000 })
-    expect((await c.recentTexts()).length).toBe(1)
+    expect(((await c.stretch())?.texts ?? []).length).toBe(1)
     // A day later, what was today is settled: only rows after it stay in the stretch.
     const later = now + DAY_MS
     c.putRecent(today + 6 * 3_600_000, today + DAY_MS + 2 * 3_600_000, [page('g1', [5])], 'g1', later)
@@ -275,10 +279,52 @@ describe('the cache', () => {
     const t0 = D0 + 3 * DAY_MS
     for (let k = 0; k <= MAX_PIECES; k++) c.putRecent(t0 + k * 60_000, t0 + (k + 1) * 60_000, [page('g1', [k, k + 1], t0)], 'g1', now)
     await drained(c)
-    const texts = await c.recentTexts()
+    const texts = (await c.stretch())?.texts ?? []
     expect(texts.length).toBe(1)
     expect((JSON.parse(texts[0]) as { rows: { i: number }[] }).rows.map((r) => r.i)).toEqual(Array.from({ length: MAX_PIECES + 2 }, (_, k) => k))
     expect(c.recent()).toEqual({ lo: t0, hi: t0 + (MAX_PIECES + 1) * 60_000 })
+  })
+
+  it('leaves a stretch another tab started over while it merged', async () => {
+    const db = install(succeed)
+    const c = (await openCache())!
+    const now = D0 + 3 * DAY_MS + 23 * 3_600_000
+    const t0 = D0 + 3 * DAY_MS
+    // Another tab's stretch, after a gap: it replaced every piece and the record.
+    const theirs = { lo: t0 + 5 * 3_600_000, hi: t0 + 6 * 3_600_000 }
+    const blob = await gzip(page('g1', [999], theirs.lo))
+    db.beforeTransaction = (scope, mode) => {
+      // The merge's write: the other tab got in between its read and this.
+      if (mode !== 'readwrite' || scope.includes('days')) return
+      db.beforeTransaction = null
+      db.stores.get('recent')!.clear()
+      db.stores.get('recent')!.set(JSON.stringify(theirs.lo), { hi: theirs.hi, blob })
+      db.stores.get('meta')!.set(JSON.stringify('state'), { generation: 'g1', recent: theirs })
+    }
+    for (let k = 0; k <= MAX_PIECES; k++) c.putRecent(t0 + k * 60_000, t0 + (k + 1) * 60_000, [page('g1', [k], t0)], 'g1', now)
+    await drained(c)
+    expect(db.beforeTransaction).toBeNull() // the merge ran
+    const s = await c.stretch()
+    expect(s?.span).toEqual(theirs)
+    expect(s?.texts.map((t) => (JSON.parse(t) as { rows: { i: number }[] }).rows.map((r) => r.i))).toEqual([[999]])
+  })
+
+  it("reads the stretch's range and texts together, as stored, not as this tab last saw them", async () => {
+    const db = install(succeed)
+    const a = (await openCache())!
+    const b = (await (install(succeed, db), openCache()))!
+    const today = D0 + 3 * DAY_MS
+    const now = today + 12 * 3_600_000
+    a.putRecent(today + 3_600_000, today + 2 * 3_600_000, [page('g1', [1])], 'g1', now)
+    await drained(a)
+    // Another tab starts the stretch over, after a gap.
+    b.putRecent(today + 5 * 3_600_000, today + 6 * 3_600_000, [page('g1', [2])], 'g1', now)
+    await drained(b)
+    expect(a.recent()).toEqual({ lo: today + 3_600_000, hi: today + 2 * 3_600_000 }) // as a last saw it
+    const s = await a.stretch()
+    expect(s?.span).toEqual({ lo: today + 5 * 3_600_000, hi: today + 6 * 3_600_000 })
+    expect(s?.texts).toEqual([page('g1', [2])])
+    expect(a.recent()).toEqual(s?.span)
   })
 
   it('claims nothing a failed write did not store', async () => {
