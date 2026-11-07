@@ -7,34 +7,41 @@ import (
 	"net"
 	"net/netip"
 	"net/url"
-	"strings"
 	"time"
 
 	"github.com/eclipse/paho.golang/autopaho"
 	"github.com/eclipse/paho.golang/paho"
 )
 
-// SafeHost reports whether host is a compose service name (no dots) or
-// resolves only to loopback/private addresses. The demo publisher refuses
-// anything else so it can never inject simulated traffic into a live mesh.
+// lookupHost resolves a host name; a variable so tests can stand in for DNS.
+var lookupHost = net.DefaultResolver.LookupHost
+
+// SafeHost reports whether host is a loopback or private address, or a name
+// that resolves only to such addresses. Names are always resolved, a
+// compose service name ("mosquitto") or "localhost" too: with a search
+// domain a dotless name can resolve to a public broker. The demo publisher
+// refuses anything else so it can never inject simulated traffic into a
+// live mesh.
 func SafeHost(ctx context.Context, host string) (bool, error) {
-	if host == "localhost" || !strings.Contains(host, ".") {
-		if ip, err := netip.ParseAddr(host); err == nil {
-			return ip.IsLoopback() || ip.IsPrivate(), nil
-		}
-		return true, nil
+	if ip, err := netip.ParseAddr(host); err == nil {
+		return safeAddr(ip), nil
 	}
-	addrs, err := net.DefaultResolver.LookupHost(ctx, host)
+	addrs, err := lookupHost(ctx, host)
 	if err != nil {
 		return false, err
 	}
 	for _, a := range addrs {
 		ip, err := netip.ParseAddr(a)
-		if err != nil || (!ip.IsLoopback() && !ip.IsPrivate()) {
+		if err != nil || !safeAddr(ip) {
 			return false, nil //nolint:nilerr // an address that does not parse is not a safe one
 		}
 	}
 	return len(addrs) > 0, nil
+}
+
+func safeAddr(ip netip.Addr) bool {
+	ip = ip.Unmap()
+	return ip.IsLoopback() || ip.IsPrivate()
 }
 
 // PublishConfig configures the demo publisher.
