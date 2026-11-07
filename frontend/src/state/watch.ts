@@ -18,14 +18,23 @@ interface Saved {
   notify: boolean
 }
 
-function load(): Saved {
+const EMPTY: Saved = { ids: [], notify: false }
+
+/** What is stored (empty when nothing or something unreadable is); null when storage cannot be read at all. */
+function load(): Saved | null {
+  let text: string | null
   try {
-    const v = JSON.parse(window.localStorage.getItem(KEY) ?? 'null') as Partial<Saved> | null
+    text = window.localStorage.getItem(KEY)
+  } catch {
+    return null // storage unavailable
+  }
+  try {
+    const v = JSON.parse(text ?? 'null') as Partial<Saved> | null
     if (v && Array.isArray(v.ids)) return { ids: v.ids.filter((x): x is string => typeof x === 'string' && /^![0-9a-f]{8}$/.test(x)).slice(0, WATCH_MAX), notify: v.notify === true }
   } catch {
-    /* storage unavailable or corrupt: start empty */
+    /* corrupt: start empty */
   }
-  return { ids: [], notify: false }
+  return { ...EMPTY }
 }
 
 function save(s: Saved) {
@@ -41,19 +50,38 @@ interface WatchState extends Saved {
   setNotify: (on: boolean) => void
 }
 
-export const useWatch = create<WatchState>((set, get) => ({
-  ...(typeof window === 'undefined' ? { ids: [], notify: false } : load()),
-  toggle: (id) => {
-    const { ids, notify } = get()
-    const next = ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id].slice(-WATCH_MAX)
-    save({ ids: next, notify })
-    set({ ids: next })
-  },
-  setNotify: (on) => {
-    save({ ids: get().ids, notify: on })
-    set({ notify: on })
-  },
-}))
+/**
+ * Every tab of the site shares the stored list: each change starts from what
+ * is stored now (another tab may have saved since), and a save in another
+ * tab is taken up here at once (the storage event). Without storage, the
+ * list lasts for this visit.
+ */
+export const useWatch = create<WatchState>((set, get) => {
+  const current = (): Saved => load() ?? { ids: get().ids, notify: get().notify }
+  return {
+    ...((typeof window === 'undefined' ? null : load()) ?? EMPTY),
+    toggle: (id) => {
+      const { ids, notify } = current()
+      const next = ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id].slice(-WATCH_MAX)
+      save({ ids: next, notify })
+      set({ ids: next, notify })
+    },
+    setNotify: (on) => {
+      const { ids } = current()
+      save({ ids, notify: on })
+      set({ ids, notify: on })
+    },
+  }
+})
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('storage', (e) => {
+    // null: another tab cleared the whole storage (Settings → Reset).
+    if (e.key !== KEY && e.key !== null) return
+    const s = load()
+    if (s) useWatch.setState(s)
+  })
+}
 
 /** Whether the browser can show notifications at all. */
 export const canNotify = () => typeof window !== 'undefined' && 'Notification' in window
