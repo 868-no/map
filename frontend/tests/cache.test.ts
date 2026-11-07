@@ -3,7 +3,7 @@
 // stand-in: only what it uses, with transactions completing (or aborting) on
 // a later tick, and a failed put aborting the whole transaction.
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { MAX_DAYS, MAX_PIECES, mergePages, OPEN_TIMEOUT_MS, openCache, type RowCache } from '../src/derive/cache'
+import { MAX_DAYS, MAX_PIECES, mergePages, OPEN_TIMEOUT_MS, openCache, UNUSED_MS, type RowCache } from '../src/derive/cache'
 import { DAY_MS } from '../src/derive/slices'
 
 type Handler = ((e?: unknown) => void) | null
@@ -178,6 +178,26 @@ describe('the cache', () => {
     expect(c.has(D0)).toBe(true)
     expect(c.has(D0 + DAY_MS)).toBe(false)
     expect(c.has(D0 + MAX_DAYS * DAY_MS)).toBe(true)
+  })
+
+  it('drops days not used for a while when it opens, and keeps those only read', async () => {
+    const db = install(succeed)
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(D0)
+    const c = (await openCache())!
+    c.putDay(D0, page('g1', [1]), 'g1')
+    c.putDay(D0 + DAY_MS, page('g1', [2]), 'g1')
+    await drained(c)
+    // A while later the first day is read (not written): that use is saved too.
+    vi.setSystemTime(D0 + UNUSED_MS - DAY_MS)
+    expect(await c.day(D0)).not.toBeNull()
+    await drained(c)
+    // Opened again after the second day went unused for longer than the limit.
+    vi.setSystemTime(D0 + UNUSED_MS + DAY_MS)
+    const again = (await (install(succeed, db), openCache()))!
+    expect(again.has(D0)).toBe(true)
+    expect(again.has(D0 + DAY_MS)).toBe(false)
+    expect(db.stores.get('days')!.size).toBe(1)
   })
 
   it('keeps one stretch of the newest rows: joined while it meets, started again after a gap, trimmed to what is not settled', async () => {

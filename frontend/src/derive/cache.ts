@@ -17,6 +17,10 @@ const VERSION = 1
 const OLD_DB = 'meshmap-derive'
 /** Days kept, the least recently used dropped beyond: the longest window and more, a few MB each at most. */
 export const MAX_DAYS = 31
+/** A day not used for this long is dropped when the cache opens: a visitor away a while finds no stale days left. */
+export const UNUSED_MS = 30 * 86_400_000
+/** A read saves when its day was last used at most this often (it is otherwise saved with the next write). */
+const USE_SAVE_MS = 86_400_000
 /** Pieces the stretch may collect (about one per minute's sync) before they are merged into one. */
 export const MAX_PIECES = 30
 /** An open that neither succeeds nor fails in this long (blocked by another tab) gives up: no cache this time. */
@@ -123,7 +127,14 @@ class IdbCache implements RowCache {
       if (!this.days.has(day)) return null
       const blob = await settle(this.db.transaction('days').objectStore('days').get(day) as IDBRequest<Blob | undefined>)
       if (!blob) return null
-      this.state.used[day] = at // kept with the next write
+      const before = this.state.used[day] ?? 0
+      this.state.used[day] = at
+      // Saved now and then, so a day that is only read does not look unused when the cache next opens.
+      if (at - before > USE_SAVE_MS) {
+        const tx = this.db.transaction('meta', 'readwrite')
+        tx.objectStore('meta').put(this.state, 'state')
+        await done(tx)
+      }
       return gunzip(blob)
     }, null)
   }
@@ -213,6 +224,23 @@ class IdbCache implements RowCache {
   clear() {
     void this.run(() => this.wipe(null), undefined)
   }
+
+  /** Drops the days not used since `before` (at open). */
+  prune(before: number): Promise<void> {
+    return this.run(async () => {
+      const stale = [...this.days].filter((d) => (this.state.used[d] ?? 0) < before)
+      if (!stale.length) return
+      const used = { ...this.state.used }
+      for (const d of stale) delete used[d]
+      const state = { ...this.state, used }
+      const tx = this.db.transaction(['days', 'meta'], 'readwrite')
+      for (const d of stale) tx.objectStore('days').delete(d)
+      tx.objectStore('meta').put(state, 'state')
+      await done(tx)
+      this.state = state
+      for (const d of stale) this.days.delete(d)
+    }, undefined)
+  }
 }
 
 function open(): Promise<IDBDatabase> {
@@ -268,7 +296,9 @@ export async function openCache(): Promise<RowCache | null> {
       settle(tx.objectStore('recent').getAllKeys() as IDBRequest<number[]>),
       settle(tx.objectStore('recent').getAll() as IDBRequest<Piece[]>),
     ])
-    return new IdbCache(db, state ?? { ...EMPTY, used: {} }, new Set(dayKeys), new Map(pieceKeys.map((l, k) => [l, pieces[k].hi])))
+    const cache = new IdbCache(db, state ?? { ...EMPTY, used: {} }, new Set(dayKeys), new Map(pieceKeys.map((l, k) => [l, pieces[k].hi])))
+    await cache.prune(Date.now() - UNUSED_MS)
+    return cache
   } catch {
     db.close()
     return null
