@@ -5,8 +5,9 @@ How to deploy, configure and run the 868.no Map. For what the system does and wh
 ## Deploy
 
 ```sh
-cp .env.example .env              # set POSTGRES_PASSWORD
+cp .env.example .env              # set POSTGRES_PASSWORD, and BASEMAP_USER to $(id -u):$(id -g)
 mkdir -p secrets && cp config/examples/*.yaml secrets/   # edit brokers and channel keys
+mkdir -p data/basemap             # written by the basemap service as BASEMAP_USER
 docker compose run --rm backend check-config
 docker compose up -d --build
 ```

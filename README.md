@@ -33,7 +33,8 @@ An interactive map, in light and dark themes, for observing Meshtastic mesh netw
 Requires Docker with Compose.
 
 ```sh
-cp .env.example .env          # set POSTGRES_PASSWORD and DEMO_MODE=true
+cp .env.example .env          # set POSTGRES_PASSWORD and DEMO_MODE=true (and BASEMAP_USER if your id is not 1000)
+mkdir -p data/basemap         # the basemap service's output, owned by you
 docker compose --profile demo up -d --build
 open http://localhost:8080
 ```

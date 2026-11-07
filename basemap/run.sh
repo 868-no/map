@@ -15,7 +15,10 @@ out=/data/basemap.pmtiles
 
 build() {
   echo "basemap: building $area (downloads several GB, takes a while)"
-  mkdir -p /data/sources /data/tmp
+  if ! mkdir -p /data/sources /data/tmp; then
+    echo "basemap: /data is not writable by uid $(id -u): chown the directory mounted there (data/basemap) to it, or set BASEMAP_USER"
+    return 1
+  fi
   # Fresh OpenStreetMap data on every build; water and Natural Earth stay cached.
   rm -f /data/sources/*.osm.pbf
   java "-Xmx${PLANETILER_HEAP:-8g}" -cp @/app/jib-classpath-file com.onthegomap.planetiler.Main \

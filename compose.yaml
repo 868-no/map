@@ -116,6 +116,10 @@ services:
     build: ./basemap
     image: ${BASEMAP_IMAGE:-meshmap-basemap:local}
     restart: unless-stopped
+    # Not root: it writes into ./data/basemap on the host, which should stay
+    # the host user's (scripts/basemap_import.sh writes there as that user
+    # too). BASEMAP_USER=$(id -u):$(id -g) in .env when that is not 1000.
+    user: ${BASEMAP_USER:-1000:1000}
     environment:
       BASEMAP_AREA: ${BASEMAP_AREA:-norway}
       BASEMAP_BOUNDS: ${BASEMAP_BOUNDS:-world}
