@@ -456,8 +456,8 @@ table.hear th:not(:first-child), table.hear td:not(:first-child) { white-space: 
 .reach-slider input { flex: 1; }
 .reach-slider b { min-width: 1ch; font-variant-numeric: tabular-nums; }
 .reach-note { margin: 4px 0 8px; }
-.reach-steps { display: grid; grid-template-columns: repeat(8, 1fr); gap: 3px; margin-bottom: 8px; }
-.reach-steps button { display: grid; justify-items: center; gap: 2px; padding: 4px 0; border-radius: 4px; opacity: 0.45; font-size: 11px; }
+.reach-steps { display: grid; grid-template-columns: repeat(8, 1fr); gap: 3px; margin: 0 0 8px; padding: 0; list-style: none; }
+.reach-steps button { width: 100%; display: grid; justify-items: center; gap: 2px; padding: 4px 0; border-radius: 4px; opacity: 0.45; font-size: 11px; }
 .reach-steps button.on { opacity: 1; }
 .reach-steps .swatch { width: 70%; height: 4px; border-radius: 2px; }
 .reach-steps .k { color: var(--muted); }

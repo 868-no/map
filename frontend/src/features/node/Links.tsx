@@ -98,15 +98,17 @@ function ReachSection({ id, name }: { id: string; name: (id: string) => string }
         {r?.hop_start !== undefined ? <>Its packets use {r.hop_start}. </> : null}
         {q.isLoading ? 'Working it out…' : <>Reaches <b>{total}</b> node{total === 1 ? '' : 's'} at {h} hop{h === 1 ? '' : 's'}{all > total ? ` (${all} at ${MAX_HOPS})` : ''}.{free ? ` ${free} of them through 0-cost links.` : ''}</>}
       </p>
-      <div className="reach-steps" role="list" aria-label="Nodes added at each hop limit">
+      <ul className="reach-steps" aria-label="Nodes added at each hop limit">
         {per.map((n, k) => (
-          <button key={k} role="listitem" className={k <= h ? 'on' : undefined} onClick={() => setHops(k)} title={`${n} node${n === 1 ? '' : 's'} need a hop limit of ${k}`}>
-            <span className="swatch" style={{ background: `rgb(${ramp[k].join(',')})` }} />
-            <span className="k">{k}</span>
-            <span className="n">{k === 0 ? n : `+${n}`}</span>
-          </button>
+          <li key={k}>
+            <button className={k <= h ? 'on' : undefined} onClick={() => setHops(k)} title={`${n} node${n === 1 ? '' : 's'} need a hop limit of ${k}`}>
+              <span className="swatch" style={{ background: `rgb(${ramp[k].join(',')})` }} />
+              <span className="k">{k}</span>
+              <span className="n">{k === 0 ? n : `+${n}`}</span>
+            </button>
+          </li>
         ))}
-      </div>
+      </ul>
       <label><input type="checkbox" checked={!!shown} onChange={(e) => setReach(e.target.checked ? { hops: h, internet } : null)} /> Show on the map</label>
       <label title="Follow internet (MQTT) links too: packets a gateway uplinked and another node downlinked and transmitted">
         <input type="checkbox" checked={internet} onChange={(e) => setInternet(e.target.checked)} /> Count internet links
