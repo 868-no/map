@@ -339,6 +339,29 @@ func TestShutdownDuringOutageIsBounded(t *testing.T) {
 	}
 }
 
+// Past the drain deadline the committed-check gives a row up without a
+// database lookup, which with the database down could take a second per row.
+func TestCommittedSkipsLookupPastDrainDeadline(t *testing.T) {
+	sink := &countingSink{}
+	p, _ := newTestPipeline(t, &memSink{}, 10)
+	p.sink = sink
+	p.stopAt.Store(time.Now().Add(-p.cfg.DrainTimeout - time.Second).UnixNano())
+	p.closed.Store(true)
+	if _, found, _ := p.committed(Observation{BrokerID: "a"}); found || sink.lookups != 0 {
+		t.Fatalf("found %v after %d lookups past the drain deadline", found, sink.lookups)
+	}
+}
+
+type countingSink struct {
+	memSink
+	lookups int
+}
+
+func (s *countingSink) RecentObservation(ctx context.Context, k [16]byte, since time.Time) (int64, bool, error) {
+	s.lookups++
+	return s.memSink.RecentObservation(ctx, k, since)
+}
+
 // Copies of a committed reception arriving from two other brokers at once
 // both end up as provenance, even when one arrives while the other is
 // briefly claimed for the committed-check (it used to be dropped with that
@@ -397,7 +420,7 @@ func TestFlushDropsRowsTheDatabaseRefuses(t *testing.T) {
 	// A batch the database refuses whole is its fault, not the data's (a
 	// schema out of step): the rows are kept and retried, not dropped.
 	whole := &memSink{}
-	whole.refuse = func(*Observation) bool { return whole.attempts < 8 } // called under whole.mu
+	whole.refuse = func(*Observation) bool { return whole.attempts < 10 } // called under whole.mu
 	q, _ := newTestPipeline(t, whole, 10)
 	rows := make([]*Observation, 4)
 	for i := range rows {
@@ -414,6 +437,20 @@ func TestFlushDropsRowsTheDatabaseRefuses(t *testing.T) {
 	}
 	if whole.count() != 4 {
 		t.Fatalf("stored %d rows after the database recovered, want 4", whole.count())
+	}
+	// Halved once (1+6 inserts), then retried whole: attempts 8 and 9 are
+	// refused and the 10th stores the batch.
+	if whole.attempts != 10 {
+		t.Fatalf("%d insert attempts, want 10 (the batch halved once)", whole.attempts)
+	}
+	// A lone refused row is dropped on the spot, not inserted a second time.
+	lone := &memSink{refuse: func(*Observation) bool { return true }}
+	r, _ := newTestPipeline(t, lone, 10)
+	one := &Observation{Topic: "bad", BrokerID: "a", ObservedAt: time.Now()}
+	r.inflight[one.ObservationKey] = "a"
+	r.flush([]*Observation{one})
+	if lone.attempts != 1 || len(r.inflight) != 0 {
+		t.Fatalf("%d attempts and %d claims for a lone refused row, want 1 and 0", lone.attempts, len(r.inflight))
 	}
 	// Transient and partition errors stay retryable.
 	if permanent(errors.New("db down")) || permanent(sqlStateErr("08006")) || permanent(fmt.Errorf("%w: %w", ErrNoPartition, sqlStateErr("23514"))) {

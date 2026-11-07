@@ -325,6 +325,11 @@ func (p *Pipeline) committed(o Observation) (id int64, found, local bool) {
 	if id, ok := p.recent.get(k, now); ok {
 		return id, true, true
 	}
+	// Past the shutdown drain's deadline every row left is given up: no
+	// lookup (up to a second each, with Redis or the database down) for them.
+	if left, closing := p.drainLeft(); closing && left <= 0 {
+		return 0, false, false
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	if p.dedupeUp(now) {
@@ -426,7 +431,8 @@ func (p *Pipeline) flush(batch []*Observation) {
 	// No two copies of one observation reach the writer: claim holds a key
 	// in flight until afterCommit.
 	backoff := 250 * time.Millisecond
-	for {
+	halveAt := 0 // the retry from which a refused batch is halved again
+	for retry := 0; ; retry++ {
 		// Shutting down: no attempt may outlast the drain deadline, and past
 		// it the rows are given up as a gap without trying (D-059).
 		timeout := 30 * time.Second
@@ -451,7 +457,11 @@ func (p *Pipeline) flush(batch []*Observation) {
 			return
 		}
 		p.m.WriterErrors.Inc()
-		if permanent(err) {
+		if permanent(err) && len(batch) == 1 {
+			p.reject(batch[0], err) // refused on its own: no second attempt
+			return
+		}
+		if permanent(err) && retry >= halveAt {
 			// The database refuses rows (hostile input it cannot hold):
 			// retrying cannot help and would stall ingest. Halve the batch
 			// until the bad rows stand alone and drop those, keeping the rest.
@@ -459,7 +469,7 @@ func (p *Pipeline) flush(batch []*Observation) {
 			// the database rather than the data (a schema out of step during
 			// a deploy): keep the rows and retry, as for any outage.
 			refused, again := p.isolate(batch, timeout)
-			if len(batch) == 1 || len(refused) < len(batch) {
+			if len(refused) < len(batch) {
 				for _, o := range refused {
 					p.reject(o, err)
 				}
@@ -469,6 +479,9 @@ func (p *Pipeline) flush(batch []*Observation) {
 				batch = again // stored or dropped the rest; retry what failed transiently
 				continue
 			}
+			// Every row refused: retry the batch whole until the database
+			// takes rows again, halving it (2n-1 inserts) only every 10th time.
+			halveAt = retry + 10
 		}
 		p.degraded.Store(true)
 		// Shutting down: retry only until the drain deadline, then give the
