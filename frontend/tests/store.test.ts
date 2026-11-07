@@ -26,6 +26,12 @@ describe('URL and API parameters', () => {
     expect(fromQuery(new URLSearchParams('region=Atlantis')).region).toBeUndefined()
     expect(apiParams(fixed).get('region')).toBeNull()
   })
+  it('opens the region, not the node, when a link names both (D-194)', () => {
+    const both = fromQuery(new URLSearchParams('region=Vestlandet&node=!8278b930'))
+    expect(both.region).toBe('Vestlandet')
+    expect(both.selection).toBeUndefined()
+    expect(fromQuery(new URLSearchParams('region=Atlantis&node=!8278b930')).selection).toEqual({ kind: 'node', id: '!8278b930' })
+  })
   it('sends explicit bounds for fixed windows and only a duration for live', () => {
     const p = apiParams(fixed)
     expect(p.get('start')).toBe(fixed.win.start)

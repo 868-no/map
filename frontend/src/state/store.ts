@@ -229,7 +229,8 @@ export function fromQuery(q: URLSearchParams, now = serverNow()): Partial<Pick<S
   const region = q.get('region')
   if (region && (REGION_NAMES as readonly string[]).includes(region)) out.region = region
   const node = q.get('node')?.toLowerCase()
-  if (node && NODE_ID.test(node)) out.selection = { kind: 'node', id: node }
+  // A region's page wins over a selected node: the panel shows one or the other.
+  if (node && NODE_ID.test(node) && !out.region) out.selection = { kind: 'node', id: node }
   const start = q.get('start'), end = q.get('end'), dur = q.get('duration')
   if (start && end && !Number.isNaN(Date.parse(start)) && !Number.isNaN(Date.parse(end))) {
     const [s, e] = endByNow(start, end, now)

@@ -7,7 +7,7 @@ import { getJSON } from '../api/client'
 import type { components } from '../api/schema'
 import type { Issue, RegionSummary, SnapshotView } from '../derive/views'
 import { useHealth, useRegionsView } from '../state/data'
-import { useStore } from '../state/store'
+import { toQuery, useStore } from '../state/store'
 import { namesOf } from '../map/model'
 import { PALETTES } from '../map/palette'
 import { REGION_LABELS } from '../map/regionData'
@@ -84,7 +84,9 @@ function ShareRegion({ name }: { name: string }) {
   const [state, flash] = useFlash<'idle' | 'copied' | 'failed'>('idle')
   const copy = async () => {
     try {
-      await navigator.clipboard.writeText(window.location.href) // the URL already names the region (state/store.ts)
+      // The page's own address: the region, period and filters, never the selected node (which would open Details instead).
+      const { win, filters } = useStore.getState()
+      await navigator.clipboard.writeText(`${window.location.origin}${window.location.pathname}?${toQuery({ win, filters, region: name }).toString()}`)
       flash('copied')
     } catch {
       flash('failed')
