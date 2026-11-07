@@ -140,10 +140,10 @@ export function precisionErrorM(bits: number, lat: number): number {
 
 /**
  * How a node moves packets between the mesh and MQTT, as glyphs (D-054,
- * D-084). One rule: the glyph inside the marker tells how it uplinks (up: the
+ * D-084). The uplink badge on the marker's rim tells how it uplinks (up: the
  * first copy of each packet; upAll: every copy, a double chevron), and a
- * downlink is always a small down arrow beside the marker (`down`). A small
- * marker has no room for an uplink and a downlink shape together.
+ * downlink is always a small down arrow beside the marker (`down`). The
+ * inside of the marker is its role glyph (D-186).
  */
 export type MqttFlow = 'up' | 'upAll' | 'down'
 /** The same arrows as solid shapes (24x24), drawn on the map as tinted icons: fonts differ too much. */
@@ -156,7 +156,7 @@ export const MQTT_ARROW: Record<MqttFlow, string> = {
 /** An aircraft (24x24), the badge on airborne nodes (D-073). */
 export const PLANE = 'M11 1.5h2l1 7.5 8.5 4.5v2.2L14 13.5l-.6 5.3 2.6 2v1.7L12 21.4l-4 1.1v-1.7l2.6-2-.6-5.3-8.5 2.2v-2.2L10 9z'
 
-/** The uplink glyph inside the marker, if it uplinks (see MqttFlow). */
+/** The arrow in the uplink badge on the marker's rim, if it uplinks (see MqttFlow). */
 export function mqttUplink(n: MeshNode): 'up' | 'upAll' | undefined {
   return n.is_gateway ? (n.multi_uplink ? 'upAll' : 'up') : undefined
 }
