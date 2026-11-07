@@ -1426,6 +1426,8 @@ export interface operations {
                 bucket?: "day" | "week" | "month";
                 /** @description IANA time zone the buckets start in, e.g. Europe/Oslo */
                 tz?: string;
+                /** @description Only rows uplinked under an MQTT topic root naming this region (Nord-Norge, Trøndelag, Vestlandet, Østlandet or Sørlandet); by_type is then empty (D-194) */
+                region?: string;
             };
             header?: never;
             path?: never;

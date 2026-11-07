@@ -25,7 +25,23 @@ type HourSummary struct {
 	Packets, Receptions int
 	ByType              map[string]int
 	DecodeVersion       int
+	// Per region (landsdel) its MQTT topic root names, of the rows uplinked
+	// under such a topic (D-194).
+	Regions map[string]RegionHour
 }
+
+// RegionHour is one hour of one region's rows: those uplinked under a topic
+// root naming it.
+type RegionHour struct {
+	Nodes      []int64 `json:"n"` // distinct senders, sorted
+	Gateways   []int64 `json:"g"` // distinct gateways, sorted
+	Packets    int     `json:"p"`
+	Receptions int     `json:"r"`
+}
+
+// Regions are the landsdeler a topic root can name (as the engine's
+// landsdel::NAMES and the map's Regions layer).
+var Regions = []string{"Nord-Norge", "Trøndelag", "Vestlandet", "Østlandet", "Sørlandet"}
 
 // TrendHours keeps per-hour summaries of the retained log in memory (D-112),
 // so long-term trends never scan the whole log after the first request:
@@ -48,13 +64,17 @@ type TrendHours struct {
 var trendRangeSQL = `
 	WITH r AS (
 	  SELECT date_trunc('hour', observed_at) AS h, source_node_id AS s, gateway_node_id AS g, logical_packet_key AS l, decode_version AS dv,
+	    substring(mqtt_topic from '/(Nord-Norge|Trøndelag|Vestlandet|Østlandet|Sørlandet)(?:/|$)') AS reg,
 	    CASE WHEN packet_type = 'other' AND decoded_metadata->'other'->>'port_name' = 'STORE_FORWARD_APP' THEN 'store_forward'
 	         WHEN packet_type = 'other' AND decoded_metadata->'other'->>'port_name' = 'NODE_STATUS_APP' THEN 'node_status'
 	         ELSE packet_type END AS ty
 	  FROM packet_log WHERE ` + window.Predicate(1, 2) + ` AND packet_type <> 'invalid'),
 	agg AS (SELECT h, array_agg(DISTINCT s ORDER BY s) AS nodes, array_remove(array_agg(DISTINCT g ORDER BY g), NULL) AS gws, count(DISTINCT l) AS p, count(*) AS rc, bool_or(dv < $3) AS stale FROM r GROUP BY h),
-	types AS (SELECT h, jsonb_object_agg(ty, c) AS j FROM (SELECT h, ty, count(DISTINCT l) AS c FROM r GROUP BY h, ty) x GROUP BY h)
-	SELECT agg.h, agg.nodes, agg.gws, agg.p, agg.rc, COALESCE(types.j, '{}'::jsonb), agg.stale FROM agg LEFT JOIN types USING (h)`
+	types AS (SELECT h, jsonb_object_agg(ty, c) AS j FROM (SELECT h, ty, count(DISTINCT l) AS c FROM r GROUP BY h, ty) x GROUP BY h),
+	regs AS (SELECT h, jsonb_object_agg(reg, jsonb_build_object('n', nodes, 'g', gws, 'p', p, 'r', rc)) AS j FROM (
+	  SELECT h, reg, array_agg(DISTINCT s ORDER BY s) AS nodes, array_remove(array_agg(DISTINCT g ORDER BY g), NULL) AS gws, count(DISTINCT l) AS p, count(*) AS rc
+	  FROM r WHERE reg IS NOT NULL GROUP BY h, reg) x GROUP BY h)
+	SELECT agg.h, agg.nodes, agg.gws, agg.p, agg.rc, COALESCE(types.j, '{}'::jsonb), agg.stale, COALESCE(regs.j, '{}'::jsonb) FROM agg LEFT JOIN types USING (h) LEFT JOIN regs USING (h)`
 
 // Refresh brings the summaries up to date: hours never summed, the most
 // recent TrendRecent, hours summed under an older decoder, and every hour
@@ -202,7 +222,7 @@ func (t *TrendHours) readRange(ctx context.Context, pool *pgxpool.Pool, lo, hi t
 		var h time.Time
 		s := &HourSummary{DecodeVersion: ingest.DecodeVersion}
 		var stale bool
-		if err := rows.Scan(&h, &s.Nodes, &s.Gateways, &s.Packets, &s.Receptions, &s.ByType, &stale); err != nil {
+		if err := rows.Scan(&h, &s.Nodes, &s.Gateways, &s.Packets, &s.Receptions, &s.ByType, &stale, &s.Regions); err != nil {
 			return err
 		}
 		if stale {
@@ -298,8 +318,10 @@ func bucketStart(t time.Time, unit string, loc *time.Location) time.Time {
 // Buckets sums the summaries into days, weeks or months starting in loc.
 // Distinct nodes and gateways are unions of the hours' sets; new nodes are
 // those whose first summarised hour falls in the bucket; a packet heard
-// either side of an hour boundary counts in both (rare).
-func (t *TrendHours) Buckets(unit string, loc *time.Location) []TrendBucket {
+// either side of an hour boundary counts in both (rare). With a region
+// (one of Regions), only the rows uplinked under a topic root naming it
+// count, and packets are not split by type (D-194).
+func (t *TrendHours) Buckets(unit string, loc *time.Location, region string) []TrendBucket {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	hours := make([]time.Time, 0, len(t.hours))
@@ -316,6 +338,10 @@ func (t *TrendHours) Buckets(unit string, loc *time.Location) []TrendBucket {
 	firstSeen := map[int64]time.Time{}
 	for _, h := range hours {
 		s := t.hours[h]
+		if region != "" {
+			r := s.Regions[region]
+			s = &HourSummary{Nodes: r.Nodes, Gateways: r.Gateways, Packets: r.Packets, Receptions: r.Receptions}
+		}
 		k := bucketStart(h, unit, loc)
 		a, ok := by[k]
 		if !ok {

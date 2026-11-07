@@ -11,6 +11,7 @@ import { SettingsPanel } from './features/menu'
 import { HealthPanel } from './features/health'
 import { Dock, Rail, type PanelId } from './features/rail'
 import { TrendsPanel } from './features/trends'
+import { RegionsPanel } from './features/regions'
 import { useCapabilities, useHealth, useRetention, useSnapshot, useWatched } from './state/data'
 import { useWatch, useWatchAlerts } from './state/watch'
 import { useTerrainClasses } from './state/terrain'
@@ -30,6 +31,7 @@ export default function App() {
   const win = useStore((s) => s.win)
   const filters = useStore((s) => s.filters)
   const selection = useStore((s) => s.selection)
+  const region = useStore((s) => s.region)
   const { online, servedOffline, canInstall, install } = usePwa()
   const [notice, setNotice] = useState<string | null>(null)
   const geo = useRef<Map<string, [number, number]>>(new Map())
@@ -69,15 +71,20 @@ export default function App() {
     if (caps.data) useStore.getState().applyLimits(caps.data.default_window_hours, caps.data.max_window_hours)
   }, [caps.data])
   useEffect(() => {
-    const q = toQuery({ win, filters, selection }).toString()
+    const q = toQuery({ win, filters, selection, region }).toString()
     const url = q ? `?${q}` : window.location.pathname
     if (url !== window.location.search) window.history.replaceState(null, '', url)
-  }, [win, filters, selection])
+  }, [win, filters, selection, region])
 
   // One panel at a time, beside the tool rail; all start closed. Selecting a
   // node or link opens Details; if the selection opened it, clearing the
   // selection closes it again (D-066).
-  const [panel, setPanel] = useState<PanelId | null>(null)
+  // A link to a region's page opens the Regions panel on it (D-194).
+  const [panel, setPanel] = useState<PanelId | null>(() => (useStore.getState().region ? 'regions' : null))
+  // Leaving the Regions panel leaves its page: the URL stops naming it.
+  useEffect(() => {
+    if (panel !== 'regions' && useStore.getState().region) useStore.getState().setRegion(null)
+  }, [panel])
   const autoOpened = useRef(false)
   useEffect(() => {
     if (selection) {
@@ -165,6 +172,7 @@ export default function App() {
           {panel === 'nodes' && <NodeList snapshot={snap.data} />}
           {panel === 'details' && (sel?.kind === 'node' ? <NodePanel id={sel.id} snapshot={snap.data} /> : linkSel ? <EdgePanel a={linkSel.src} b={linkSel.dst} mqtt={!!linkSel.mqtt} snapshot={snap.data} /> : <div className="panel muted">Select a node or link on the map, or find one under Nodes.</div>)}
           {panel === 'health' && <HealthPanel snapshot={snap.data} />}
+          {panel === 'regions' && <RegionsPanel snapshot={snap.data} />}
           {panel === 'trends' && <TrendsPanel />}
           {panel === 'period' && <PeriodPanel caps={caps.data} retention={retention.data} snapshot={snap.data} />}
           {panel === 'filters' && <FilterPanel snapshot={snap.data} />}

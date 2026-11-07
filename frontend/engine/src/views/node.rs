@@ -67,6 +67,16 @@ pub struct Telemetry {
     pub observed_at: String,
 }
 
+/// Channel utilisation (%) a node reported in its device telemetry over
+/// the window: the median and highest of its reports, and how many (for
+/// the Regions panel, D-194).
+#[derive(Serialize, Clone, Copy, Debug, PartialEq)]
+pub struct ChUtil {
+    pub median: f64,
+    pub max: f64,
+    pub reports: usize,
+}
+
 #[derive(Serialize, Clone, Copy, Default, Debug)]
 pub struct Signatures {
     pub verified: usize,
@@ -166,6 +176,10 @@ pub struct Node {
     /// Routers: how often it is seen relaying what it should relay (D-078).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub relaying: Option<crate::reliability::Relaying>,
+    /// The channel utilisation it reported in the window, for the Regions
+    /// panel (D-194); not sent with the node.
+    #[serde(skip)]
+    pub ch_util: Option<ChUtil>,
     #[serde(skip)]
     pub(super) first: i64,
     #[serde(skip)]
@@ -301,7 +315,7 @@ impl Node {
         Node {
             id: node_id(n), num: n, status: "observed", identity: None, position: None, stale_position: None, rejected_position: None, telemetry: None, first_seen: None, last_seen: None, last_referenced: None, own_uplinks: 0,
             packets: 0, receptions: 0, gateway_receptions: 0, is_gateway: false, multi_uplink: false, signatures: Signatures::default(), brokers: None,
-            mqtt_opt_out: false, estimate: None, estimate_note: None, mqtt_downlink: None, moved_at: None, track: None, airborne: false, refined: None, relaying: None, first: i64::MAX, last: i64::MIN, pos: None,
+            mqtt_opt_out: false, estimate: None, estimate_note: None, mqtt_downlink: None, moved_at: None, track: None, airborne: false, refined: None, relaying: None, ch_util: None, first: i64::MAX, last: i64::MIN, pos: None,
         }
     }
 }

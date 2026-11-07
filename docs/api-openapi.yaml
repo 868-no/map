@@ -1797,6 +1797,13 @@ paths:
             default: UTC
             description: IANA time zone the buckets start in, e.g. Europe/Oslo
             type: string
+        - description: Only rows uplinked under an MQTT topic root naming this region (Nord-Norge, Trøndelag, Vestlandet, Østlandet or Sørlandet); by_type is then empty (D-194)
+          explode: false
+          in: query
+          name: region
+          schema:
+            description: Only rows uplinked under an MQTT topic root naming this region (Nord-Norge, Trøndelag, Vestlandet, Østlandet or Sørlandet); by_type is then empty (D-194)
+            type: string
       responses:
         "200":
           content:

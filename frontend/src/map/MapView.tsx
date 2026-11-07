@@ -385,7 +385,7 @@ export default memo(function MapView({ caps, snapshot, onPositions }: Props) {
     const overlay = overlayRef.current
     if (!ready || !overlay) return
     const show = (probe: [number, number] | null, place: PlaceMark | null) => {
-      const layers = [...baseLayers, ...(place ? [placeLayer(place, palette)] : []), ...(probe ? [probeLayer(probe, palette)] : [])]
+      const layers = [...baseLayers, ...(place && place.ring !== false ? [placeLayer(place, palette)] : []), ...(probe ? [probeLayer(probe, palette)] : [])]
       overlay.setProps({ layers })
       meshLayers.current = layers // the e2e hook sees the probe too
     }

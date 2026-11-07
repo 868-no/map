@@ -628,6 +628,10 @@ func TestTrends(t *testing.T) {
 	f.position(day2, nodeB, gw1, 63.1)
 	// 23:30 UTC on day 2 is already day 3 in Oslo.
 	f.position(base.Add(47*time.Hour+30*time.Minute), nodeB, gw1, 63.1)
+	// Node B's rows came in under a topic root naming Trøndelag (D-194).
+	if _, err := pool.Exec(context.Background(), `UPDATE packet_log SET mqtt_topic = 'msh/EU_868/NO/Trøndelag/2/e/LongFast/!0000000a' WHERE source_node_id = $1`, int64(nodeB)); err != nil {
+		t.Fatal(err)
+	}
 	c := newAPI(t, pool, rc, testNow)
 	var got struct {
 		Buckets []struct {
@@ -659,6 +663,15 @@ func TestTrends(t *testing.T) {
 	}
 	if code := c.get("/api/v1/trends", url.Values{"tz": {"Mars/Olympus"}}, &got); code != 400 {
 		t.Fatalf("bad zone: HTTP %d", code)
+	}
+	// One region: only B, from day 2; the other days count nothing there.
+	got.Buckets = nil // decoding into the old buckets would merge their by_type maps
+	if code := c.get("/api/v1/trends", url.Values{"bucket": {"day"}, "tz": {"Europe/Oslo"}, "region": {"Trøndelag"}}, &got); code != 200 || len(got.Buckets) != 3 ||
+		got.Buckets[0].Nodes != 0 || got.Buckets[1].Nodes != 1 || got.Buckets[1].NewNodes != 1 || got.Buckets[1].Packets != 1 || got.Buckets[2].Nodes != 1 || len(got.Buckets[1].ByType) != 0 {
+		t.Fatalf("Trøndelag: %d %+v", code, got.Buckets)
+	}
+	if code := c.get("/api/v1/trends", url.Values{"region": {"Atlantis"}}, &got); code != 400 {
+		t.Fatalf("unknown region: HTTP %d", code)
 	}
 }
 

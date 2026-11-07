@@ -2,7 +2,7 @@ import { keepPreviousData, useQuery, type Query } from '@tanstack/react-query'
 import { useMemo } from 'react'
 import { getJSON, getJSONFresh } from '../api/client'
 import type { Capabilities, Retention } from '../api/types'
-import type { HealthView, WatchView, LinkHistory, NodeView, PacketLog, PacketRoute, ReachView, SnapshotView, TrafficView, ViewMeta } from '../derive/views'
+import type { HealthView, RegionsView, WatchView, LinkHistory, NodeView, PacketLog, PacketRoute, ReachView, SnapshotView, TrafficView, ViewMeta } from '../derive/views'
 import { apiParams, useStore } from './store'
 import { create } from 'zustand'
 import { deriveView, hintGeneration, onDerivedChange } from '../derive/client'
@@ -117,6 +117,8 @@ export const usePacketRoute = (lp: string | null) => useWindowQuery<PacketRoute>
 export const useNodeDetail = (id: string | null) => useWindowQuery<NodeView>('node', id ?? undefined, !!id)
 /** One link's evidence over time (D-105). */
 export const useLinkHistory = (a: string, b: string) => useWindowQuery<LinkHistory>('link', `${a}|${b}`)
+/** The window per region (D-194). */
+export const useRegionsView = () => useWindowQuery<RegionsView>('regions')
 /** The watchlist's nodes (D-192), in the order given. */
 export const useWatched = (ids: string[]) => useWindowQuery<WatchView>('watch', ids.join(','), ids.length > 0)
 /** Known issues and airtime for the window (D-095). */

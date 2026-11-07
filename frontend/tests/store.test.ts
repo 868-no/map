@@ -19,6 +19,13 @@ describe('URL and API parameters', () => {
     expect(apiParams(withRoles).get('role')).toBeNull()
     expect(toQuery({ ...fixed, filters: defaultFilters }).get('role')).toBeNull()
   })
+  it('round-trips a region page, and ignores names that are not regions (D-194)', () => {
+    const q = toQuery({ ...fixed, region: 'Trøndelag' })
+    expect(q.get('region')).toBe('Trøndelag')
+    expect(fromQuery(q).region).toBe('Trøndelag')
+    expect(fromQuery(new URLSearchParams('region=Atlantis')).region).toBeUndefined()
+    expect(apiParams(fixed).get('region')).toBeNull()
+  })
   it('sends explicit bounds for fixed windows and only a duration for live', () => {
     const p = apiParams(fixed)
     expect(p.get('start')).toBe(fixed.win.start)

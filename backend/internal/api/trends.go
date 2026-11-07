@@ -2,10 +2,13 @@ package api
 
 import (
 	"context"
+	"slices"
 	"sync"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
+
+	"github.com/868-no/map/internal/storage"
 )
 
 // ---- long-term trends (D-104) ----
@@ -17,6 +20,7 @@ import (
 type TrendsInput struct {
 	Bucket string `query:"bucket" enum:"day,week,month" default:"day" doc:"Bucket length"`
 	TZ     string `query:"tz" default:"UTC" doc:"IANA time zone the buckets start in, e.g. Europe/Oslo"`
+	Region string `query:"region" doc:"Only rows uplinked under an MQTT topic root naming this region (Nord-Norge, Trøndelag, Vestlandet, Østlandet or Sørlandet); by_type is then empty (D-194)"`
 }
 
 type TrendBucket struct {
@@ -131,7 +135,10 @@ func (s *Server) trends(ctx context.Context, in *TrendsInput) (*TrendsOutput, er
 	if !ok {
 		return nil, huma.Error400BadRequest("unknown time zone")
 	}
-	key := in.Bucket + "|" + in.TZ
+	if in.Region != "" && !slices.Contains(storage.Regions, in.Region) {
+		return nil, huma.Error400BadRequest("unknown region")
+	}
+	key := in.Bucket + "|" + in.TZ + "|" + in.Region
 	if b, ok := s.trendsMemo.get(key, s.now()); ok {
 		return &TrendsOutput{CacheControl: trendsCC, Body: b}, nil
 	}
@@ -148,7 +155,7 @@ func (s *Server) trends(ctx context.Context, in *TrendsInput) (*TrendsOutput, er
 		return nil, err
 	}
 	body := TrendsBody{Bucket: in.Bucket, Buckets: []TrendBucket{}, Computed: s.now(), Since: s.trendHours.Oldest()}
-	for _, b := range s.trendHours.Buckets(in.Bucket, loc) {
+	for _, b := range s.trendHours.Buckets(in.Bucket, loc, in.Region) {
 		body.Buckets = append(body.Buckets, TrendBucket{Start: b.Start, Nodes: b.Nodes, Gateways: b.Gateways, NewNodes: b.NewNodes, Packets: b.Packets, Receptions: b.Receptions, ByType: b.ByType})
 	}
 	s.trendsMemo.put(key, body)

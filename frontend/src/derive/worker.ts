@@ -248,6 +248,7 @@ async function loadRegions() {
       await started
       setRegions(text)
       memo.forget('health')
+      memo.forget('regions') // regions are judged by the outlines too (D-194)
       self.postMessage({ type: 'changed' } satisfies Response)
       return
     } catch (err) {

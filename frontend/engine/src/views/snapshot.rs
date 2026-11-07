@@ -211,6 +211,18 @@ pub fn build_snapshot(rows: &[&Row], i: &Interner, g: &GeoOptions, rules: Rules)
     for (n, r) in latest_by(&by.telemetry, is_device_telemetry, |r| r.src) {
         nodes.entry(n).or_insert_with(|| Node::new(n)).telemetry = Some(telemetry_of(r));
     }
+    // Channel utilisation over the window, for the Regions panel (D-194).
+    let mut ch: FxMap<u32, Vec<f64>> = map();
+    for r in by.telemetry.iter().filter(|r| is_device_telemetry(r)) {
+        if let Some(c) = r.telemetry().and_then(|t| t.ch_util).filter(|c| c.is_finite() && *c >= 0.0) {
+            ch.entry(r.src).or_default().push(c);
+        }
+    }
+    for (n, mut v) in ch {
+        v.sort_unstable_by(f64::total_cmp);
+        let median = if v.len() % 2 == 1 { v[v.len() / 2] } else { f64::midpoint(v[v.len() / 2 - 1], v[v.len() / 2]) };
+        nodes.entry(n).or_insert_with(|| Node::new(n)).ch_util = Some(super::ChUtil { median, max: v[v.len() - 1], reports: v.len() });
+    }
     for (n, t) in referenced(by.neighborinfo.iter().chain(&by.traceroute)) {
         let x = nodes.entry(n).or_insert_with(|| {
             let mut x = Node::new(n);

@@ -43,7 +43,7 @@ func TestBucketsUnionNodesAndCountNewOnce(t *testing.T) {
 		h0.Add(time.Hour):      {Nodes: []int64{2, 3}, Gateways: []int64{9}, Packets: 2, Receptions: 2, ByType: map[string]int{"position": 1, "text": 1}},
 		h0.Add(24 * time.Hour): {Nodes: []int64{1, 4}, Gateways: []int64{8}, Packets: 1, Receptions: 1, ByType: map[string]int{"text": 1}},
 	}}
-	b := th.Buckets("day", time.UTC)
+	b := th.Buckets("day", time.UTC, "")
 	if len(b) != 2 {
 		t.Fatalf("%d buckets", len(b))
 	}
@@ -53,7 +53,24 @@ func TestBucketsUnionNodesAndCountNewOnce(t *testing.T) {
 	if b[1].Nodes != 2 || b[1].NewNodes != 1 || b[1].Gateways != 1 {
 		t.Fatalf("day 2: %+v", b[1])
 	}
-	if m := th.Buckets("month", time.UTC); len(m) != 1 || m[0].Nodes != 4 || m[0].NewNodes != 4 {
+	if m := th.Buckets("month", time.UTC, ""); len(m) != 1 || m[0].Nodes != 4 || m[0].NewNodes != 4 {
 		t.Fatalf("month: %+v", m)
+	}
+}
+
+func TestBucketsForARegionCountOnlyItsRows(t *testing.T) {
+	h0 := time.Date(2026, 11, 2, 10, 0, 0, 0, time.UTC)
+	th := TrendHours{hours: map[time.Time]*HourSummary{
+		h0: {Nodes: []int64{1, 2, 3}, Gateways: []int64{8, 9}, Packets: 6, Receptions: 9, ByType: map[string]int{"text": 6},
+			Regions: map[string]RegionHour{"Vestlandet": {Nodes: []int64{1, 2}, Gateways: []int64{9}, Packets: 4, Receptions: 5}}},
+		h0.Add(24 * time.Hour): {Nodes: []int64{2, 4}, Gateways: []int64{9}, Packets: 2, Receptions: 2,
+			Regions: map[string]RegionHour{"Vestlandet": {Nodes: []int64{2, 4}, Gateways: []int64{9}, Packets: 2, Receptions: 2}}},
+	}}
+	b := th.Buckets("day", time.UTC, "Vestlandet")
+	if len(b) != 2 || b[0].Nodes != 2 || b[0].Gateways != 1 || b[0].Packets != 4 || b[0].Receptions != 5 || len(b[0].ByType) != 0 || b[1].NewNodes != 1 {
+		t.Fatalf("Vestlandet: %+v", b)
+	}
+	if o := th.Buckets("day", time.UTC, "Østlandet"); len(o) != 2 || o[0].Nodes != 0 || o[1].Packets != 0 {
+		t.Fatalf("a region with no rows: %+v", o)
 	}
 }

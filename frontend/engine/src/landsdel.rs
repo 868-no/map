@@ -48,6 +48,11 @@ impl Regions {
         Ok(Regions(out))
     }
 
+    /// No outlines: the worker has not handed them over yet.
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
     /// The region a point lies in, or the nearest one within NEAREST_KM;
     /// None elsewhere (abroad, or far out at sea).
     pub fn region_at(&self, lat: f64, lon: f64) -> Option<&'static str> {

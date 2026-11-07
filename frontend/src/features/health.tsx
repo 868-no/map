@@ -15,7 +15,7 @@ const SEVERITY: Record<Issue['severity'], { label: string; plural: string; icon:
 }
 
 /** Issue kinds as section headings in the Health panel. */
-const KIND: Record<string, string> = {
+export const KIND: Record<string, string> = {
   silent: 'Silent routers and gateways',
   spoofed: 'Packets in its name failed verification',
   shared_key: 'Shared public key',
@@ -49,7 +49,7 @@ const KIND: Record<string, string> = {
 const pct = (x: number) => (x >= 0.1 ? `${Math.round(x * 100)} %` : `${(x * 100).toFixed(1)} %`)
 const typeName = (t: string) => TYPE_LABEL[t] ?? t
 
-function IssueLine({ i, name }: { i: Issue; name?: (id: string) => string }) {
+export function IssueLine({ i, name }: { i: Issue; name?: (id: string) => string }) {
   const select = useStore((s) => s.select)
   const [open, setOpen] = useState(false)
   // Other nodes in the text by name, as the line's own node is.

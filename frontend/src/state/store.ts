@@ -46,7 +46,11 @@ export interface PlaceMark {
   lat: number
   zoom: number
   name: string
+  ring?: boolean // false: go there without marking it (a region)
 }
+
+/** Norway's regions (landsdeler), as the engine and the server name them (D-194). */
+const REGION_NAMES = ['Nord-Norge', 'Trøndelag', 'Vestlandet', 'Østlandet', 'Sørlandet'] as const
 
 export type Selection = { kind: 'node'; id: string } | { kind: 'edge'; src: string; dst: string; mqtt?: boolean } | null
 
@@ -76,6 +80,7 @@ interface Store {
   reach: Reach | null // the selected node's simulated reach, drawn on the map (D-069)
   probe: [number, number] | null // [lon, lat] the link's cross section is hovered at, marked on the map (D-143)
   place: PlaceMark | null // a place picked from the search: the map goes there and marks it (D-193)
+  region: string | null // the region whose page the Regions panel shows (D-194)
   search: string
   detailTab: DetailTab // the node panel's tab, kept across selections
   setLive: (durationH?: number) => void
@@ -87,6 +92,7 @@ interface Store {
   setReach: (r: Reach | null) => void
   setProbe: (p: [number, number] | null) => void
   goToPlace: (p: PlaceMark | null) => void
+  setRegion: (r: string | null) => void
   setSearch: (s: string) => void
   setDetailTab: (t: DetailTab) => void
 }
@@ -145,6 +151,7 @@ export const useStore = create<Store>((set) => ({
   reach: null,
   probe: null,
   place: null,
+  region: null,
   search: '',
   detailTab: 'overview',
   // The window already shown is kept as it is (the same object), so
@@ -169,6 +176,7 @@ export const useStore = create<Store>((set) => ({
   setReach: (reach) => set({ reach, route: null }),
   setProbe: (probe) => set({ probe }),
   goToPlace: (place) => set({ place }),
+  setRegion: (region) => set({ region }),
   setSearch: (search) => set({ search }),
   setDetailTab: (detailTab) => set({ detailTab }),
 }))
@@ -183,9 +191,10 @@ export function nodeLink(id: string, origin = window.location.origin): string {
   return `${origin}/?node=${id}`
 }
 
-export function toQuery(s: Pick<Store, 'win' | 'filters'> & { selection?: Selection }): URLSearchParams {
+export function toQuery(s: Pick<Store, 'win' | 'filters'> & { selection?: Selection; region?: string | null }): URLSearchParams {
   const q = new URLSearchParams()
   if (s.selection?.kind === 'node') q.set('node', s.selection.id)
+  if (s.region) q.set('region', s.region)
   if (s.win.live) {
     if (s.win.durationH !== windowLimits.defaultH) q.set('duration', `${s.win.durationH}h`)
   } else if (s.win.start && s.win.end) {
@@ -215,8 +224,10 @@ export function endByNow(start: string, end: string, now: number): [string, stri
   return [new Date(s).toISOString(), new Date(now).toISOString()]
 }
 
-export function fromQuery(q: URLSearchParams, now = serverNow()): Partial<Pick<Store, 'win' | 'filters' | 'selection'>> {
-  const out: Partial<Pick<Store, 'win' | 'filters' | 'selection'>> = {}
+export function fromQuery(q: URLSearchParams, now = serverNow()): Partial<Pick<Store, 'win' | 'filters' | 'selection' | 'region'>> {
+  const out: Partial<Pick<Store, 'win' | 'filters' | 'selection' | 'region'>> = {}
+  const region = q.get('region')
+  if (region && (REGION_NAMES as readonly string[]).includes(region)) out.region = region
   const node = q.get('node')?.toLowerCase()
   if (node && NODE_ID.test(node)) out.selection = { kind: 'node', id: node }
   const start = q.get('start'), end = q.get('end'), dur = q.get('duration')

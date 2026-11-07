@@ -13,6 +13,7 @@ pub mod graph;
 pub mod packets;
 pub mod radio;
 pub mod reach;
+pub mod regions;
 pub mod reliability;
 pub mod row;
 pub mod store;
@@ -127,9 +128,9 @@ fn json<T: serde::Serialize>(v: &T) -> String {
 
 impl Engine {
     /// A view as JSON (Engine::view_bytes for the page; tests read it as
-    /// text): kind is snapshot, traffic, node, packetlog, route, reach, watch,
+    /// text): kind is snapshot, traffic, node, packetlog, route, reach, regions, watch,
     /// health or link; arg is the node id (node, packetlog, reach), packet key
-    /// (route), "a|b" node ids (link) or comma-separated ids (watch). "null"
+    /// (route), "a|b" node ids (link) or comma-separated ids (watch); regions takes none. "null"
     /// means the node is neither observed nor referenced in the window.
     pub fn view(&mut self, kind: &str, start: f64, end: f64, filters: &str, arg: &str) -> Result<String, JsError> {
         let (start, end) = (start as i64, end as i64);
@@ -209,6 +210,13 @@ impl Engine {
                 let b = &self.built.as_ref().unwrap().1;
                 let rows = self.rows();
                 Ok(json(&serde_json::json!({ "nodes": watch::watch(&ids, &rows, b.snapshot.nodes.iter().chain(&b.beyond)) })))
+            }
+            "regions" => {
+                // The window per region, for the Regions panel (D-194).
+                self.build(start, end, filters)?;
+                let b = &self.built.as_ref().unwrap().1;
+                let rows = self.rows();
+                Ok(json(&regions::regions(&self.regions, b.snapshot.nodes.iter().chain(&b.beyond), &rows, &self.i)))
             }
             "health" => {
                 self.build(start, end, filters)?;

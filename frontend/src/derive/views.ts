@@ -198,6 +198,27 @@ export interface LinkHistory {
   ba: LinkPoint[]
 }
 
+/** One region's part of the window (D-194). */
+export interface RegionSummary {
+  name: string
+  nodes: number // placed in it, by reported position or estimate
+  members: string[]
+  routers: number
+  bases: number
+  gateways: number
+  topic_nodes: number // senders in rows uplinked under a topic root naming it
+  topic_gateways: number
+  ch_util?: number // median of its nodes' medians
+  ch_util_nodes: number
+  busiest?: [string, number] // node id, its median channel utilisation
+}
+export interface RegionsView {
+  meta: ViewMeta
+  loaded: boolean // the outlines are in
+  regions: RegionSummary[]
+  outside: number
+}
+
 /** A watched node's state (D-192). */
 export interface Watched {
   id: string
