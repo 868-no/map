@@ -60,7 +60,7 @@ export function LayersPanel() {
       {check('Position accuracy', t.uncertainty, (v) => setT({ uncertainty: v }),
         'A circle around each estimated position: the area the node is likely within, from the positioned nodes that heard it directly. With a node selected, only its circle is shown, switched on or not; for a coarse reported position it shows how far off that position may be.')}
       {check('Node names', t.labels, (v) => setT({ labels: v }),
-        'Each node\'s short name from its latest NodeInfo (or its own map report) in the selected window, or the last 4 hex digits of its ID. Shown from zoom 10. Names that would overlap are grouped (“+N”) and fan out when hovered.')}
+        'Each node\'s short name from its latest NodeInfo (or its own map report) in the selected window, or the last 4 hex digits of its ID. Shown from zoom 10. Names that would overlap are grouped (“+N”) and fan out when hovered, at most 12 at a time (zoom in for the rest).')}
       {check('Position trails', t.trails, (v) => setT({ trails: v }),
         'Which way moving nodes are going: a short line through their last few reported positions, fading towards the oldest, with chevrons pointing the way they went. With a node selected, only its trail. A node counts as moving once two positions lie further apart than 300 m (2 km for routers and base stations, whose GPS may wander) plus what their precision explains; its links then use only evidence from after its latest move.')}
       {check('Traffic', t.animation, (v) => setT({ animation: v }),

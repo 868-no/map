@@ -39,7 +39,7 @@ const ICONS: Record<PanelId, ReactNode> = {
 }
 
 export const PANELS: { id: PanelId; label: string; hint: string }[] = [
-  { id: 'nodes', label: 'Nodes', hint: 'Find a node by name or ID' },
+  { id: 'nodes', label: 'Nodes', hint: 'Find a node by name or ID, or a place; the nodes you watch' },
   { id: 'details', label: 'Details', hint: 'The selected node or link (closing keeps it selected on the map)' },
   { id: 'health', label: 'Health', hint: 'Known problems in the mesh, and who uses the airtime' },
   { id: 'regions', label: 'Regions', hint: 'Each region\'s mesh: nodes, problems, channel use and growth' },
@@ -48,7 +48,7 @@ export const PANELS: { id: PanelId; label: string; hint: string }[] = [
   { id: 'filters', label: 'Filters', hint: 'Which observations and links count' },
   { id: 'layers', label: 'Layers', hint: 'What the map shows' },
   { id: 'legend', label: 'Legend', hint: 'What the colours, sizes and lines mean' },
-  { id: 'settings', label: 'Settings', hint: 'Theme, install, source code, license and privacy' },
+  { id: 'settings', label: 'Settings', hint: 'Theme, how many nodes to show, install, about this site, and reset' },
 ]
 
 const panelLabel = (id: PanelId) => PANELS.find((p) => p.id === id)!.label

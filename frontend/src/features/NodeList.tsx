@@ -98,7 +98,7 @@ function WatchList() {
   const watched = useWatched(ids)
   const issues = useHealth().data?.issues ?? []
   const [refused, setRefused] = useState(false)
-  if (ids.length === 0) return <p className="muted small watch-hint">Watch a node (☆ in its Details) to keep it here, with when it was last heard and its battery.</p>
+  if (ids.length === 0) return <p className="muted small watch-hint">Watch a node (☆ in its Details) to keep it here, with when it was last heard and its battery. The list is kept in this browser only.</p>
   const onNotify = async (on: boolean) => {
     if (on && !(await allowNotifications())) return setRefused(true)
     setRefused(false)
@@ -139,9 +139,12 @@ function WatchList() {
         })}
       </ul>
       {canNotify() && (
-        <label className="watch-notify" title={live ? 'A browser notification when a watched node goes quiet for much longer than usual, is heard again, gets a problem or warning, or its battery drops to 20 %. Only while this page is open in a live period: nothing runs on the server.' : 'Notifications follow the live period only.'}>
-          <input type="checkbox" checked={notify} disabled={!live} onChange={(e) => void onNotify(e.target.checked)} /> Notify me while this page is open
-        </label>
+        <>
+          <label className="watch-notify" title={`A browser notification when a watched node goes quiet for much longer than usual, is heard again, gets a problem or warning, or its battery drops to ${WATCH_BATTERY_LOW} %. Only while this page is open in a live period: nothing runs on the server, and nothing is sent when the page is closed.`}>
+            <input type="checkbox" checked={notify} disabled={!live} onChange={(e) => void onNotify(e.target.checked)} /> Notify me while this page is open
+          </label>
+          {!live && <p className="muted small">Notifications work only in a live period; return to live to get them.</p>}
+        </>
       )}
       {refused && <p className="muted small">The browser did not allow notifications for this site; its site settings can.</p>}
     </section>
