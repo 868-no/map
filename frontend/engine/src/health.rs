@@ -81,7 +81,7 @@ pub const INFRA_ROLES: [&str; 4] = ["ROUTER", "ROUTER_LATE", "ROUTER_CLIENT", "R
 /// at most FEW_LINKS radio neighbours (but one at least: with none, nothing
 /// is known of its reach, and the isolated rule speaks for it) over at least FEW_LINKS_MIN_PACKETS
 /// of its own packets. Co-located relays: nodes that rebroadcast, reporting
-/// positions within SITE_M of each other, precise to SITE_MIN_BITS.
+/// positions within SITE_M of each other (every pair), precise to SITE_MIN_BITS.
 pub const OVERLAP_MIN_NEIGHBOURS: usize = 5;
 pub const OVERLAP_SHARE: f64 = 0.9;
 pub const FEW_LINKS: usize = 1;
@@ -782,29 +782,37 @@ pub fn health(rows: &[&Row], window: &[&Row], nodes: &[Node], edges: &[crate::gr
             }
         }
     }
-    let mut site_of: Vec<usize> = (0..placed.len()).collect();
-    fn root(v: &mut [usize], k: usize) -> usize {
-        let mut k = k;
-        while v[k] != k {
-            v[k] = v[v[k]];
-            k = v[k];
+    // Sites around the relay to keep (a router role first, then the most
+    // radio neighbours): each takes the nearest free nodes within SITE_M of
+    // every member so far, so a site's members are all within SITE_M of each
+    // other and a chain of relays does not become one long site.
+    let keep_first = |x: &Node| (!ROUTER_ROLES.contains(&role_of(x)), std::cmp::Reverse(near(x.num).len()), x.num);
+    let mut by_keep: Vec<usize> = (0..placed.len()).collect();
+    by_keep.sort_by_key(|&k| keep_first(placed[k].0));
+    let mut taken = vec![false; placed.len()];
+    let mut sites: Vec<Vec<&Node>> = Vec::new();
+    for &a in &by_keep {
+        if taken[a] {
+            continue;
         }
-        k
-    }
-    for (a, near_a) in close.iter().enumerate() {
-        for &b in near_a {
-            let (ra, rb) = (root(&mut site_of, a), root(&mut site_of, b));
-            site_of[ra.max(rb)] = ra.min(rb);
+        let mut free: Vec<usize> = close[a].iter().copied().filter(|&b| !taken[b]).collect();
+        free.sort_by(|&b, &c| crate::graph::distance_m(placed[a].1, placed[b].1).total_cmp(&crate::graph::distance_m(placed[a].1, placed[c].1)).then(keep_first(placed[b].0).cmp(&keep_first(placed[c].0))));
+        let mut site = vec![a];
+        for b in free {
+            if site[1..].iter().all(|m| close[b].contains(m)) {
+                site.push(b);
+            }
+        }
+        if site.len() >= 2 {
+            for &k in &site {
+                taken[k] = true;
+            }
+            sites.push(site.iter().map(|&k| placed[k].0).collect());
         }
     }
-    let mut sites: FxMap<usize, Vec<&Node>> = map();
-    for (k, &(x, _)) in placed.iter().enumerate() {
-        let r = root(&mut site_of, k);
-        sites.entry(r).or_default().push(x);
-    }
-    for mut site in sites.into_values().filter(|v| v.len() >= 2) {
+    for mut site in sites {
         // The one to keep relaying: a router role first, then the most radio neighbours.
-        site.sort_by_key(|x| (!ROUTER_ROLES.contains(&role_of(x)), std::cmp::Reverse(near(x.num).len()), x.num));
+        site.sort_by_key(|x| keep_first(x));
         let keep = site[0].num;
         let all: Vec<String> = site.iter().map(|x| node_id(x.num)).collect();
         for x in &site[1..] {
@@ -1002,6 +1010,24 @@ mod tests {
         assert_eq!(of("router_overlap"), [("!00000001", "Covers the same nodes as router !00000002")]);
         assert_eq!(of("router_few_links"), [("!00000003", "Router with 1 radio link")]);
         assert_eq!(of("co_located"), [("!00000014", "Relays from the same site as !00000015"), ("!00000016", "Relays from the same site as !00000015")]);
+    }
+
+    #[test]
+    fn a_chain_of_relays_is_not_one_long_site() {
+        let i = Interner::default();
+        // Four clients in a line about 89 m apart (267 m end to end), and a
+        // router 50 m from the third: sites hold only nodes all within 100 m
+        // of each other, around the router first.
+        let at = |n: u32, role: &str, lat: f64, lon: f64| {
+            let mut x = crate::views::Node::new(n);
+            x.identity = Some(crate::views::Identity { role: role.into(), ..Default::default() });
+            x.position = Some(crate::views::Position { lat, lon, alt: None, precision_bits: 32, precision_known: true, signature: "unsigned".into(), observed_at: "2026-11-05T00:00:00Z".into(), source: "position".into() });
+            x
+        };
+        let nodes = [at(1, "CLIENT", 60.0, 10.0), at(2, "CLIENT", 60.0008, 10.0), at(3, "CLIENT", 60.0016, 10.0), at(4, "CLIENT", 60.0024, 10.0), at(5, "ROUTER", 60.0016, 10.0009)];
+        let got = health(&[], &[], &nodes, &[], &Copies::default(), &PresetIndex::default(), &i, 48.0, &crate::landsdel::Regions::default()).issues;
+        let sites: Vec<(&str, &str)> = got.iter().filter(|x| x.kind == "co_located").map(|x| (x.node.as_str(), x.summary.as_str())).collect();
+        assert_eq!(sites, [("!00000002", "Relays from the same site as !00000001"), ("!00000003", "Relays from the same site as !00000005")]);
     }
 
     /// A gateway at (lat, lon) and one uplink of it under `topic`.
