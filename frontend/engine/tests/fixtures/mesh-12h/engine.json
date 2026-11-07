@@ -24742,13 +24742,6 @@
         ],
         "estimate": {
           "anchor_count": 3,
-          "anchors": [
-            "!5028b360",
-            "!8a84e409",
-            "!a9339946"
-          ],
-          "evidence_from": "2026-10-31T03:20:35.014Z",
-          "evidence_to": "2026-10-31T15:15:04.749Z",
           "lat": 64.04,
           "lon": 11.055,
           "method": "weighted_centroid",
@@ -25668,14 +25661,6 @@
         ],
         "estimate": {
           "anchor_count": 4,
-          "anchors": [
-            "!672f1873",
-            "!997b0449",
-            "!b1610d41",
-            "!f6a6fd67"
-          ],
-          "evidence_from": "2026-10-31T03:43:29.982Z",
-          "evidence_to": "2026-10-31T15:11:35.337Z",
           "lat": 63.397,
           "lon": 10.399,
           "method": "weighted_centroid",
@@ -25982,15 +25967,6 @@
         ],
         "estimate": {
           "anchor_count": 5,
-          "anchors": [
-            "!672f1873",
-            "!94ed7591",
-            "!997b0449",
-            "!b1610d41",
-            "!f6a6fd67"
-          ],
-          "evidence_from": "2026-10-31T03:28:05.119Z",
-          "evidence_to": "2026-10-31T15:13:37.009Z",
           "lat": 63.385,
           "lon": 10.409,
           "method": "weighted_centroid",
@@ -26901,13 +26877,6 @@
         ],
         "estimate": {
           "anchor_count": 3,
-          "anchors": [
-            "!39b01fc6",
-            "!83abf576",
-            "!e2e49980"
-          ],
-          "evidence_from": "2026-10-31T03:37:25.589Z",
-          "evidence_to": "2026-10-31T14:37:36.918Z",
           "lat": 61.193,
           "lon": 7.03,
           "method": "weighted_centroid",
@@ -27523,13 +27492,6 @@
         ],
         "estimate": {
           "anchor_count": 3,
-          "anchors": [
-            "!672f1873",
-            "!9b0f4bd5",
-            "!b1610d41"
-          ],
-          "evidence_from": "2026-10-31T07:24:22.817Z",
-          "evidence_to": "2026-10-31T13:23:05.072Z",
           "lat": 63.368,
           "lon": 10.396,
           "method": "weighted_centroid",
@@ -27894,13 +27856,6 @@
         ],
         "estimate": {
           "anchor_count": 3,
-          "anchors": [
-            "!09a7ceb5",
-            "!34bb8eaf",
-            "!9365c6cd"
-          ],
-          "evidence_from": "2026-10-31T03:55:17.284Z",
-          "evidence_to": "2026-10-31T14:39:34.261Z",
           "lat": 59.347,
           "lon": 10.643,
           "method": "weighted_centroid",
@@ -28427,15 +28382,6 @@
         ],
         "estimate": {
           "anchor_count": 5,
-          "anchors": [
-            "!09a7ceb5",
-            "!1454ed85",
-            "!699cb4a0",
-            "!b2a114e3",
-            "!d78555f8"
-          ],
-          "evidence_from": "2026-10-31T03:47:16.192Z",
-          "evidence_to": "2026-10-31T14:50:44.748Z",
           "lat": 59.855,
           "lon": 10.55,
           "method": "weighted_centroid",
@@ -28561,13 +28507,6 @@
         ],
         "estimate": {
           "anchor_count": 3,
-          "anchors": [
-            "!0745f838",
-            "!b1610d41",
-            "!f6a6fd67"
-          ],
-          "evidence_from": "2026-10-31T03:28:05.119Z",
-          "evidence_to": "2026-10-31T10:52:28.477Z",
           "lat": 63.367,
           "lon": 10.458,
           "method": "weighted_centroid",
@@ -29006,17 +28945,6 @@
         ],
         "estimate": {
           "anchor_count": 6,
-          "anchors": [
-            "!09a7ceb5",
-            "!1454ed85",
-            "!2f349738",
-            "!34bb8eaf",
-            "!8d52fe84",
-            "!a721aca8",
-            "!b2a114e3"
-          ],
-          "evidence_from": "2026-10-31T03:18:15.130Z",
-          "evidence_to": "2026-10-31T15:08:24.335Z",
           "lat": 59.543,
           "lon": 10.496,
           "method": "weighted_centroid",
@@ -29763,13 +29691,6 @@
         ],
         "estimate": {
           "anchor_count": 3,
-          "anchors": [
-            "!8d52fe84",
-            "!d78555f8",
-            "!f669c568"
-          ],
-          "evidence_from": "2026-10-31T03:39:06.908Z",
-          "evidence_to": "2026-10-31T15:08:23.258Z",
           "lat": 59.493,
           "lon": 9.702,
           "method": "weighted_centroid",
@@ -29812,14 +29733,6 @@
         ],
         "estimate": {
           "anchor_count": 3,
-          "anchors": [
-            "!34bb8eaf",
-            "!514664dd",
-            "!552ad94c",
-            "!8d52fe84"
-          ],
-          "evidence_from": "2026-10-31T04:15:24.619Z",
-          "evidence_to": "2026-10-31T14:50:44.748Z",
           "lat": 59.317,
           "lon": 11.116,
           "method": "weighted_centroid",
@@ -30298,15 +30211,6 @@
         ],
         "estimate": {
           "anchor_count": 5,
-          "anchors": [
-            "!0745f838",
-            "!672f1873",
-            "!8a84e409",
-            "!935ab592",
-            "!94ed7591"
-          ],
-          "evidence_from": "2026-10-31T06:16:44.956Z",
-          "evidence_to": "2026-10-31T12:49:14.267Z",
           "lat": 63.427,
           "lon": 10.398,
           "method": "weighted_centroid",
@@ -30357,14 +30261,6 @@
         ],
         "estimate": {
           "anchor_count": 4,
-          "anchors": [
-            "!94ed7591",
-            "!997b0449",
-            "!9b0f4bd5",
-            "!b1610d41"
-          ],
-          "evidence_from": "2026-10-31T03:28:05.119Z",
-          "evidence_to": "2026-10-31T13:01:36.541Z",
           "lat": 63.356,
           "lon": 10.395,
           "method": "weighted_centroid",
@@ -30892,14 +30788,6 @@
         ],
         "estimate": {
           "anchor_count": 4,
-          "anchors": [
-            "!0745f838",
-            "!672f1873",
-            "!94ed7591",
-            "!a9339946"
-          ],
-          "evidence_from": "2026-10-31T06:30:33.136Z",
-          "evidence_to": "2026-10-31T15:04:23.695Z",
           "lat": 63.615,
           "lon": 10.968,
           "method": "weighted_centroid",
@@ -31177,15 +31065,6 @@
         ],
         "estimate": {
           "anchor_count": 5,
-          "anchors": [
-            "!09a7ceb5",
-            "!34bb8eaf",
-            "!49ea4c9c",
-            "!8d52fe84",
-            "!d78555f8"
-          ],
-          "evidence_from": "2026-10-31T04:15:24.619Z",
-          "evidence_to": "2026-10-31T14:47:45.660Z",
           "lat": 59.331,
           "lon": 10.459,
           "method": "weighted_centroid",
@@ -31343,13 +31222,6 @@
       {
         "estimate": {
           "anchor_count": 3,
-          "anchors": [
-            "!0745f838",
-            "!672f1873",
-            "!8a84e409"
-          ],
-          "evidence_from": "2026-10-31T04:55:07.828Z",
-          "evidence_to": "2026-10-31T13:21:57.403Z",
           "lat": 63.587,
           "lon": 10.69,
           "method": "weighted_centroid",
@@ -31532,14 +31404,6 @@
       {
         "estimate": {
           "anchor_count": 4,
-          "anchors": [
-            "!4c6575d4",
-            "!8f4c2cf0",
-            "!d481460c",
-            "!f66adc9c"
-          ],
-          "evidence_from": "2026-10-31T03:40:31.172Z",
-          "evidence_to": "2026-10-31T11:16:18.782Z",
           "lat": 60.403,
           "lon": 5.31,
           "method": "weighted_centroid",

@@ -77,9 +77,6 @@ export interface Estimate {
   quality: 'very_low' | 'low'
   anchor_count: number
   sample_count: number
-  anchors: string[]
-  evidence_from: string
-  evidence_to: string
   reasons: string[]
 }
 

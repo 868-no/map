@@ -20,8 +20,6 @@ pub(super) fn estimate(nodes: &mut FxMap<u32, Node>, edges: &[Edge], g: &GeoOpti
         rssi_sum: f64,
         rssi_w: f64,
         samples: u32,
-        first: i64,
-        last: i64,
     }
     let mut links: FxMap<u32, Vec<(u32, Agg)>> = map(); // target -> (anchor, agg) in first-seen order
     let mut add = |target: u32, anchor: u32, e: &Edge| {
@@ -33,7 +31,7 @@ pub(super) fn estimate(nodes: &mut FxMap<u32, Node>, edges: &[Edge], g: &GeoOpti
         let k = match v.iter().position(|(a, _)| *a == anchor) {
             Some(k) => k,
             None => {
-                v.push((anchor, Agg { snr_sum: 0.0, snr_w: 0.0, rssi_sum: 0.0, rssi_w: 0.0, samples: 0, first: e.first, last: e.last }));
+                v.push((anchor, Agg { snr_sum: 0.0, snr_w: 0.0, rssi_sum: 0.0, rssi_w: 0.0, samples: 0 }));
                 v.len() - 1
             }
         };
@@ -47,8 +45,6 @@ pub(super) fn estimate(nodes: &mut FxMap<u32, Node>, edges: &[Edge], g: &GeoOpti
             a.rssi_sum += m * e.rssi.n as f64;
             a.rssi_w += e.rssi.n as f64;
         }
-        a.first = a.first.min(e.first);
-        a.last = a.last.max(e.last);
     };
     for e in edges.iter().filter(|e| !e.mqtt) {
         if anchors.contains_key(&e.src_num) {
@@ -69,8 +65,6 @@ pub(super) fn estimate(nodes: &mut FxMap<u32, Node>, edges: &[Edge], g: &GeoOpti
                     .map(|(anchor, a)| Measurement {
                         anchor: *anchor,
                         samples: a.samples,
-                        first: a.first,
-                        last: a.last,
                         snr: (a.snr_w > 0.0).then(|| a.snr_sum / a.snr_w),
                         rssi: (a.rssi_w > 0.0).then(|| a.rssi_sum / a.rssi_w),
                     })

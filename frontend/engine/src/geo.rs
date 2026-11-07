@@ -4,7 +4,6 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::util::iso;
 
 #[derive(Clone, Copy, Debug)]
 pub struct Anchor {
@@ -31,8 +30,6 @@ pub struct Measurement {
     pub snr: Option<f64>,
     pub rssi: Option<f64>,
     pub samples: u32,
-    pub first: i64,
-    pub last: i64,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize)]
@@ -71,9 +68,6 @@ pub struct Estimate {
     pub quality: &'static str,
     pub anchor_count: usize,
     pub sample_count: u32,
-    pub anchors: Vec<String>,
-    pub evidence_from: String,
-    pub evidence_to: String,
     pub reasons: Vec<String>,
 }
 
@@ -132,8 +126,6 @@ fn merge_sites(mut pts: Vec<Pt>, spacing: f64) -> (Vec<Pt>, Vec<Vec<u32>>) {
                 let lerp = |a: f64, b: f64| (a * ws + b * w) / t;
                 (s.x, s.y, s.a.lat, s.a.lon) = (lerp(s.x, q.x), lerp(s.y, q.y), lerp(s.a.lat, q.a.lat), lerp(s.a.lon, q.a.lon));
                 s.m.samples += q.m.samples;
-                s.m.first = s.m.first.min(q.m.first);
-                s.m.last = s.m.last.max(q.m.last);
                 s.with.push(q.a.node);
                 let Site { sig: a, members } = &mut acc[k];
                 for (t, v) in a.iter_mut().zip(sig) {
@@ -319,17 +311,6 @@ pub fn locate(
     if l1 <= 0.0 || (l2.max(0.0) / l1).sqrt() < p.min_shape_ratio {
         return Err("anchors nearly collinear: position not constrained in two dimensions".into());
     }
-    let (mut from, mut to) = (0i64, 0i64);
-    let mut names: Vec<String> = Vec::with_capacity(pts.len());
-    for q in &pts {
-        names.push(node_id(q.a.node));
-        names.extend(q.with.iter().map(|&n| node_id(n)));
-        if from == 0 || q.m.first < from {
-            from = q.m.first;
-        }
-        to = to.max(q.m.last);
-    }
-    names.sort_unstable();
     let mut reasons = Vec::new();
     let (mut x, mut y, mut unc);
     let (method, quality);
@@ -400,9 +381,6 @@ pub fn locate(
         quality,
         anchor_count: pts.len(),
         sample_count: samples,
-        anchors: names,
-        evidence_from: iso(from),
-        evidence_to: iso(to),
         reasons,
     })
 }
@@ -503,7 +481,7 @@ mod tests {
         for (n, lat, lon) in [(1u32, 59.9, 10.7), (2, 59.95, 10.8), (3, 59.85, 10.85)] {
             anchors.insert(n, Anchor { node: n, lat, lon, err_m: 0.0 });
         }
-        let m = |a| Measurement { anchor: a, snr: Some(5.0), rssi: None, samples: 2, first: 1, last: 2 };
+        let m = |a| Measurement { anchor: a, snr: Some(5.0), rssi: None, samples: 2 };
         let est = locate(&anchors, &[m(1), m(2), m(3)], &Params::default(), None, node_id).unwrap();
         assert_eq!(est.method, "weighted_centroid");
         assert!(est.lat > 59.85 && est.lat < 59.95);
@@ -517,10 +495,9 @@ mod tests {
         for (n, lat, lon) in [(1u32, 59.9, 10.7), (2, 59.95, 10.8), (3, 59.85, 10.85), (4, 59.9, 10.7), (5, 59.9009, 10.7)] {
             anchors.insert(n, Anchor { node: n, lat, lon, err_m: 0.0 });
         }
-        let m = |a, samples| Measurement { anchor: a, snr: Some(5.0), rssi: None, samples, first: a as i64, last: 10 + a as i64 };
+        let m = |a, samples| Measurement { anchor: a, snr: Some(5.0), rssi: None, samples };
         let est = locate(&anchors, &[m(1, 2), m(2, 2), m(3, 2), m(4, 6), m(5, 2)], &Params::default(), None, node_id).unwrap();
         assert_eq!((est.anchor_count, est.sample_count), (3, 14), "three sites, every sample kept");
-        assert_eq!(est.anchors.len(), 5, "all five named");
         assert!(est.reasons.iter().any(|r| r == "anchors !00000004, !00000001, !00000005 are less than 200 m apart: counted as one site"), "{:?}", est.reasons);
         // The site's own spread (up to ~100 m) counts as anchor imprecision.
         assert!(est.reasons.iter().any(|r| r.starts_with("radius includes up to 100 m")), "{:?}", est.reasons);
@@ -556,7 +533,7 @@ mod tests {
             .enumerate()
             .map(|(i, &(x, y)): (usize, &(f64, f64))| {
                 let km = x.hypot(y) / 1000.0;
-                let m = Measurement { anchor: i as u32, snr: Some(10.0 - 7.0 * km.log10()), rssi: None, samples: 4, first: 1, last: 2 };
+                let m = Measurement { anchor: i as u32, snr: Some(10.0 - 7.0 * km.log10()), rssi: None, samples: 4 };
                 Pt { x, y, m, a: Anchor { node: i as u32, lat: 0.0, lon: 0.0, err_m: 0.0 }, with: vec![] }
             })
             .collect();
@@ -578,7 +555,7 @@ mod tests {
             .map(|&a| {
                 let x = anchors[&a];
                 let km = crate::graph::distance_m(crate::graph::LatLon { lat: x.lat, lon: x.lon }, crate::graph::LatLon { lat: target.0, lon: target.1 }) / 1000.0;
-                Measurement { anchor: a, snr: Some(10.0 - 7.0 * km.log10()), rssi: None, samples: 10, first: 1, last: 2 }
+                Measurement { anchor: a, snr: Some(10.0 - 7.0 * km.log10()), rssi: None, samples: 10 }
             })
             .collect();
         let plain = locate(&anchors, &ms, &Params::default(), None, node_id).unwrap();
@@ -589,7 +566,7 @@ mod tests {
         // Surrounded: a centroid with anchors all round is left alone.
         anchors.insert(4, Anchor { node: 4, lat: 62.9, lon: 10.0, err_m: 0.0 });
         let mut ms4 = ms;
-        ms4.push(Measurement { anchor: 4, snr: Some(0.0), rssi: None, samples: 10, first: 1, last: 2 });
+        ms4.push(Measurement { anchor: 4, snr: Some(0.0), rssi: None, samples: 10 });
         assert_eq!(locate(&anchors, &ms4, &Params::default(), Some(&r), node_id).unwrap().method, "weighted_centroid");
     }
 }
