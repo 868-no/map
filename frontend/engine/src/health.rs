@@ -75,6 +75,21 @@ pub const SILENT_MIN_EVENTS: usize = 4;
 pub const SILENT_BATTERY_LOW: f64 = 20.0;
 /// Roles that keep the mesh together: their silence is worth a warning.
 pub const INFRA_ROLES: [&str; 4] = ["ROUTER", "ROUTER_LATE", "ROUTER_CLIENT", "REPEATER"];
+/// Router role review (D-189). Overlap: a router with at least
+/// OVERLAP_MIN_NEIGHBOURS radio neighbours, at least OVERLAP_SHARE of them
+/// also neighbours of another router it hears. Little reach: a router with
+/// at most FEW_LINKS radio neighbours (but one at least: with none, nothing
+/// is known of its reach, and the isolated rule speaks for it) over at least FEW_LINKS_MIN_PACKETS
+/// of its own packets. Co-located relays: nodes that rebroadcast, reporting
+/// positions within SITE_M of each other, precise to SITE_MIN_BITS.
+pub const OVERLAP_MIN_NEIGHBOURS: usize = 5;
+pub const OVERLAP_SHARE: f64 = 0.9;
+pub const FEW_LINKS: usize = 1;
+pub const FEW_LINKS_MIN_PACKETS: usize = 20;
+pub const SITE_M: f64 = 100.0;
+pub const SITE_MIN_BITS: u32 = 18;
+/// Roles whose job is to relay for others.
+pub const ROUTER_ROLES: [&str; 2] = ["ROUTER", "ROUTER_LATE"];
 
 #[derive(Serialize, Debug, Clone, PartialEq)]
 pub struct Issue {
@@ -318,7 +333,7 @@ type Claims = (FxSet<u64>, FxMap<u32, usize>, FxSet<u32>);
 /// `regions`: the regions' outlines for the topic-root rule (D-161); empty
 /// until the worker has handed them over, and then that rule is skipped.
 #[allow(clippy::too_many_arguments)] // mostly views::Built's parts; a params struct would only repackage them
-pub fn health(rows: &[&Row], invalid: &[&Row], nodes: &[Node], copies: &Copies, presets: &PresetIndex, i: &Interner, hours: f64, regions: &crate::landsdel::Regions) -> Health {
+pub fn health(rows: &[&Row], invalid: &[&Row], nodes: &[Node], edges: &[crate::graph::Edge], copies: &Copies, presets: &PresetIndex, i: &Interner, hours: f64, regions: &crate::landsdel::Regions) -> Health {
     // Rates over the span the data covers, which can be shorter than the
     // window (the service started later, or was down).
     let (lo, hi) = rows.iter().fold((i64::MAX, i64::MIN), |(lo, hi), r| (lo.min(r.t), hi.max(r.t)));
@@ -712,6 +727,83 @@ pub fn health(rows: &[&Row], invalid: &[&Row], nodes: &[Node], copies: &Copies, 
         weighted.push(Issue { node: node_id(x.num), kind: "silent", severity: "warning", summary: format!("Silent for {}", span_words(silent)), detail, weight: silent as f64 });
     }
 
+    // Router role review (D-189): routers rebroadcast everything they hear,
+    // so they pay off where they reach nodes others do not. From the
+    // window's radio links (medium confidence or better), which only show
+    // what gateways reported: notices, worded as such.
+    fn role_of(x: &Node) -> &str {
+        x.identity.as_ref().map_or("", |id| id.role.as_str())
+    }
+    let mut neighbours: FxMap<u32, FxSet<u32>> = map();
+    for e in edges.iter().filter(|e| !e.mqtt && !e.inferred && e.confidence != "low") {
+        neighbours.entry(e.src_num).or_default().insert(e.dst_num);
+        neighbours.entry(e.dst_num).or_default().insert(e.src_num);
+    }
+    let empty = FxSet::default();
+    let near = |n: u32| neighbours.get(&n).unwrap_or(&empty);
+    let routers: Vec<&Node> = nodes.iter().filter(|x| ROUTER_ROLES.contains(&role_of(x)) && x.moved_at.is_none()).collect();
+    for r in &routers {
+        let mine = near(r.num);
+        if mine.len() >= OVERLAP_MIN_NEIGHBOURS {
+            // The other router it hears that covers most of its neighbours; of
+            // two that cover each other, only the one with fewer neighbours
+            // (or the higher id) is named, so a pair gets one notice.
+            let best = routers
+                .iter()
+                .filter(|o| o.num != r.num && mine.contains(&o.num))
+                .map(|o| (o, mine.iter().filter(|&&m| m == o.num || near(o.num).contains(&m)).count()))
+                .max_by(|a, b| a.1.cmp(&b.1).then(b.0.num.cmp(&a.0.num)));
+            if let Some((o, shared)) = best
+                && shared as f64 >= OVERLAP_SHARE * mine.len() as f64
+                && (mine.len() < near(o.num).len() || (mine.len() == near(o.num).len() && r.num > o.num))
+            {
+                add(r.num, "router_overlap", "notice", format!("Covers the same nodes as router {}", node_id(o.num)), format!("{shared} of its {} radio neighbours are also neighbours of {} (or {} itself), a router it hears directly. Two routers reaching the same nodes both rebroadcast every packet: twice the airtime, no new reach. One of them as CLIENT would do the same job; keep the better-placed one as router. Only links that gateways reported are known, so check on site before changing.", mine.len(), node_id(o.num), node_id(o.num)));
+            }
+        }
+        let own_packets = own.get(&r.num).map_or(0, FxMap::len);
+        if own_packets >= FEW_LINKS_MIN_PACKETS && (1..=FEW_LINKS).contains(&mine.len()) {
+            add(r.num, "router_few_links", "notice", format!("Router with {} radio link{}", mine.len(), if mine.len() == 1 { "" } else { "s" }), format!("Gateways reported it linked to {} node{} over {own_packets} of its packets. A router rebroadcasts everything it hears, which helps most on a high site that hears many nodes; with few neighbours, CLIENT is usually the better role. A site that only gateways nobody reports from can hear would look the same, so check its placement first.", mine.len(), if mine.len() == 1 { "" } else { "s" }));
+        }
+    }
+    // Co-located relays: nodes that rebroadcast, at one site. They repeat
+    // the same packets from the same place; all but one could be CLIENT_MUTE.
+    let placed: Vec<(&Node, crate::graph::LatLon)> = nodes
+        .iter()
+        .filter(|x| x.moved_at.is_none() && !crate::views::is_silent_role(role_of(x)) && x.status == "observed")
+        .filter_map(|x| x.position.as_ref().filter(|p| p.precision_known && p.precision_bits >= SITE_MIN_BITS).map(|p| (x, crate::graph::LatLon { lat: p.lat, lon: p.lon })))
+        .collect();
+    let mut site_of: Vec<usize> = (0..placed.len()).collect();
+    fn root(v: &mut [usize], k: usize) -> usize {
+        let mut k = k;
+        while v[k] != k {
+            v[k] = v[v[k]];
+            k = v[k];
+        }
+        k
+    }
+    for a in 0..placed.len() {
+        for b in a + 1..placed.len() {
+            if crate::graph::distance_m(placed[a].1, placed[b].1) <= SITE_M {
+                let (ra, rb) = (root(&mut site_of, a), root(&mut site_of, b));
+                site_of[ra.max(rb)] = ra.min(rb);
+            }
+        }
+    }
+    let mut sites: FxMap<usize, Vec<&Node>> = map();
+    for (k, &(x, _)) in placed.iter().enumerate() {
+        let r = root(&mut site_of, k);
+        sites.entry(r).or_default().push(x);
+    }
+    for mut site in sites.into_values().filter(|v| v.len() >= 2) {
+        // The one to keep relaying: a router role first, then the most radio neighbours.
+        site.sort_by_key(|x| (!ROUTER_ROLES.contains(&role_of(x)), std::cmp::Reverse(near(x.num).len()), x.num));
+        let keep = site[0].num;
+        let all: Vec<String> = site.iter().map(|x| node_id(x.num)).collect();
+        for x in &site[1..] {
+            add(x.num, "co_located", "notice", format!("Relays from the same site as {}", node_id(keep)), format!("{} nodes that rebroadcast report positions within {SITE_M:.0} m of each other ({}). Each repeats the same packets from the same place: more airtime, no more reach. All but one, here {} (a router, or the most radio neighbours), could be CLIENT_MUTE, which still sends its own packets.", site.len(), all.join(", "), node_id(keep)));
+        }
+    }
+
     // Airtime.
     let air = airtime(copies, rows, i, hours);
     for a in air.nodes.iter().filter(|a| a.caused >= AIRTIME_WARN_SHARE) {
@@ -750,7 +842,7 @@ mod tests {
 
     fn issues(rows: &[Row], i: &Interner) -> Vec<Issue> {
         let refs: Vec<&Row> = rows.iter().collect();
-        health(&refs, &[], &[], &Copies::default(), &PresetIndex::default(), i, 48.0, &crate::landsdel::Regions::default()).issues
+        health(&refs, &[], &[], &[], &Copies::default(), &PresetIndex::default(), i, 48.0, &crate::landsdel::Regions::default()).issues
     }
 
     #[test]
@@ -796,10 +888,40 @@ mod tests {
         let (f, rf) = sender(&mut i, 6, "CLIENT", &every(0, 48 * H));
         let rows: Vec<Row> = [ra, rb, rc, rd, re, rf].into_iter().flatten().collect();
         let refs: Vec<&Row> = rows.iter().collect();
-        let got = health(&refs, &[], &[a, b, c, d, e, f], &Copies::default(), &PresetIndex::default(), &i, 48.0, &crate::landsdel::Regions::default()).issues;
+        let got = health(&refs, &[], &[a, b, c, d, e, f], &[], &Copies::default(), &PresetIndex::default(), &i, 48.0, &crate::landsdel::Regions::default()).issues;
         let silent: Vec<(&str, &str)> = got.iter().filter(|x| x.kind == "silent").map(|x| (x.node.as_str(), x.summary.as_str())).collect();
         assert_eq!(silent, [("!00000001", "Silent for 24 h"), ("!00000002", "Silent for 8.0 h")]);
         assert!(got.iter().find(|x| x.node == "!00000001" && x.kind == "silent").unwrap().detail.contains("usually heard every 30 min"));
+    }
+
+    #[test]
+    fn router_roles_are_reviewed_from_links_and_sites() {
+        let mut i = Interner::default();
+        let m = 60_000;
+        let times: Vec<i64> = (0..30).map(|k| k * 10 * m).collect();
+        let (a, ra) = sender(&mut i, 1, "ROUTER", &times);
+        let (b, rb) = sender(&mut i, 2, "ROUTER", &times);
+        let (c, rc) = sender(&mut i, 3, "ROUTER", &times);
+        // Three clients within 100 m, precise positions; 21 has the most links.
+        let at = |n: u32, lat: f64| {
+            let mut x = crate::views::Node::new(n);
+            x.identity = Some(crate::views::Identity { role: "CLIENT".into(), ..Default::default() });
+            x.position = Some(crate::views::Position { lat, lon: 10.0, alt: None, precision_bits: 32, precision_known: true, signature: "unsigned".into(), observed_at: "2026-11-05T00:00:00Z".into(), source: "position".into() });
+            x
+        };
+        let site = [at(20, 60.0), at(21, 60.0004), at(22, 60.0008)];
+        let link = |s: u32, d: u32| crate::graph::Edge { src_num: s, dst_num: d, confidence: "high", ..Default::default() };
+        // A hears B and 10..13; B hears A and 10..14: A adds nothing B does not reach. C hears only 10.
+        let mut edges: Vec<crate::graph::Edge> = vec![link(1, 2), link(1, 10), link(1, 11), link(1, 12), link(1, 13), link(2, 10), link(2, 11), link(2, 12), link(2, 13), link(2, 14), link(3, 10), link(21, 10), link(21, 11)];
+        edges.push(crate::graph::Edge { src_num: 3, dst_num: 14, confidence: "low", ..Default::default() }); // low confidence: not counted
+        let rows: Vec<Row> = [ra, rb, rc].into_iter().flatten().collect();
+        let refs: Vec<&Row> = rows.iter().collect();
+        let nodes: Vec<crate::views::Node> = [a, b, c].into_iter().chain(site).collect();
+        let got = health(&refs, &[], &nodes, &edges, &Copies::default(), &PresetIndex::default(), &i, 48.0, &crate::landsdel::Regions::default()).issues;
+        let of = |kind: &str| got.iter().filter(|x| x.kind == kind).map(|x| (x.node.as_str(), x.summary.as_str())).collect::<Vec<_>>();
+        assert_eq!(of("router_overlap"), [("!00000001", "Covers the same nodes as router !00000002")]);
+        assert_eq!(of("router_few_links"), [("!00000003", "Router with 1 radio link")]);
+        assert_eq!(of("co_located"), [("!00000014", "Relays from the same site as !00000015"), ("!00000016", "Relays from the same site as !00000015")]);
     }
 
     /// A gateway at (lat, lon) and one uplink of it under `topic`.
@@ -813,7 +935,7 @@ mod tests {
 
     fn node_issues(rows: &[Row], nodes: &[crate::views::Node], i: &Interner) -> Vec<Issue> {
         let refs: Vec<&Row> = rows.iter().collect();
-        health(&refs, &[], nodes, &Copies::default(), &PresetIndex::default(), i, 48.0, &crate::landsdel::tests::fixture()).issues
+        health(&refs, &[], nodes, &[], &Copies::default(), &PresetIndex::default(), i, 48.0, &crate::landsdel::tests::fixture()).issues
     }
 
     #[test]
@@ -875,14 +997,14 @@ mod tests {
         let forged: Vec<Row> = (1..=3).map(|k| bad(&mut i, k, "sig_invalid")).collect();
         let decode: Vec<Row> = (4..=9).map(|k| bad(&mut i, k, "payload_invalid")).collect();
         let refs: Vec<&Row> = forged.iter().chain(&decode).collect();
-        let got = health(&[], &refs, &[], &Copies::default(), &PresetIndex::default(), &i, 48.0, &crate::landsdel::Regions::default()).issues;
+        let got = health(&[], &refs, &[], &[], &Copies::default(), &PresetIndex::default(), &i, 48.0, &crate::landsdel::Regions::default()).issues;
         let s: Vec<&Issue> = got.iter().filter(|x| x.kind == "spoofed").collect();
         assert_eq!(s.len(), 1, "decoding failures alone are not impersonation");
         assert!(s[0].summary.starts_with("3 packets"));
         // A changed key is explained as a likely reset.
         let rekeyed: Vec<Row> = (1..=4).map(|k| bad(&mut i, k, "nodeinfo_key_mismatch")).collect();
         let refs: Vec<&Row> = rekeyed.iter().collect();
-        let got = health(&[], &refs, &[], &Copies::default(), &PresetIndex::default(), &i, 48.0, &crate::landsdel::Regions::default()).issues;
+        let got = health(&[], &refs, &[], &[], &Copies::default(), &PresetIndex::default(), &i, 48.0, &crate::landsdel::Regions::default()).issues;
         assert!(got.iter().any(|x| x.kind == "spoofed" && x.detail.contains("reset or reflashed")));
     }
 }

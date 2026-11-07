@@ -3991,6 +3991,34 @@
         "node": "!a9339946",
         "severity": "notice",
         "summary": "Restarted once"
+      },
+      {
+        "detail": "5 of its 5 radio neighbours are also neighbours of !8a84e409 (or !8a84e409 itself), a router it hears directly. Two routers reaching the same nodes both rebroadcast every packet: twice the airtime, no new reach. One of them as CLIENT would do the same job; keep the better-placed one as router. Only links that gateways reported are known, so check on site before changing.",
+        "kind": "router_overlap",
+        "node": "!268a1248",
+        "severity": "notice",
+        "summary": "Covers the same nodes as router !8a84e409"
+      },
+      {
+        "detail": "5 of its 5 radio neighbours are also neighbours of !34bb8eaf (or !34bb8eaf itself), a router it hears directly. Two routers reaching the same nodes both rebroadcast every packet: twice the airtime, no new reach. One of them as CLIENT would do the same job; keep the better-placed one as router. Only links that gateways reported are known, so check on site before changing.",
+        "kind": "router_overlap",
+        "node": "!49ea4c9c",
+        "severity": "notice",
+        "summary": "Covers the same nodes as router !34bb8eaf"
+      },
+      {
+        "detail": "5 of its 5 radio neighbours are also neighbours of !0745f838 (or !0745f838 itself), a router it hears directly. Two routers reaching the same nodes both rebroadcast every packet: twice the airtime, no new reach. One of them as CLIENT would do the same job; keep the better-placed one as router. Only links that gateways reported are known, so check on site before changing.",
+        "kind": "router_overlap",
+        "node": "!ab8ecd74",
+        "severity": "notice",
+        "summary": "Covers the same nodes as router !0745f838"
+      },
+      {
+        "detail": "6 of its 6 radio neighbours are also neighbours of !34bb8eaf (or !34bb8eaf itself), a router it hears directly. Two routers reaching the same nodes both rebroadcast every packet: twice the airtime, no new reach. One of them as CLIENT would do the same job; keep the better-placed one as router. Only links that gateways reported are known, so check on site before changing.",
+        "kind": "router_overlap",
+        "node": "!f2a7cde1",
+        "severity": "notice",
+        "summary": "Covers the same nodes as router !34bb8eaf"
       }
     ]
   },

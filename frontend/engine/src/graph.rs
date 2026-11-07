@@ -63,7 +63,7 @@ impl EvidenceCounts {
 }
 
 /// Directed src -> dst: dst heard src.
-#[derive(Serialize, Clone, Debug)]
+#[derive(Serialize, Clone, Debug, Default)]
 pub struct Edge {
     pub src: String,
     pub dst: String,
