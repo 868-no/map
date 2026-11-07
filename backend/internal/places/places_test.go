@@ -104,3 +104,30 @@ func TestNormalizeRefusesBadQueries(t *testing.T) {
 		t.Errorf("%q %v", q, err)
 	}
 }
+
+// Names and searches fold the same way: punctuation between words is a
+// space, apostrophes vanish, and LIKE wildcards stay text.
+func TestFold(t *testing.T) {
+	for in, want := range map[string]string{
+		"Nord-Fron":          "nord fron",
+		"nord  fron":         "nord fron",
+		"St. Olavs gate":     "st olavs gate",
+		"St.Olavs gate":      "st olavs gate",
+		"Bø (Telemark)":      "bø telemark",
+		"Inn/Ut – Øvre":      "inn ut øvre",
+		"Jacob's plass":      "jacobs plass",
+		"100%_sikker":        "100%_sikker",
+		" -. ":               "",
+		"ÆRØ, Sør-Trøndelag": "ærø sør trøndelag",
+	} {
+		if got := Fold(in); got != want {
+			t.Errorf("Fold(%q) = %q, want %q", in, got, want)
+		}
+	}
+	if _, err := Normalize("-.-"); !errors.Is(err, ErrQuery) {
+		t.Errorf("punctuation alone: %v", err)
+	}
+	if q, err := Normalize("St. Olav"); err != nil || q != "st olav" {
+		t.Errorf("%q %v", q, err)
+	}
+}

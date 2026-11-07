@@ -16,7 +16,7 @@ import (
 // search asks no one else.
 
 type PlacesInput struct {
-	Q string `query:"q" required:"true" minLength:"2" maxLength:"256" doc:"The start of a place name, or of a word in it; 2 to 64 characters once spaces are collapsed"`
+	Q string `query:"q" required:"true" minLength:"2" maxLength:"256" doc:"The start of a place name, or of a word in it; 2 to 64 characters once folded (lower case, punctuation between words read as spaces)"`
 }
 
 type PlacesOutput struct {

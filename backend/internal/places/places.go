@@ -38,10 +38,36 @@ type Place struct {
 	Lon          float64 `json:"lon"`
 }
 
-// Normalize is the search as matched: trimmed, spaces collapsed, lower
-// case; ErrQuery when it is not 2 to 64 characters of text.
+// Fold is a name or search as matched: lower case, with the punctuation
+// that separates words in names (hyphens, dashes, full stops, slashes,
+// brackets, commas and the like) turned into spaces and apostrophes
+// dropped, spaces collapsed and trimmed. Names are stored folded (name_lc)
+// and their keys taken from that, and searches are folded the same way, so
+// "nord fron" finds Nord-Fron and "st olav" St. Olavs gate. Other
+// characters, '%' and '_' among them, are kept.
+func Fold(s string) string {
+	s = strings.Map(func(r rune) rune {
+		switch r {
+		case '-', '‐', '‑', '–', '—', '.', '/', '\\', '(', ')', '[', ']', ',', ':', ';', '!', '?', '"', '«', '»', '“', '”':
+			return ' '
+		case '\'', '’', '`', '´':
+			return -1
+		}
+		return unicode.ToLower(r)
+	}, s)
+	return strings.Join(strings.Fields(s), " ")
+}
+
+// FoldVersion names how Fold and the keys taken from its result work. A
+// register loaded under another version is loaded again (Refresh), so a
+// change here reaches loaded names without waiting for PLACES_MAX_AGE_DAYS.
+// 1: lower case only (no version recorded); 2: Fold.
+const FoldVersion = 2
+
+// Normalize is the search as matched (Fold); ErrQuery when that is not 2
+// to 64 characters of text.
 func Normalize(q string) (string, error) {
-	q = strings.ToLower(strings.Join(strings.Fields(q), " "))
+	q = Fold(q)
 	n := 0
 	for _, r := range q {
 		if unicode.IsControl(r) {

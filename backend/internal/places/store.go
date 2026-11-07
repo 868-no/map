@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -33,12 +34,14 @@ type Store struct {
 // municipality is kept.
 const candidates = 200
 
-// Search finds places with a word starting with q (the whole search, so
-// "st olav" finds St. Olavs gate), best first: names equal to q, then by
-// kind (rank: towns, districts and villages before other features, farms,
-// roads and buildings last), then Kartverket's importance, a place's main
-// name before its others, shorter names first. A place is listed once, by its best-matching name (Oslo, not also
-// Oslo suohkan), and a name once per municipality, as its best-ranked place.
+// Search finds places with a word starting with q (the whole search, both
+// folded by Fold, so "st olav" finds St. Olavs gate and "nord fron"
+// Nord-Fron), best first: names equal to q, then by kind (rank: towns,
+// districts and villages before other features, farms, roads and buildings
+// last), then Kartverket's importance, a place's main name before its
+// others, shorter names first. A place is listed once, by its best-matching
+// name (Oslo, not also Oslo suohkan), and a name once per municipality, as
+// its best-ranked place.
 func (s *Store) Search(ctx context.Context, q string) ([]Place, error) {
 	q, err := Normalize(q)
 	if err != nil {
@@ -96,16 +99,35 @@ func (s *Store) Search(ctx context.Context, q string) ([]Place, error) {
 
 // LoadedAt is when the loaded place names were imported, zero if never.
 func LoadedAt(ctx context.Context, pool *pgxpool.Pool) (time.Time, error) {
+	at, _, err := loaded(ctx, pool)
+	return at, err
+}
+
+// loaded reads the table comment Load writes: when the names were loaded
+// and under which FoldVersion ("<RFC 3339> fold=<n> ..."; 1 when it names
+// none, as before versions were recorded). Zero time if never loaded.
+func loaded(ctx context.Context, pool *pgxpool.Pool) (time.Time, int, error) {
 	var c *string
 	if err := pool.QueryRow(ctx, `SELECT obj_description(to_regclass('public.place_name'), 'pg_class')`).Scan(&c); err != nil || c == nil {
-		return time.Time{}, err
+		return time.Time{}, 0, err
 	}
-	at, _, _ := strings.Cut(*c, " ")
-	t, err := time.Parse(time.RFC3339, at)
+	f := strings.Fields(*c)
+	if len(f) == 0 {
+		return time.Time{}, 0, nil
+	}
+	t, err := time.Parse(time.RFC3339, f[0])
 	if err != nil {
-		return time.Time{}, nil //nolint:nilerr // another comment: as if never loaded
+		return time.Time{}, 0, nil //nolint:nilerr // another comment: as if never loaded
 	}
-	return t, nil
+	version := 1
+	if len(f) > 1 {
+		if v, ok := strings.CutPrefix(f[1], "fold="); ok {
+			if n, err := strconv.Atoi(v); err == nil {
+				version = n
+			}
+		}
+	}
+	return t, version, nil
 }
 
 // LoadStats summarises an import.
@@ -154,7 +176,7 @@ func Load(ctx context.Context, pool *pgxpool.Pool, source string, parse func(fun
 		ps, err := parse(func(r Record) error {
 			id++
 			select {
-			case recs <- []any{id, r.ID, r.Alt, r.Name, strings.ToLower(r.Name), r.Kind, int16(rank(r.Code)), int16(r.Importance), r.Municipality, r.County, r.Lat, r.Lon}:
+			case recs <- []any{id, r.ID, r.Alt, r.Name, Fold(r.Name), r.Kind, int16(rank(r.Code)), int16(r.Importance), r.Municipality, r.County, r.Lat, r.Lon}:
 				return nil
 			case <-pctx.Done():
 				return pctx.Err()
@@ -177,11 +199,12 @@ func Load(ctx context.Context, pool *pgxpool.Pool, source string, parse func(fun
 	if st.Names == 0 {
 		return st, errors.New("places: the file held no place names")
 	}
-	// Every word start of a name is a key, so a search matches any word:
-	// "galdh" finds Vesle Galdhøpiggen, "fron" Nord-Fron.
+	// Every word start of a folded name (Fold: words are separated by single
+	// spaces) is a key, so a search matches any word: "galdh" finds Vesle
+	// Galdhøpiggen, "fron" and "nord fron" Nord-Fron.
 	tag, err := conn.Exec(ctx, `INSERT INTO places_load.place_key (key, name_id)
 		SELECT DISTINCT substr(n.name_lc, g.p), n.id FROM places_load.place_name n, generate_series(1, length(n.name_lc)) g(p)
-		WHERE g.p = 1 OR (substr(n.name_lc, g.p - 1, 1) IN (' ', '-', '/', '(', '.') AND substr(n.name_lc, g.p, 1) NOT IN (' ', '-', '/', '(', '.'))`)
+		WHERE g.p = 1 OR substr(n.name_lc, g.p - 1, 1) = ' '`)
 	if err != nil {
 		return st, fmt.Errorf("places: keys: %w", err)
 	}
@@ -196,7 +219,7 @@ func Load(ctx context.Context, pool *pgxpool.Pool, source string, parse func(fun
 			return st, fmt.Errorf("places: %w", err)
 		}
 	}
-	comment := fmt.Sprintf("%s %d names from %s", time.Now().UTC().Format(time.RFC3339), st.Names, source)
+	comment := fmt.Sprintf("%s fold=%d %d names from %s", time.Now().UTC().Format(time.RFC3339), FoldVersion, st.Names, source)
 	err = pgx.BeginFunc(ctx, conn, func(tx pgx.Tx) error {
 		for _, q := range []string{
 			`DROP TABLE public.place_key, public.place_name`,
@@ -316,15 +339,20 @@ func download(ctx context.Context, url, userAgent string) (string, error) {
 	return f.Name(), f.Close()
 }
 
-// Refresh imports the register when none is loaded or the loaded one is
-// older than maxAge. Another process importing is not an error.
+// Refresh imports the register when none is loaded, the loaded one is older
+// than maxAge, or it was loaded under another FoldVersion (its names and
+// keys are folded differently from what searches now are). Another process
+// importing is not an error.
 func Refresh(ctx context.Context, pool *pgxpool.Pool, src, userAgent string, maxAge time.Duration, log *slog.Logger) error {
-	at, err := LoadedAt(ctx, pool)
+	at, version, err := loaded(ctx, pool)
 	if err != nil {
 		return err
 	}
 	if !at.IsZero() && time.Since(at) < maxAge {
-		return nil
+		if version == FoldVersion {
+			return nil
+		}
+		log.Info("place names were loaded under another key format; loading them again", "loaded", version, "current", FoldVersion)
 	}
 	st, err := Import(ctx, pool, src, userAgent, log)
 	if errors.Is(err, ErrBusy) {

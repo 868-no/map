@@ -110,15 +110,16 @@ CREATE TABLE IF NOT EXISTS terrain_height (
 -- Place names (D-193) from Kartverket's place-name register, for the map's
 -- search: one row per name in use (a place may have several, sharing its
 -- place_id), and each
--- name's word starts as keys (lower case), so a prefix finds any word. Loaded
+-- name's word starts as keys (folded, places.Fold), so a prefix finds any word. Loaded
 -- whole by places.Load, which builds new tables and swaps them in; when it
--- ran is the table's comment. No node ids: it says nothing about the mesh.
+-- ran, and under which places.FoldVersion, is the table's comment. No node ids:
+-- it says nothing about the mesh.
 CREATE TABLE IF NOT EXISTS place_name (
     id           INTEGER NOT NULL,
     place_id     INTEGER NOT NULL, -- Kartverket's stedsnummer: a place's names share it
     alt          BOOLEAN NOT NULL, -- not its main name (another language or spelling)
     name         TEXT NOT NULL,
-    name_lc      TEXT NOT NULL,
+    name_lc      TEXT NOT NULL, -- places.Fold(name): lower case, punctuation between words a space
     kind         TEXT NOT NULL,
     rank         SMALLINT NOT NULL,
     importance   SMALLINT NOT NULL,

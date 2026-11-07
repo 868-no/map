@@ -1116,7 +1116,7 @@ export interface operations {
     places: {
         parameters: {
             query: {
-                /** @description The start of a place name, or of a word in it; 2 to 64 characters once spaces are collapsed */
+                /** @description The start of a place name, or of a word in it; 2 to 64 characters once folded (lower case, punctuation between words read as spaces) */
                 q: string;
             };
             header?: never;
