@@ -275,6 +275,27 @@ describe('range fetch through the cache (D-184)', () => {
     expect([...cache.days.keys()]).toEqual([D2])
   })
 
+  it('keeps the days it got when the range fails later, and asks only for the rest next time', async () => {
+    const s = server(() => 'g1')
+    const eng = new FakeEngine()
+    let failDay2 = true
+    // A poor link: the second day never arrives.
+    const get = async (url: string) => {
+      if (failDay2 && url.includes('/day/2026-11-01')) throw new Error('observations: network error')
+      return s.get(url)
+    }
+    const f = new RangeFetcher(() => eng, get)
+    const cache = new MemCache()
+    f.cache = cache
+    await expect(f.fetchRange(params())).rejects.toThrow('network error')
+    expect([...cache.days.keys()]).toEqual([D1])
+    expect(cache.stretch).toBeNull() // the paged part is stored only once the whole range came
+    failDay2 = false
+    s.log.length = 0
+    await f.fetchRange(params())
+    expect(s.log.filter((u) => u.includes('/day/'))).toEqual([dayUrl(D2, 'g1')])
+  })
+
   it('offline, builds a range from the cache alone, as far as it reaches from the start', async () => {
     const s = server(() => 'g1')
     const eng = new FakeEngine()

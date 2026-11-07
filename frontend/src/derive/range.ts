@@ -148,21 +148,20 @@ export class RangeFetcher {
       if (keep) void text.then((t) => keep.push(t), () => {})
       return text
     }
-    // A day's text: cached, prefetched (asked again if that failed), or fetched now.
-    const fetchedDays = new Map<number, string>() // from the server, for the cache
-    const day = async (d: number, generation: string) => {
+    // A day's text: cached, prefetched (asked again if that failed), or fetched
+    // now; store says whether it goes into the cache once staged. Only a day the
+    // server sent as final: one still settling (rows awaiting a new decoding,
+    // the writer behind, an import running) comes no-store and may change.
+    const day = async (d: number, generation: string): Promise<{ text: string; store: boolean }> => {
       if (cached) {
         const text = await cache!.day(d)
-        if (text !== null) return text
+        if (text !== null) return { text, store: false }
       }
       const url = dayUrl(d, generation)
       const pre = this.prefetched.get(url)
       this.prefetched.delete(url)
       const r = got(await (pre ? pre.catch(() => run(() => this.get(url))) : run(() => this.get(url))))
-      // Only a day the server sent as final: one still settling (rows awaiting a new
-      // decoding, the writer behind, an import running) comes no-store and may change.
-      if (r.final) fetchedDays.set(d, r.text)
-      return r.text
+      return { text: r.text, store: r.final }
     }
     const iso = (ms: number) => new Date(ms).toISOString()
     const now = Date.now()
@@ -238,8 +237,17 @@ export class RangeFetcher {
         tasks.push(async () => drain(stage(await page(head)), head))
       }
       // Days asked under a stale hint are dropped (the server answers them 409).
-      const asked = hint === first.generation ? early : new Map<number, Promise<string>>()
-      for (const d of days) tasks.push(async () => stageOwn(await (asked.get(d) ?? day(d, first.generation))))
+      const asked = hint === first.generation ? early : new Map<number, ReturnType<typeof day>>()
+      for (const d of days)
+        tasks.push(async () => {
+          const r = await (asked.get(d) ?? day(d, first.generation))
+          // Into the cache as soon as it arrived, even when another part of the
+          // range has failed meanwhile (a poor link, a 14-day window): the next
+          // attempt asks only for the rest. It was asked under this generation,
+          // which a day's URL names (another is answered 409).
+          if (r.store) this.cache?.putDay(d, r.text, first.generation)
+          stageOwn(r.text)
+        })
     }
     // The range fails with the first failure in time (a 409 to retry under the
     // new generation, a gateway's 502 that sends the page to the saved copy),
@@ -258,13 +266,11 @@ export class RangeFetcher {
       }
       throw err.reason
     }
-    // Into the cache: the days fetched, and a rolling window's paged part, which holds every row of its range.
-    const into = this.cache
-    if (into) {
-      for (const [d, text] of fetchedDays) into.putDay(d, text, first.generation)
+    // Into the cache: a rolling window's paged part, which holds every row of its range (only once all of it came).
+    if (this.cache && first.window.rolling) {
       const since = tail.since ?? params.get('since')
       const from = Math.max(Date.parse(first.window.start), since ? Date.parse(since) : -Infinity)
-      if (first.window.rolling) into.putRecent(from, rangeEnd(first.window.end, params.get('until')), tailTexts, first.generation, now)
+      this.cache.putRecent(from, rangeEnd(first.window.end, params.get('until')), tailTexts, first.generation, now)
     }
     return { window: first.window, generation: first.generation, batch }
   }
