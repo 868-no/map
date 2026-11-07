@@ -30,11 +30,11 @@ Two runs agreed within 2 %. On 2026-10-31 a 72 h window took 1.60 s and its firs
 
 ## Derivation (WebAssembly engine, `frontend/bench/engine.mjs`, Node 22)
 
-Rows are loaded in 20 000-row pages, as the worker gets them. Each view is the median of 5 builds; node detail, packet log, traffic and health are for a built snapshot (as when a panel opens), node detail and packet log for the node that sent the most rows.
+Rows are loaded in 20 000-row pages, as the worker gets them. Run one row file per invocation for timings: a second window in the same process measured up to 15 % slower (a first run of this table gave 298 ms for the 72 h snapshot; repeated runs give 188–190 ms). Each view is the median of 5 builds; node detail, packet log, traffic and health are for a built snapshot (as when a panel opens), node detail and packet log for the node that sent the most rows.
 
 | Window | Rows | Load | Snapshot | Rebuild after a live batch | Traffic | Node detail | Packet log | Health | Snapshot JSON | Engine memory |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| **72 h**, reference | 190 206 | 644 ms | **298 ms** | 188 ms | 5 ms | 2 ms | 4 ms | 41 ms | 6.2 MiB | 199 MiB |
+| **72 h**, reference | 190 206 | 640 ms | **189 ms** | 188 ms | 5 ms | 2 ms | 4 ms | 39 ms | 6.2 MiB | 199 MiB |
 | 168 h, reference | 444 200 | 1 033 ms | **400 ms** | 399 ms | 14 ms | 5 ms | 9 ms | 87 ms | 6.5 MiB | 216 MiB |
 | 168 h, production (to 2026-11-07) | 104 564 | 283 ms | **106 ms** | 95 ms | 3 ms | 2 ms | 3 ms | 21 ms | 0.7 MiB | 96 MiB |
 
@@ -64,9 +64,9 @@ Synthetic observations at reference density (positions, NodeInfo and NeighborInf
 | Scene | JS heap after GC | Panning frame rate |
 | --- | --- | --- |
 | Empty mesh (basemap only) | 12 MiB | 24.5 fps |
-| 2 000 nodes / 20 000 links | **35 MiB** | 9.4 fps |
+| 2 000 nodes / 20 000 links | **22 MiB** | 12.1 fps |
 
-Three runs each, 2026-11-07, against the local stack; the heap is read from DevTools (`Runtime.getHeapUsage`): `performance.memory` is coarse and cached, and gave the same figure for both scenes. The heap target (< 250 MiB) is met with a large margin; the browser never holds raw history. Frame rates here are CPU-rasterised (SwiftShader) and are **not representative of a desktop GPU**; they are useful as a relative measure. Level-of-detail rendering (best-supported 3 000 links below zoom 9, viewport-culled links above) raised the dense-scene rate from 4.7 to 11.4 fps under identical conditions (2026-10-31). The dense scene now runs at 9.4 fps; since D-186 every node draws a role glyph as well as its disc, which is a likely but unmeasured share of the difference. The 60 fps desktop target has not been verified on GPU hardware in this environment; measure it on target hardware with the same spec file in headed mode.
+Three runs each, 2026-11-07, against the local stack; the heap is read from DevTools (`Runtime.getHeapUsage`): `performance.memory` is coarse and cached, and gave the same figure for both scenes. The heap target (< 250 MiB) is met with a large margin; the browser never holds raw history. Frame rates here are CPU-rasterised (SwiftShader) and are **not representative of a desktop GPU**; they are useful as a relative measure. Level-of-detail rendering (best-supported 3 000 links below zoom 9, viewport-culled links above) raised the dense-scene rate from 4.7 to 11.4 fps under identical conditions (2026-10-31). Since D-186 every node draws a role glyph as well as its disc. The glyphs themselves cost about 3 fps here (15.3 → 12.1), CPU-rasterised; the stacking levels they first brought (D-072: up to about 95 layers in this scene) cost another 2 fps and 13 MiB, until markers and glyphs were ordered by depth in two layers (D-187). The 60 fps desktop target has not been verified on GPU hardware in this environment; measure it on target hardware with the same spec file in headed mode.
 
 ## Observations and follow-ups
 
