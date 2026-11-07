@@ -16,6 +16,11 @@ move and signal-strength rules off since they postdate the server views.
 options (CLIENT_MUTE, MQTT-link, move and signal-strength rules on),
 engine-only fields included: the same snapshot, filtered snapshot, traffic
 and node panels, plus health, packet logs and routes for a few nodes and
-packets. It locks current behaviour for
-refactors; after an intended change, record it again with `UPDATE_GOLDEN=1`
-set for `cargo test --test golden`.
+packets, reach from two nodes, one link's history, a watchlist and the
+regions (with the map's Regions layer handed over after health, so health
+stays without the topic-region rule): every view kind the engine serves.
+It locks current behaviour for refactors, and `frontend/tests/viewTypes.test.ts`
+checks every view in it against the TypeScript mirror in
+`frontend/src/derive/views.ts`; after an intended change, record it again
+with `UPDATE_GOLDEN=1 scripts/wasm.sh test` (`cargo test --test golden`
+with `UPDATE_GOLDEN=1` set).

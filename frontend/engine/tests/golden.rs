@@ -152,8 +152,16 @@ fn engine_matches_the_recorded_server_views() {
 /// and a NodeInfo heard by four gateways).
 const LOG_NODES: &[&str] = &["!b1610d41", "!9b0f4bd5", "!1224405f", "!011e7098"];
 const ROUTES: &[&str] = &["5b183f9a5eda8a24", "cfad293b363dece8", "6d56465f5dec6de5", "e57c03ceeb34b221"];
+/// Reach from a gateway and, over MQTT links too, from a router it hears;
+/// the link history between them; a watchlist of the logged nodes and one
+/// not in the window.
+const REACH: &[&str] = &["!672f1873", "!b1610d41|internet"];
+const LINKS: &[&str] = &["!672f1873|!b1610d41"];
+const WATCH: &str = "!b1610d41,!9b0f4bd5,!1224405f,!011e7098,!00000001";
+/// The map's Regions layer, which the worker hands the engine (D-161, D-194).
+const REGIONS: &str = include_str!("../../src/assets/regions.geojson");
 
-/// Every view kind with default options (CLIENT_MUTE, MQTT-link, move and signal rules on),
+/// Every view kind (all ten) with default options (CLIENT_MUTE, MQTT-link, move and signal rules on),
 /// engine-only fields kept: locks the engine's current behaviour.
 #[test]
 fn engine_matches_its_recorded_views() {
@@ -165,7 +173,7 @@ fn engine_matches_its_recorded_views() {
     let view = |e: &mut Engine, kind: &str, filters: Value, arg: &str| -> Value { serde_json::from_str(&e.view(kind, s, t, &filters.to_string(), arg).unwrap()).unwrap() };
     let per = |e: &mut Engine, kind: &str, args: &mut dyn Iterator<Item = &str>| -> Value { Value::Object(args.map(|a| (a.to_string(), view(e, kind, json!({}), a))).collect()) };
 
-    let got = json!({
+    let mut got = json!({
         "snapshot": view(&mut e, "snapshot", json!({}), ""),
         "traffic": view(&mut e, "traffic", json!({}), ""),
         "snapshot_position_nodeinfo": view(&mut e, "snapshot", json!({"types": ["position", "nodeinfo"]}), ""),
@@ -173,17 +181,23 @@ fn engine_matches_its_recorded_views() {
         "packetlogs": per(&mut e, "packetlog", &mut LOG_NODES.iter().copied()),
         "routes": per(&mut e, "route", &mut ROUTES.iter().copied()),
         "health": view(&mut e, "health", json!({}), ""),
+        "reach": per(&mut e, "reach", &mut REACH.iter().copied()),
+        "links": per(&mut e, "link", &mut LINKS.iter().copied()),
+        "watch": view(&mut e, "watch", json!({}), WATCH),
     });
+    // The outlines last, so health above stays without the topic-region rule (D-161).
+    e.set_regions(REGIONS).unwrap();
+    got["regions"] = view(&mut e, "regions", json!({}), "");
     let path = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/mesh-12h/engine.json");
     if std::env::var_os("UPDATE_GOLDEN").is_some_and(|v| !v.is_empty()) {
         std::fs::write(path, serde_json::to_string_pretty(&got).unwrap() + "\n").unwrap();
         return;
     }
     let want: Value = serde_json::from_str(&std::fs::read_to_string(path).expect("engine.json (UPDATE_GOLDEN=1 records it)")).unwrap();
-    for k in ["snapshot", "traffic", "snapshot_position_nodeinfo", "health"] {
+    for k in ["snapshot", "traffic", "snapshot_position_nodeinfo", "health", "watch", "regions"] {
         assert_eq!(norm(&got[k], false), norm(&want[k], false), "{k}");
     }
-    for k in ["nodes", "packetlogs", "routes"] {
+    for k in ["nodes", "packetlogs", "routes", "reach", "links"] {
         let (g, w) = (got[k].as_object().unwrap(), want[k].as_object().unwrap());
         assert_eq!(g.keys().collect::<Vec<_>>(), w.keys().collect::<Vec<_>>(), "{k}");
         for (a, x) in g {
