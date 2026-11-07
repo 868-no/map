@@ -62,6 +62,7 @@ type base struct {
 	m      *observability.Metrics
 	log    *slog.Logger
 	state  atomic.Int32
+	conns  atomic.Int64 // connections made: a subscribe loop of an older one stops
 }
 
 func (b *base) ID() string       { return b.cfg.ID }
@@ -81,7 +82,7 @@ var errSubscribeTimeout = errors.New("no SUBACK within 15s")
 // is up (and ready) only once every filter was granted. A refused filter
 // (reason code 0x80 or above, in MQTT 3.1.1 and 5 alike) or no SUBACK leaves
 // it down, so readiness does not report a broker that delivers nothing.
-func (b *base) subscribed(err error, codes []byte, want int) {
+func (b *base) subscribed(err error, codes []byte, want int) bool {
 	if err == nil && len(codes) != want {
 		err = fmt.Errorf("SUBACK has %d reason codes for %d filters", len(codes), want)
 	}
@@ -93,10 +94,38 @@ func (b *base) subscribed(err error, codes []byte, want int) {
 	if err != nil {
 		b.setState(StateDown)
 		b.log.Warn("subscribe failed", "err", err)
-		return
+		return false
 	}
 	b.setState(StateUp)
 	b.log.Info("mqtt subscribed", "filters", want)
+	return true
+}
+
+// subscribe runs try after a connect until every filter is granted, waiting
+// Backoff between attempts: a refused or unanswered SUBACK leaves a session
+// that is connected and delivers nothing, and nothing else would subscribe
+// again until the connection happened to drop. It stops when ctx ends or a
+// newer connection has taken over.
+func (b *base) subscribe(ctx context.Context, try func(context.Context) (codes []byte, want int, err error)) {
+	conn := b.conns.Add(1)
+	go func() {
+		for attempt := 0; ; attempt++ {
+			sctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+			codes, want, err := try(sctx)
+			cancel()
+			if b.subscribed(err, codes, want) {
+				return
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(Backoff(attempt)):
+			}
+			if b.conns.Load() != conn {
+				return
+			}
+		}
+	}()
 }
 
 // deliver is called from the MQTT library's receive path. ObservedAt is

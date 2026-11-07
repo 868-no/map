@@ -1,6 +1,7 @@
 package mqtt
 
 import (
+	"context"
 	"errors"
 	"go/ast"
 	"go/parser"
@@ -11,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/eclipse/paho.golang/paho"
 
@@ -96,5 +98,36 @@ func TestConnectLimitsPacketSize(t *testing.T) {
 	}
 	if MaxPacketSize < MaxPayload+protocol.MaxTopicLen+1024 {
 		t.Fatal("MaxPacketSize leaves too little room above MaxPayload and topic")
+	}
+}
+
+// A refused subscription is tried again until granted, and a newer
+// connection's loop takes over from an older one.
+func TestSubscribeRetriesUntilGranted(t *testing.T) {
+	b := testBase()
+	tries := make(chan int, 8)
+	n := 0
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	b.subscribe(ctx, func(context.Context) ([]byte, int, error) {
+		n++
+		tries <- n
+		if n < 2 {
+			return []byte{0x80}, 1, nil // refused
+		}
+		return []byte{0}, 1, nil
+	})
+	<-tries // refused
+	select {
+	case <-tries:
+	case <-time.After(5 * time.Second):
+		t.Fatal("not tried again")
+	}
+	deadline := time.Now().Add(time.Second)
+	for b.State() != StateUp && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if b.State() != StateUp {
+		t.Fatalf("granted, still %v", b.State())
 	}
 }
