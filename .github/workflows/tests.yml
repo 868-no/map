@@ -179,7 +179,6 @@ jobs:
       contents: read
       packages: write
     uses: ./.github/workflows/images.yml
-    secrets: inherit
 
   # Redeploy production once main's images are published: a Portainer stack
   # webhook pulls them and recreates the stack. The webhook URL is its only
