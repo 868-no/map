@@ -118,7 +118,7 @@ export interface paths {
         };
         /**
          * Live updates for the rolling window (SSE)
-         * @description Events: `delta` (new observations, each with its full row), `heartbeat` (every 15 s, current window bounds), `retention` (rows deleted; refetch), `status` (live availability).
+         * @description Events: `delta` (new observations, each with its full row), `heartbeat` (every 15 s, current window bounds), `retention` (a retention run deleted rows and the cutoff moved; clients may re-read /retention), `status` (live availability).
          */
         get: operations["stream"];
         put?: never;

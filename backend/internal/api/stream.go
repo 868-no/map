@@ -87,7 +87,7 @@ func (s *Server) registerStream(api huma.API) {
 		OperationID: "stream", Method: http.MethodGet, Path: streamPath,
 		Summary: "Live updates for the rolling window (SSE)", Tags: []string{"live"},
 		Description: "Events: `delta` (new observations, each with its full row), `heartbeat` (every 15 s, current window bounds), " +
-			"`retention` (rows deleted; refetch), `status` (live availability).",
+			"`retention` (a retention run deleted rows and the cutoff moved; clients may re-read /retention), `status` (live availability).",
 		Errors: []int{400},
 		// The window is checked against the server's limits before the
 		// stream opens: once it has, a refusal would be a 200 that closes

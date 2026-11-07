@@ -1506,7 +1506,7 @@ paths:
         - meta
   /api/v1/stream:
     get:
-      description: "Events: `delta` (new observations, each with its full row), `heartbeat` (every 15 s, current window bounds), `retention` (rows deleted; refetch), `status` (live availability)."
+      description: "Events: `delta` (new observations, each with its full row), `heartbeat` (every 15 s, current window bounds), `retention` (a retention run deleted rows and the cutoff moved; clients may re-read /retention), `status` (live availability)."
       operationId: stream
       parameters:
         - description: "Not allowed: live updates apply only to the rolling window"
