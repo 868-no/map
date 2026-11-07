@@ -131,7 +131,10 @@ func nullStr(s string) any {
 	return s
 }
 
-// copyRow converts an observation to COPY values.
+// copyRow converts an observation to COPY values. One that cannot be encoded
+// fails with ingest.ErrUnencodable, which ingest.Permanent counts as the
+// row's own fault: the batch is halved until it stands alone and is dropped,
+// instead of being retried for ever.
 func copyRow(o *ingest.Observation) ([]any, error) {
 	meta, tail, err := o.Encoded()
 	if err != nil {

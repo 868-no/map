@@ -8,6 +8,7 @@ import (
 	dto "github.com/prometheus/client_model/go"
 	"io"
 	"log/slog"
+	"math"
 	"slices"
 	"sync"
 	"testing"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/868-no/map/internal/observability"
 	"github.com/868-no/map/internal/obsrow"
+	"github.com/868-no/map/internal/protocol/ports"
 	"github.com/868-no/map/internal/security"
 )
 
@@ -453,11 +455,17 @@ func TestFlushDropsRowsTheDatabaseRefuses(t *testing.T) {
 		t.Fatalf("%d attempts and %d claims for a lone refused row, want 1 and 0", lone.attempts, len(r.inflight))
 	}
 	// Transient and partition errors stay retryable.
-	if permanent(errors.New("db down")) || permanent(sqlStateErr("08006")) || permanent(fmt.Errorf("%w: %w", ErrNoPartition, sqlStateErr("23514"))) {
+	if Permanent(errors.New("db down")) || Permanent(sqlStateErr("08006")) || Permanent(fmt.Errorf("%w: %w", ErrNoPartition, sqlStateErr("23514"))) {
 		t.Fatal("transient error classed as permanent")
 	}
-	if !permanent(sqlStateErr("23502")) {
+	if !Permanent(sqlStateErr("23502")) {
 		t.Fatal("integrity error classed as transient")
+	}
+	// A row that cannot be encoded is its own fault, like one the database
+	// refuses: never retried.
+	nan := &Observation{Meta: Metadata{Decoded: ports.Decoded{Position: &ports.Position{Lat: math.NaN()}}}}
+	if _, _, err := nan.Encoded(); !errors.Is(err, ErrUnencodable) || !Permanent(fmt.Errorf("copy: %w", err)) {
+		t.Fatalf("encoding failure %v not classed as permanent", err)
 	}
 }
 

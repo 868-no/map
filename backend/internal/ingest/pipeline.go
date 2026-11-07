@@ -22,6 +22,11 @@ import (
 // a schema gap partition upkeep closes, so the batch is retried.
 var ErrNoPartition = errors.New("no partition for the row")
 
+// ErrUnencodable marks an observation whose row cannot be encoded for
+// storage: its own data's fault, so it is refused like a row the database
+// cannot hold, never retried (it would stall the writer).
+var ErrUnencodable = errors.New("row cannot be encoded")
+
 // Sink persists batches (storage package, adapted in cmd).
 type Sink interface {
 	// InsertBatch's error wraps ErrNoPartition when a partition is missing.
@@ -458,11 +463,11 @@ func (p *Pipeline) flush(batch []*Observation) {
 			return
 		}
 		p.m.WriterErrors.Inc()
-		if permanent(err) && len(batch) == 1 {
+		if Permanent(err) && len(batch) == 1 {
 			p.reject(batch[0], err) // refused on its own: no second attempt
 			return
 		}
-		if permanent(err) && retry >= halveAt {
+		if Permanent(err) && retry >= halveAt {
 			// The database refuses rows (hostile input it cannot hold):
 			// retrying cannot help and would stall ingest. Halve the batch
 			// until the bad rows stand alone and drop those, keeping the rest.
@@ -538,7 +543,7 @@ func (p *Pipeline) isolate1(rows []*Observation, timeout time.Duration) (refused
 		p.m.WriterRows.Add(float64(len(rows)))
 		p.afterCommit(rows, ids)
 		return nil, nil
-	case !permanent(err):
+	case !Permanent(err):
 		return nil, rows
 	case len(rows) == 1:
 		return rows, nil
@@ -546,12 +551,15 @@ func (p *Pipeline) isolate1(rows []*Observation, timeout time.Duration) (refused
 	return p.isolate(rows, timeout)
 }
 
-// permanent reports whether a write failed on the data rather than on the
-// database: SQLSTATE class 22 (data exception, e.g. NUL in text) or 23
-// (integrity). A missing partition is also class 23 but stays retryable
-// (ErrNoPartition). The SQLSTATE is read via an interface so this package
-// does not depend on the driver.
-func permanent(err error) bool {
+// Permanent reports whether a write failed on the data rather than on the
+// database: a row that cannot be encoded (ErrUnencodable), SQLSTATE class 22
+// (data exception, e.g. NUL in text) or 23 (integrity). A missing partition
+// is also class 23 but stays retryable (ErrNoPartition). The SQLSTATE is read
+// via an interface so this package does not depend on the driver.
+func Permanent(err error) bool {
+	if errors.Is(err, ErrUnencodable) {
+		return true
+	}
 	var se interface{ SQLState() string }
 	if !errors.As(err, &se) || errors.Is(err, ErrNoPartition) {
 		return false

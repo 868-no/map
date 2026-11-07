@@ -2,6 +2,7 @@ package ingest
 
 import (
 	"encoding/json"
+	"fmt"
 
 	"github.com/868-no/map/internal/obsrow"
 )
@@ -22,11 +23,12 @@ func rowOf(o *Observation, id int64, meta []byte) obsrow.ObsRow {
 // stream completes the tail with the committed id rather than encoding the
 // row again (D-046). Meta must not change afterwards except through the
 // pipeline's takeAlsoVia, which resets the encoding. Called by the writer
-// (storage.copyRow), which owns the observation until it commits.
+// (storage.copyRow), which owns the observation until it commits. Its error
+// wraps ErrUnencodable, so the row is refused alone rather than retried.
 func (o *Observation) Encoded() (meta, tail []byte, err error) {
 	if o.tail == nil {
 		if o.meta, o.tail, err = o.encode(); err != nil {
-			return nil, nil, err
+			return nil, nil, fmt.Errorf("%w: %w", ErrUnencodable, err)
 		}
 	}
 	return o.meta, o.tail, nil
