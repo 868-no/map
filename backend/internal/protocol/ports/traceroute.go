@@ -57,7 +57,7 @@ func snrs(v []int32) []*float64 {
 // produce edges.
 func decodeTraceroute(d *pb.Data) (*Traceroute, error) {
 	var r pb.RouteDiscovery
-	if err := unmarshal.Unmarshal(d.GetPayload(), &r); err != nil {
+	if err := decode(d.GetPayload(), &r); err != nil {
 		return nil, ErrInvalid
 	}
 	t := &Traceroute{

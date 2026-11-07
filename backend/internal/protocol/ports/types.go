@@ -30,7 +30,7 @@ func (n *NodeInfo) PublicKeyBytes() []byte { return n.publicKey }
 
 func decodeNodeInfo(b []byte) (*NodeInfo, error) {
 	var u pb.User
-	if err := unmarshal.Unmarshal(b, &u); err != nil {
+	if err := decode(b, &u); err != nil {
 		return nil, ErrInvalid
 	}
 	n := &NodeInfo{
@@ -68,7 +68,7 @@ type Position struct {
 // coordinates (zero or missing lat/lon): stored, but with no position.
 func decodePosition(b []byte) (*Position, error) {
 	var p pb.Position
-	if err := unmarshal.Unmarshal(b, &p); err != nil {
+	if err := decode(b, &p); err != nil {
 		return nil, ErrInvalid
 	}
 	if p.LatitudeI == nil || p.LongitudeI == nil || (p.GetLatitudeI() == 0 && p.GetLongitudeI() == 0) {
@@ -112,7 +112,7 @@ type Telemetry struct {
 
 func decodeTelemetry(b []byte) (*Telemetry, error) {
 	var t pb.Telemetry
-	if err := unmarshal.Unmarshal(b, &t); err != nil {
+	if err := decode(b, &t); err != nil {
 		return nil, ErrInvalid
 	}
 	switch v := t.GetVariant().(type) {
@@ -165,7 +165,7 @@ type NeighborInfo struct {
 
 func decodeNeighborInfo(b []byte, from uint32) (*NeighborInfo, error) {
 	var n pb.NeighborInfo
-	if err := unmarshal.Unmarshal(b, &n); err != nil {
+	if err := decode(b, &n); err != nil {
 		return nil, ErrInvalid
 	}
 	if len(n.GetNeighbors()) > MaxNeighbors {
@@ -211,7 +211,7 @@ type Routing struct {
 
 func decodeRouting(d *pb.Data) (*Routing, error) {
 	var r pb.Routing
-	if err := unmarshal.Unmarshal(d.GetPayload(), &r); err != nil {
+	if err := decode(d.GetPayload(), &r); err != nil {
 		return nil, ErrInvalid
 	}
 	out := &Routing{RequestID: d.GetRequestId(), AckProof: len(r.GetAckProof()) > 0}

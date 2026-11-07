@@ -14,7 +14,7 @@ type NodeStatus struct {
 
 func decodeNodeStatus(b []byte) (*NodeStatus, error) {
 	var m pb.StatusMessage
-	if err := unmarshal.Unmarshal(b, &m); err != nil {
+	if err := decode(b, &m); err != nil {
 		return nil, ErrInvalid
 	}
 	return &NodeStatus{Status: CleanString(m.GetStatus(), 80)}, nil
@@ -32,7 +32,7 @@ type StoreForward struct {
 
 func decodeStoreForward(b []byte) (*StoreForward, error) {
 	var m pb.StoreAndForward
-	if err := unmarshal.Unmarshal(b, &m); err != nil {
+	if err := decode(b, &m); err != nil {
 		return nil, ErrInvalid
 	}
 	out := &StoreForward{Kind: strings.ToLower(m.GetRr().String())}

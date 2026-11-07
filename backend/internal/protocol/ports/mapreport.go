@@ -23,7 +23,7 @@ type MapReport struct {
 // coordinates, a Position built the same way as a POSITION_APP packet.
 func decodeMapReport(b []byte) (*MapReport, *Position, error) {
 	var m pb.MapReport
-	if err := unmarshal.Unmarshal(b, &m); err != nil {
+	if err := decode(b, &m); err != nil {
 		return nil, nil, ErrInvalid
 	}
 	r := &MapReport{

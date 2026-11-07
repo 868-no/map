@@ -3,6 +3,7 @@ package ports
 import (
 	"testing"
 
+	"google.golang.org/protobuf/encoding/protowire"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/868-no/map/internal/protocol/pb"
@@ -142,5 +143,27 @@ func TestNodeStatusAndStoreForward(t *testing.T) {
 	}
 	if _, err := Decode(&pb.Data{Portnum: pb.PortNum_STORE_FORWARD_APP, Payload: []byte{0xff, 0xff}}, 1); err == nil {
 		t.Fatal("garbage store-and-forward decoded")
+	}
+}
+
+// A name cut to its byte limit mid-character is invalid UTF-8, which proto3
+// rejects: the node info is still decoded, the broken bytes replaced.
+func TestNodeInfoWithNameCutMidCharacter(t *testing.T) {
+	b, err := proto.Marshal(&pb.User{ShortName: "Hi", HwModel: pb.HardwareModel_HELTEC_V3})
+	if err != nil {
+		t.Fatal(err)
+	}
+	b = protowire.AppendTag(b, 2, protowire.BytesType) // long_name
+	b = protowire.AppendBytes(b, []byte("Hi\xf0\x9f"))
+	d, err := Decode(&pb.Data{Portnum: pb.PortNum_NODEINFO_APP, Payload: b}, 1)
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if d.NodeInfo.LongName != "Hi�" || d.NodeInfo.ShortName != "Hi" || d.NodeInfo.HwModel != "HELTEC_V3" {
+		t.Fatalf("node info %+v", d.NodeInfo)
+	}
+	// Garbage stays invalid rather than half repaired.
+	if _, err := Decode(&pb.Data{Portnum: pb.PortNum_NODEINFO_APP, Payload: []byte{0x12, 0x7f}}, 1); err == nil {
+		t.Fatal("truncated payload decoded")
 	}
 }
