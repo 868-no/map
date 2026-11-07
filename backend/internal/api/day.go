@@ -490,8 +490,14 @@ func (s *Server) fillDay(ctx context.Context, db rowsDB, p dayPlan, head Observa
 			}
 		}
 	}
-	s.dayCount("built")
 	res, err := s.buildDay(ctx, db, p, head, st)
+	switch {
+	case err != nil, res.unsettled: // counted by the caller, which streams it
+	case res.tooLarge:
+		s.dayCount("large")
+	default:
+		s.dayCount("built")
+	}
 	if err == nil && res.tooLarge && s.DayCache != nil {
 		// Tell the other replicas, whose waiters would build it next.
 		if err := s.DayCache.SetBlob(ctx, key+":large", []byte{1}, dayTTL); err != nil {
