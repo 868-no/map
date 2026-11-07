@@ -211,7 +211,13 @@ impl Engine {
                 let invalid: Vec<&row::Row> = self.store.rows()[lo..hi].iter().filter(|r| Some(r.ty) == invalid_ty).collect();
                 let rows = self.rows();
                 let presets = b.presets.get_or_init(|| channels::PresetIndex::new(&rows, &b.traceroute_contacts, &self.i));
-                Ok(json(&health::health(&rows, &invalid, &b.snapshot.nodes, &b.copies, presets, &self.i, hours, &self.regions)))
+                let mut h = health::health(&rows, &invalid, &b.snapshot.nodes, &b.copies, presets, &self.i, hours, &self.regions);
+                // Nodes past the snapshot's node limit get no health checks (D-182); airtime still counts every node.
+                if !b.beyond.is_empty() {
+                    let cut: crate::util::FxSet<&str> = b.beyond.iter().map(|n| n.id.as_str()).collect();
+                    h.issues.retain(|i| !cut.contains(i.node.as_str()));
+                }
+                Ok(json(&h))
             }
             _ => Err(err(format!("unknown view {kind}"))),
         }
