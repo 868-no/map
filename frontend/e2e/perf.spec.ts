@@ -29,7 +29,8 @@ for (const [N, E] of [[0, 0], [2000, 20000]] as const) test(`rendering ${N} node
   await page.waitForTimeout(3000)
   const cdp = await page.context().newCDPSession(page)
   await cdp.send('HeapProfiler.collectGarbage')
-  const heap = (await page.evaluate(() => (performance as unknown as { memory: { usedJSHeapSize: number } }).memory.usedJSHeapSize)) / 2 ** 20
+  // From DevTools: performance.memory is coarse and cached, the same figure for an empty and a full map.
+  const heap = (await cdp.send('Runtime.getHeapUsage')).usedSize / 2 ** 20
   // Pan continuously for 5 s and count frames.
   const fps = await page.evaluate(
     () =>
