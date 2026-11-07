@@ -32,7 +32,8 @@ function useWindowModel(caps: Capabilities, retention: Retention | undefined, sn
   const now = serverNow()
   // The slider starts where data does (the oldest kept observation), not at
   // the retention limit, which can lie months before anything was recorded.
-  const cutoffMs = retention ? Date.parse(retention.configured_cutoff) : now - 180 * 24 * H
+  // On the hour: a window started at the limit itself falls past it with the next retention poll.
+  const cutoffMs = retention ? Math.ceil(Date.parse(retention.configured_cutoff) / H) * H : now - 180 * 24 * H
   const minMs = retention?.earliest_observation ? Math.max(cutoffMs, Math.floor(Date.parse(retention.earliest_observation) / H) * H) : cutoffMs
   const maxDur = caps.max_window_hours * H
   const shown = snapshot?.meta.window

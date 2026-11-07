@@ -123,7 +123,8 @@ export default function App() {
     if (Date.parse(win.start) < Date.parse(retention.data.configured_cutoff)) {
       setNotice('The selected window now starts before the retention limit; it was moved to the oldest available time.')
       const dur = Date.parse(win.end!) - Date.parse(win.start)
-      const s = Date.parse(retention.data.configured_cutoff) + 60_000
+      // An hour clear of the limit, so the next retention poll (every 5 minutes) does not move it again.
+      const s = Math.ceil(Date.parse(retention.data.configured_cutoff) / 3_600_000) * 3_600_000 + 3_600_000
       useStore.getState().setFixed(new Date(s).toISOString(), new Date(s + dur).toISOString())
     }
   }, [retention.data, win])
@@ -135,8 +136,8 @@ export default function App() {
     [selection, edges],
   )
 
-  if (caps.isLoading) return <div className="boot">Loading…</div>
-  if (caps.error || !caps.data) return <div className="boot error">Backend unavailable: {String(caps.error)}</div>
+  // A failed refetch keeps the capabilities already loaded; only a first load that fails ends here.
+  if (!caps.data) return caps.error ? <div className="boot error">Backend unavailable: {String(caps.error)}</div> : <div className="boot">Loading…</div>
 
   const sel = selection
   const counts = snap.data?.counts
