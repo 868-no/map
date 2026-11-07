@@ -10,7 +10,6 @@ import { PALETTES } from '../src/map/palette'
 
 const node = (id: string): MeshNode => ({
   id, num: 1, status: 'observed', packets: 1, receptions: 1, gateway_receptions: 0, is_gateway: false,
-  signatures: { verified: 0, unsigned: 1, unverifiable: 0, not_applicable: 0 },
 })
 const placed: PlacedNode[] = [
   { node: node('!a'), kind: 'reported', lon: 10, lat: 60, age: 0 },

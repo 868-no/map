@@ -37,13 +37,13 @@ fn a_map_report_names_a_node_without_nodeinfo_and_nodeinfo_wins() {
     assert_eq!(a["identity"]["long_name"], "NT Motorklubb");
     assert_eq!(a["identity"]["short_name"], "NTMK");
     assert_eq!(a["identity"]["role"], "CLIENT_BASE");
-    assert_eq!(a["identity"]["source"], "mapreport");
     let b = node("!0b00000b");
     assert_eq!(b["identity"]["long_name"], "From NodeInfo", "NodeInfo beats a map report");
-    assert!(b["identity"]["source"].is_null());
 
     let d = view(&mut e, "node", "!ae609008");
     assert_eq!(d["identity"]["long_name"], "NT Motorklubb", "the node panel too");
+    assert_eq!(d["identity"]["source"], "mapreport");
+    assert!(view(&mut e, "node", "!0b00000b")["identity"]["source"].is_null());
     assert_eq!(d["radio"]["reported"]["modem_preset"], "LONG_FAST");
     assert!(d["radio"]["reported"]["preset_confirmed"].is_null(), "no default channel: the preset is not confirmed");
     let d = view(&mut e, "node", "!0b00000b");

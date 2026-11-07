@@ -23,27 +23,16 @@ pub struct Counts {
     pub positioned: usize,
     pub estimated: usize,
     pub edges: usize,
-    pub by_type: std::collections::BTreeMap<String, usize>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub first_event: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub last_event: Option<String>,
     pub nodes_truncated: bool,
 }
 
 #[derive(Serialize, Clone, Debug, Default)]
-pub struct Diagnostics {
-    pub relay_ambiguous: usize,
-    pub relay_unmatched: usize,
-}
-
-#[derive(Serialize, Clone, Debug, Default)]
 pub struct Snapshot {
+    #[serde(serialize_with = "super::node::slim_nodes")]
     pub nodes: Vec<Node>,
     pub edges: Vec<Edge>,
     pub edges_truncated: bool,
     pub counts: Counts,
-    pub diagnostics: Diagnostics,
 }
 
 pub struct GeoOptions {
@@ -247,7 +236,7 @@ pub fn build_snapshot(rows: &[&Row], i: &Interner, g: &GeoOptions, rules: Rules)
         }
     }
 
-    let mut counts = window_counts(rows, receptions, i);
+    let mut counts = window_counts(rows, receptions);
     let known: Vec<u32> = nodes.keys().copied().collect();
     let roles: FxMap<u32, String> = nodes.iter().filter_map(|(&n, x)| x.identity.as_ref().filter(|id| !id.role.is_empty()).map(|id| (n, id.role.clone()))).collect();
     let silent: FxSet<u32> = if rules.silent { silent_nodes(&roles, &by.nodeinfo, &by.mapreport, i) } else { set() };
@@ -325,7 +314,7 @@ pub fn build_snapshot(rows: &[&Row], i: &Interner, g: &GeoOptions, rules: Rules)
         Vec::new()
     };
     Built {
-        snapshot: Snapshot { nodes: list, edges: er.edges, edges_truncated: er.truncated, counts, diagnostics: Diagnostics { relay_ambiguous: er.ambiguous, relay_unmatched: er.unmatched } },
+        snapshot: Snapshot { nodes: list, edges: er.edges, edges_truncated: er.truncated, counts },
         beyond,
         ctx,
         roles,
@@ -339,29 +328,9 @@ pub fn build_snapshot(rows: &[&Row], i: &Interner, g: &GeoOptions, rules: Rules)
 }
 
 /// receptions: the window's distinct receptions (origins).
-fn window_counts(rows: &[&Row], receptions: usize, i: &Interner) -> Counts {
-    // Distinct (type, packet): packets per type, and packets as the distinct keys among them.
-    let mut typed: FxSet<(u32, u64)> = FxSet::with_capacity_and_hasher(rows.len() / 2, Default::default());
-    let (mut first, mut last) = (i64::MAX, i64::MIN);
-    for r in rows {
-        typed.insert((r.ty, r.lp));
-        first = first.min(r.t);
-        last = last.max(r.t);
-    }
-    let mut by_type: FxMap<u32, usize> = map();
-    let mut packets: FxSet<u64> = FxSet::with_capacity_and_hasher(typed.len(), Default::default());
-    for &(t, lp) in &typed {
-        *by_type.entry(t).or_default() += 1;
-        packets.insert(lp);
-    }
-    Counts {
-        packets: packets.len(),
-        receptions,
-        by_type: by_type.into_iter().map(|(k, v)| (i.s(k).to_string(), v)).collect(),
-        first_event: (!rows.is_empty()).then(|| iso(first)),
-        last_event: (!rows.is_empty()).then(|| iso(last)),
-        ..Default::default()
-    }
+fn window_counts(rows: &[&Row], receptions: usize) -> Counts {
+    let packets: FxSet<u64> = rows.iter().map(|r| r.lp).collect();
+    Counts { packets: packets.len(), receptions, ..Default::default() }
 }
 
 #[cfg(test)]

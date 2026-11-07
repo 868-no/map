@@ -26,13 +26,19 @@ fn views(rows: &[Value]) -> (Value, Value) {
     let mut e = Engine::new();
     e.add_rows(&Value::Array(rows.to_vec()).to_string(), f64::NEG_INFINITY).unwrap();
     let (s, t) = (T0 as f64, (T0 + 24 * H) as f64);
-    let snap = serde_json::from_str(&e.view("snapshot", s, t, "{}", "").unwrap()).unwrap();
+    // Every node's panel view by id: the snapshot leaves out where ids come from.
+    let snap: Value = serde_json::from_str(&e.view("snapshot", s, t, "{}", "").unwrap()).unwrap();
+    let nodes = snap["nodes"].as_array().unwrap().iter().map(|n| {
+        let id = n["id"].as_str().unwrap();
+        (id.to_string(), serde_json::from_str(&e.view("node", s, t, "{}", id).unwrap()).unwrap())
+    });
+    let nodes = Value::Object(nodes.collect());
     let health = serde_json::from_str(&e.view("health", s, t, "{}", "").unwrap()).unwrap();
-    (snap, health)
+    (nodes, health)
 }
 
 fn identity<'a>(snap: &'a Value, id: &str) -> &'a Value {
-    &snap["nodes"].as_array().unwrap().iter().find(|n| n["id"] == id).unwrap_or_else(|| panic!("{id} missing"))["identity"]
+    &snap.get(id).unwrap_or_else(|| panic!("{id} missing"))["identity"]
 }
 
 /// (node, severity, summary, detail) of each shared-key issue.

@@ -4,9 +4,8 @@ import { meanPoints, weatherPoints, weatherSite } from '../src/state/weather'
 
 const node = (role: string | undefined, extra: Partial<MeshNode> = {}): MeshNode => ({
   id: '!00000001', num: 1, status: 'observed', packets: 0, receptions: 0, gateway_receptions: 0, is_gateway: false,
-  signatures: { verified: 0, unsigned: 0, unverifiable: 0, not_applicable: 0 },
-  identity: role ? { role, has_public_key: false, signature: 'unsigned', observed_at: '' } : undefined,
-  position: { lat: 63.4, lon: 10.4, precision_bits: 32, precision_known: true, signature: 'unsigned', observed_at: '', source: 'position' },
+  identity: role ? { role } : undefined,
+  position: { lat: 63.4, lon: 10.4, precision_bits: 32, precision_known: true, source: 'position' },
   ...extra,
 })
 

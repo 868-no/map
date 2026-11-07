@@ -5,9 +5,8 @@ import { INCOMPLETE_POLLS as TERRAIN_POLLS, pollGaveUp as terrainGaveUp, pollInc
 
 const node = (id: string, role: string, extra: Partial<MeshNode> = {}): MeshNode => ({
   id, num: 1, status: 'observed', packets: 0, receptions: 0, gateway_receptions: 0, is_gateway: false,
-  signatures: { verified: 0, unsigned: 0, unverifiable: 0, not_applicable: 0 },
-  identity: { role, has_public_key: false, signature: 'unsigned', observed_at: '' },
-  position: { lat: 63.4, lon: 10.4, precision_bits: 32, precision_known: true, signature: 'unsigned', observed_at: '', source: 'position' },
+  identity: { role },
+  position: { lat: 63.4, lon: 10.4, precision_bits: 32, precision_known: true, source: 'position' },
   ...extra,
 })
 const edge = (src: string, dst: string, mqtt = false) => ({ src, dst, mqtt }) as unknown as Edge

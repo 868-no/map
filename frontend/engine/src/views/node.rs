@@ -174,6 +174,107 @@ pub struct Node {
     pub(super) pos: Option<RowPos>,
 }
 
+/// The snapshot's nodes as sent: what the map, lists, filters and health
+/// read. The node panel's own parts (counts by signature status, telemetry,
+/// first seen, stale and rejected positions, why there is no estimate, and
+/// the identity's and position's details and provenance) come with the node
+/// view, which sends the whole Node. A field added to Node for the map must
+/// be added here too.
+pub fn slim_nodes<S: serde::Serializer>(nodes: &[Node], s: S) -> Result<S::Ok, S::Error> {
+    s.collect_seq(nodes.iter().map(SlimNode::from))
+}
+
+#[derive(Serialize)]
+struct SlimIdentity<'a> {
+    #[serde(skip_serializing_if = "str::is_empty")]
+    long_name: &'a str,
+    #[serde(skip_serializing_if = "str::is_empty")]
+    short_name: &'a str,
+    #[serde(skip_serializing_if = "str::is_empty")]
+    role: &'a str,
+}
+
+#[derive(Serialize)]
+struct SlimPosition<'a> {
+    lat: f64,
+    lon: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    alt: Option<i32>,
+    precision_bits: u32,
+    precision_known: bool,
+    source: &'a str,
+}
+
+#[derive(Serialize)]
+struct SlimNode<'a> {
+    id: &'a str,
+    num: u32,
+    status: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    identity: Option<SlimIdentity<'a>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    position: Option<SlimPosition<'a>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    last_seen: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    last_referenced: Option<&'a str>,
+    packets: usize,
+    receptions: usize,
+    #[serde(skip_serializing_if = "is_zero")]
+    own_uplinks: usize,
+    gateway_receptions: usize,
+    is_gateway: bool,
+    #[serde(skip_serializing_if = "is_false")]
+    multi_uplink: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    brokers: Option<&'a [String]>,
+    #[serde(skip_serializing_if = "is_false")]
+    mqtt_opt_out: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    estimate: Option<&'a Estimate>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    mqtt_downlink: Option<&'a Downlink>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    moved_at: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    track: Option<&'a [crate::movement::TrackPoint]>,
+    #[serde(skip_serializing_if = "is_false")]
+    airborne: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    refined: Option<&'a crate::movement::Anchor>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    relaying: Option<&'a crate::reliability::Relaying>,
+}
+
+impl<'a> From<&'a Node> for SlimNode<'a> {
+    fn from(n: &'a Node) -> Self {
+        SlimNode {
+            id: &n.id,
+            num: n.num,
+            status: n.status,
+            identity: n.identity.as_ref().map(|x| SlimIdentity { long_name: &x.long_name, short_name: &x.short_name, role: &x.role }),
+            position: n.position.as_ref().map(|p| SlimPosition { lat: p.lat, lon: p.lon, alt: p.alt, precision_bits: p.precision_bits, precision_known: p.precision_known, source: &p.source }),
+            last_seen: n.last_seen.as_deref(),
+            last_referenced: n.last_referenced.as_deref(),
+            packets: n.packets,
+            receptions: n.receptions,
+            own_uplinks: n.own_uplinks,
+            gateway_receptions: n.gateway_receptions,
+            is_gateway: n.is_gateway,
+            multi_uplink: n.multi_uplink,
+            brokers: n.brokers.as_deref(),
+            mqtt_opt_out: n.mqtt_opt_out,
+            estimate: n.estimate.as_ref(),
+            mqtt_downlink: n.mqtt_downlink.as_ref(),
+            moved_at: n.moved_at.as_deref(),
+            track: n.track.as_deref(),
+            airborne: n.airborne,
+            refined: n.refined.as_ref(),
+            relaying: n.relaying.as_ref(),
+        }
+    }
+}
+
 impl Node {
     /// Its narrowed position (D-077); call after its position is set.
     pub(super) fn set_anchor(&mut self, a: &crate::movement::Anchor) {

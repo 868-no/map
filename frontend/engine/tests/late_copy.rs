@@ -24,10 +24,6 @@ fn a_late_copy_of_an_old_report_is_not_the_latest() {
     e.add_rows(&rows.to_string(), f64::NEG_INFINITY).unwrap();
     let (s, t) = (T0 as f64, (T0 + 37 * HOUR) as f64);
 
-    let snap: Value = serde_json::from_str(&e.view("snapshot", s, t, "{}", "").unwrap()).unwrap();
-    let node = snap["nodes"].as_array().unwrap().iter().find(|n| n["id"] == "!00000005").expect("the node");
-    assert_eq!(node["telemetry"]["battery"], 75.0, "snapshot: {}", node["telemetry"]);
-
     let d: Value = serde_json::from_str(&e.view("node", s, t, "{}", "!00000005").unwrap()).unwrap();
     assert_eq!(d["telemetry"]["battery"], 75.0, "panel: {}", d["telemetry"]);
     assert_eq!(d["telemetry"]["uptime"], 3_600, "panel: {}", d["telemetry"]);

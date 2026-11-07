@@ -34,11 +34,16 @@ export interface Stats {
   last?: number
 }
 
-export interface Identity {
+/** A node's identity as the snapshot sends it: what the map and lists show. */
+export interface MapIdentity {
   long_name?: string
   short_name?: string
-  hw_model?: string
   role?: string
+}
+
+/** The node view's identity: with its details and provenance. */
+export interface Identity extends MapIdentity {
+  hw_model?: string
   has_public_key: boolean
   /** Where its node id comes from (D-142): its key (firmware 2.8+) or its hardware (2.7 and older). */
   node_id_from?: 'key' | 'hardware'
@@ -49,15 +54,20 @@ export interface Identity {
   source?: 'mapreport' // from the node's own map report: no NodeInfo in the window
 }
 
-export interface Position {
+/** A node's position as the snapshot sends it. */
+export interface MapPosition {
   lat: number
   lon: number
   alt?: number
   precision_bits: number
   precision_known: boolean
+  source: 'position' | 'mapreport'
+}
+
+/** The node view's position: with its signature and time. */
+export interface Position extends MapPosition {
   signature: SignatureStatus
   observed_at: string
-  source: 'position' | 'mapreport'
 }
 
 export interface Telemetry {
@@ -88,16 +98,13 @@ export interface RejectedPosition extends Position {
   bound_m: number
 }
 
+/** A snapshot node: what the map, lists, filters and health read. The node view (NodeView) adds the panel's parts. */
 export interface MeshNode {
   id: string
   num: number
   status: 'observed' | 'referenced'
-  identity?: Identity
-  position?: Position
-  stale_position?: Position // newest report more than a day (a week for fixed nodes) before the window's latest data (D-094, D-138)
-  rejected_position?: RejectedPosition // newest report the radio rules out: ignored (D-178)
-  telemetry?: Telemetry
-  first_seen?: string
+  identity?: MapIdentity
+  position?: MapPosition
   last_seen?: string
   packets: number // unique packets originated in the window
   receptions: number // gateway receptions of those packets
@@ -107,11 +114,9 @@ export interface MeshNode {
   last_referenced?: string // referenced-only nodes: when last named by others
   /** Uplinks every copy of a packet it hears, not only the first (a future firmware option, D-084). */
   multi_uplink?: boolean
-  signatures: { verified: number; unsigned: number; unverifiable: number; not_applicable: number }
   brokers?: string[]
   mqtt_opt_out?: boolean // sent packets without OK-to-MQTT through another gateway: unnamed
   estimate?: Estimate // approximate location from in-window links; never a reported position
-  estimate_note?: string // why an unpositioned node has no estimate
   mqtt_downlink?: { zero_snr: number; traceroutes: number } // probably transmits packets from MQTT (D-054)
   moved_at?: string // last moved more than 300 m (2 km for fixed roles): links use only later evidence (D-073, D-139)
   track?: { lat: number; lon: number; alt?: number; at: string }[] // its positions in time order, newest last, when it moved
@@ -125,8 +130,6 @@ export interface MeshNode {
 export interface Edge {
   src: string
   dst: string
-  src_num: number
-  dst_num: number
   evidence: { neighbor: number; traceroute: number; direct_rf: number; relay_hint: number }
   samples: number
   confidence: 'high' | 'medium' | 'low'
@@ -212,9 +215,6 @@ export interface Counts {
   positioned: number
   estimated: number
   edges: number
-  by_type: Record<string, number>
-  first_event?: string
-  last_event?: string
   nodes_truncated: boolean
 }
 
@@ -224,14 +224,12 @@ export interface SnapshotView {
   edges: Edge[]
   edges_truncated: boolean
   counts: Counts
-  diagnostics: { relay_ambiguous: number; relay_unmatched: number }
 }
 
 export interface Bucket {
   start: string
   packets: number
   receptions: number
-  by_type?: Record<string, number>
 }
 
 export interface TrafficView {
@@ -295,8 +293,16 @@ export interface PresetGuess {
   conflict?: [string, number][] // presets and how many group members each
 }
 
-export interface NodeView extends MeshNode {
+export interface NodeView extends Omit<MeshNode, 'identity' | 'position'> {
   meta: ViewMeta
+  identity?: Identity
+  position?: Position
+  stale_position?: Position // newest report more than a day (a week for fixed nodes) before the window's latest data (D-094, D-138)
+  rejected_position?: RejectedPosition // newest report the radio rules out: ignored (D-178)
+  telemetry?: Telemetry
+  first_seen?: string
+  signatures: { verified: number; unsigned: number; unverifiable: number; not_applicable: number }
+  estimate_note?: string // why an unpositioned node has no estimate
   telemetry_series: { at: string; battery?: number; voltage?: number; ch_util?: number; air_util?: number; uptime?: number }[]
   environment_series?: { at: string; temp?: number; humidity?: number; pressure?: number }[] // environment reports, time order (D-099)
   delivery_by_recipient?: { to: string; asked: number; acked: number; errors: number; retried: number }[] // its packets that asked for an ACK (D-109)

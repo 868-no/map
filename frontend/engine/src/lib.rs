@@ -136,7 +136,7 @@ impl Engine {
             "snapshot" => Ok(json(&self.build(start, end, filters)?.snapshot)),
             "traffic" => {
                 self.filter(start, end, filters)?;
-                Ok(json(&build_traffic(&self.rows(), start, bucket_for(end - start), &self.i)))
+                Ok(json(&build_traffic(&self.rows(), start, bucket_for(end - start))))
             }
             "node" => {
                 let num = parse_node(arg).ok_or_else(|| err("invalid node id"))?;

@@ -10,8 +10,6 @@ pub const MAX_EDGES: usize = 20000;
 pub struct EdgeResult {
     pub edges: Vec<Edge>,
     pub truncated: bool,
-    pub ambiguous: usize,
-    pub unmatched: usize,
     /// The measured readings of the radio evidence, for link history (D-105).
     pub readings: super::link::LinkReadings,
     /// The relay each relayed copy here resolved to, by row id, for
@@ -116,22 +114,16 @@ pub fn build_edges(rows: &[&Row], neighborinfo: &[&Row], hops: &[Sample], known:
     if !rules.range {
         ctx.max_range_m = ctx.loose_range_m;
     }
-    let (mut ambiguous, mut unmatched) = (0, 0);
     let mut resolved: FxMap<i64, Option<u32>> = FxMap::with_capacity_and_hasher(pending.len(), Default::default());
     for (s, hint, origin, gw, id) in pending {
         let res = ctx.resolve_detail(hint, origin, gw, s.rssi);
         resolved.insert(id, res.and_then(Result::ok).map(|(n, _)| n));
-        match res {
-            // Chosen because it already has a link to the gateway: adds nothing to that link.
-            Some(Ok((_, true))) => {}
-            Some(Ok((n, false))) => {
-                let s = Sample { src: n, ev: Ev::RelayHint, ..s };
-                if current(&s) {
-                    samples.push(s)
-                }
+        // A relay chosen because it already has a link to the gateway adds nothing to that link.
+        if let Some(Ok((n, false))) = res {
+            let s = Sample { src: n, ev: Ev::RelayHint, ..s };
+            if current(&s) {
+                samples.push(s)
             }
-            Some(Err(())) => ambiguous += 1,
-            None => unmatched += 1,
         }
     }
     let mut readings = super::link::LinkReadings::default();
@@ -139,5 +131,5 @@ pub fn build_edges(rows: &[&Row], neighborinfo: &[&Row], hops: &[Sample], known:
     let truncated = edges.len() > MAX_EDGES;
     edges.truncate(MAX_EDGES);
     edges.extend(graph::reduce_mqtt(&mqtt));
-    (EdgeResult { edges, truncated, ambiguous, unmatched, readings, resolved }, ctx)
+    (EdgeResult { edges, truncated, readings, resolved }, ctx)
 }

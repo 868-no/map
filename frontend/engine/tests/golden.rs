@@ -74,6 +74,38 @@ fn millis(s: &str) -> f64 {
 /// latest copy; the engine by its first (D-180). In this window that tells
 /// apart only !552ad94c's identity: its NodeInfo 928744739, first heard at
 /// 13:52:41, had a copy uplinked at 13:54:52, after 928744741 (13:52:54).
+/// A server snapshot or traffic view without what the engine leaves out of
+/// them: the node panel's parts, which the node view carries (compared
+/// below), and counts no view shows.
+fn slim(v: &Value) -> Value {
+    // Mutable indexing would add the keys it looks for: get_mut only.
+    fn drop(o: Option<&mut Value>, keys: &[&str]) {
+        if let Some(o) = o.and_then(Value::as_object_mut) {
+            for k in keys {
+                o.remove(*k);
+            }
+        }
+    }
+    fn each<'a>(v: &'a mut Value, k: &str) -> impl Iterator<Item = &'a mut Value> {
+        v.get_mut(k).and_then(Value::as_array_mut).into_iter().flatten()
+    }
+    let mut v = v.clone();
+    drop(Some(&mut v), &["diagnostics"]);
+    drop(v.get_mut("counts"), &["by_type", "first_event", "last_event"]);
+    for n in each(&mut v, "nodes") {
+        drop(Some(&mut *n), &["signatures", "telemetry", "first_seen", "stale_position", "rejected_position", "estimate_note"]);
+        drop(n.get_mut("identity"), &["hw_model", "has_public_key", "node_id_from", "key_id", "signature", "observed_at", "source"]);
+        drop(n.get_mut("position"), &["signature", "observed_at"]);
+    }
+    for e in each(&mut v, "edges") {
+        drop(Some(e), &["src_num", "dst_num"]);
+    }
+    for b in each(&mut v, "buckets") {
+        drop(Some(b), &["by_type"]);
+    }
+    v
+}
+
 fn server_views() -> Value {
     serde_json::from_str(&EXPECTED.replace(r#""observed_at":"2026-10-31T13:54:52.30196Z""#, r#""observed_at":"2026-10-31T13:52:55.174Z""#)).unwrap()
 }
@@ -87,9 +119,9 @@ fn engine_matches_the_recorded_server_views() {
     let (s, t) = (millis(expected["window"]["start"].as_str().unwrap()), millis(expected["window"]["end"].as_str().unwrap()));
     let view = |e: &mut Engine, kind: &str, filters: Value, arg: &str| -> Value { serde_json::from_str(&e.view(kind, s, t, &filters.to_string(), arg).unwrap()).unwrap() };
 
-    assert_eq!(normalize(&view(&mut e, "snapshot", json!({}), "")), normalize(&expected["snapshot"]), "snapshot");
-    assert_eq!(normalize(&view(&mut e, "traffic", json!({}), "")), normalize(&expected["traffic"]), "traffic");
-    assert_eq!(normalize(&view(&mut e, "snapshot", json!({"types": ["position", "nodeinfo"]}), "")), normalize(&expected["snapshot_position_nodeinfo"]), "filtered snapshot");
+    assert_eq!(normalize(&view(&mut e, "snapshot", json!({}), "")), normalize(&slim(&expected["snapshot"])), "snapshot");
+    assert_eq!(normalize(&view(&mut e, "traffic", json!({}), "")), normalize(&slim(&expected["traffic"])), "traffic");
+    assert_eq!(normalize(&view(&mut e, "snapshot", json!({"types": ["position", "nodeinfo"]}), "")), normalize(&slim(&expected["snapshot_position_nodeinfo"])), "filtered snapshot");
     let nodes = expected["nodes"].as_object().unwrap();
     assert_eq!(nodes.len(), 10);
     for (id, want) in nodes {

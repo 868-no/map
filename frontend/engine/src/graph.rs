@@ -67,7 +67,9 @@ impl EvidenceCounts {
 pub struct Edge {
     pub src: String,
     pub dst: String,
+    #[serde(skip)] // ids as numbers, for the engine: src and dst say them
     pub src_num: u32,
+    #[serde(skip)]
     pub dst_num: u32,
     pub evidence: EvidenceCounts,
     pub samples: u32,

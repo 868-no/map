@@ -23,9 +23,11 @@ fn engine(rows: &Value) -> Engine {
     e
 }
 
+/// The node panel's node: the snapshot leaves out its rejected position.
 fn node(e: &mut Engine, id: &str) -> Value {
-    let snap: Value = serde_json::from_str(&e.view("snapshot", T0 as f64, (T0 + 3_600_000) as f64, "{}", "").unwrap()).unwrap();
-    snap["nodes"].as_array().unwrap().iter().find(|n| n["id"] == id).cloned().expect("the node")
+    let n: Value = serde_json::from_str(&e.view("node", T0 as f64, (T0 + 3_600_000) as f64, "{}", id).unwrap()).unwrap();
+    assert!(!n.is_null(), "{id} missing");
+    n
 }
 
 #[test]
