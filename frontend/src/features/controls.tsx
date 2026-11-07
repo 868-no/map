@@ -1,7 +1,8 @@
 import { useMemo } from 'react'
 import type { SnapshotView } from '../derive/views'
 import { defaultFilters, useStore, type Confidence, type Filters } from '../state/store'
-import { ageMs, MQTT_ARROW, roleRadius, type MqttFlow } from '../map/model'
+import { ageMs, MQTT_ARROW, type MqttFlow } from '../map/model'
+import { NodeIcon } from '../components/NodeIcon'
 import { PALETTES } from '../map/palette'
 import { useTheme } from '../theme'
 import { BASEMAP_GROUPS } from '../map/layers'
@@ -148,9 +149,9 @@ function ago(ms: number): string {
 export function Legend({ snapshot }: { snapshot: SnapshotView | undefined }) {
   const w = snapshot?.meta.window
   const windowMs = w ? Date.parse(w.end) - Date.parse(w.start) : 72 * 3600_000
-  const stops = PALETTES[useTheme()].ageStops
+  const palette = PALETTES[useTheme()]
+  const stops = palette.ageStops
   const gradient = `linear-gradient(to right, ${stops.map((c) => `rgb(${c.join(',')})`).join(', ')})`
-  const size = (role: string) => ({ width: roleRadius(role) * 2, height: roleRadius(role) * 2 })
   return (
     <div className="panel legend">
       <h3>Nodes: colour is last heard</h3>
@@ -163,20 +164,21 @@ export function Legend({ snapshot }: { snapshot: SnapshotView | undefined }) {
       <p className="muted">
         Time before the window's end{w?.rolling ? ' (now)' : ''} that it was last heard, or uplinked something as a gateway, on a logarithmic scale across the selected window: recent activity is spread out. A node only named by others counts from when it was last named.
       </p>
-      <h3>Nodes: size is role</h3>
-      <ul>
-        <li><span className="dot rep" style={size('ROUTER')} /> Router (ROUTER, ROUTER_LATE)</li>
-        <li><span className="dot rep" style={size('CLIENT_BASE')} /> Client base (CLIENT_BASE)</li>
-        <li><span className="dot rep" style={size('CLIENT')} /> Any other role, or role not reported</li>
+      <h3>Nodes: the icon is the role</h3>
+      <ul className="node-icons">
+        <li><NodeIcon icon="router" palette={palette} /> Router (ROUTER): relays everything it hears, for everyone</li>
+        <li><NodeIcon icon="routerLate" palette={palette} /> Late router (ROUTER_LATE): waits, then relays what the others did not</li>
+        <li><NodeIcon icon="base" palette={palette} /> Home station (CLIENT_BASE): fixed; relays for the nodes it has favourited</li>
+        <li><NodeIcon icon="client" palette={palette} /> Client: any other role, or role not reported</li>
       </ul>
       <h3>Node markers</h3>
-      <ul>
-        <li><span className="dot rep" /> Reported position (from an in-window Position packet or map report). When its reports jump around one place, they are combined into a narrower position.</li>
-        <li><span className="dot rep gwring glyph"><FlowIcon flow="up" /></span> MQTT gateway: uplinks the first copy of each packet it hears to the broker</li>
-        <li><span className="dot rep gwring glyph"><FlowIcon flow="upAll" /></span> MQTT gateway that uplinks every copy it hears, each with its own last hop (a firmware option)</li>
-        <li><span className="glyph-badged"><span className="dot rep" /><FlowIcon flow="down" className="glyph-badge" /></span> Arrow beside the marker: probably downlinks, transmitting packets it takes from the broker (its traceroute hops read exactly 0 dB, as packets from MQTT do). Shown with either uplink glyph too.</li>
-        <li><span className="dot rep optout" /> Red ring: did not allow MQTT uplink; reached us through another gateway, so the name is withheld</li>
-        <li><span className="dot est" /> Estimated location (not reported): a hollow ring in its last-heard colour, name in purple. Its uncertainty circle shows when it is selected or Position accuracy is on.</li>
+      <ul className="node-icons">
+        <li><NodeIcon icon="client" palette={palette} /> Reported position (from an in-window Position packet or map report). When its reports jump around one place, they are combined into a narrower position.</li>
+        <li><NodeIcon icon="client" palette={palette} uplink="up" /> MQTT gateway (blue rim, uplink badge): uplinks the first copy of each packet it hears to the broker</li>
+        <li><NodeIcon icon="client" palette={palette} uplink="upAll" /> MQTT gateway that uplinks every copy it hears, each with its own last hop (a firmware option)</li>
+        <li><span className="glyph-badged"><NodeIcon icon="client" palette={palette} /><FlowIcon flow="down" className="glyph-badge" /></span> Arrow beside the marker: probably downlinks, transmitting packets it takes from the broker (its traceroute hops read exactly 0 dB, as packets from MQTT do). Shown with an uplink badge too.</li>
+        <li><span className="optout-ring"><NodeIcon icon="client" palette={palette} /></span> Red ring: did not allow MQTT uplink; reached us through another gateway, so the name is withheld</li>
+        <li><NodeIcon icon="client" palette={palette} estimated /> Estimated location (not reported): a hollow ring in its last-heard colour, with its role in the same colour, name in purple. Its uncertainty circle shows when it is selected or Position accuracy is on.</li>
         <li>Selecting a node shows its accuracy circle (estimate uncertainty, or the precision of a coarse reported position) and only its links.</li>
         <li><span className="dot unp" /> No position: listed under “Without position”</li>
         <li><span className="chev" aria-hidden>✈</span> Airborne: moving and reporting more than 750 m above sea level (fixed mountain sites never get it)</li>

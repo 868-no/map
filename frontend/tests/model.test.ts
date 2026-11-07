@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { ageColor, AGE_STOPS, isOnline, ONLINE_MS, bridgeRoute, filterEdges, glyphInk, relativeLuminance, isInfraRole, mqttDownlink, mqttUplink, LOW_ZOOM_LINKS, passesNodeFilters, precisionErrorM, visibleLinks, withSelectedLink, lastHeardAge, ageMs, linkGeometry, placeNodes, roleRadius } from '../src/map/model'
+import { ageColor, AGE_STOPS, isOnline, ONLINE_MS, bridgeRoute, filterEdges, glyphInk, relativeLuminance, isInfraRole, mqttDownlink, mqttUplink, LOW_ZOOM_LINKS, passesNodeFilters, precisionErrorM, visibleLinks, withSelectedLink, lastHeardAge, ageMs, linkGeometry, placeNodes, roleRank } from '../src/map/model'
+import { roleIcon } from '../src/map/roleIcons'
 
 // WCAG contrast ratio.
 const contrast = (a: readonly number[], b: readonly number[]) => (Math.max(relativeLuminance(a), relativeLuminance(b)) + 0.05) / (Math.min(relativeLuminance(a), relativeLuminance(b)) + 0.05)
@@ -40,11 +41,12 @@ describe('map view model', () => {
     expect(precisionErrorM(15, 63)).toBeGreaterThan(700)
     expect(precisionErrorM(15, 63)).toBeLessThan(900)
   })
-  it('sizes markers by role', () => {
-    expect(roleRadius('ROUTER')).toBe(roleRadius('ROUTER_LATE'))
-    expect(roleRadius('ROUTER')).toBeGreaterThan(roleRadius('CLIENT_BASE'))
-    expect(roleRadius('CLIENT_BASE')).toBeGreaterThan(roleRadius('CLIENT'))
-    expect(roleRadius(undefined)).toBe(roleRadius('CLIENT_MUTE'))
+  it('draws four role icons, every other role as a client, and ranks routers first (D-186)', () => {
+    expect([roleIcon('ROUTER'), roleIcon('ROUTER_LATE'), roleIcon('CLIENT_BASE'), roleIcon('CLIENT')]).toEqual(['router', 'routerLate', 'base', 'client'])
+    for (const r of ['CLIENT_MUTE', 'TRACKER', 'SENSOR', 'TAK', undefined]) expect(roleIcon(r)).toBe('client')
+    expect(roleRank('ROUTER')).toBe(roleRank('ROUTER_LATE'))
+    expect(roleRank('ROUTER')).toBeGreaterThan(roleRank('CLIENT_BASE'))
+    expect(roleRank('CLIENT_BASE')).toBeGreaterThan(roleRank('CLIENT'))
   })
   it('hides inferred links when toggled and applies confidence filters', () => {
     const es = [edge('!a', '!b'), edge('!b', '!c', { confidence: 'low', inferred: true })]

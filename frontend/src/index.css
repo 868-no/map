@@ -331,15 +331,16 @@ table.hear th:not(:first-child), table.hear td:not(:first-child) { white-space: 
 
 .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--text); border: 1px solid #000; flex: none; vertical-align: middle; }
 .dot.est { background: transparent; border: 2px solid var(--purple); }
-.dot.optout { box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--optout); }
 .opt-out-note { border-left: 3px solid var(--optout); padding: 4px 8px; margin: 6px 0; font-size: 0.9em; }
 .dot.unp { background: var(--unpositioned); }
 .dot.ref { background: transparent; border: 1px dashed var(--muted); }
-.dot.gwring { border: 2px solid var(--accent); }
-.dot.glyph .flow-icon { width: 9px; height: 9px; fill: currentColor; }
 .glyph-badged { position: relative; display: inline-flex; flex: none; vertical-align: middle; margin-right: 6px; }
 .glyph-badged .glyph-badge { position: absolute; right: -7px; bottom: -4px; width: 8px; height: 8px; fill: var(--text); }
-.dot.glyph { width: 14px; height: 14px; font-size: 10px; font-weight: 700; line-height: 1; color: var(--bg); display: inline-flex; align-items: center; justify-content: center; }
+/* Node markers in the legend (components/NodeIcon.tsx, D-186). */
+.node-icon { flex: none; vertical-align: middle; overflow: visible; }
+.legend ul.node-icons li { display: flex; gap: 8px; align-items: flex-start; }
+.legend ul.node-icons li > .node-icon, .legend ul.node-icons li > span { margin-top: 1px; }
+.optout-ring { display: inline-flex; flex: none; border-radius: 50%; box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--optout); }
 .ln { display: inline-block; width: 26px; height: 0; border-top: 2px solid; vertical-align: middle; margin-right: 4px; }
 .ln.infra { border-color: rgb(76, 201, 240); }
 .ln.other { border-color: rgb(150, 163, 184); }

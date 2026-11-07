@@ -44,21 +44,23 @@ describe('mesh layer builder', () => {
     expect(c['links-other'].updateTriggers).toEqual(b['links-other'].updateTriggers) // a node selection leaves links alone
   })
 
-  it('draws the uplink kind inside the marker and a downlink beside it (D-084)', () => {
+  it('draws the uplink kind in a badge on the rim and a downlink beside it (D-084, D-186)', () => {
     const gw = (id: string, lon: number, extra: object): PlacedNode => ({ node: { ...node(id), is_gateway: true, ...extra }, kind: 'reported', lon, lat: 61, age: 0 })
     const ls = byId(meshLayerBuilder()({ ...base, placed: [gw('!u', 5, { multi_uplink: true }), gw('!d', 7, { multi_uplink: true, mqtt_downlink: { zero_snr: 3, traceroutes: 4 } }), gw('!g', 9, {}), gw('!b', 11, { mqtt_downlink: { zero_snr: 3, traceroutes: 4 } }), { ...gw('!o', 13, { mqtt_downlink: { zero_snr: 3, traceroutes: 4 } }), node: { ...node('!o'), mqtt_downlink: { zero_snr: 3, traceroutes: 4 } } }] }))
-    const glyphs = (ls['mqtt-glyphs'].data as { p: PlacedNode; flow: string }[]).map((g) => `${g.p.node.id}:${g.flow}`)
+    const glyphs = (ls['node-glyphs'].data as { p: PlacedNode; icon: string; part: string }[]).filter((g) => g.part === 'uplink' || g.part === 'down').map((g) => `${g.p.node.id}:${g.icon}`)
     expect(glyphs.sort()).toEqual(['!b:down', '!b:up', '!d:down', '!d:upAll', '!g:up', '!o:down', '!u:upAll'])
   })
 
-  it('never draws a plain marker over a glyph node at the same spot', () => {
+  it('stacks a marker drawn later above an earlier node and its glyphs (D-072)', () => {
     // A downlinking gateway listed first, a plain node at the same position after it.
     const gw: PlacedNode = { node: { ...node('!g'), is_gateway: true, mqtt_downlink: { zero_snr: 3, traceroutes: 4 } }, kind: 'reported', lon: 10, lat: 60, age: 0 }
     const plain: PlacedNode = { node: node('!p'), kind: 'reported', lon: 10, lat: 60, age: 0 }
     const ls = byId(meshLayerBuilder()({ ...base, placed: [gw, plain] }))
-    expect((ls.nodes.data as PlacedNode[]).map((p) => p.node.id)).toEqual(['!p', '!g'])
-    expect(Object.keys(ls).some((id) => id.startsWith('nodes-over'))).toBe(false) // no marker above the glyphs
-    expect((ls['mqtt-glyphs'].data as { flow: string }[]).map((g) => g.flow).sort()).toEqual(['down', 'up'])
+    // Every node has a glyph now (its role): the later one stacks above the first, glyph and all.
+    expect((ls.nodes.data as PlacedNode[]).map((p) => p.node.id)).toEqual(['!g', '!p'])
+    expect((ls['node-glyphs'].data as { part: string }[]).map((g) => g.part)).toEqual(['role', 'rim', 'badge', 'uplink', 'down'])
+    expect((ls['nodes-over-1'].data as PlacedNode[]).map((p) => p.node.id)).toEqual(['!p'])
+    expect((ls['node-glyphs-1'].data as { p: PlacedNode; part: string }[]).map((g) => `${g.p.node.id}:${g.part}`)).toEqual(['!p:role'])
   })
 
   it('draws a fading trail with arrows behind a moving node, and a plane badge when airborne (D-073)', () => {
@@ -70,7 +72,7 @@ describe('mesh layer builder', () => {
     expect(trail).toHaveLength(2) // two positions, then on to the marker
     expect(trail[1].alpha).toBeGreaterThan(trail[0].alpha) // fading towards the oldest
     expect((ls['trail-arrows'].data as unknown[]).length).toBe(2)
-    expect((ls['mqtt-glyphs'].data as { flow: string }[]).map((g) => g.flow)).toEqual(['plane'])
+    expect((ls['node-glyphs'].data as { p: PlacedNode; part: string }[]).filter((g) => g.p.node.id === '!m').map((g) => g.part)).toEqual(['role', 'plane'])
     expect('trails' in byId(build({ ...base, placed: [...placed, mover] }))).toBe(false) // off by default
     // With another node selected, its trail is hidden; with this one, shown.
     const on = { ...base.toggles, trails: true }

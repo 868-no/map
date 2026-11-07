@@ -183,17 +183,9 @@ export function isInfraRole(role: string | undefined): boolean {
   return role === 'ROUTER' || role === 'ROUTER_LATE'
 }
 
-/** Marker radius in pixels by device role. */
-export function roleRadius(role: string | undefined): number {
-  switch (role) {
-    case 'ROUTER':
-    case 'ROUTER_LATE':
-      return 8
-    case 'CLIENT_BASE':
-      return 6.5
-    default:
-      return 5
-  }
+/** How prominent a role is (routers first, then home stations): which name leads a label cluster. */
+export function roleRank(role: string | undefined): number {
+  return isInfraRole(role) ? 2 : role === 'CLIENT_BASE' ? 1 : 0
 }
 
 export function placeNodes(nodes: MeshNode[], endMs: number, windowMs: number): { placed: PlacedNode[]; unplaced: MeshNode[] } {

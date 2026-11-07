@@ -2,7 +2,8 @@
 // collapsed cluster shows one name and "+N"; an exploded one fans every name
 // out around the cluster with a leader line to its marker. Markers never
 // move. Pure functions in Web Mercator world pixels (unit-tested).
-import { roleRadius, type PlacedNode } from './model'
+import { roleRank, type PlacedNode } from './model'
+import { NODE_RADIUS } from './roleIcons'
 
 const TILE = 512 // MapLibre's world size at zoom 0
 
@@ -33,7 +34,7 @@ export interface Cluster {
 
 /** Most prominent member names the collapsed cluster: routers first, then the busiest. */
 function prominence(p: PlacedNode): number {
-  return roleRadius(p.node.identity?.role) * 1e6 + p.node.packets + p.node.gateway_receptions
+  return roleRank(p.node.identity?.role) * 1e9 + p.node.packets + p.node.gateway_receptions
 }
 
 /**
@@ -45,7 +46,7 @@ export function clusterLabels(placed: PlacedNode[], zoom: number): Cluster[] {
   const n = placed.length
   const px = placed.map((p) => {
     const [x, y] = toPixels(p.lon, p.lat, zoom)
-    return { x, y: y - roleRadius(p.node.identity?.role) - 12, w: labelWidth(labelText(p)) }
+    return { x, y: y - NODE_RADIUS - 12, w: labelWidth(labelText(p)) }
   })
   const parent = Array.from({ length: n }, (_, i) => i)
   const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i])))
