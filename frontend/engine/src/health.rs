@@ -555,8 +555,10 @@ pub fn health(rows: &[&Row], invalid: &[&Row], nodes: &[Node], copies: &Copies, 
             }
             with.sort_unstable();
             let others: Vec<String> = with.iter().map(|&o| node_id(o)).collect();
-            match holder.filter(|h| with.contains(h)) {
-                Some(h) => add(n, "shared_key", "warning", format!("Announces the public key of {}", node_id(h)), format!("{} proved holding this key (a verified signature; firmware 2.8 derives its id from it), while this id announced it unsigned at the same time. Either a device set up from {}'s backup or with its key copied, which can then read its direct messages, or someone announcing another node's key; signatures still tell them apart. A copy should get a new key.", node_id(h), node_id(h))),
+            // A proven key's claimants are warned even when only they overlap
+            // (the holder silent meanwhile): it is still the holder's key.
+            match holder {
+                Some(h) => add(n, "shared_key", "warning", format!("Announces the public key of {}", node_id(h)), format!("{} proved holding this key (a verified signature; firmware 2.8 derives its id from it), while this id announced it unsigned{}. Either a device set up from {}'s backup or with its key copied, which can then read its direct messages, or someone announcing another node's key; signatures still tell them apart. A copy should get a new key.", node_id(h), if with.contains(&h) { " at the same time".to_string() } else { format!(", at the same time as {}", others.join(", ")) }, node_id(h))),
                 None => add(n, "shared_key", "notice", format!("Announces the same public key as {}", others.join(", ")), format!("Active at the same time with the same key, and none of them proved holding it (no verified signature, as on firmware 2.7 and earlier). Devices set up from one backup or with a copied key can read each other's direct messages, and on firmware 2.8 they would all take the id {}; but an unsigned NodeInfo can also announce another node's key, so check the devices before acting.", node_id(k))),
             }
         }

@@ -135,3 +135,22 @@ fn an_upgraded_node_keeping_its_short_name_is_no_duplicate_name() {
         }
     }
 }
+
+// Ids claiming a proven key, active together while its holder is silent,
+// are warned about the holder's key; "none of them proved it" would be false.
+#[test]
+fn claimants_of_a_proved_key_that_overlap_only_each_other_are_warned() {
+    let mut rows = Vec::new();
+    announcing(&mut rows, 0x1111_1111, 0x1111_1111, 0, 3); // 2.8, proved its key, then silent
+    for h in 4..24 {
+        let n = if h % 2 == 0 { 0x1200_0012 } else { 0x1400_0014 };
+        announcing(&mut rows, n, 0x1111_1111, h, h + 1);
+    }
+    let (_, health) = views(&rows);
+    let got = shared(&health);
+    assert_eq!(got.len(), 2, "{got:?}");
+    for (n, sev, summary, detail) in &got {
+        assert_eq!((sev.as_str(), summary.as_str()), ("warning", "Announces the public key of !11111111"), "{n}");
+        assert!(detail.contains("at the same time as !1"), "{n}: {detail}");
+    }
+}
