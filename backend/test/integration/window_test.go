@@ -364,7 +364,7 @@ func TestObservationsEndpoint(t *testing.T) {
 	c := newAPI(t, pool, rc, testNow)
 
 	type obs struct {
-		Since, Until time.Time
+		Since time.Time
 		Generation   string
 		Rows         []struct {
 			Tp string           `json:"tp"`
@@ -408,8 +408,8 @@ func TestObservationsEndpoint(t *testing.T) {
 	q.Set("since", base.Add(6*time.Hour).Format(time.RFC3339))
 	q.Set("until", base.Add(30*time.Hour).Format(time.RFC3339))
 	c.get("/api/v1/observations", q, &o)
-	if got := types(o); len(got) != 1 || got[0] != "telemetry" || !o.Until.Equal(base.Add(10*time.Hour)) {
-		t.Fatalf("narrowed: %v until %v", got, o.Until)
+	if got := types(o); len(got) != 1 || got[0] != "telemetry" {
+		t.Fatalf("narrowed: %v", got)
 	}
 	// Paging in (observed_at, id) order with an opaque cursor.
 	q = win(base, base.Add(12*time.Hour))

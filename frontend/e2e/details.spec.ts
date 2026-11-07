@@ -105,7 +105,7 @@ test("a link's cross section marks the hovered point on the map, and the mark go
       return { d: f * L, lat: 59.91 + f * 0.04, lon: 10.75 + f * 0.3, ground: 100 + 40 * Math.sin(f * Math.PI), bulge: 5 * f * (1 - f), line: 150, fresnel: 20 * Math.sqrt(f * (1 - f)) }
     })
     return route.fulfill({
-      json: { attribution: 'Kartverket (e2e)', class: 'grazing', length_m: L, worst_clearance: 0.4, worst_d: samples[9].d, samples,
+      json: { attribution: 'Kartverket (e2e)', class: 'grazing', length_m: L, worst_d: samples[9].d, samples,
         a: { height: 150, ground: 100, source: 'terrain' }, b: { height: 150, ground: 100, source: 'terrain' } },
     })
   })

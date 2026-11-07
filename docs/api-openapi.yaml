@@ -44,9 +44,6 @@ components:
           format: uri
           readOnly: true
           type: string
-        decode_version:
-          format: int64
-          type: integer
         default_window_hours:
           format: int64
           type: integer
@@ -62,9 +59,6 @@ components:
         max_window_hours:
           format: int64
           type: integer
-        min_window_hours:
-          format: int64
-          type: integer
         operator:
           $ref: "#/components/schemas/CapabilitiesBodyOperatorStruct"
         presets:
@@ -76,23 +70,15 @@ components:
         retention_months:
           format: int64
           type: integer
-        signature_policy:
-          enum:
-            - balanced
-            - strict
-          type: string
       required:
         - presets
         - default_window_hours
-        - min_window_hours
         - max_window_hours
         - live_quantum_seconds
         - retention_months
         - map
         - features
         - geolocation
-        - signature_policy
-        - decode_version
         - operator
       type: object
     CapabilitiesBodyFeaturesStruct:
@@ -750,10 +736,6 @@ components:
         next_cursor:
           description: Opaque position after the last row returned (rows come in observed_at order)
           type: string
-        now:
-          description: Server time when the rows were read; lets clients follow the server clock between fetches
-          format: date-time
-          type: string
         rows:
           items:
             $ref: "#/components/schemas/ObsRow"
@@ -764,19 +746,13 @@ components:
           description: Effective lower bound of the rows returned
           format: date-time
           type: string
-        until:
-          description: Effective upper bound (exclusive)
-          format: date-time
-          type: string
         window:
           $ref: "#/components/schemas/WindowEcho"
           description: The full window the rows belong to
       required:
         - window
         - since
-        - until
         - generation
-        - now
         - rows
         - more
       type: object
@@ -904,17 +880,8 @@ components:
             - blocked
             - unknown
           type: string
-        length_m:
-          format: double
-          type: number
-        worst_clearance:
-          description: Least free part of the first Fresnel zone, in Fresnel radii
-          format: double
-          type: number
       required:
         - class
-        - length_m
-        - worst_clearance
       type: object
     TerrainClassesInputBody:
       additionalProperties: false
@@ -1037,9 +1004,6 @@ components:
           type:
             - array
             - "null"
-        worst_clearance:
-          format: double
-          type: number
         worst_d:
           format: double
           type: number
@@ -1050,7 +1014,6 @@ components:
         - a
         - b
         - worst_d
-        - worst_clearance
       type: object
     TrendBucket:
       additionalProperties: false
@@ -1112,20 +1075,13 @@ components:
           type:
             - array
             - "null"
-        computed:
-          format: date-time
-          type: string
         since:
           description: "Oldest retained observation: the first bucket may be partial, and new_nodes counts from here"
           format: date-time
           type: string
-        tz:
-          type: string
       required:
         - bucket
-        - tz
         - buckets
-        - computed
       type: object
     WeatherBody:
       additionalProperties: false

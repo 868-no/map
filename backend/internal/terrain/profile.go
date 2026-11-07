@@ -100,7 +100,7 @@ type Profile struct {
 	// Worst is where the least of the Fresnel zone is free: its distance and
 	// the free part, in Fresnel radii (negative: terrain above the line).
 	WorstD         float64  `json:"worst_d"`
-	WorstClearance float64  `json:"worst_clearance"`
+	WorstClearance float64  `json:"-"` // what Class is judged from
 	Samples        []Sample `json:"samples,omitempty"`
 }
 

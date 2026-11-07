@@ -13,7 +13,7 @@ import (
 // An empty page streams the same document the buffered body used to be.
 func TestWriteObservationsEmptyPage(t *testing.T) {
 	at := time.Date(2026, 11, 1, 12, 0, 0, 0, time.UTC)
-	head := ObservationsBody{Window: WindowEcho{Start: at.Add(-time.Hour), End: at, Rolling: true}, Since: at.Add(-time.Hour), Until: at, Generation: "d1.r2.cx", Now: at}
+	head := ObservationsBody{Window: WindowEcho{Start: at.Add(-time.Hour), End: at, Rolling: true}, Since: at.Add(-time.Hour), Generation: "d1.r2.cx"}
 	var buf bytes.Buffer
 	cur := &query.Cursor{At: at.Add(-time.Minute), ID: 42}
 	if err := writeObservations(&buf, head, nil, cur); err != nil {
@@ -42,12 +42,12 @@ func TestObservationsBodyRowsLast(t *testing.T) {
 		t.Fatal("ObservationsBody must end with Rows, More, NextCursor")
 	}
 	var b bytes.Buffer
-	head := ObservationsBody{Generation: `g,"rows":x`, Now: time.Unix(0, 0).UTC()}
+	head := ObservationsBody{Generation: `g,"rows":x`}
 	if err := writeObservations(&b, head, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 	var got map[string]any
-	if err := json.Unmarshal(b.Bytes(), &got); err != nil || got["generation"] != `g,"rows":x` || got["more"] != false || len(got) != 7 {
+	if err := json.Unmarshal(b.Bytes(), &got); err != nil || got["generation"] != `g,"rows":x` || got["more"] != false || len(got) != 5 {
 		t.Fatalf("%s: %v", b.Bytes(), err)
 	}
 }

@@ -275,7 +275,7 @@ func TestDayFinalIsCachedEverywhere(t *testing.T) {
 	}
 	head, rows := dayBody(t, w)
 	if len(rows) != 2 || head.Generation != gen || head.Window.Start.Format(time.DateOnly) != testDay || head.Window.Rolling ||
-		!head.Until.Equal(head.Window.End) || head.Window.End.Sub(head.Window.Start) != 24*time.Hour {
+		head.Window.End.Sub(head.Window.Start) != 24*time.Hour {
 		t.Fatalf("head %+v rows %d", head, len(rows))
 	}
 	if blobs.sets != 2 { // the gzip and br copies
@@ -418,7 +418,7 @@ func TestDayNotFinalStreams(t *testing.T) {
 	if err != nil || p.final {
 		t.Fatalf("plan %+v %v", p, err)
 	}
-	head := ObservationsBody{Window: WindowEcho{Start: p.day.Start, End: p.day.End}, Since: p.rows.Start, Until: p.rows.End, Generation: gen}
+	head := ObservationsBody{Window: WindowEcho{Start: p.day.Start, End: p.day.End}, Since: p.rows.Start, Generation: gen}
 	built, err := s.buildDay(context.Background(), db, p, head, storage.HistoryState{})
 	if err != nil {
 		t.Fatal(err)

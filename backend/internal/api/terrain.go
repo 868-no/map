@@ -108,9 +108,7 @@ type TerrainClassesInput struct {
 }
 
 type TerrainClass struct {
-	Class          string  `json:"class" enum:"clear,grazing,blocked,unknown"`
-	LengthM        float64 `json:"length_m"`
-	WorstClearance float64 `json:"worst_clearance" doc:"Least free part of the first Fresnel zone, in Fresnel radii"`
+	Class string `json:"class" enum:"clear,grazing,blocked,unknown"`
 }
 
 type TerrainClassesOutput struct {
@@ -156,10 +154,9 @@ func (s *Server) terrainClasses(ctx context.Context, in *TerrainClassesInput) (*
 	out.Body.Incomplete, out.Body.Attribution = incomplete, terrain.Attribution
 	out.Body.Classes = make([]TerrainClass, len(ends))
 	for i, e := range ends {
-		c := TerrainClass{Class: "unknown", LengthM: math.Round(terrain.Distance(e[0].Point, e[1].Point))}
+		c := TerrainClass{Class: "unknown"}
 		if ok[i] {
 			p := terrain.Build(e[0], e[1], heights.At)
-			c.WorstClearance = p.WorstClearance
 			// Until every height of this link is in, a missing one could be
 			// what blocks it; other links' missing heights do not matter.
 			if linkKnown(heights, e[0].Point, e[1].Point) {

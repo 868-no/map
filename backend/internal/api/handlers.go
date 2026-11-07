@@ -16,11 +16,9 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 
 	"github.com/868-no/map/internal/geo"
-	"github.com/868-no/map/internal/ingest"
 	"github.com/868-no/map/internal/protocol"
 	"github.com/868-no/map/internal/query"
 	"github.com/868-no/map/internal/storage"
-	"github.com/868-no/map/internal/window"
 )
 
 // ---- capabilities ----
@@ -33,7 +31,6 @@ type Preset struct {
 type CapabilitiesBody struct {
 	Presets            []Preset `json:"presets"`
 	DefaultWindowHours int      `json:"default_window_hours"`
-	MinWindowHours     int      `json:"min_window_hours"`
 	MaxWindowHours     int      `json:"max_window_hours"`
 	LiveQuantumSeconds int      `json:"live_quantum_seconds"`
 	RetentionMonths    int      `json:"retention_months"`
@@ -54,8 +51,6 @@ type CapabilitiesBody struct {
 	// Geolocation carries the estimator settings so browsers deriving views
 	// themselves apply the operator's rules (D-031).
 	Geolocation     GeoSettings `json:"geolocation"`
-	SignaturePolicy string      `json:"signature_policy" enum:"balanced,strict"`
-	DecodeVersion   int         `json:"decode_version"`
 	// Shown in the privacy policy; empty when the operator has not set them.
 	Operator struct {
 		Name    string `json:"name,omitempty" doc:"Who runs this deployment"`
@@ -103,7 +98,7 @@ func (s *Server) capabilities(ctx context.Context, _ *struct{}) (*CapabilitiesOu
 			b.Presets = append(b.Presets, p)
 		}
 	}
-	b.DefaultWindowHours, b.MinWindowHours, b.MaxWindowHours = s.Env.DefaultWindowHours, int(window.MinDuration/time.Hour), s.Env.MaxWindowHours
+	b.DefaultWindowHours, b.MaxWindowHours = s.Env.DefaultWindowHours, s.Env.MaxWindowHours
 	b.LiveQuantumSeconds = int(s.Env.LiveQuantum / time.Second)
 	b.RetentionMonths = s.Env.RetentionMonths
 	b.Map.Lat, b.Map.Lon, b.Map.Zoom, b.Map.StyleURL, b.Map.TileSource = s.Env.DefaultMapLat, s.Env.DefaultMapLon, s.Env.DefaultMapZoom, s.Env.MapStyleURL, s.Env.MapTileSource
@@ -114,8 +109,6 @@ func (s *Server) capabilities(ctx context.Context, _ *struct{}) (*CapabilitiesOu
 	b.Features.Weather = s.Weather != nil
 	b.Features.Terrain = s.Terrain != nil
 	b.Geolocation = s.geoSettings()
-	b.SignaturePolicy = s.Env.SignaturePolicy
-	b.DecodeVersion = ingest.DecodeVersion
 	return &CapabilitiesOutput{Body: b}, nil
 }
 
@@ -208,9 +201,7 @@ type ObservationsInput struct {
 type ObservationsBody struct {
 	Window     WindowEcho `json:"window" doc:"The full window the rows belong to"`
 	Since      time.Time  `json:"since" doc:"Effective lower bound of the rows returned"`
-	Until      time.Time  `json:"until" doc:"Effective upper bound (exclusive)"`
 	Generation string     `json:"generation" doc:"Decoder, row-format, configuration and history-revision generation; rows from another generation must be discarded"`
-	Now        time.Time  `json:"now" doc:"Server time when the rows were read; lets clients follow the server clock between fetches"`
 	Rows       RowList    `json:"rows"`
 	More       bool       `json:"more" doc:"More rows remain; request again with cursor = next_cursor"`
 	NextCursor string     `json:"next_cursor,omitempty" doc:"Opaque position after the last row returned (rows come in observed_at order)"`
@@ -271,7 +262,7 @@ func (s *Server) observations(ctx context.Context, in *ObservationsInput) (*Obse
 	if err != nil {
 		return nil, err
 	}
-	head := ObservationsBody{Now: s.now(), Window: echo(w), Since: n.Start, Until: n.End, Generation: s.generation(hist.Rev)}
+	head := ObservationsBody{Window: echo(w), Since: n.Start, Generation: s.generation(hist.Rev)}
 	var page rowSource // nil interface when nothing is read
 	release := func() {}
 	if n.End.After(n.Start) {

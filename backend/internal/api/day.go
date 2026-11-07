@@ -229,7 +229,7 @@ func (s *Server) observationsDay(ctx context.Context, in *DayInput) (*DayOutput,
 			hc.SetStatus(http.StatusNotModified)
 		}}, nil
 	}
-	head := ObservationsBody{Window: WindowEcho{Start: p.day.Start, End: p.day.End}, Since: p.rows.Start, Until: p.rows.End, Generation: gen}
+	head := ObservationsBody{Window: WindowEcho{Start: p.day.Start, End: p.day.End}, Since: p.rows.Start, Generation: gen}
 	if !final {
 		// Not final by the clock (today, the retention edge) or importing:
 		// nothing to share, so nothing is held whole; streamed as read.
@@ -355,7 +355,6 @@ func (s *Server) streamDay(ctx context.Context, db rowsDB, p dayPlan, head Obser
 		defer release()
 		defer src.Close()
 		dayHeaders(hc, false, "")
-		head.Now = s.now()
 		dst, done := stallGuard(hc)
 		defer done()
 		var zw *gzip.Writer
@@ -591,7 +590,6 @@ func (s *Server) buildDay(ctx context.Context, db rowsDB, p dayPlan, head Observ
 		return nil, err
 	}
 	defer src.Close()
-	head.Now = s.now()
 	// Both copies are compressed in the one pass over the rows (D-168).
 	gzBuf, brBuf := &cappedBuffer{max: dayMaxBytes}, &cappedBuffer{max: dayMaxBytes}
 	zw := gzip.NewWriter(gzBuf)

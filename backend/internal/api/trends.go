@@ -31,10 +31,9 @@ type TrendBucket struct {
 
 type TrendsBody struct {
 	Bucket   string        `json:"bucket"`
-	TZ       string        `json:"tz"`
 	Since    *time.Time    `json:"since,omitempty" doc:"Oldest retained observation: the first bucket may be partial, and new_nodes counts from here"`
 	Buckets  []TrendBucket `json:"buckets"`
-	Computed time.Time     `json:"computed"`
+	Computed time.Time     `json:"-"` // for the response cache's expiry
 }
 
 type TrendsOutput struct {
@@ -148,7 +147,7 @@ func (s *Server) trends(ctx context.Context, in *TrendsInput) (*TrendsOutput, er
 	if err := s.trendHours.RefreshEvery(rctx, s.Pool, s.now(), TrendsTTL); err != nil {
 		return nil, err
 	}
-	body := TrendsBody{Bucket: in.Bucket, TZ: in.TZ, Buckets: []TrendBucket{}, Computed: s.now(), Since: s.trendHours.Oldest()}
+	body := TrendsBody{Bucket: in.Bucket, Buckets: []TrendBucket{}, Computed: s.now(), Since: s.trendHours.Oldest()}
 	for _, b := range s.trendHours.Buckets(in.Bucket, loc) {
 		body.Buckets = append(body.Buckets, TrendBucket{Start: b.Start, Nodes: b.Nodes, Gateways: b.Gateways, NewNodes: b.NewNodes, Packets: b.Packets, Receptions: b.Receptions, ByType: b.ByType})
 	}

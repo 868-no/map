@@ -215,8 +215,6 @@ export interface components {
              */
             readonly $schema?: string;
             /** Format: int64 */
-            decode_version: number;
-            /** Format: int64 */
             default_window_hours: number;
             features: components["schemas"]["CapabilitiesBodyFeaturesStruct"];
             geolocation: components["schemas"]["GeoSettings"];
@@ -225,14 +223,10 @@ export interface components {
             map: components["schemas"]["CapabilitiesBodyMapStruct"];
             /** Format: int64 */
             max_window_hours: number;
-            /** Format: int64 */
-            min_window_hours: number;
             operator: components["schemas"]["CapabilitiesBodyOperatorStruct"];
             presets: components["schemas"]["Preset"][] | null;
             /** Format: int64 */
             retention_months: number;
-            /** @enum {string} */
-            signature_policy: "balanced" | "strict";
         };
         CapabilitiesBodyFeaturesStruct: {
             geolocation: boolean;
@@ -599,22 +593,12 @@ export interface components {
             more: boolean;
             /** @description Opaque position after the last row returned (rows come in observed_at order) */
             next_cursor?: string;
-            /**
-             * Format: date-time
-             * @description Server time when the rows were read; lets clients follow the server clock between fetches
-             */
-            now: string;
             rows: components["schemas"]["ObsRow"][] | null;
             /**
              * Format: date-time
              * @description Effective lower bound of the rows returned
              */
             since: string;
-            /**
-             * Format: date-time
-             * @description Effective upper bound (exclusive)
-             */
-            until: string;
             /** @description The full window the rows belong to */
             window: components["schemas"]["WindowEcho"];
         };
@@ -699,13 +683,6 @@ export interface components {
         TerrainClass: {
             /** @enum {string} */
             class: "clear" | "grazing" | "blocked" | "unknown";
-            /** Format: double */
-            length_m: number;
-            /**
-             * Format: double
-             * @description Least free part of the first Fresnel zone, in Fresnel radii
-             */
-            worst_clearance: number;
         };
         TerrainClassesInputBody: {
             /**
@@ -770,8 +747,6 @@ export interface components {
             length_m: number;
             samples?: components["schemas"]["Sample"][] | null;
             /** Format: double */
-            worst_clearance: number;
-            /** Format: double */
             worst_d: number;
         };
         TrendBucket: {
@@ -819,14 +794,11 @@ export interface components {
             readonly $schema?: string;
             bucket: string;
             buckets: components["schemas"]["TrendBucket"][] | null;
-            /** Format: date-time */
-            computed: string;
             /**
              * Format: date-time
              * @description Oldest retained observation: the first bucket may be partial, and new_nodes counts from here
              */
             since?: string;
-            tz: string;
         };
         WeatherBody: {
             /**
