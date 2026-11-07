@@ -11,7 +11,7 @@ docker compose run --rm backend check-config
 docker compose up -d --build
 ```
 
-The map is at `http://<host>:${WEB_PORT:-8080}`. Only the `web` service publishes a port. On first start the `basemap` service builds the self-hosted basemap (see [basemap.md](basemap.md)); until it is ready the map works without one.
+The map is at `http://127.0.0.1:${WEB_PORT:-8080}` on the host, for the reverse proxy in front of it (see [HTTPS / reverse proxy](#https--reverse-proxy)). Only the `web` service publishes a port, and only on the host's loopback interface (`WEB_BIND`, default `127.0.0.1`): Docker's published ports bypass host firewalls such as ufw. Set `WEB_BIND=0.0.0.0` to reach it from other machines, e.g. for a trial without a proxy. On first start the `basemap` service builds the self-hosted basemap (see [basemap.md](basemap.md)); until it is ready the map works without one.
 
 ### Everything in one Compose file
 

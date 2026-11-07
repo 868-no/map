@@ -96,8 +96,11 @@ services:
     environment:
       # Extra hosts the page may fetch from, e.g. an online basemap (docs/basemap.md).
       CSP_CONNECT_EXTRA: ${CSP_CONNECT_EXTRA:-}
+    # On this host's loopback only: a port Docker publishes bypasses ufw and
+    # similar host firewalls, and web must be reached through the TLS proxy
+    # (docs/operations.md). WEB_BIND=0.0.0.0 to reach it from other machines.
     ports:
-      - "${WEB_PORT:-8080}:80"
+      - "${WEB_BIND:-127.0.0.1}:${WEB_PORT:-8080}:80"
     volumes:
       # Self-hosted basemap, kept present and fresh by the basemap service
       - ./data/basemap:/srv/tiles:ro
