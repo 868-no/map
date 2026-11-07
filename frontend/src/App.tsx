@@ -41,7 +41,7 @@ export default function App() {
     geo.current = pos
     setPingPositions(pos) // pings follow the markers as estimates move
   }, [])
-  const liveOK = useLiveStream(geo, setNotice)
+  const liveOK = useLiveStream(geo)
   useWatchAlerts(watched.data?.nodes, health.data?.issues, win.live)
   useTerrainClasses(snap.data) // line of sight of router links, for the engine's ranging (D-143)
 

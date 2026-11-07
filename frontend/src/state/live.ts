@@ -1,7 +1,7 @@
 // The live stream (SSE) for the rolling window: every new row goes to the
 // derivation worker, recent radio rows also become pings, and heartbeats
 // and reconnects schedule the gap-filling sync.
-import { useEffect, useRef, useState, type RefObject } from 'react'
+import { useEffect, useState, type RefObject } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { subscribeLive } from '../api/client'
 import { noteServerTime, serverNow } from '../lib/serverClock'
@@ -28,16 +28,12 @@ function passes(r: ObsRow, f: Filters): boolean {
  * Subscribes while the window is rolling. positions: the drawn markers, for
  * placing pings. Returns whether the stream is up.
  */
-export function useLiveStream(positions: RefObject<Map<string, [number, number]>>, onNotice: (text: string) => void): boolean {
+export function useLiveStream(positions: RefObject<Map<string, [number, number]>>): boolean {
   const win = useStore((s) => s.win)
   const limitsReady = useStore((s) => s.limitsReady)
   const bump = useLiveEpoch((s) => s.bump)
   const qc = useQueryClient()
   const [liveOK, setLiveOK] = useState(true)
-  const noticeRef = useRef(onNotice)
-  useEffect(() => {
-    noticeRef.current = onNotice
-  })
 
   // The worker attributes live rows to transmissions; the animation places them.
   // Animated at once while the page is being painted; otherwise on the next
@@ -113,10 +109,12 @@ export function useLiveStream(positions: RefObject<Map<string, [number, number]>
         }
         wasLive = ok
       },
-      onRetention: () => {
-        noticeRef.current('Old data was removed by retention; views refreshed.')
-        qc.invalidateQueries()
-      },
+      // Sent after every maintenance run, whether or not it deleted anything.
+      // No view changes: a rolling window (the only kind with a stream) is at
+      // most 14 days and retention at least a month. Only the retention
+      // figures shown are read again; every tab refetching everything at
+      // once would only load the server.
+      onRetention: () => void qc.invalidateQueries({ queryKey: ['retention'] }),
     })
     return () => {
       unsub()
