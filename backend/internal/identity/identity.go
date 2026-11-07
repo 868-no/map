@@ -154,18 +154,29 @@ func (s *Store) Refresh(ctx context.Context) error {
 	return nil
 }
 
-// Run tops the index up every interval (Refresh) and reloads it whenever
-// trigger fires (retention events, which delete rows).
+// FullEvery is how many intervals Run tops the index up between full
+// reloads: retention notices travel over Redis, which is optional, and
+// rows a redecode newly verifies keep their old ids, which a top-up never
+// reads; a full reload now and then catches both.
+const FullEvery = 24
+
+// Run tops the index up every interval (Refresh), reloads it fully every
+// FullEvery intervals, and whenever trigger fires (retention events, which
+// delete rows).
 func (s *Store) Run(ctx context.Context, every time.Duration, trigger <-chan struct{}) {
 	t := time.NewTicker(every)
 	defer t.Stop()
-	for {
+	for n := 1; ; n++ {
 		var err error
 		select {
 		case <-ctx.Done():
 			return
 		case <-t.C:
-			err = s.Refresh(ctx)
+			if n%FullEvery == 0 {
+				err = s.Reload(ctx)
+			} else {
+				err = s.Refresh(ctx)
+			}
 		case <-trigger:
 			err = s.Reload(ctx)
 		}

@@ -100,3 +100,35 @@ func TestRefreshAddsOnlyNewNodes(t *testing.T) {
 		t.Errorf("reads after %v, want %v", afters, want)
 	}
 }
+
+// Without retention notices (no Redis), the index still reloads fully now
+// and then; between full reloads it is only topped up.
+func TestRunReloadsFullyEveryFullEveryTicks(t *testing.T) {
+	var full, top int // touched by the loader only (Run's goroutine)
+	counts := make(chan [2]int, 1)
+	running := false
+	s := New(func(_ context.Context, after int64) ([]storage.IdentityRow, int64, error) {
+		if !running {
+			return nil, 1, nil // the startup reload
+		}
+		if after == 0 {
+			full++
+		} else {
+			top++
+		}
+		if full+top == FullEvery {
+			counts <- [2]int{full, top}
+		}
+		return nil, 1, nil
+	}, slog.Default())
+	if err := s.Reload(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	running = true
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go s.Run(ctx, time.Millisecond, nil)
+	if c := <-counts; c != [2]int{1, FullEvery - 1} {
+		t.Fatalf("%d full reloads and %d top-ups in %d ticks", c[0], c[1], FullEvery)
+	}
+}
