@@ -108,8 +108,14 @@ services:
     environment:
       # Extra hosts the page may fetch from, e.g. an online basemap (docs/basemap.md).
       CSP_CONNECT_EXTRA: ${CSP_CONNECT_EXTRA:-}
+    # The reverse proxy's upstream, on this host's loopback only: a port
+    # Docker publishes bypasses ufw and similar host firewalls, and web must
+    # be reached only through the proxy (docs/operations.md). A proxy on
+    # another machine needs WEB_BIND set to an address it can reach (behind
+    # a firewall that admits only the proxy); a proxy or tunnel container
+    # on a Docker network reaches web:80 without any published port.
     ports:
-      - "8080:80" # the reverse proxy's upstream
+      - "${WEB_BIND:-127.0.0.1}:8080:80"
     volumes:
       - basemap:/srv/tiles:ro
     depends_on:

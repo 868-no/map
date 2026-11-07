@@ -162,8 +162,12 @@ services:
       API_UPSTREAM: backend:8000
       FETCH_UPSTREAM: ingest:8000
       CSP_CONNECT_EXTRA: ${CSP_CONNECT_EXTRA:-} # e.g. an online basemap's host (docs/basemap.md)
+    # The reverse proxy's upstream (Swarm ingress: any node). An ingress port
+    # cannot be bound to loopback and bypasses ufw and similar host
+    # firewalls: firewall it in DOCKER-USER, or better use the overlay
+    # network below (docs/operations.md, "HTTPS / reverse proxy").
     ports:
-      - "8080:80" # the reverse proxy's upstream (Swarm ingress: any node)
+      - "8080:80"
     volumes:
       - basemap:/srv/tiles:ro
     # To reach web from a tunnel/proxy container on an external overlay
