@@ -23,6 +23,15 @@ export const useLiveEpoch = create<{ epoch: string; rev: number; bump: (e: strin
 }))
 onDerivedChange(() => useLiveEpoch.setState((s) => ({ rev: s.rev + 1 })))
 
+/**
+ * The server answered while the views were built from the saved copy: ask
+ * them again. A rolling window's stream would reconnect and sync on its own;
+ * a fixed window has none, and a restarted backend sends no 'online' event.
+ */
+export function serverAnswered(): void {
+  if (usePwa.getState().servedOffline) useLiveEpoch.setState((s) => ({ rev: s.rev + 1 }))
+}
+
 export function useCapabilities() {
   return useQuery({ queryKey: ['capabilities'], queryFn: ({ signal }) => getJSON<Capabilities>('/api/v1/capabilities', undefined, signal), staleTime: 300_000 })
 }
@@ -37,6 +46,7 @@ export function useRetention() {
       if (!offline) {
         noteServerTime(r.now)
         hintGeneration(r.generation)
+        serverAnswered()
       }
       return r
     },
