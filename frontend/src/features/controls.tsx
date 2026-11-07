@@ -103,9 +103,15 @@ export function FilterPanel({ snapshot }: { snapshot: SnapshotView | undefined }
       <p className="muted">These and the link filters below change what the map draws, not the counts in the header or a node's details.</p>
 
       <h3>Link evidence</h3>
-      {EVIDENCE.map(([k, label]) => (
-        <label key={k}><input type="checkbox" checked={f.evidence.length === 0 || f.evidence.includes(k)} onChange={() => set({ evidence: toggle(f.evidence.length ? f.evidence : EVIDENCE.map((e) => e[0]), k) })} /> {label}</label>
-      ))}
+      {EVIDENCE.map(([k, label]) => {
+        // None selected means every kind (the default), so the last one checked stays checked.
+        const last = f.evidence.length === 1 && f.evidence[0] === k
+        return (
+          <label key={k} title={last ? 'At least one kind of evidence stays on: turn on another to turn this one off' : undefined}>
+            <input type="checkbox" checked={f.evidence.length === 0 || f.evidence.includes(k)} disabled={last} onChange={() => set({ evidence: toggle(f.evidence.length ? f.evidence : EVIDENCE.map((e) => e[0]), k) })} /> {label}
+          </label>
+        )
+      })}
       <label>
         Minimum confidence{' '}
         <select value={f.minConfidence} onChange={(e) => set({ minConfidence: e.target.value as Confidence })}>
