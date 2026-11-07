@@ -72,10 +72,11 @@ const MAX_HOPS = 7
 function ReachSection({ id, name }: { id: string; name: (id: string) => string }) {
   const shown = useStore((s) => s.reach)
   const setReach = useStore((s) => s.setReach)
-  const [internet, setInternet] = useState(false)
+  // Already shown on the map (the panel remounted): keep its settings rather than reset them.
+  const [internet, setInternet] = useState(shown?.internet ?? false)
   const q = useReach(id, internet)
   const r = q.data?.origin === id ? q.data : undefined
-  const [hops, setHops] = useState<number | null>(null)
+  const [hops, setHops] = useState<number | null>(shown?.hops ?? null)
   const h = hops ?? r?.hop_start ?? 3
   const ramp = PALETTES[useTheme()].reach
   // Keep the map in step while it is shown.
