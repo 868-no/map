@@ -78,6 +78,7 @@ export function NodeList({ snapshot }: { snapshot: SnapshotView | undefined }) {
       <h3>Without position ({unpositioned.length})</h3>
       <p className="muted">Observed or referenced in this window, but no in-window position or estimate.</p>
       <ul className="node-list">{unpositioned.slice(0, 300).map(row)}</ul>
+      {unpositioned.length > 300 && <p className="muted">Showing 300 of {unpositioned.length}; refine the search.</p>}
     </div>
   )
 }
