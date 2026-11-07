@@ -161,6 +161,26 @@ describe('RowStore', () => {
     expect(store.held.slice(r.start, r.end).map((x) => x.i)).toEqual(all.filter((x) => x.t >= r.start && x.t < r.end).map((x) => x.i))
   })
 
+  it('passes its abort to every fetch, and an aborted sync releases and fetches nothing', async () => {
+    const all = Array.from({ length: 6 * 60 }, (_, k) => row(k + 1, T0 + k * 60_000))
+    const s = server(all, () => T0 + 7 * H)
+    const signals: (AbortSignal | undefined)[] = []
+    const store = newStore((p, signal?: AbortSignal) => (signals.push(signal), s.fetch(p)))
+    let kept = 0
+    store.held.keepOnly = () => void kept++
+    const iso = (h: number) => new Date(T0 + h * H).toISOString()
+    await store.sync({ live: false, start: iso(2), end: iso(4) })
+    const ctl = new AbortController()
+    await store.sync({ live: false, start: iso(1), end: iso(5) }, T0 + 7 * H, ctl.signal)
+    expect(signals.slice(1)).toEqual([ctl.signal, ctl.signal]) // both ends
+    ctl.abort()
+    const before = s.calls.length
+    await expect(store.sync({ live: false, start: iso(5), end: iso(6) }, T0 + 7 * H, ctl.signal)).rejects.toThrow()
+    expect(s.calls.length).toBe(before)
+    expect(kept).toBe(0) // the window not containing the last one: nothing copied for it
+    expect(store.cov).toEqual({ lo: T0 + H, hi: T0 + 5 * H })
+  })
+
   it('offline with nothing held, takes what the cache has of the window', async () => {
     const all = Array.from({ length: 60 }, (_, k) => row(k + 1, T0 + k * 60_000))
     const fail = async (): Promise<Fetched<ObsRow[]>> => {

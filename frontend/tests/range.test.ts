@@ -126,6 +126,31 @@ describe('range fetch with a generation hint (D-170)', () => {
     expect(eng.staged.get(r.batch)?.length).toBe(3)
   })
 
+  it('an abort fails the range: requests in flight are aborted, none is made after, the batch is discarded', async () => {
+    const s = server(() => 'g1')
+    const eng = new FakeEngine()
+    const asked: string[] = []
+    let firstDone: () => void = () => {}
+    const first = new Promise<void>((r) => (firstDone = r))
+    // The first page answers; each day waits until its request is aborted.
+    const f = new RangeFetcher(() => eng, (url, signal) => {
+      asked.push(url)
+      if (!url.includes('/day/')) return s.get(url).finally(() => setTimeout(firstDone))
+      return new Promise((_, reject) => signal!.addEventListener('abort', () => reject(new Error('observations: aborted'))))
+    })
+    const ctl = new AbortController()
+    const done = f.fetchRange(params(), ctl.signal)
+    await first
+    expect(asked.filter((u) => u.includes('/day/')).length).toBe(2)
+    ctl.abort()
+    await expect(done).rejects.toThrow('aborted')
+    expect(eng.discarded.length).toBe(1)
+    expect(asked.length).toBe(3)
+    // Already aborted: nothing is asked at all.
+    await expect(f.fetchRange(params(), ctl.signal)).rejects.toThrow()
+    expect(asked.length).toBe(3)
+  })
+
   it('prefetched days are taken by the range that plans them', async () => {
     const s = server(() => 'g1')
     const eng = new FakeEngine()

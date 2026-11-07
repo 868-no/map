@@ -30,18 +30,33 @@ export interface Got {
 /** What a fetch hands back: a text, final when it is a bare string (tests), or a Got. */
 const got = (r: string | Got): Got => (typeof r === 'string' ? { text: r, final: true } : r)
 
+/** A page's signal: its timeout, and the caller's abort where the browser can combine them (AbortSignal.any). */
+function pageSignal(signal?: AbortSignal): AbortSignal {
+  const timeout = AbortSignal.timeout(PAGE_TIMEOUT_MS)
+  if (!signal) return timeout
+  return typeof AbortSignal.any === 'function' ? AbortSignal.any([signal, timeout]) : timeout
+}
+
+/** Waits ms, or less when the signal aborts. */
+const pause = (ms: number, signal?: AbortSignal) =>
+  new Promise<void>((resolve) => {
+    const t = setTimeout(resolve, ms)
+    signal?.addEventListener('abort', () => (clearTimeout(t), resolve()), { once: true })
+  })
+
 /** GETs an API URL as text, retrying while the backend is busy; errors are typed as fetchRange's callers expect. */
-async function fetchText(url: string): Promise<Got> {
+async function fetchText(url: string, signal?: AbortSignal): Promise<Got> {
   let res: globalThis.Response
   for (let attempt = 0; ; attempt++) {
     try {
-      res = await fetch(url, { headers: { Accept: 'application/json' }, signal: AbortSignal.timeout(PAGE_TIMEOUT_MS) })
+      signal?.throwIfAborted()
+      res = await fetch(url, { headers: { Accept: 'application/json' }, signal: pageSignal(signal) })
     } catch (e) {
       throw new Error(`observations: ${e instanceof Error ? e.message : e}`, { cause: e })
     }
     // Rate-limited (several tabs or a shared address) or busy: wait and try again.
     if (!backendBusy(res) || attempt >= RATE_RETRIES) break
-    await new Promise((r) => setTimeout(r, retryDelay(res, attempt)))
+    await pause(retryDelay(res, attempt), signal)
   }
   // Still busy after the retries falls through to an 'upstream' error below:
   // the backend is up, so this is no reason to show the saved copy.
@@ -88,7 +103,7 @@ export class RangeFetcher {
   /** The read-through cache (D-184): set once it is open, absent without storage. */
   cache: RowCache | null = null
 
-  constructor(private engine: () => Stager, private get: (url: string) => Promise<string | Got> = fetchText) {}
+  constructor(private engine: () => Stager, private get: (url: string, signal?: AbortSignal) => Promise<string | Got> = fetchText) {}
 
   /**
    * Starts fetching the whole days of a range under the hint, before the
@@ -129,9 +144,12 @@ export class RangeFetcher {
    * alongside the first request (D-170); their texts are staged once it
    * answered, and only when it names the same generation, else they are
    * asked again under its generation. A whole first day may hold rows from
-   * before the window: views are built from the window only.
+   * before the window: views are built from the window only. An abort (the
+   * views waiting for it were given up) fails the range as any failure does:
+   * requests in flight are aborted and none is made after.
    */
-  fetchRange = async (params: URLSearchParams, retry = true): Promise<Fetched<number>> => {
+  fetchRange = async (params: URLSearchParams, signal?: AbortSignal, retry = true): Promise<Fetched<number>> => {
+    signal?.throwIfAborted()
     const engine = this.engine()
     // After a generation moved: straight from the server (the cache starts over).
     const cache = retry ? this.cache : null
@@ -140,11 +158,11 @@ export class RangeFetcher {
     // request (even one still waiting for a slot) or at their next page, and the
     // batch is discarded, so no staged rows are stranded in the engine.
     let failed = false
-    const run = abandonable(this.slots, () => failed)
+    const run = abandonable(this.slots, () => failed || !!signal?.aborted)
     const page = (extra: Record<string, string>, keep?: string[]) => {
       const p = new URLSearchParams(params)
       for (const [k, v] of Object.entries(extra)) p.set(k, v)
-      const text = run(() => this.get(`/api/v1/observations?${p}`)).then((r) => got(r).text)
+      const text = run(() => this.get(`/api/v1/observations?${p}`, signal)).then((r) => got(r).text)
       if (keep) void text.then((t) => keep.push(t), () => {})
       return text
     }
@@ -160,7 +178,7 @@ export class RangeFetcher {
       const url = dayUrl(d, generation)
       const pre = this.prefetched.get(url)
       this.prefetched.delete(url)
-      const r = got(await (pre ? pre.catch(() => run(() => this.get(url))) : run(() => this.get(url))))
+      const r = got(await (pre ? pre.catch(() => run(() => this.get(url, signal))) : run(() => this.get(url, signal))))
       return { text: r.text, store: r.final }
     }
     const iso = (ms: number) => new Date(ms).toISOString()
@@ -207,7 +225,7 @@ export class RangeFetcher {
     this.hint = first.generation
     const batch = first.batch
     const stage = (text: string) => {
-      if (failed) throw new Abandoned('observations: range abandoned')
+      if (failed || signal?.aborted) throw new Abandoned('observations: range abandoned')
       return JSON.parse(engine.stage(text, batch)) as Meta
     }
     // A day or a cached page of another generation restarts the range without the cache.
@@ -263,7 +281,7 @@ export class RangeFetcher {
         // start over once, under the new generation (the store then sees it).
         if (retry) {
           this.cache?.clear()
-          return this.fetchRange(params, false)
+          return this.fetchRange(params, signal, false)
         }
         throw new ViewError('upstream', err.reason.message)
       }

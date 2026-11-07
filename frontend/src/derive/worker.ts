@@ -123,9 +123,19 @@ self.addEventListener('unhandledrejection', (e) => {
   if (fatal(e.reason)) e.preventDefault()
 })
 
-// One sync at a time; repeated requests for the same window and epoch share it.
+// One sync at a time; repeated requests for the same window and epoch share
+// it. A sync is for the views waiting on it: once the page has given up all
+// of them (a newer window, filter or node), a queued sync is skipped and a
+// running one aborted, its requests with it.
+interface Sync {
+  key: string
+  result: Promise<{ synced: Synced; offline: boolean }>
+  waiters: Set<number> // ids of the views waiting on it
+  abort: AbortController
+}
 let chain: Promise<unknown> = Promise.resolve()
-let last: { key: string; result: Promise<{ synced: Synced; offline: boolean }> } | null = null
+let last: Sync | null = null
+const waitingOn = new Map<number, Sync>() // view id → the sync it waits on
 let pendingLive: string[] = [] // streamed before the first sync established coverage
 
 // Whole days of the first window are fetched as soon as the page has passed
@@ -142,18 +152,20 @@ async function prefetch() {
   if (syncing) return
   fetcher.prefetchDays(baseParams(firstWin))
 }
-function synced(win: WindowReq, epoch: string): Promise<{ synced: Synced; offline: boolean }> {
-  const key = JSON.stringify(win) + '|' + epoch
-  if (last?.key === key) return last.result
+function startSync(win: WindowReq, key: string): Sync {
+  const abort = new AbortController()
+  const signal = abort.signal
   const result = chain.then(async () => {
+    if (signal.aborted) throw CANCELLED // queued, and every view waiting on it was given up
     await started
     try {
       syncing = true
-      const s = await store.sync(win).finally(() => fetcher.dropPrefetched())
+      const s = await store.sync(win, Date.now(), signal).finally(() => fetcher.dropPrefetched())
       for (const rows of pendingLive) store.addLive(rows)
       pendingLive = []
       return { synced: s, offline: false }
     } catch (e) {
+      if (signal.aborted) throw CANCELLED // not offline: given up
       if (e instanceof ViewError) throw e // the API answered, with an error (a gateway's 502/503/504 is no answer)
       // Nothing held yet (a cold start offline): what the cache has of the window.
       await store.fromCache(win).catch(() => false)
@@ -162,15 +174,42 @@ function synced(win: WindowReq, epoch: string): Promise<{ synced: Synced; offlin
       return { synced: s, offline: true }
     }
   })
+  const sync: Sync = { key, result, waiters: new Set(), abort }
   chain = result.catch(() => {})
-  last = { key, result }
   // Retry next time after an error, and after an answer from the saved copy
   // (the API may answer again: a backend restart sends no 'online' event).
   const forget = () => {
-    if (last?.key === key) last = null
+    if (last === sync) last = null
   }
   result.then((r) => r.offline && forget(), forget)
-  return result
+  return sync
+}
+
+/** The window's sync, shared with other views of the same window and epoch; view `id` waits on it. */
+async function synced(win: WindowReq, epoch: string, id: number): Promise<{ synced: Synced; offline: boolean }> {
+  const key = JSON.stringify(win) + '|' + epoch
+  if (last?.key !== key) last = startSync(win, key)
+  const sync = last
+  sync.waiters.add(id)
+  waitingOn.set(id, sync)
+  try {
+    return await sync.result
+  } finally {
+    sync.waiters.delete(id)
+    waitingOn.delete(id)
+  }
+}
+
+/** The page gave up view `id`: a sync no view waits on any more is skipped, or aborted if running. */
+function giveUp(id: number) {
+  asked.delete(id)
+  const sync = waitingOn.get(id)
+  if (!sync) return
+  waitingOn.delete(id)
+  sync.waiters.delete(id)
+  if (sync.waiters.size) return
+  sync.abort.abort()
+  if (last === sync) last = null // a later request for the same window starts afresh
 }
 
 // Rolling-window ends pinned per page revision (window, epoch, rev): rows
@@ -276,7 +315,8 @@ async function view(req: ViewRequest): Promise<{ body: Uint8Array; meta: ViewMet
   await inited
   if (startError) throw new ViewError('internal', `the derivation engine failed to start: ${startError}`)
   liveHours = req.win.live ? req.win.durationH : null
-  const { synced: sy, offline } = await synced(req.win, req.epoch)
+  if (!asked.has(req.id)) throw CANCELLED // given up while the worker started: no sync for it
+  const { synced: sy, offline } = await synced(req.win, req.epoch, req.id)
   // Waiting on the sync is when requests pile up (start-up, a new window or
   // filter, a node clicked through): those given up are not built.
   if (!asked.has(req.id)) throw CANCELLED
@@ -356,7 +396,7 @@ self.onmessage = async (e: MessageEvent<Request>) => {
     return
   }
   if (msg.type === 'cancel') {
-    asked.delete(msg.id)
+    giveUp(msg.id)
     return
   }
   let out: Response

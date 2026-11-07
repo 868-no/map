@@ -27,8 +27,8 @@ export interface Fetched<B> {
   batch: B
 }
 
-/** Fetches every page for the given parameters into one batch. */
-export type FetchRange<B> = (params: URLSearchParams) => Promise<Fetched<B>>
+/** Fetches every page for the given parameters into one batch; an abort fails it. */
+export type FetchRange<B> = (params: URLSearchParams, signal?: AbortSignal) => Promise<Fetched<B>>
 
 /** Where rows live. B is a fetched batch, L a set of live rows. */
 export interface Backend<B, L> {
@@ -69,6 +69,8 @@ export class RowStore<B, L> {
   generation: string | null = null
   /** The window last synced: the next one releases what it cannot use unless it contains it. */
   private last: { req: WindowReq; start: number; end: number } | null = null
+  /** The running sync's abort, passed to every fetch it makes. */
+  private signal: AbortSignal | undefined
 
   constructor(public rows: Backend<B, L>, private fetchRange: FetchRange<B>, private fetchCached?: FetchCached<B>) {}
 
@@ -92,7 +94,7 @@ export class RowStore<B, L> {
   private get(params: URLSearchParams, extra: Record<string, string> = {}): Promise<Fetched<B>> {
     const p = new URLSearchParams(params)
     for (const [k, v] of Object.entries(extra)) p.set(k, v)
-    return this.fetchRange(p)
+    return this.fetchRange(p, this.signal)
   }
 
   /**
@@ -121,8 +123,22 @@ export class RowStore<B, L> {
     }
   }
 
-  /** Bring the store up to date for req; returns the window's bounds. */
-  async sync(req: WindowReq, now = Date.now()): Promise<Synced> {
+  /**
+   * Bring the store up to date for req; returns the window's bounds. An
+   * abort fails it like a failed fetch: what is held stays consistent (each
+   * fetch is committed whole or discarded), only not up to date.
+   */
+  async sync(req: WindowReq, now = Date.now(), signal?: AbortSignal): Promise<Synced> {
+    signal?.throwIfAborted() // before release: a sync nobody waits for copies nothing
+    this.signal = signal
+    try {
+      return await this.syncing(req, now)
+    } finally {
+      this.signal = undefined
+    }
+  }
+
+  private async syncing(req: WindowReq, now: number): Promise<Synced> {
     this.release(req, now)
     const base = baseParams(req)
     const cov = this.cov
