@@ -89,12 +89,31 @@ export interface FanSlot {
 }
 
 /**
- * Exploded layout: names on a ring around the cluster's centre, assigned in
- * the angular order of their markers so leader lines do not cross. The ring
- * grows with the cluster so names keep apart.
+ * The most names a cluster fans out. Clusters join transitively, so in a
+ * dense town one can hold hundreds of nodes: their names would not fit on a
+ * ring anyone can read, and placing them costs O(n²) per ring size tried.
+ * The rest are counted in a "+N more" under the ring; zooming in splits the
+ * cluster.
  */
-export function fanOut(c: Cluster, zoom: number): FanSlot[] {
-  const pts = c.members.map((m) => ({ m, p: toPixels(m.lon, m.lat, zoom), w: labelWidth(labelText(m)) }))
+export const FAN_MAX = 12
+
+/** The members a fan names: the most prominent, and always `keep` (the selected node) when it is a member. */
+function fanMembers(c: Cluster, keep?: string | null): PlacedNode[] {
+  if (c.members.length <= FAN_MAX) return c.members
+  const top = c.members.slice(0, FAN_MAX) // members are sorted by prominence
+  const kept = keep ? c.members.find((m) => m.node.id === keep) : undefined
+  if (kept && !top.includes(kept)) top[FAN_MAX - 1] = kept
+  return top
+}
+
+interface FanLayout {
+  slots: FanSlot[]
+  centre: [number, number] // world pixels
+  r: number // ring radius, pixels
+}
+
+function fanLayout(c: Cluster, zoom: number, keep?: string | null): FanLayout {
+  const pts = fanMembers(c, keep).map((m) => ({ m, p: toPixels(m.lon, m.lat, zoom), w: labelWidth(labelText(m)) }))
   const cx = pts.reduce((s, q) => s + q.p[0], 0) / pts.length
   const cy = pts.reduce((s, q) => s + q.p[1], 0) / pts.length
   const n = pts.length
@@ -113,7 +132,16 @@ export function fanOut(c: Cluster, zoom: number): FanSlot[] {
     slots.every((a, i) => slots.every((b, j) => j <= i || Math.abs(a.x - b.x) >= (a.q.w + b.q.w) / 2 + 4 || Math.abs(a.y - b.y) >= LABEL_H + 2))
   let r = 48
   while (r < 600 && !clear(at(r))) r += 4
-  return at(r).map((s) => ({ node: s.q.m, pos: fromPixels(s.x, s.y, zoom) }))
+  return { slots: at(r).map((s) => ({ node: s.q.m, pos: fromPixels(s.x, s.y, zoom) })), centre: [cx, cy], r }
+}
+
+/**
+ * Exploded layout: names on a ring around the cluster's centre, assigned in
+ * the angular order of their markers so leader lines do not cross. The ring
+ * grows with the cluster so names keep apart. At most FAN_MAX names.
+ */
+export function fanOut(c: Cluster, zoom: number, keep?: string | null): FanSlot[] {
+  return fanLayout(c, zoom, keep).slots
 }
 
 /** One rendered name: a collapsed cluster's, or one member's in an exploded fan. */
@@ -124,16 +152,29 @@ export interface LabelDatum {
   text: string
   pos: [number, number]
   exploded: boolean
+  /** A fan's "+N more": how many names it leaves out, and the ring's centre (lon, lat) to zoom in on. */
+  more?: { count: number; centre: [number, number] }
 }
 
-export function labelData(clusters: Cluster[], exploded: Set<string>, zoom: number): { labels: LabelDatum[]; leaders: { from: [number, number]; to: [number, number] }[] } {
+/** Labels for the clusters; `keep` (the selected node) is always among a fan's names. */
+export function labelData(clusters: Cluster[], exploded: Set<string>, zoom: number, keep?: string | null): { labels: LabelDatum[]; leaders: { from: [number, number]; to: [number, number] }[] } {
   const labels: LabelDatum[] = []
   const leaders: { from: [number, number]; to: [number, number] }[] = []
   for (const c of clusters) {
     if (c.members.length > 1 && exploded.has(c.id)) {
-      for (const s of fanOut(c, zoom)) {
+      const fan = fanLayout(c, zoom, keep)
+      for (const s of fan.slots) {
         labels.push({ label: true, cluster: c, node: s.node, text: labelText(s.node), pos: s.pos, exploded: true })
         leaders.push({ from: [s.node.lon, s.node.lat], to: s.pos })
+      }
+      const left = c.members.length - fan.slots.length
+      if (left > 0) {
+        const [cx, cy] = fan.centre
+        labels.push({
+          label: true, cluster: c, node: c.lead, text: `+${left} more`, exploded: true,
+          pos: fromPixels(cx, cy + fan.r + LABEL_H + 6, zoom), // under the ring's lowest name
+          more: { count: left, centre: fromPixels(cx, cy, zoom) },
+        })
       }
     } else {
       const extra = c.members.length - 1

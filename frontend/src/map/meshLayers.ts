@@ -505,7 +505,7 @@ export function meshLayerBuilder(): (input: MeshLayerInput) => Layer[] {
 
     if (toggles.labels && zoom >= 10) {
       // Names that would overlap are clustered; hovered or selected clusters fan out.
-      const { labels, leaders } = labelsOf(clusters, exploded, zoom)
+      const { labels, leaders } = labelsOf(clusters, exploded, zoom, selId)
       if (leaders.length) {
         layers.push(
           new LineLayer<(typeof leaders)[number]>({
@@ -520,7 +520,7 @@ export function meshLayerBuilder(): (input: MeshLayerInput) => Layer[] {
           getText: (l) => l.text, getSize: 18,
           // Collapsed names sit above their marker; fanned-out names centre on their slot.
           getPixelOffset: (l) => (l.exploded ? [0, 0] : [0, -(NODE_RADIUS + 12)]),
-          getColor: (l) => (l.node.node.id === selId ? c.selected : [...(l.node.kind === 'estimated' ? c.textEstimated : c.text), 235] as RGBA),
+          getColor: (l) => (l.node.node.id === selId && !l.more ? c.selected : [...(l.node.kind === 'estimated' ? c.textEstimated : c.text), 235] as RGBA),
           // 'auto' builds the glyph atlas from the names (Æ, Ø, Å, emoji); the default is ASCII only.
           characterSet: 'auto', fontFamily: 'system-ui, sans-serif', fontWeight: 600,
           outlineWidth: 3, outlineColor: c.textOutline, fontSettings: FONT_SETTINGS,

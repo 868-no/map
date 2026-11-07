@@ -477,6 +477,7 @@ export default memo(function MapView({ caps, snapshot, onPositions }: Props) {
         }
         if ('label' in o) {
           const n = o.node.node
+          if (o.more) return setHover({ x: info.x, y: info.y, text: `${o.more.count} more nodes close together: click or zoom in to tell them apart` })
           setHover({ x: info.x, y: info.y, text: o.exploded || o.cluster.members.length === 1 ? n.identity?.long_name ?? n.id : `${o.cluster.members.length} nodes close together` })
         } else if ('kind' in o) {
           if (c && c.members.length > 1) return setHover(null) // its names are fanned out: a tooltip would cover them
@@ -508,8 +509,11 @@ export default memo(function MapView({ caps, snapshot, onPositions }: Props) {
       const o = info?.object as PlacedNode | LinkGeom | LabelDatum | RouteGeom | undefined
       if (!o) return select(null) // empty map: clear the selection
       if ('seg' in o) return
-      if ('label' in o) select({ kind: 'node', id: o.node.node.id })
-      else if ('kind' in o) select({ kind: 'node', id: o.node.id })
+      if ('label' in o) {
+        // A fan's "+N more" zooms in on the cluster, where it splits up.
+        if (o.more) map.easeTo({ center: o.more.centre, zoom: Math.min(map.getZoom() + 2, map.getMaxZoom()) })
+        else select({ kind: 'node', id: o.node.node.id })
+      } else if ('kind' in o) select({ kind: 'node', id: o.node.id })
       else select({ kind: 'edge', src: o.a, dst: o.b, mqtt: o.mqtt })
     }
     map.on('click', onClick)

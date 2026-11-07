@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { MeshNode } from '../src/derive/views'
-import { clusterLabels, fanOut, fromPixels, labelData, toPixels } from '../src/map/labels'
+import { clusterLabels, FAN_MAX, fanOut, fromPixels, labelData, toPixels } from '../src/map/labels'
 import type { PlacedNode } from '../src/map/model'
 
 const node = (id: string, lat: number, lon: number, name: string, role?: string, packets = 1): PlacedNode => ({
@@ -53,5 +53,21 @@ describe('label clusters', () => {
       }
     }
     expect(many.every((m) => m.lat === 59.91 && m.lon === 10.75)).toBe(true)
+  })
+
+  it('fans out at most FAN_MAX names, the selected one always among them, and counts the rest', () => {
+    const crowd = Array.from({ length: 40 }, (_, i) => node(`!000001${i.toString(16).padStart(2, '0')}`, 59.91, 10.75, `N${i}`, undefined, 100 - i))
+    const [cl] = clusterLabels(crowd, 14)
+    expect(cl.members).toHaveLength(40)
+    const quiet = crowd[39].node.id // the least prominent
+    const open = labelData([cl], new Set([cl.id]), 14, quiet)
+    const names = open.labels.filter((l) => !l.more)
+    expect(names).toHaveLength(FAN_MAX)
+    expect(names.some((l) => l.node.node.id === quiet)).toBe(true)
+    expect(open.leaders).toHaveLength(FAN_MAX)
+    const more = open.labels.find((l) => l.more)!
+    expect(more.text).toBe(`+${40 - FAN_MAX} more`)
+    expect(more.more!.count).toBe(40 - FAN_MAX)
+    expect(fanOut(cl, 14)).toHaveLength(FAN_MAX)
   })
 })
