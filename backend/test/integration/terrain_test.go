@@ -17,7 +17,8 @@ import (
 	"github.com/868-no/map/internal/window"
 )
 
-// The warmer's nodes (D-144): a node's newest role decides, positions come
+// The warmer's and the weather keeper's nodes (D-133, D-144): routers,
+// by a node's newest trusted role, positions come
 // from Position packets and map reports, the newest wins, a reported
 // altitude of 0 means none, and nothing older than the window counts.
 func TestInfrastructure(t *testing.T) {
@@ -51,7 +52,7 @@ func TestInfrastructure(t *testing.T) {
 	row(4, "nodeinfo", 3*time.Hour, router) // a router once, a client now
 	row(4, "nodeinfo", time.Hour, `{"nodeinfo": {"role": "CLIENT"}}`)
 	row(4, "position", time.Hour, pos(63.5, 10.5, 10))
-	row(5, "nodeinfo", time.Hour, `{"nodeinfo": {"role": "CLIENT_BASE"}}`)
+	row(5, "nodeinfo", time.Hour, `{"nodeinfo": {"role": "ROUTER_LATE"}}`)
 	row(5, "position", 3*time.Hour, pos(60.0, 5.0, 10)) // moved since
 	row(5, "position", time.Hour, pos(63.34, 10.69, 20))
 	row(6, "nodeinfo", 20*24*time.Hour, router) // older than the 14-day window
@@ -63,6 +64,10 @@ func TestInfrastructure(t *testing.T) {
 	row(7, "position", time.Hour, pos(63.45, 10.4, 5))
 	row(8, "nodeinfo", time.Hour, `{"nodeinfo": {"role": "ROUTER", "identity_untrusted": true}}`)
 	row(8, "position", time.Hour, pos(63.46, 10.41, 5))
+	// A base station is placed to stay but is no router: the page asks for
+	// no line of sight to it, nor any weather at it.
+	row(9, "nodeinfo", time.Hour, `{"nodeinfo": {"role": "CLIENT_BASE"}}`)
+	row(9, "position", time.Hour, pos(63.47, 10.42, 5))
 
 	got, err := storage.Infrastructure(ctx, pool, window.Window{Start: now.Add(-terrain.WarmWindow), End: now.Add(time.Second)}, now.Add(-24*time.Hour))
 	if err != nil {
@@ -77,7 +82,7 @@ func TestInfrastructure(t *testing.T) {
 	if n := got[1]; n.Node != 3 || n.Lat != 63.39 || n.Alt != nil {
 		t.Fatalf("node 3 (map report, no altitude): %+v", n)
 	}
-	if n := got[2]; n.Node != 5 || n.Lat != 63.34 || n.Role != "CLIENT_BASE" || n.Router() {
+	if n := got[2]; n.Node != 5 || n.Lat != 63.34 || n.Role != "ROUTER_LATE" || !n.Router() {
 		t.Fatalf("node 5 (newest position): %+v", n)
 	}
 	if n := got[3]; n.Node != 7 || n.Role != "ROUTER" {

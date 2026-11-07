@@ -439,7 +439,7 @@ func serveCmd() *cobra.Command {
 				apiSrv.DayCache = rc // whole days shared between replicas (D-158)
 			}
 			ua := userAgent(c.Env)
-			// Routers and base stations, read once for the terrain warmer and
+			// Routers, read once for the terrain warmer and
 			// the weather keeper alike (D-133, D-144), over the longer of their
 			// windows.
 			roster := &storage.Roster{Pool: pool, Window: max(terrain.WarmWindow, time.Duration(c.Env.MaxWindowHours)*time.Hour), Alive: 24 * time.Hour, TTL: 20 * time.Minute}
@@ -450,8 +450,8 @@ func serveCmd() *cobra.Command {
 				apiSrv.Terrain = terrain.New(c.Env.TerrainURL, ua)
 				apiSrv.Terrain.Store, apiSrv.Terrain.Log = &terrain.Store{Pool: pool}, log
 				go apiSrv.Terrain.Run(ctx)
-				// Heights between infrastructure nodes, fetched before anyone
-				// asks (D-144). Each replica warms its own queue; the store
+				// Heights between routers, the links the page asks classes
+				// for, fetched before anyone asks (D-144). Each replica warms its own queue; the store
 				// keeps any point from being fetched twice once it is in.
 				warm := &terrain.Warmer{Client: apiSrv.Terrain, Interval: terrain.WarmInterval, Log: log,
 					Load: func(ctx context.Context) ([]terrain.End, error) {

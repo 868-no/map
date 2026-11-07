@@ -13,11 +13,11 @@ import (
 	"github.com/868-no/map/internal/window"
 )
 
-// InfraNode is an infrastructure node: its newest role, its newest reported
-// position, and whether it was heard lately.
+// InfraNode is an infrastructure node (a router): its newest role, its
+// newest reported position, and whether it was heard lately.
 type InfraNode struct {
 	Node     uint32
-	Role     string // ROUTER, ROUTER_LATE or CLIENT_BASE
+	Role     string // ROUTER or ROUTER_LATE
 	Lat, Lon float64
 	Alt      *float64 // m above sea level; nil when not reported
 	Heard    bool     // sent anything but an invalid packet since the roster's alive time
@@ -27,9 +27,11 @@ type InfraNode struct {
 // weather is kept ready (D-133).
 func (n InfraNode) Router() bool { return n.Role == "ROUTER" || n.Role == "ROUTER_LATE" }
 
-// InfraRoles are the roles of infrastructure nodes, those placed to stay
-// (D-144): routers and base stations.
-var InfraRoles = []string{"ROUTER", "ROUTER_LATE", "CLIENT_BASE"}
+// InfraRoles are the roles of infrastructure nodes (D-144): the routers,
+// which the page draws line of sight between and shows weather at. Base
+// stations (CLIENT_BASE) are placed to stay too, but the page asks for
+// neither at them, so warming them would be work nobody uses.
+var InfraRoles = []string{"ROUTER", "ROUTER_LATE"}
 
 // Infrastructure returns every node whose newest role announcement (NodeInfo
 // or map report; never an unsigned NodeInfo marked identity_untrusted, which
@@ -38,7 +40,7 @@ var InfraRoles = []string{"ROUTER", "ROUTER_LATE", "CLIENT_BASE"}
 // (Position packets and map reports, the newest by time then id; 0,0 is no
 // position). Heard is whether it sent anything but an invalid packet since
 // alive. One definition serves the weather kept ready for live routers
-// (D-133) and the terrain heights warmed between infrastructure (D-144).
+// (D-133) and the terrain heights warmed between routers (D-144).
 func Infrastructure(ctx context.Context, pool *pgxpool.Pool, w window.Window, alive time.Time) ([]InfraNode, error) {
 	role := `COALESCE(decoded_metadata->'nodeinfo'->>'role', decoded_metadata->'mapreport'->>'role', '')`
 	q := fmt.Sprintf(`
