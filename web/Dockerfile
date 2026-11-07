@@ -11,6 +11,12 @@ RUN rustup target add wasm32-unknown-unknown \
  && cargo install --locked wasm-bindgen-cli --version "$WASM_BINDGEN"
 WORKDIR /src/engine
 COPY frontend/engine/Cargo.toml frontend/engine/Cargo.lock ./
+# The dependencies, built against an empty crate in a layer of their own, so
+# a change to the engine's sources rebuilds only the engine: the layer cache
+# is what CI keeps between runs (cache mounts are not exported with it).
+# The empty crate's own outputs are removed, so its build is never mistaken
+# for the real one.
+RUN mkdir src && touch src/lib.rs  && cargo build --release --locked --target wasm32-unknown-unknown  && rm -r src target/wasm32-unknown-unknown/release/.fingerprint/meshmap-engine-*           target/wasm32-unknown-unknown/release/deps/*meshmap_engine*           target/wasm32-unknown-unknown/release/*meshmap_engine*
 COPY frontend/engine/src ./src
 # Binaryen's wasm-opt, as scripts/wasm.sh runs it: -O3 (as the release
 # profile's opt-level 3) and no name or producers sections. Its release has
@@ -19,8 +25,7 @@ ARG BINARYEN=version_133
 ADD --checksum=sha256:2dc9c7813f5375db93d96ead4b78222fcc3e2677bbb832297af4797782a37489 \
     https://github.com/WebAssembly/binaryen/releases/download/${BINARYEN}/binaryen-${BINARYEN}-x86_64-linux.tar.gz /tmp/binaryen.tar.gz
 ARG BUILDARCH
-RUN --mount=type=cache,target=/usr/local/cargo/registry --mount=type=cache,target=/src/engine/target \
-    cargo build --release --locked --target wasm32-unknown-unknown \
+RUN cargo build --release --locked --target wasm32-unknown-unknown \
  && wasm-bindgen --target web --experimental-reset-state-function --out-dir /out --out-name engine target/wasm32-unknown-unknown/release/meshmap_engine.wasm \
  && if [ "$BUILDARCH" = amd64 ]; then \
       tar xzf /tmp/binaryen.tar.gz -C /usr/local/bin --strip-components=2 "binaryen-${BINARYEN}/bin/wasm-opt" \
