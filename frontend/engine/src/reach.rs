@@ -109,3 +109,41 @@ pub fn reach(origin: u32, edges: &[Edge], silent: &FxSet<u32>, internet: bool, o
     nodes.sort_unstable_by(|a, b| a.need.cmp(&b.need).then(a.id.cmp(&b.id)));
     Reach { origin: node_id(origin), hop_start, internet, nodes }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::row::{Interner, JRow};
+    use crate::util::set;
+    use crate::zerocost::ZeroCost;
+
+    fn link(src: u32, dst: u32) -> Edge {
+        Edge { src_num: src, dst_num: dst, confidence: "high", ..Default::default() }
+    }
+
+    #[test]
+    fn hop_limits_follow_relays_free_links_and_silent_nodes() {
+        // 1 -> 2 -> 3 -> 4 with 3 CLIENT_MUTE; 2 -> 5 over MQTT; 4 -> 6 a
+        // guess; 2 -> 7 a 0-cost link, then 7 -> 8 -> 9; 2 -> 1 back.
+        let mut edges = vec![link(1, 2), link(2, 3), link(3, 4), link(2, 7), link(7, 8), link(8, 9), link(2, 1)];
+        edges.push(Edge { mqtt: true, ..link(2, 5) });
+        edges.push(Edge { inferred: true, ..link(4, 6) });
+        edges[3].zero_cost = Some(ZeroCost { free: 5, spent: 0, likely: true });
+        let silent: FxSet<u32> = [3].into_iter().collect();
+        let mut i = Interner::default();
+        let own: Vec<Row> = [(1, 3), (2, 3), (3, 4)]
+            .iter()
+            .map(|&(k, hs)| serde_json::from_str::<JRow>(&format!(r#"{{"i":{k},"t":{k},"b":"x","g":2,"s":1,"y":"text","l":"{k:016x}","o":"{k:016x}","sg":"unsigned","hs":{hs}}}"#)).unwrap().into_row(&mut i))
+            .collect();
+        let refs: Vec<&Row> = own.iter().collect();
+        let got = reach(1, &edges, &silent, false, &refs);
+        let need: Vec<(&str, u8, &str, bool)> = got.nodes.iter().map(|r| (r.id.as_str(), r.need, r.via.as_str(), r.free)).collect();
+        // 9 needs 2, not 3: 7 got it over a 0-cost link and passes it on with the hop unspent.
+        assert_eq!(need, [("!00000002", 0, "!00000001", false), ("!00000003", 1, "!00000002", false), ("!00000007", 1, "!00000002", true), ("!00000008", 2, "!00000007", false), ("!00000009", 2, "!00000008", false)]);
+        assert_eq!((got.hop_start, got.internet), (Some(3), false), "the hop limit most of its packets left with");
+        let online = reach(1, &edges, &set(), true, &[]);
+        assert!(online.nodes.iter().any(|r| r.id == "!00000005" && r.need == 1), "MQTT links with internet on");
+        assert!(online.nodes.iter().any(|r| r.id == "!00000004" && r.need == 2), "3 relays once it is not silent");
+        assert!(online.nodes.iter().all(|r| r.id != "!00000006" && r.id != "!00000001"), "no guesses, nor the origin");
+    }
+}
