@@ -5,13 +5,14 @@
 
 use serde::Serialize;
 
-use crate::health::SILENT_GAP_FACTOR;
+use crate::health::{gone_quiet, heard_times, usual_gap};
 use crate::row::Row;
 use crate::util::{iso, map, node_id, FxMap, FxSet};
 use crate::views::Node;
 
 /// A watched node counts as quiet once nothing was heard from it for this
-/// long and SILENT_GAP_FACTOR times its usual gap, before the newest data.
+/// long and health::SILENT_GAP_FACTOR times its usual gap, before the newest data
+/// (health::gone_quiet, as the silent-infrastructure rule, D-188).
 pub const QUIET_MIN_MS: i64 = 3_600_000;
 /// Events (a minute or more apart) needed to know its usual gap.
 pub const QUIET_MIN_EVENTS: usize = 4;
@@ -55,17 +56,11 @@ pub fn watch<'a>(ids: &[u32], rows: &[&Row], nodes: impl Iterator<Item = &'a Nod
     let want: FxSet<u32> = ids.iter().copied().collect();
     let by: FxMap<u32, &Node> = nodes.filter(|n| want.contains(&n.num)).map(|n| (n.num, n)).collect();
     let hi = rows.iter().map(|r| r.t).max().unwrap_or(0);
-    let mut heard: FxMap<u32, Vec<i64>> = map();
+    let mut heard = heard_times(rows, |n| want.contains(&n));
     let mut gws: FxMap<u32, FxSet<u32>> = map();
     for r in rows {
-        if want.contains(&r.src) {
-            heard.entry(r.src).or_default().push(r.t);
-            if let Some(g) = r.gw {
-                gws.entry(r.src).or_default().insert(g);
-            }
-        }
-        if let Some(g) = r.gw.filter(|g| want.contains(g)) {
-            heard.entry(g).or_default().push(r.t);
+        if let Some(g) = r.gw.filter(|_| want.contains(&r.src)) {
+            gws.entry(r.src).or_default().insert(g);
         }
     }
     ids.iter()
@@ -73,16 +68,10 @@ pub fn watch<'a>(ids: &[u32], rows: &[&Row], nodes: impl Iterator<Item = &'a Nod
             let Some(x) = by.get(&n) else {
                 return Watched { id: node_id(n), status: "absent", long_name: String::new(), short_name: String::new(), role: String::new(), last_seen: None, quiet_ms: None, usual_gap_ms: None, quiet: false, battery: None, voltage: None, telemetry_at: None, packets: 0, gateways: 0, is_gateway: false };
             };
-            let mut ts = heard.remove(&n).unwrap_or_default();
-            ts.sort_unstable();
-            ts.dedup_by(|b, a| *b - *a < 60_000);
-            let usual = (ts.len() >= QUIET_MIN_EVENTS).then(|| {
-                let mut gaps: Vec<i64> = ts.windows(2).map(|w| w[1] - w[0]).collect();
-                gaps.sort_unstable();
-                gaps[gaps.len() / 2]
-            });
+            let ts = heard.remove(&n).unwrap_or_default();
+            let usual = usual_gap(&ts, QUIET_MIN_EVENTS);
             let quiet_ms = ts.last().map(|&last| hi - last);
-            let quiet = matches!((quiet_ms, usual), (Some(q), Some(u)) if q >= QUIET_MIN_MS.max(SILENT_GAP_FACTOR * u));
+            let quiet = matches!((quiet_ms, usual), (Some(q), Some(u)) if gone_quiet(q, u, QUIET_MIN_MS));
             let id = x.identity.as_ref();
             let t = x.telemetry.as_ref();
             Watched {
