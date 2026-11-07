@@ -327,13 +327,16 @@ pub fn airtime(copies: &Copies, rows: &[&Row], i: &Interner, hours: f64) -> Airt
 type Claims = (FxSet<u64>, FxMap<u32, usize>, FxSet<u32>);
 
 /// The window's known issues and airtime. `hours`: the window's length;
-/// rates use the span its rows cover when that is shorter. `invalid`: the
-/// window's rows that failed decoding or verification, which the filters
-/// keep out of `rows` (D-093). nodes, copies, presets: the build's (views::Built).
+/// rates use the span its rows cover when that is shorter. `rows`: the
+/// window's rows passing the filters. `window`: all of the window's rows,
+/// unfiltered: those that failed decoding or verification, which the
+/// filters always keep out of `rows` (D-093), for the impersonation rule,
+/// and the rest for whether routers and gateways went silent (D-188),
+/// which a type, channel or broker filter must not change. nodes, copies, presets: the build's (views::Built).
 /// `regions`: the regions' outlines for the topic-root rule (D-161); empty
 /// until the worker has handed them over, and then that rule is skipped.
 #[allow(clippy::too_many_arguments)] // mostly views::Built's parts; a params struct would only repackage them
-pub fn health(rows: &[&Row], invalid: &[&Row], nodes: &[Node], edges: &[crate::graph::Edge], copies: &Copies, presets: &PresetIndex, i: &Interner, hours: f64, regions: &crate::landsdel::Regions) -> Health {
+pub fn health(rows: &[&Row], window: &[&Row], nodes: &[Node], edges: &[crate::graph::Edge], copies: &Copies, presets: &PresetIndex, i: &Interner, hours: f64, regions: &crate::landsdel::Regions) -> Health {
     // Rates over the span the data covers, which can be shorter than the
     // window (the service started later, or was down).
     let (lo, hi) = rows.iter().fold((i64::MAX, i64::MIN), |(lo, hi), r| (lo.min(r.t), hi.max(r.t)));
@@ -344,6 +347,8 @@ pub fn health(rows: &[&Row], invalid: &[&Row], nodes: &[Node], edges: &[crate::g
     let mut add = |n: u32, kind: &'static str, severity: &'static str, summary: String, detail: String| out.push(Issue { node: node_id(n), kind, severity, summary, detail, weight: 0.0 });
 
     // Own packets, first copy each, and per-node counts by type.
+    let invalid_ty = i.get("invalid");
+    let (invalid, live): (Vec<&Row>, Vec<&Row>) = window.iter().partition(|r| Some(r.ty) == invalid_ty);
     let mut own: FxMap<u32, FxMap<u64, &Row>> = map();
     for &r in rows {
         own.entry(r.src).or_default().entry(r.lp).and_modify(|c| if r.t < c.t { *c = r }).or_insert(r);
@@ -634,7 +639,7 @@ pub fn health(rows: &[&Row], invalid: &[&Row], nodes: &[Node], edges: &[crate::g
     // signature or key does not check out. Decoding failures are not counted.
     let trust = ["sig_invalid", "sig_malformed", "first_contact_invalid", "nodeinfo_key_mismatch", "strict_unverifiable"];
     let mut claimed: FxMap<u32, Claims> = map();
-    for &r in invalid {
+    for &r in &invalid {
         let Some(reason) = r.invalid().filter(|&v| trust.contains(&i.s(v))) else { continue };
         let e = claimed.entry(r.src).or_default();
         if e.0.insert(r.lp) {
@@ -664,18 +669,21 @@ pub fn health(rows: &[&Row], invalid: &[&Row], nodes: &[Node], edges: &[crate::g
     }
 
     // Silent infrastructure (D-188): routers and gateways heard in the
-    // window that then went quiet for much longer than their usual rhythm.
-    // A node on the move (a car, a hike) comes and goes by design.
+    // window that then went quiet for much longer than their usual rhythm,
+    // from all its valid rows: filters choose what to look at, not whether
+    // a node is alive. A node on the move (a car, a hike) comes and goes by
+    // design.
     let is_infra = |x: &Node| INFRA_ROLES.contains(&role_of(x));
     let kept: FxSet<u32> = nodes.iter().filter(|x| (is_infra(x) || x.is_gateway) && x.moved_at.is_none()).map(|x| x.num).collect();
-    let heard = heard_times(rows, |n| kept.contains(&n));
+    let heard = heard_times(&live, |n| kept.contains(&n));
+    let newest = live.iter().map(|r| r.t).max().unwrap_or(i64::MIN);
     for x in nodes.iter().filter(|x| kept.contains(&x.num)) {
         let role = role_of(x);
         let infra = is_infra(x);
         let Some(ts) = heard.get(&x.num) else { continue };
         let Some(usual) = usual_gap(ts, SILENT_MIN_EVENTS) else { continue };
         let last = ts[ts.len() - 1];
-        let silent = hi - last;
+        let silent = newest - last;
         if !gone_quiet(silent, usual, SILENT_MIN_MS) {
             continue;
         }
@@ -917,7 +925,13 @@ mod tests {
         let (f, rf) = sender(&mut i, 6, "CLIENT", &every(0, 48 * H));
         let rows: Vec<Row> = [ra, rb, rc, rd, re, rf].into_iter().flatten().collect();
         let refs: Vec<&Row> = rows.iter().collect();
-        let got = health(&refs, &[], &[a, b, c, d, e, f], &[], &Copies::default(), &PresetIndex::default(), &i, 48.0, &crate::landsdel::Regions::default()).issues;
+        let nodes = [a, b, c, d, e, f];
+        let got = health(&refs, &refs, &nodes, &[], &Copies::default(), &PresetIndex::default(), &i, 48.0, &crate::landsdel::Regions::default()).issues;
+        // Filters that leave out the window's later rows (a type, channel or
+        // broker filter) change nothing: liveness comes from the whole window.
+        let early: Vec<&Row> = refs.iter().copied().filter(|r| r.t <= 10 * H).collect();
+        let filtered = health(&early, &refs, &nodes, &[], &Copies::default(), &PresetIndex::default(), &i, 48.0, &crate::landsdel::Regions::default()).issues;
+        assert_eq!(filtered.iter().filter(|x| x.kind == "silent").count(), 2);
         let silent: Vec<(&str, &str)> = got.iter().filter(|x| x.kind == "silent").map(|x| (x.node.as_str(), x.summary.as_str())).collect();
         assert_eq!(silent, [("!00000001", "Silent for 24 h"), ("!00000002", "Silent for 8.0 h")]);
         assert!(got.iter().find(|x| x.node == "!00000001" && x.kind == "silent").unwrap().detail.contains("usually heard every 30 min"));

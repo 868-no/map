@@ -209,7 +209,11 @@ impl Engine {
                 self.build(start, end, filters)?;
                 let b = &self.built.as_ref().unwrap().1;
                 let rows = self.rows();
-                Ok(json(&serde_json::json!({ "nodes": watch::watch(&ids, &rows, b.snapshot.nodes.iter().chain(&b.beyond)) })))
+                // When each was heard, from every valid row: filters must not make a node quiet.
+                let invalid = self.i.get("invalid");
+                let (lo, hi) = self.store.range(start, end);
+                let live: Vec<&row::Row> = self.store.rows()[lo..hi].iter().filter(|r| Some(r.ty) != invalid).collect();
+                Ok(json(&serde_json::json!({ "nodes": watch::watch(&ids, &rows, &live, b.snapshot.nodes.iter().chain(&b.beyond)) })))
             }
             "regions" => {
                 // The window per region, for the Regions panel (D-194).
@@ -222,13 +226,13 @@ impl Engine {
                 self.build(start, end, filters)?;
                 let b = &self.built.as_ref().unwrap().1;
                 let hours = (end - start) as f64 / 3_600_000.0;
-                // Rows that failed verification, which the filters always leave out (D-108).
-                let invalid_ty = self.i.get("invalid");
+                // The window unfiltered: rows that failed verification, which the
+                // filters always leave out (D-108), and liveness (D-188).
                 let (lo, hi) = self.store.range(start, end);
-                let invalid: Vec<&row::Row> = self.store.rows()[lo..hi].iter().filter(|r| Some(r.ty) == invalid_ty).collect();
+                let window: Vec<&row::Row> = self.store.rows()[lo..hi].iter().collect();
                 let rows = self.rows();
                 let presets = b.presets.get_or_init(|| channels::PresetIndex::new(&rows, &b.traceroute_contacts, &self.i));
-                let mut h = health::health(&rows, &invalid, &b.snapshot.nodes, &b.snapshot.edges, &b.copies, presets, &self.i, hours, &self.regions);
+                let mut h = health::health(&rows, &window, &b.snapshot.nodes, &b.snapshot.edges, &b.copies, presets, &self.i, hours, &self.regions);
                 // Nodes past the snapshot's node limit get no health checks (D-182); airtime still counts every node.
                 if !b.beyond.is_empty() {
                     let cut: crate::util::FxSet<&str> = b.beyond.iter().map(|n| n.id.as_str()).collect();

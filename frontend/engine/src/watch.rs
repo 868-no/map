@@ -50,13 +50,16 @@ pub struct Watched {
     pub is_gateway: bool,
 }
 
-/// The watched nodes, in the order asked for. `nodes`: the build's nodes
-/// (the snapshot's and those past its limit).
-pub fn watch<'a>(ids: &[u32], rows: &[&Row], nodes: impl Iterator<Item = &'a Node>) -> Vec<Watched> {
+/// The watched nodes, in the order asked for. `rows`: the window's rows
+/// passing the filters (gateways that got its packets); `live`: all its
+/// valid rows, unfiltered, for when it was heard and whether it went quiet,
+/// which a filter must not change (D-192). `nodes`: the build's nodes (the
+/// snapshot's and those past its limit).
+pub fn watch<'a>(ids: &[u32], rows: &[&Row], live: &[&Row], nodes: impl Iterator<Item = &'a Node>) -> Vec<Watched> {
     let want: FxSet<u32> = ids.iter().copied().collect();
     let by: FxMap<u32, &Node> = nodes.filter(|n| want.contains(&n.num)).map(|n| (n.num, n)).collect();
-    let hi = rows.iter().map(|r| r.t).max().unwrap_or(0);
-    let mut heard = heard_times(rows, |n| want.contains(&n));
+    let hi = live.iter().map(|r| r.t).max().unwrap_or(0);
+    let mut heard = heard_times(live, |n| want.contains(&n));
     let mut gws: FxMap<u32, FxSet<u32>> = map();
     for r in rows {
         if let Some(g) = r.gw.filter(|_| want.contains(&r.src)) {
@@ -80,7 +83,7 @@ pub fn watch<'a>(ids: &[u32], rows: &[&Row], nodes: impl Iterator<Item = &'a Nod
                 long_name: id.map(|i| i.long_name.clone()).unwrap_or_default(),
                 short_name: id.map(|i| i.short_name.clone()).unwrap_or_default(),
                 role: id.map(|i| i.role.clone()).unwrap_or_default(),
-                last_seen: x.last_seen.clone().or_else(|| ts.last().map(|&l| iso(l))),
+                last_seen: ts.last().map(|&l| iso(l)).or_else(|| x.last_seen.clone()),
                 quiet_ms,
                 usual_gap_ms: usual,
                 quiet,
@@ -114,8 +117,20 @@ mod tests {
         rows.extend((0..30).map(|k| sent(&mut i, 100 + k, 2, 8, k as i64 * 10 * m)));
         let refs: Vec<&Row> = rows.iter().collect();
         let nodes = [Node::new(1), Node::new(2)];
-        let got = watch(&[1, 2, 3], &refs, nodes.iter());
+        let got = watch(&[1, 2, 3], &refs, &refs, nodes.iter());
         assert_eq!(got.iter().map(|w| (w.id.as_str(), w.status, w.quiet)).collect::<Vec<_>>(), [("!00000001", "observed", true), ("!00000002", "observed", false), ("!00000003", "absent", false)]);
         assert_eq!((got[0].usual_gap_ms, got[0].quiet_ms, got[0].gateways), (Some(10 * m), Some(180 * m), 2));
+    }
+
+    #[test]
+    fn filters_do_not_make_a_watched_node_quiet() {
+        let mut i = Interner::default();
+        let m = 60_000;
+        // Every 10 minutes for 5 h; the filters keep only its first 2 h.
+        let rows: Vec<Row> = (0..30).map(|k| sent(&mut i, k, 1, 8, k as i64 * 10 * m)).collect();
+        let live: Vec<&Row> = rows.iter().collect();
+        let filtered: Vec<&Row> = rows.iter().take(12).collect();
+        let got = watch(&[1], &filtered, &live, [Node::new(1)].iter());
+        assert_eq!((got[0].quiet, got[0].quiet_ms), (false, Some(0)));
     }
 }
