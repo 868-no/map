@@ -803,6 +803,42 @@ test('Reset north turns a rotated map back to north up', async ({ page }) => {
   await expect.poll(() => page.evaluate(() => (window as unknown as { __meshmap: M }).__meshmap.map.getBearing()), { timeout: 5000 }).toBe(0)
 })
 
+test('a hollow (estimated) marker is clickable inside its ring, not only on it', async ({ page }) => {
+  type Placed = { node: { id: string }; kind: string; lon: number; lat: number }
+  type M = Hook & {
+    map: { project: (p: [number, number]) => { x: number; y: number }; jumpTo: (o: object) => void }
+    pick: (x: number, y: number) => { layer: string; node?: string } | null
+  }
+  await ready(page)
+  await page.waitForFunction(() => ((window as unknown as { __meshmap: Hook }).__meshmap.layers().find((x) => x.id === 'nodes')?.data as Placed[] | undefined)?.some((p) => p.kind === 'estimated') ?? false, null, { timeout: 30_000 })
+  await page.waitForTimeout(1500) // the fit on first load
+  // The estimated node furthest from any other marker, so nothing else lies under the click.
+  const hit = await page.evaluate(() => {
+    const nodes = (window as unknown as { __meshmap: M }).__meshmap.layers().find((l) => l.id === 'nodes')!.data as Placed[]
+    const gap = (n: Placed) => Math.min(...nodes.filter((m) => m !== n).map((m) => Math.hypot(m.lon - n.lon, (m.lat - n.lat) * 2)), Infinity)
+    const best = nodes.filter((n) => n.kind === 'estimated').reduce((a, b) => (gap(b) > gap(a) ? b : a))
+    return { id: best.node.id, lon: best.lon, lat: best.lat }
+  })
+  await page.evaluate(([lon, lat]) => (window as unknown as { __meshmap: M }).__meshmap.map.jumpTo({ center: [lon, lat], zoom: 13 }), [hit.lon, hit.lat])
+  await page.waitForTimeout(800)
+  const pt = await page.evaluate(([lon, lat]) => (window as unknown as { __meshmap: M }).__meshmap.map.project([lon, lat]), [hit.lon, hit.lat])
+  // The clear inside picks the marker at every pixel, the centre too (D-187 keeps it undrawn, not unpickable).
+  for (const [dx, dy] of [[0, 0], [4, 0], [0, -5], [-3, 3]]) {
+    const got = await page.evaluate(([x, y]) => (window as unknown as { __meshmap: M }).__meshmap.pick(x, y), [pt.x + dx, pt.y + dy])
+    expect(got, `pick at ${dx},${dy}`).toEqual({ layer: 'nodes', node: hit.id })
+  }
+  // And a click at its centre selects it: hover first, as a user would, then click.
+  const box = (await page.locator('.map').boundingBox())!
+  await page.mouse.move(box.x + pt.x, box.y + pt.y)
+  await expect.poll(async () => (await page.locator('.tooltip').isVisible()) || (await page.evaluate(() =>
+    (window as unknown as { __meshmap: Hook }).__meshmap.layers().some((l) => l.id === 'label-leaders')))).toBe(true)
+  await expect(async () => {
+    await page.mouse.click(box.x + pt.x, box.y + pt.y)
+    await expect(page.locator('#dock')).toBeVisible({ timeout: 2000 })
+  }).toPass({ timeout: 20_000 })
+  await expect(page).toHaveURL(new RegExp(`node=(!|%21)${hit.id.slice(1)}`))
+})
+
 test('selecting a node on the map with the panel closed centres it beside the panel that opens', async ({ page }) => {
   type M = Hook & { map: { project: (p: [number, number]) => { x: number; y: number }; jumpTo: (o: object) => void } }
   await ready(page)

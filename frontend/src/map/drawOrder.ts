@@ -32,8 +32,10 @@ class DrawOrderExtension extends LayerExtension {
         'vs:#decl': 'in float instanceDrawOrder;',
         'vs:DECKGL_FILTER_GL_POSITION': `position.z -= instanceDrawOrder * ${STEP} * position.w;`,
         // Nothing drawn, no depth written: the clear inside of a hollow
-        // (estimated) marker must not hide the glyphs beneath it.
-        'fs:DECKGL_FILTER_COLOR': 'if (color.a == 0.0) discard;',
+        // (estimated) marker must not hide the glyphs beneath it. Except when
+        // picking: the whole disc is the marker's target, or a click inside
+        // the ring would miss it and land on whatever lies beneath.
+        'fs:DECKGL_FILTER_COLOR': 'if (color.a == 0.0 && !bool(picking.isActive)) discard;',
       },
     }
   }

@@ -4,7 +4,10 @@ import type * as maplibregl from 'maplibre-gl'
 import type { Layer } from '@deck.gl/core'
 import { activePings, pingCount } from './pings'
 
-export function installTestHook(map: maplibregl.Map, layers: () => Layer[] | null): void {
+/** What the overlay picks at a pixel: the layer, and the node's id when it is one. */
+type Pick = (x: number, y: number) => { layer: string; node?: string } | null
+
+export function installTestHook(map: maplibregl.Map, layers: () => Layer[] | null, pick: Pick): void {
   if (import.meta.env.VITE_E2E_HOOKS !== 'true') return
   ;(window as unknown as Record<string, unknown>).__meshmap = {
     map,
@@ -16,6 +19,8 @@ export function installTestHook(map: maplibregl.Map, layers: () => Layer[] | nul
     },
     // The mesh layers currently on the map: id and data (deck.gl's public layer props).
     layers: () => (layers() ?? []).map((l) => ({ id: l.id, data: l.props.data as unknown[] })),
+    // What a click at exactly (x, y) on the map would pick, ignoring the pick radius.
+    pick,
     // Genuine rendered basemap label features.
     queryLabels: () => {
       const names: Record<string, string[]> = {}

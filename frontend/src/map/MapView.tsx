@@ -218,7 +218,12 @@ export default memo(function MapView({ caps, snapshot, onPositions }: Props) {
         map.on('load', () => setReady(true))
         mapRef.current = map
         overlayRef.current = overlay
-        installTestHook(map, () => meshLayers.current)
+        installTestHook(map, () => meshLayers.current, (x, y) => {
+          const info = overlay.pickObject({ x, y, radius: 0 })
+          if (!info?.layer) return null
+          const o = info.object as { node?: { id?: string } } | undefined
+          return { layer: info.layer.id, node: o?.node?.id }
+        })
       })
       .catch((e: Error) => setError(e.message))
     return () => {
