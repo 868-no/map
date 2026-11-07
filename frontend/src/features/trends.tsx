@@ -51,9 +51,9 @@ export const TrendsPanel = memo(function TrendsPanel() {
   }), [buckets, labels])
   return (
     <div className="panel trends-panel">
-      <div className="segmented" role="radiogroup" aria-label="Summary period">
+      <div className="segmented" role="group" aria-label="Summary period">
         {(['day', 'week', 'month'] as const).map((b) => (
-          <button key={b} role="radio" aria-checked={bucket === b} onClick={() => setBucket(b)}>{{ day: 'Daily', week: 'Weekly', month: 'Monthly' }[b]}</button>
+          <button key={b} aria-pressed={bucket === b} onClick={() => setBucket(b)}>{{ day: 'Daily', week: 'Weekly', month: 'Monthly' }[b]}</button>
         ))}
       </div>
       <p className="muted small">

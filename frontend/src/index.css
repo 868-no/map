@@ -309,7 +309,7 @@ table.hear th:not(:first-child), table.hear td:not(:first-child) { white-space: 
 .segmented { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; margin-bottom: 8px; }
 .segmented button { border: 0; border-radius: 0; background: transparent; color: var(--muted); padding: 5px 12px; font: inherit; font-size: 12.5px; cursor: pointer; }
 .segmented button + button { border-left: 1px solid var(--line); }
-.segmented button[aria-checked='true'] { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--text); }
+.segmented button[aria-pressed='true'] { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--text); }
 .bchart { margin: 0; }
 .bchart figcaption { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; margin-bottom: 3px; }
 .bchart-plot { position: relative; height: 70px; background: var(--panel2); border-radius: 6px; }

@@ -55,11 +55,13 @@ export function NodePanel({ id, snapshot }: { id: string; snapshot: SnapshotView
       )}
       <NodeHealth id={d.id} />
       <DetailTabs counts={{ links: neighbours.length, packets: d.packets }} />
-      {tab === 'overview' && <OverviewTab d={d} snapNode={snapNode} now={now} names={names} />}
-      {tab === 'telemetry' && <TelemetryTab d={d} snapshot={snapshot} now={now} />}
-      {tab === 'links' && <LinksTab d={d} id={id} snapshot={snapshot} snapNode={snapNode} names={names} neighbours={neighbours} />}
-      {tab === 'radio' && <RadioTab d={d} names={names} />}
-      {tab === 'packets' && <PacketsTab d={d} id={id} snapshot={snapshot} names={names} />}
+      <div role="tabpanel" id="detail-tabpanel" aria-labelledby={`detail-tab-${tab}`}>
+        {tab === 'overview' && <OverviewTab d={d} snapNode={snapNode} now={now} names={names} />}
+        {tab === 'telemetry' && <TelemetryTab d={d} snapshot={snapshot} now={now} />}
+        {tab === 'links' && <LinksTab d={d} id={id} snapshot={snapshot} snapNode={snapNode} names={names} neighbours={neighbours} />}
+        {tab === 'radio' && <RadioTab d={d} names={names} />}
+        {tab === 'packets' && <PacketsTab d={d} id={id} snapshot={snapshot} names={names} />}
+      </div>
     </div>
   )
 }
@@ -91,7 +93,7 @@ function DetailTabs({ counts }: { counts: Partial<Record<DetailTab, number>> }) 
       {TABS.map((t, k) => (
         <Fragment key={t.id}>
           {k > 0 && <span className="tab-gap" aria-hidden />}
-          <button id={`detail-tab-${t.id}`} role="tab" aria-selected={tab === t.id} tabIndex={tab === t.id ? 0 : -1} title={t.hint} onClick={() => setTab(t.id)}>
+          <button id={`detail-tab-${t.id}`} role="tab" aria-selected={tab === t.id} aria-controls={tab === t.id ? 'detail-tabpanel' : undefined} tabIndex={tab === t.id ? 0 : -1} title={t.hint} onClick={() => setTab(t.id)}>
             {t.label}{counts[t.id] !== undefined && <span className="tab-count">{counts[t.id]}</span>}
           </button>
         </Fragment>

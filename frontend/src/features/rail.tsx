@@ -53,7 +53,7 @@ export function Rail({ open, onToggle, badges }: { open: PanelId | null; onToggl
   const button = (p: (typeof PANELS)[number]) => {
     const n = badges[p.id] ?? 0
     return (
-      <button key={p.id} className="rail-btn" aria-pressed={open === p.id} aria-controls="dock" aria-label={p.label}
+      <button key={p.id} className="rail-btn" data-panel={p.id} aria-pressed={open === p.id} aria-controls="dock" aria-label={p.label}
         title={`${p.hint}${n ? ` (${n} ${p.id === 'health' ? 'problems and warnings' : 'active'})` : ''}`} onClick={() => onToggle(p.id)}>
         {ICONS[p.id]}
         <span className="rail-label">{p.label}</span>
@@ -161,6 +161,20 @@ function useDockWidth() {
 export function Dock({ open, onClose, children }: { open: PanelId | null; onClose: () => void; children: ReactNode }) {
   const { width, shown, set } = useDockWidth()
   const drag = useRef<{ x: number; w: number } | null>(null)
+  // Focus inside a panel that closes or gives way to another would fall back
+  // to the page: move it to the new panel's heading, or back to the closed
+  // panel's rail button. Focus elsewhere (the rail, the map) stays put.
+  const dock = useRef<HTMLElement>(null)
+  const prev = useRef(open)
+  useEffect(() => {
+    const was = prev.current
+    prev.current = open
+    if (was === open) return
+    const a = document.activeElement
+    if (a && a !== document.body && !dock.current?.contains(a)) return
+    if (open) dock.current?.querySelector<HTMLElement>('.dock-head h2')?.focus()
+    else if (was) document.querySelector<HTMLElement>(`.rail-btn[data-panel="${was}"]`)?.focus()
+  }, [open])
   const onPointerDown = (e: PointerEvent<HTMLDivElement>) => {
     e.preventDefault()
     e.currentTarget.setPointerCapture(e.pointerId)
@@ -182,14 +196,14 @@ export function Dock({ open, onClose, children }: { open: PanelId | null; onClos
     e.preventDefault()
   }
   return (
-    <aside id="dock" className="dock" aria-label={open ? panelLabel(open) : 'Panel'} hidden={!open}>
+    <aside id="dock" ref={dock} className="dock" aria-label={open ? panelLabel(open) : 'Panel'} hidden={!open}>
       <div className="dock-resize" role="separator" aria-orientation="vertical" aria-label="Panel width" tabIndex={0}
         aria-valuemin={MIN_WIDTH} aria-valuemax={maxWidth()} aria-valuenow={shown}
         title="Drag to resize the panel (arrow keys too); double-click resets"
         onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={onPointerUp}
         onDoubleClick={() => set(null)} onKeyDown={onKeyDown} />
       <header className="dock-head">
-        <h2>{open && panelLabel(open)}</h2>
+        <h2 tabIndex={-1}>{open && panelLabel(open)}</h2>
         <button className="close" onClick={onClose} aria-label={`Close ${open ? panelLabel(open).toLowerCase() : 'panel'}`} title="Close (Esc)">×</button>
       </header>
       <div className="dock-body">{children}</div>

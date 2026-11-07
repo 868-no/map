@@ -235,7 +235,7 @@ function PacketLogs({ id, names, positioned, moved }: { id: string; names: Reado
         </thead>
         <tbody>
           {entries.slice(0, shown).map((p) => (
-            <tr key={p.kind + p.lp} data-kind={p.kind} data-pending={p.pending || undefined} className={[route === p.lp && 'active', fresh.has(p.kind + p.lp) && 'row-new'].filter(Boolean).join(' ') || undefined} onClick={() => showRoute(route === p.lp ? null : p.lp)} aria-selected={route === p.lp}
+            <tr key={p.kind + p.lp} data-kind={p.kind} data-pending={p.pending || undefined} className={[route === p.lp && 'active', fresh.has(p.kind + p.lp) && 'row-new'].filter(Boolean).join(' ') || undefined} onClick={() => showRoute(route === p.lp ? null : p.lp)} aria-current={route === p.lp || undefined}
               tabIndex={0} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); showRoute(route === p.lp ? null : p.lp) } }} title="Select (click, Enter or Space) to draw this packet's route on the map">
               <td title={formatLocal(p.at)}>{formatLogTime(p.at)}</td>
               <td className="wrap" title={p.kind === 'relayed' ? nm(p.origin) : undefined}>
