@@ -3,7 +3,7 @@
 // stand-in: only what it uses, with transactions completing (or aborting) on
 // a later tick, and a failed put aborting the whole transaction.
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { MAX_DAYS, MAX_PIECES, mergePages, OPEN_TIMEOUT_MS, openCache, UNUSED_MS, type RowCache } from '../src/derive/cache'
+import { MAX_DAYS, MAX_PIECES, mergePages, OPEN_TIMEOUT_MS, openCache, UNUSED_MS, type IdleCache } from '../src/derive/cache'
 import { DAY_MS } from '../src/derive/slices'
 
 type Handler = ((e?: unknown) => void) | null
@@ -27,51 +27,62 @@ class FakeDB {
   close() {
     this.closed = true
   }
+  /**
+   * Like IndexedDB: requests apply in order and later ones see earlier ones;
+   * the transaction completes once no request is pending, and a failure rolls
+   * all of it back.
+   */
   transaction(names: string | string[]) {
     if (this.closed) throw new Error('InvalidStateError: the database is closed')
+    const scope = ([] as string[]).concat(names)
     const stores = this.stores, failPuts = this.failPuts
-    // Changes apply when the transaction completes, all or none.
-    const pending: (() => void)[] = []
-    let failed = false
+    const snapshot = new Map(scope.map((n) => [n, new Map(stores.get(n)!)]))
+    let pending = 0, finished = false, failed = false
     const tx = {
       error: null as unknown,
       oncomplete: null as Handler,
       onerror: null as Handler,
       onabort: null as Handler,
       objectStore(name: string) {
-        if (!([] as string[]).concat(names).includes(name)) throw new Error(`${name} not in this transaction`)
+        if (!scope.includes(name)) throw new Error(`${name} not in this transaction`)
         const s = stores.get(name)!
         const req = (v: () => unknown) => {
           const r = new FakeRequest()
+          pending++
+          const value = v() // read now: later requests of this transaction come after it
           setTimeout(() => {
-            r.result = v()
+            r.result = value
+            pending--
             r.onsuccess?.()
+            idle()
           }, 0)
           return r
         }
-        const sorted = () => [...s.entries()].sort((a, b) => Number(JSON.parse(a[0])) - Number(JSON.parse(b[0])))
+        const sorted = () => [...s.entries()].sort((x, y) => Number(JSON.parse(x[0])) - Number(JSON.parse(y[0])))
         return {
           getAllKeys: () => req(() => sorted().map(([k]) => JSON.parse(k))),
           getAll: () => req(() => sorted().map(([, v]) => v)),
           get: (k: unknown) => req(() => s.get(JSON.stringify(k))),
           put: (v: unknown, k: unknown) => {
             if (failPuts && name !== 'meta') failed = true
-            pending.push(() => s.set(JSON.stringify(k), v))
+            s.set(JSON.stringify(k), v)
           },
-          delete: (k: unknown) => void pending.push(() => s.delete(JSON.stringify(k))),
-          clear: () => void pending.push(() => s.clear()),
+          delete: (k: unknown) => void s.delete(JSON.stringify(k)),
+          clear: () => s.clear(),
         }
       },
     }
-    setTimeout(() => {
-      if (failed) {
-        tx.error = new DOMException('quota', 'QuotaExceededError')
-        tx.onabort?.()
-        return
-      }
-      for (const f of pending) f()
-      tx.oncomplete?.()
-    }, 5)
+    const idle = () =>
+      setTimeout(() => {
+        if (pending || finished) return
+        finished = true
+        if (failed) {
+          for (const [n, m] of snapshot) stores.set(n, m)
+          tx.error = new DOMException('quota', 'QuotaExceededError')
+          tx.onabort?.()
+        } else tx.oncomplete?.()
+      }, 0)
+    idle()
     return tx
   }
 }
@@ -94,12 +105,9 @@ const succeed = (req: FakeRequest, db: FakeDB) => {
 }
 
 const D0 = Date.parse('2026-10-20T00:00:00Z')
-const page = (gen: string, ids: number[]) => JSON.stringify({ window: { start: 'a', end: 'b' }, generation: gen, rows: ids.map((i) => ({ i, t: D0 + i })) })
+const page = (gen: string, ids: number[], t0 = D0) => JSON.stringify({ window: { start: 'a', end: 'b' }, generation: gen, rows: ids.map((i) => ({ i, t: t0 + i })) })
 /** Lets the cache's queued writes finish. */
-const drained = async (c: RowCache) => {
-  await c.recentTexts()
-  await new Promise((r) => setTimeout(r, 20))
-}
+const drained = (c: IdleCache) => c.idle()
 
 afterEach(() => {
   vi.useRealTimers()
@@ -167,11 +175,12 @@ describe('the cache', () => {
     const c = (await openCache())!
     vi.useFakeTimers({ toFake: ['Date'] })
     for (let k = 0; k <= MAX_DAYS; k++) {
-      vi.setSystemTime(D0 + k * 1000)
+      vi.setSystemTime(D0 + k * DAY_MS)
       c.putDay(D0 + k * DAY_MS, page('g1', [k]), 'g1')
       if (k === 1) {
-        vi.setSystemTime(D0 + 1500)
-        await c.day(D0) // the first day is read again: the second one is now the least recent
+        await drained(c)
+        vi.setSystemTime(D0 + 1.5 * DAY_MS)
+        await c.day(D0) // the first day is read again, a day on: the second one is now the least recent
       }
     }
     await drained(c)
@@ -198,6 +207,43 @@ describe('the cache', () => {
     expect(again.has(D0)).toBe(true)
     expect(again.has(D0 + DAY_MS)).toBe(false)
     expect(db.stores.get('days')!.size).toBe(1)
+  })
+
+  it('drops rows of days settled since when it merges the stretch', async () => {
+    install(succeed)
+    const c = (await openCache())!
+    const today = D0 + 3 * DAY_MS
+    const before = page('g1', [1], today - 3_600_000) // yesterday 23:00
+    const after = (k: number) => page('g1', [100 + k], today + 3_600_000)
+    // The stretch begins before midnight; a day later it is merged.
+    c.putRecent(today - 3_600_000, today + 60_000, [before], 'g1', today + 60_000)
+    await drained(c)
+    const later = today + 2 * 3_600_000
+    for (let k = 0; k <= MAX_PIECES; k++) c.putRecent(today + k * 60_000, today + (k + 1) * 60_000, [after(k)], 'g1', later)
+    await drained(c)
+    expect(c.recent()!.lo).toBe(today)
+    const texts = await c.recentTexts()
+    expect(texts.length).toBe(1)
+    expect((JSON.parse(texts[0]) as { rows: { i: number }[] }).rows.some((r) => r.i === 1)).toBe(false)
+  })
+
+  it('reads the record each write: a tab writing after another keeps its days', async () => {
+    const db = install(succeed)
+    const a = (await openCache())!
+    const b = (await (install(succeed, db), openCache()))!
+    a.putDay(D0, page('g1', [1]), 'g1')
+    await drained(a)
+    b.putDay(D0 + DAY_MS, page('g1', [2]), 'g1') // b opened before a wrote: its own view is stale
+    await drained(b)
+    const again = (await (install(succeed, db), openCache()))!
+    expect(again.has(D0)).toBe(true)
+    expect(again.has(D0 + DAY_MS)).toBe(true)
+    // A tab writing under a newer generation empties what the other wrote, as it should.
+    a.putDay(D0 + 2 * DAY_MS, page('g2', [3]), 'g2')
+    await drained(a)
+    const after = (await (install(succeed, db), openCache()))!
+    expect(after.generation).toBe('g2')
+    expect(after.has(D0)).toBe(false)
   })
 
   it('keeps one stretch of the newest rows: joined while it meets, started again after a gap, trimmed to what is not settled', async () => {
@@ -227,7 +273,7 @@ describe('the cache', () => {
     const c = (await openCache())!
     const now = D0 + 3 * DAY_MS + 23 * 3_600_000
     const t0 = D0 + 3 * DAY_MS
-    for (let k = 0; k <= MAX_PIECES; k++) c.putRecent(t0 + k * 60_000, t0 + (k + 1) * 60_000, [page('g1', [k, k + 1])], 'g1', now)
+    for (let k = 0; k <= MAX_PIECES; k++) c.putRecent(t0 + k * 60_000, t0 + (k + 1) * 60_000, [page('g1', [k, k + 1], t0)], 'g1', now)
     await drained(c)
     const texts = await c.recentTexts()
     expect(texts.length).toBe(1)

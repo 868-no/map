@@ -251,12 +251,28 @@ describe('range fetch through the cache (D-184)', () => {
     expect(eng.staged.get(r.batch)).not.toContain('old day')
     expect(cache.generation).toBe('g2')
     expect([...cache.days.keys()].sort()).toEqual([D1, D2])
-    // With a hint that differs, the cache is emptied before anything is read.
-    cache.generation = 'g1'
-    f.hint = 'g2'
+    // A hint that differs (it may be the older of the two) only keeps the cache from being read.
+    f.hint = 'g1'
     const before = cache.cleared
+    s.log.length = 0
     await f.fetchRange(params())
-    expect(cache.cleared).toBe(before + 1)
+    expect(cache.cleared).toBe(before)
+    expect(s.log.some((u) => u.includes('/day/'))).toBe(true)
+  })
+
+  it('stores only days the server sent as final', async () => {
+    const s = server(() => 'g1')
+    const eng = new FakeEngine()
+    // The first day comes no-store: not settled on the server yet (rows awaiting a new decoding).
+    const get = async (url: string) => {
+      const text = await s.get(url)
+      return { text, final: !url.includes(new Date(D1).toISOString().slice(0, 10)) }
+    }
+    const f = new RangeFetcher(() => eng, get)
+    const cache = new MemCache()
+    f.cache = cache
+    await f.fetchRange(params())
+    expect([...cache.days.keys()]).toEqual([D2])
   })
 
   it('offline, builds a range from the cache alone, as far as it reaches from the start', async () => {

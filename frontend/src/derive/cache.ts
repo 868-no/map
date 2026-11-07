@@ -1,25 +1,28 @@
 // IndexedDB read-through cache of the API's row texts (D-184), in front of
 // /observations: whole past UTC days as /observations/day sent them, keyed by
 // date, and the newest stretch of a rolling window (not settled yet, so
-// paged) as the pages that brought it. A stored day is complete, since days
+// paged) as the pages that brought it. Only a day the server sent as final
+// (immutable) is stored, and a stored day is complete, since final days
 // never change within a generation: a date is either there or fetched. The
 // stretch records the range it holds completely, and only rows after it are
 // asked for. Texts are the API's own, so any engine build reads them; a new
-// generation empties the cache. Each write stores its texts and the record
-// describing them in one transaction, so a failed write claims nothing.
-// Best effort: without storage the app works the same, from the network.
+// generation empties the cache. Each write reads the record and stores its
+// texts and the record in one transaction, so a failed write claims nothing
+// and tabs writing at once do not undo each other. Best effort: without
+// storage the app works the same, from the network.
 import { gunzip, gzip } from './compress'
 import { settledUntil } from './slices'
 
 const DB = 'meshmap-cache'
-const VERSION = 1
+// 2: each day's record holds when it was last used (1 kept a shared map, which tabs overwrote).
+const VERSION = 2
 /** The database of the cache before D-184 (hourly copies of the engine's rows), deleted on open. */
 const OLD_DB = 'meshmap-derive'
 /** Days kept, the least recently used dropped beyond: the longest window and more, a few MB each at most. */
 export const MAX_DAYS = 31
 /** A day not used for this long is dropped when the cache opens: a visitor away a while finds no stale days left. */
 export const UNUSED_MS = 30 * 86_400_000
-/** A read saves when its day was last used at most this often (it is otherwise saved with the next write). */
+/** A read saves when its day was used at most this often. */
 const USE_SAVE_MS = 86_400_000
 /** Pieces the stretch may collect (about one per minute's sync) before they are merged into one. */
 export const MAX_PIECES = 30
@@ -34,11 +37,12 @@ export interface Span {
 
 /** What the fetcher needs of the cache (the IndexedDB one, or a stand-in in tests). */
 export interface RowCache {
-  /** The generation of what is stored; null when empty. */
+  /** The generation of what is stored, as last seen; null when empty. */
   readonly generation: string | null
   has(day: number): boolean
   /** A stored day's text, or null. */
   day(day: number): Promise<string | null>
+  /** A day the server sent as final. */
   putDay(day: number, text: string, generation: string): void
   /** The range the stretch holds completely, or null. */
   recent(): Span | null
@@ -49,24 +53,32 @@ export interface RowCache {
   clear(): void
 }
 
-interface State {
+/** The IndexedDB cache, which can also say when its queued writes are done (tests). */
+export interface IdleCache extends RowCache {
+  idle(): Promise<void>
+}
+
+interface Meta {
   generation: string | null
   recent: Span | null
-  used: Record<string, number> // day -> when last read or written
 }
+type DayRecord = { blob: Blob; used: number }
 type Piece = { hi: number; blob: Blob }
 
-const EMPTY: State = { generation: null, recent: null, used: {} }
+const EMPTY: Meta = { generation: null, recent: null }
 
-/** Merges page texts into one page: their rows, each id once, under the first one's window and generation. */
-export function mergePages(texts: string[]): string {
-  if (texts.length === 1) return texts[0]
-  const pages = texts.map((t) => JSON.parse(t) as { window: unknown; generation: string; rows?: { i: number }[] | null })
+/**
+ * Merges page texts into one page: their rows at or after `from`, each id
+ * once, under the first one's window and generation.
+ */
+export function mergePages(texts: string[], from = -Infinity): string {
+  if (texts.length === 1 && from === -Infinity) return texts[0]
+  const pages = texts.map((t) => JSON.parse(t) as { window: unknown; generation: string; rows?: { i: number; t: number }[] | null })
   const seen = new Set<number>()
-  const rows: { i: number }[] = []
+  const rows: { i: number; t: number }[] = []
   for (const p of pages)
     for (const r of p.rows ?? []) {
-      if (seen.has(r.i)) continue
+      if (r.t < from || seen.has(r.i)) continue
       seen.add(r.i)
       rows.push(r)
     }
@@ -84,15 +96,14 @@ const done = (tx: IDBTransaction) =>
     tx.onerror = tx.onabort = () => reject(tx.error)
   })
 
-class IdbCache implements RowCache {
-  private chain: Promise<unknown> = Promise.resolve()
+class IdbCache implements IdleCache {
+  private writes: Promise<unknown> = Promise.resolve()
   private closed = false
 
   constructor(
     private db: IDBDatabase,
-    private state: State,
+    private meta: Meta, // as last read or written by this tab
     private days: Set<number>,
-    private pieces: Map<number, number>, // the stretch's pieces: lo -> hi
   ) {
     // Another tab upgrades or deletes the database (Settings → Reset): let it,
     // and carry on without a cache.
@@ -103,7 +114,7 @@ class IdbCache implements RowCache {
   }
 
   get generation() {
-    return this.closed ? null : this.state.generation
+    return this.closed ? null : this.meta.generation
   }
 
   has(day: number) {
@@ -111,135 +122,159 @@ class IdbCache implements RowCache {
   }
 
   recent(): Span | null {
-    return !this.closed && this.state.recent ? { ...this.state.recent } : null
+    return !this.closed && this.meta.recent ? { ...this.meta.recent } : null
   }
 
-  /** One operation at a time, in call order: a read sees every write asked for before it. Failures are swallowed. */
-  private run<T>(fn: () => Promise<T>, fallback: T): Promise<T> {
-    const p = this.chain.then(() => (this.closed ? fallback : fn())).catch(() => fallback)
-    this.chain = p
-    return p
+  /**
+   * Writes run one at a time, in call order; failures are swallowed (a
+   * failed write claims nothing). Compression happens before, outside the
+   * queue; reads do not wait for it (what they miss is fetched).
+   */
+  private write(fn: () => Promise<void>) {
+    this.writes = this.writes.then(() => (this.closed ? undefined : fn())).catch(() => {})
   }
 
-  day(day: number): Promise<string | null> {
-    const at = Date.now() // when it was asked for, not when the queue reached it
-    return this.run(async () => {
-      if (!this.days.has(day)) return null
-      const blob = await settle(this.db.transaction('days').objectStore('days').get(day) as IDBRequest<Blob | undefined>)
-      if (!blob) return null
-      const before = this.state.used[day] ?? 0
-      this.state.used[day] = at
-      // Saved now and then, so a day that is only read does not look unused when the cache next opens.
-      if (at - before > USE_SAVE_MS) {
-        const tx = this.db.transaction('meta', 'readwrite')
-        tx.objectStore('meta').put(this.state, 'state')
-        await done(tx)
+  async idle() {
+    // A write may queue another (a merge after a stretch's write): until none is left.
+    for (let w = this.writes; ; w = this.writes) {
+      await w
+      if (w === this.writes) return
+    }
+  }
+
+  async day(day: number): Promise<string | null> {
+    if (!this.has(day)) return null
+    const at = Date.now()
+    try {
+      const rec = await settle(this.db.transaction('days').objectStore('days').get(day) as IDBRequest<DayRecord | undefined>)
+      if (!rec) {
+        this.days.delete(day) // another tab dropped it
+        return null
       }
-      return gunzip(blob)
-    }, null)
+      // Saved now and then, so a day that is only read does not look unused when the cache next opens.
+      if (at - rec.used > USE_SAVE_MS) {
+        this.write(async () => {
+          const tx = this.db.transaction('days', 'readwrite')
+          const now = await settle(tx.objectStore('days').get(day) as IDBRequest<DayRecord | undefined>)
+          if (now) tx.objectStore('days').put({ ...now, used: Math.max(now.used, at) }, day)
+          await done(tx)
+        })
+      }
+      return await gunzip(rec.blob)
+    } catch {
+      return null
+    }
   }
 
-  recentTexts(): Promise<string[]> {
-    return this.run(async () => {
+  async recentTexts(): Promise<string[]> {
+    if (this.closed) return []
+    try {
       const pieces = await settle(this.db.transaction('recent').objectStore('recent').getAll() as IDBRequest<Piece[]>)
-      return Promise.all(pieces.map((p) => gunzip(p.blob)))
-    }, [])
+      return await Promise.all(pieces.map((p) => gunzip(p.blob)))
+    } catch {
+      return []
+    }
   }
 
-  /** Empties every store, for a new generation (null: none). */
-  private async wipe(generation: string | null) {
-    const tx = this.db.transaction(['days', 'recent', 'meta'], 'readwrite')
+  /**
+   * The record as stored, inside a write: for another generation (another
+   * tab's, or a new one), the cache is emptied first.
+   */
+  private async current(tx: IDBTransaction, generation: string | null): Promise<Meta> {
+    const m = (await settle(tx.objectStore('meta').get('state') as IDBRequest<Meta | undefined>)) ?? EMPTY
+    if (m.generation === generation) return m
     tx.objectStore('days').clear()
     tx.objectStore('recent').clear()
-    const state = { ...EMPTY, used: {}, generation }
-    tx.objectStore('meta').put(state, 'state')
-    await done(tx)
-    this.state = state
-    this.days.clear()
-    this.pieces.clear()
+    return { generation, recent: null }
   }
 
   putDay(day: number, text: string, generation: string) {
+    if (this.closed) return
     const at = Date.now()
-    void this.run(async () => {
-      const blob = await gzip(text)
-      if (generation !== this.state.generation) await this.wipe(generation)
-      const used: Record<string, number> = { ...this.state.used, [day]: at }
-      const evict = Object.keys(used)
-        .map(Number)
-        .filter((d) => d !== day)
-        .sort((a, b) => used[a] - used[b])
-        .slice(0, Math.max(0, Object.keys(used).length - MAX_DAYS))
-      for (const d of evict) delete used[d]
-      const state = { ...this.state, used }
-      const tx = this.db.transaction(['days', 'meta'], 'readwrite')
-      tx.objectStore('days').put(blob, day)
-      for (const d of evict) tx.objectStore('days').delete(d)
-      tx.objectStore('meta').put(state, 'state')
+    const blob = gzip(text)
+    blob.catch(() => {})
+    this.write(async () => {
+      const b = await blob
+      const tx = this.db.transaction(['days', 'recent', 'meta'], 'readwrite')
+      const days = tx.objectStore('days')
+      const meta = await this.current(tx, generation)
+      days.put({ blob: b, used: at }, day)
+      // Beyond the limit, the least recently used go.
+      const [keys, recs] = await Promise.all([settle(days.getAllKeys() as IDBRequest<number[]>), settle(days.getAll() as IDBRequest<DayRecord[]>)])
+      const evict = keys
+        .map((d, k) => [d, recs[k].used] as const)
+        .filter(([d]) => d !== day)
+        .sort((a, b) => a[1] - b[1])
+        .slice(0, Math.max(0, keys.length - MAX_DAYS))
+        .map(([d]) => d)
+      for (const d of evict) days.delete(d)
+      tx.objectStore('meta').put(meta, 'state')
       await done(tx)
-      this.state = state
-      this.days.add(day)
-      for (const d of evict) this.days.delete(d)
-    }, undefined)
+      this.meta = meta
+      this.days = new Set(keys.filter((d) => !evict.includes(d)))
+    })
   }
 
   putRecent(lo: number, hi: number, texts: string[], generation: string, now: number) {
-    if (hi <= lo || !texts.length) return
-    void this.run(async () => {
-      if (generation !== this.state.generation) await this.wipe(generation)
+    if (this.closed || hi <= lo || !texts.length) return
+    const blob = gzip(mergePages(texts))
+    blob.catch(() => {})
+    this.write(async () => {
+      const b = await blob
+      const tx = this.db.transaction(['days', 'recent', 'meta'], 'readwrite')
+      const recent = tx.objectStore('recent')
+      const meta = await this.current(tx, generation)
       // Rows of settled days come as whole days: the stretch starts at the first day that is not.
       const settled = settledUntil(now)
-      const r = this.state.recent
+      const r = meta.recent
       const joins = !!r && lo <= r.hi && hi >= r.lo
       const span = { lo: Math.max(joins ? Math.min(r!.lo, lo) : lo, settled), hi: joins ? Math.max(r!.hi, hi) : hi }
       // Pieces that end in a settled day, or every piece when the new one does not meet them, go.
-      const drop = [...this.pieces].filter(([, h]) => !joins || h <= settled).map(([l]) => l)
-      const kept = [...this.pieces.keys()].filter((l) => !drop.includes(l))
-      let writes: [number, Piece][]
-      if (kept.length + 1 > MAX_PIECES) {
-        // Merged into one, the stretch's rows each once.
-        const tx = this.db.transaction('recent')
-        const [keys, old] = await Promise.all([
-          settle(tx.objectStore('recent').getAllKeys() as IDBRequest<number[]>),
-          settle(tx.objectStore('recent').getAll() as IDBRequest<Piece[]>),
-        ])
-        const oldTexts = await Promise.all(old.filter((_, k) => kept.includes(keys[k])).map((p) => gunzip(p.blob)))
-        writes = [[span.lo, { hi: span.hi, blob: await gzip(mergePages([...oldTexts, ...texts])) }]]
-        drop.push(...kept)
-      } else {
-        writes = [[lo, { hi, blob: await gzip(mergePages(texts)) }]]
-      }
-      const state = { ...this.state, recent: span.hi > span.lo ? span : null }
-      const tx = this.db.transaction(['recent', 'meta'], 'readwrite')
-      for (const l of drop) tx.objectStore('recent').delete(l)
-      for (const [l, p] of writes) tx.objectStore('recent').put(p, l)
-      tx.objectStore('meta').put(state, 'state')
+      const [keys, pieces] = await Promise.all([settle(recent.getAllKeys() as IDBRequest<number[]>), settle(recent.getAll() as IDBRequest<Piece[]>)])
+      const drop = keys.filter((_, k) => !joins || pieces[k].hi <= settled)
+      for (const l of drop) recent.delete(l)
+      recent.put({ hi, blob: b }, lo)
+      const next = { ...meta, recent: span.hi > span.lo ? span : null }
+      tx.objectStore('meta').put(next, 'state')
       await done(tx)
-      this.state = state
-      for (const l of drop) this.pieces.delete(l)
-      for (const [l, p] of writes) this.pieces.set(l, p.hi)
-    }, undefined)
+      this.meta = next
+      if (keys.length - drop.length + 1 > MAX_PIECES) this.compact(generation)
+    })
+  }
+
+  /**
+   * Merges the stretch's pieces into one, keeping only rows from the
+   * stretch's start: a piece that straddled midnight would otherwise carry
+   * its settled day's rows on from merge to merge.
+   */
+  private compact(generation: string) {
+    this.write(async () => {
+      const read = this.db.transaction('recent')
+      const [keys, pieces] = await Promise.all([
+        settle(read.objectStore('recent').getAllKeys() as IDBRequest<number[]>),
+        settle(read.objectStore('recent').getAll() as IDBRequest<Piece[]>),
+      ])
+      const from = this.meta.recent?.lo ?? -Infinity
+      const merged = await gzip(mergePages(await Promise.all(pieces.map((p) => gunzip(p.blob))), from))
+      const tx = this.db.transaction(['recent', 'meta'], 'readwrite')
+      const meta = (await settle(tx.objectStore('meta').get('state') as IDBRequest<Meta | undefined>)) ?? EMPTY
+      if (meta.generation !== generation || !meta.recent) return // another tab moved on meanwhile
+      for (const l of keys) tx.objectStore('recent').delete(l) // pieces another tab added since stay
+      tx.objectStore('recent').put({ hi: Math.max(...pieces.map((p) => p.hi)), blob: merged }, meta.recent.lo)
+      await done(tx)
+    })
   }
 
   clear() {
-    void this.run(() => this.wipe(null), undefined)
-  }
-
-  /** Drops the days not used since `before` (at open). */
-  prune(before: number): Promise<void> {
-    return this.run(async () => {
-      const stale = [...this.days].filter((d) => (this.state.used[d] ?? 0) < before)
-      if (!stale.length) return
-      const used = { ...this.state.used }
-      for (const d of stale) delete used[d]
-      const state = { ...this.state, used }
-      const tx = this.db.transaction(['days', 'meta'], 'readwrite')
-      for (const d of stale) tx.objectStore('days').delete(d)
-      tx.objectStore('meta').put(state, 'state')
+    this.write(async () => {
+      const tx = this.db.transaction(['days', 'recent', 'meta'], 'readwrite')
+      tx.objectStore('days').clear()
+      tx.objectStore('recent').clear()
+      tx.objectStore('meta').put(EMPTY, 'state')
       await done(tx)
-      this.state = state
-      for (const d of stale) this.days.delete(d)
-    }, undefined)
+      this.meta = { ...EMPTY }
+      this.days.clear()
+    })
   }
 }
 
@@ -263,7 +298,11 @@ function open(): Promise<IDBDatabase> {
       // while to finish, so the timeout no longer applies.
       clearTimeout(timer)
       const db = req.result
-      for (const s of ['days', 'recent', 'meta']) if (!db.objectStoreNames.contains(s)) db.createObjectStore(s)
+      // A cache: a new format starts empty.
+      for (const s of ['days', 'recent', 'meta']) {
+        if (db.objectStoreNames.contains(s)) db.deleteObjectStore(s)
+        db.createObjectStore(s)
+      }
     }
     req.onsuccess = () => {
       if (settled) return req.result.close()
@@ -275,8 +314,11 @@ function open(): Promise<IDBDatabase> {
   })
 }
 
-/** Opens the cache: its record and its keys only; texts are read when a window needs them. Null without storage. */
-export async function openCache(): Promise<RowCache | null> {
+/**
+ * Opens the cache: its record and its days' keys, dropping the days not used
+ * for UNUSED_MS; texts are read when a window needs them. Null without storage.
+ */
+export async function openCache(now = Date.now()): Promise<IdleCache | null> {
   let db: IDBDatabase
   try {
     db = await open()
@@ -289,19 +331,19 @@ export async function openCache(): Promise<RowCache | null> {
     /* nothing to delete */
   }
   try {
-    const tx = db.transaction(['days', 'recent', 'meta'], 'readonly')
-    const [state, dayKeys, pieceKeys, pieces] = await Promise.all([
-      settle(tx.objectStore('meta').get('state') as IDBRequest<State | undefined>),
-      settle(tx.objectStore('days').getAllKeys() as IDBRequest<number[]>),
-      settle(tx.objectStore('recent').getAllKeys() as IDBRequest<number[]>),
-      settle(tx.objectStore('recent').getAll() as IDBRequest<Piece[]>),
+    const tx = db.transaction(['days', 'meta'], 'readwrite')
+    const days = tx.objectStore('days')
+    const [meta, keys, recs] = await Promise.all([
+      settle(tx.objectStore('meta').get('state') as IDBRequest<Meta | undefined>),
+      settle(days.getAllKeys() as IDBRequest<number[]>),
+      settle(days.getAll() as IDBRequest<DayRecord[]>),
     ])
-    const cache = new IdbCache(db, state ?? { ...EMPTY, used: {} }, new Set(dayKeys), new Map(pieceKeys.map((l, k) => [l, pieces[k].hi])))
-    await cache.prune(Date.now() - UNUSED_MS)
-    return cache
+    const stale = keys.filter((_, k) => recs[k].used < now - UNUSED_MS)
+    for (const d of stale) days.delete(d)
+    await done(tx)
+    return new IdbCache(db, meta ?? { ...EMPTY }, new Set(keys.filter((d) => !stale.includes(d))))
   } catch {
     db.close()
     return null
   }
 }
-

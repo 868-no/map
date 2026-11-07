@@ -22,8 +22,16 @@ const STRETCH_MIN_MS = 10 * 60_000
 /** A whole day was asked for under a generation the server no longer has (409): refetch the range. */
 export class GenerationMoved extends Error {}
 
+/** A response's text, and whether the server sent it as final (immutable: a whole day that cannot change). */
+export interface Got {
+  text: string
+  final: boolean
+}
+/** What a fetch hands back: a text, final when it is a bare string (tests), or a Got. */
+const got = (r: string | Got): Got => (typeof r === 'string' ? { text: r, final: true } : r)
+
 /** GETs an API URL as text, retrying while the backend is busy; errors are typed as fetchRange's callers expect. */
-async function fetchText(url: string): Promise<string> {
+async function fetchText(url: string): Promise<Got> {
   let res: globalThis.Response
   for (let attempt = 0; ; attempt++) {
     try {
@@ -50,7 +58,7 @@ async function fetchText(url: string): Promise<string> {
     throw new ViewError('upstream', `observations: ${res.status} ${detail}`)
   }
   try {
-    return await res.text()
+    return { text: await res.text(), final: /\bimmutable\b/.test(res.headers.get('Cache-Control') ?? '') }
   } catch (e) {
     throw new Error(`observations: ${e instanceof Error ? e.message : e}`, { cause: e }) // timed out or cut off mid-body
   }
@@ -74,13 +82,13 @@ export class RangeFetcher {
    * generation; a stale one is caught and the days asked again (D-170).
    */
   hint: string | null = null
-  private prefetched = new Map<string, Promise<string>>()
+  private prefetched = new Map<string, Promise<Got>>()
   private slots = limiter(PARALLEL)
 
   /** The read-through cache (D-184): set once it is open, absent without storage. */
   cache: RowCache | null = null
 
-  constructor(private engine: () => Stager, private get: (url: string) => Promise<string> = fetchText) {}
+  constructor(private engine: () => Stager, private get: (url: string) => Promise<string | Got> = fetchText) {}
 
   /**
    * Starts fetching the whole days of a range under the hint, before the
@@ -93,7 +101,7 @@ export class RangeFetcher {
     for (const d of planDays(lo, hi, now)) {
       const url = dayUrl(d, this.hint)
       if (this.prefetched.has(url) || (this.cache?.generation === this.hint && this.cache.has(d))) continue
-      const p = this.slots(() => this.get(url))
+      const p = this.slots(() => this.get(url)).then(got)
       p.catch(() => {}) // a failure is the range's when it is taken
       this.prefetched.set(url, p)
     }
@@ -127,7 +135,6 @@ export class RangeFetcher {
     const engine = this.engine()
     // After a generation moved: straight from the server (the cache starts over).
     const cache = retry ? this.cache : null
-    if (cache?.generation && this.hint && cache.generation !== this.hint) cache.clear()
     const cached = !!cache?.generation && (!this.hint || this.hint === cache.generation)
     // A failed request fails the range: the others stop before their next
     // request (even one still waiting for a slot) or at their next page, and the
@@ -137,7 +144,7 @@ export class RangeFetcher {
     const page = (extra: Record<string, string>, keep?: string[]) => {
       const p = new URLSearchParams(params)
       for (const [k, v] of Object.entries(extra)) p.set(k, v)
-      const text = run(() => this.get(`/api/v1/observations?${p}`))
+      const text = run(() => this.get(`/api/v1/observations?${p}`)).then((r) => got(r).text)
       if (keep) void text.then((t) => keep.push(t), () => {})
       return text
     }
@@ -151,9 +158,11 @@ export class RangeFetcher {
       const url = dayUrl(d, generation)
       const pre = this.prefetched.get(url)
       this.prefetched.delete(url)
-      const text = await (pre ? pre.catch(() => run(() => this.get(url))) : run(() => this.get(url)))
-      fetchedDays.set(d, text)
-      return text
+      const r = got(await (pre ? pre.catch(() => run(() => this.get(url))) : run(() => this.get(url))))
+      // Only a day the server sent as final: one still settling (rows awaiting a new
+      // decoding, the writer behind, an import running) comes no-store and may change.
+      if (r.final) fetchedDays.set(d, r.text)
+      return r.text
     }
     const iso = (ms: number) => new Date(ms).toISOString()
     const now = Date.now()
@@ -274,7 +283,7 @@ export class RangeFetcher {
     const texts: string[] = []
     let upTo = lo
     for (const d of planDays(lo, hi, now)) {
-      const text = d <= upTo ? await cache.day(d) : null
+      const text = await cache.day(d)
       if (text === null) break
       texts.push(text)
       upTo = d + DAY_MS
