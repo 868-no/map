@@ -18,8 +18,7 @@ import { IssueLine, KIND } from './health'
 
 type Trends = components['schemas']['TrendsBody']
 const TZ = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
-/** How close "Show on map" goes: Nord-Norge is long. */
-const REGION_ZOOM: Record<string, number> = { 'Nord-Norge': 4.6, Trøndelag: 6.3, Vestlandet: 6.2, Østlandet: 6.2, Sørlandet: 7.1 }
+const NO_ISSUES: Issue[] = []
 
 function useRegionTrends(region: string) {
   return useQuery({
@@ -41,16 +40,15 @@ export function RegionsPanel({ snapshot }: { snapshot: SnapshotView | undefined 
   const region = useStore((s) => s.region)
   const setRegion = useStore((s) => s.setRegion)
   const v = useRegionsView()
-  const issues = useHealth().data?.issues ?? []
+  const issues = useHealth().data?.issues ?? NO_ISSUES
   const palette = PALETTES[useTheme()]
-  const swatch = (name: string) => {
-    const id = REGION_LABELS.find((r) => r.name === name)?.id
-    return id ? { background: `rgb(${palette.regions[id].join(',')})` } : undefined
-  }
+  // One style object per region and theme, so the memoised page is not re-rendered for a new one.
+  const swatches = useMemo(() => new Map(REGION_LABELS.map((l) => [l.name, { background: `rgb(${palette.regions[l.id].join(',')})` }])), [palette])
+  const swatch = (name: string) => swatches.get(name)
   if (!v.data) return <div className="panel muted">Summing up the regions…</div>
   if (!v.data.loaded) return <div className="panel muted">Loading the region outlines…</div>
   const r = v.data.regions.find((x) => x.name === region)
-  if (r) return <RegionPage r={r} issues={issues} snapshot={snapshot} swatch={swatch(r.name)} onBack={() => setRegion(null)} />
+  if (r) return <RegionPage r={r} issues={issues} snapshot={snapshot} swatch={swatch(r.name)} />
   return (
     <div className="panel regions-panel">
       <p className="muted small">Norway's five regions in the selected period: nodes by where they are (reported or estimated), problems and warnings from Health. Open one for its page.</p>
@@ -99,8 +97,9 @@ function ShareRegion({ name }: { name: string }) {
   )
 }
 
-const RegionPage = memo(function RegionPage({ r, issues, snapshot, swatch, onBack }: { r: RegionSummary; issues: Issue[]; snapshot: SnapshotView | undefined; swatch?: React.CSSProperties; onBack: () => void }) {
+const RegionPage = memo(function RegionPage({ r, issues, snapshot, swatch }: { r: RegionSummary; issues: Issue[]; snapshot: SnapshotView | undefined; swatch?: React.CSSProperties }) {
   const select = useStore((s) => s.select)
+  const setRegion = useStore((s) => s.setRegion)
   const setToggles = useStore((s) => s.setToggles)
   const goToPlace = useStore((s) => s.goToPlace)
   const names = namesOf(snapshot?.nodes)
@@ -123,13 +122,13 @@ const RegionPage = memo(function RegionPage({ r, issues, snapshot, swatch, onBac
     }
   }, [t.data])
   const show = () => {
-    const at = REGION_LABELS.find((x) => x.name === r.name)?.pos
+    const at = REGION_LABELS.find((x) => x.name === r.name)
     setToggles({ regions: true })
-    if (at) goToPlace({ lon: at[0], lat: at[1], zoom: REGION_ZOOM[r.name] ?? 6, name: r.name, ring: false })
+    if (at) goToPlace({ lon: at.pos[0], lat: at.pos[1], zoom: at.zoom, name: r.name, ring: false })
   }
   return (
     <div className="panel region-page">
-      <button className="linkish region-back" onClick={onBack}>‹ All regions</button>
+      <button className="linkish region-back" onClick={() => setRegion(null)}>‹ All regions</button>
       <div className="node-title">
         <h3 className="region-title"><span className="region-swatch" style={swatch} aria-hidden />{r.name}</h3>
         <ShareRegion name={r.name} />
