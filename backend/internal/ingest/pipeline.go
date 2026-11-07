@@ -331,6 +331,13 @@ func (p *Pipeline) committed(o Observation) (id int64, found, local bool) {
 	if id, ok := p.recent.get(k, now); ok {
 		return id, true, true
 	}
+	// Ingest is a singleton: once this process has run a whole dedupe window
+	// without evicting a recent key for room, every key stored within the
+	// window is in the in-process set, and Redis or the database could only
+	// say the same at the cost of a round trip per reception.
+	if p.recent.complete(now) {
+		return 0, false, false
+	}
 	// Past the shutdown drain's deadline every row left is given up: no
 	// lookup (up to a second each, with Redis or the database down) for them.
 	if left, closing := p.drainLeft(); closing && left <= 0 {

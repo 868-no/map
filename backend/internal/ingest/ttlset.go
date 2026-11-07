@@ -27,10 +27,22 @@ type ttlSet struct {
 	// next append that outgrows it copies the live entries to a new array:
 	// it never holds more than about twice max.
 	order [][16]byte
+	// whole is when the set holds every observation committed within the
+	// TTL: one TTL after it was made (earlier rows came from another
+	// process), and one TTL after the newest entry evicted for room.
+	whole time.Time
 }
 
 func newTTLSet(ttl time.Duration, max int) *ttlSet {
-	return &ttlSet{ttl: ttl, max: max, items: make(map[[16]byte]*recentEntry, max)}
+	return &ttlSet{ttl: ttl, max: max, items: make(map[[16]byte]*recentEntry, max), whole: time.Now().Add(ttl)}
+}
+
+// complete reports whether a key the set lacks was not committed within
+// the TTL by this process, nor by one before it.
+func (s *ttlSet) complete(now time.Time) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return !now.Before(s.whole)
 }
 
 // get returns the row id of a recent observation.
@@ -68,8 +80,11 @@ func (s *ttlSet) add(k [16]byte, id int64, brokers []string, now time.Time) {
 	}
 	s.items[k] = &recentEntry{at: now, id: id, brokers: brokers}
 	for len(s.order) > 0 && (len(s.items) > s.max || now.Sub(s.items[s.order[0]].at) >= s.ttl) {
-		old := s.order[0]
+		old := s.items[s.order[0]]
+		if until := old.at.Add(s.ttl); until.After(now) && until.After(s.whole) {
+			s.whole = until // evicted for room while still within the TTL
+		}
+		delete(s.items, s.order[0])
 		s.order = s.order[1:]
-		delete(s.items, old)
 	}
 }

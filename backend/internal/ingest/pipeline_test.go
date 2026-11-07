@@ -354,6 +354,43 @@ func TestCommittedSkipsLookupPastDrainDeadline(t *testing.T) {
 	}
 }
 
+// Once the in-process set has held a whole dedupe window, a key it lacks
+// was not stored lately: neither Redis nor the database is asked. Until
+// then (a restart), and for a window after the set evicted a key for room,
+// they are.
+func TestCommittedSkipsLookupOnceTheSetIsWhole(t *testing.T) {
+	sink := &countingSink{}
+	p, _ := newTestPipeline(t, &memSink{}, 10)
+	p.sink = sink
+	if p.committed(Observation{BrokerID: "a"}); sink.lookups != 1 {
+		t.Fatalf("%d lookups just after start, want 1", sink.lookups)
+	}
+	p.recent.whole = time.Now().Add(-time.Second)
+	if _, found, _ := p.committed(Observation{BrokerID: "a"}); found || sink.lookups != 1 {
+		t.Fatalf("found %v after %d lookups with the set whole", found, sink.lookups)
+	}
+	// A key evicted for room leaves the set short for one window.
+	s := newTTLSet(time.Minute, 2)
+	t0 := time.Now().Add(5 * time.Minute)
+	if s.complete(t0.Add(-4*time.Minute - 30*time.Second)) {
+		t.Fatal("a set made 30 s ago claims to be whole")
+	}
+	if !s.complete(t0) {
+		t.Fatal("a set a window old does not claim to be whole")
+	}
+	for i := range 3 {
+		s.add([16]byte{byte(i)}, int64(i+1), nil, t0)
+	}
+	if _, ok := s.get([16]byte{0}, t0); ok || s.complete(t0.Add(59*time.Second)) || !s.complete(t0.Add(time.Minute)) {
+		t.Fatal("eviction for room did not leave the set short for one window")
+	}
+	// Expiry is not eviction: the set stays whole.
+	s.add([16]byte{9}, 10, nil, t0.Add(3*time.Minute))
+	if !s.complete(t0.Add(3 * time.Minute)) {
+		t.Fatal("expired keys made the set short")
+	}
+}
+
 type countingSink struct {
 	memSink
 	lookups int
