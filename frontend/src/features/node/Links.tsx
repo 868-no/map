@@ -8,11 +8,10 @@ import { fmt } from './shared'
 import { sortHearings, type LinkNeighbour } from './sort'
 
 /** The Links tab: radio links, gateways that heard it, reach and relaying. */
-export function LinksTab({ d, id, snapshot, snapNode, names, neighbours }: {
+export function LinksTab({ d, id, snapshot, names, neighbours }: {
   d: NodeView
   id: string
   snapshot: SnapshotView | undefined
-  snapNode: MeshNode | undefined
   names: ReadonlyMap<string, string>
   neighbours: LinkNeighbour[]
 }) {
@@ -56,7 +55,7 @@ export function LinksTab({ d, id, snapshot, snapNode, names, neighbours }: {
           ))}
         </tbody>
       </table>
-      <RelayingSection node={snapNode} snapshot={snapshot} />
+      <RelayingSection node={d} snapshot={snapshot} />
       <ReachSection key={d.id} id={d.id} name={(n) => names.get(n) ?? n} />
     </>
   )

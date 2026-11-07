@@ -16,7 +16,6 @@ import { PacketsTab } from './Packets'
 export function NodePanel({ id, snapshot }: { id: string; snapshot: SnapshotView | undefined }) {
   const { data, isLoading, error } = useNodeDetail(id)
   const tab = useStore((s) => s.detailTab)
-  const snapNode = (snapshot?.nodes ?? []).find((n) => n.id === id)
   const now = snapshot ? Date.parse(snapshot.meta.window.end) : Date.now()
   const names = namesOf(snapshot?.nodes)
   const neighbours = useMemo(() => linkNeighbours(snapshot?.edges ?? [], id, names), [snapshot, id, names])
@@ -56,9 +55,9 @@ export function NodePanel({ id, snapshot }: { id: string; snapshot: SnapshotView
       <NodeHealth id={d.id} />
       <DetailTabs counts={{ links: neighbours.length, packets: d.packets }} />
       <div role="tabpanel" id="detail-tabpanel" aria-labelledby={`detail-tab-${tab}`}>
-        {tab === 'overview' && <OverviewTab d={d} snapNode={snapNode} now={now} names={names} />}
+        {tab === 'overview' && <OverviewTab d={d} now={now} names={names} />}
         {tab === 'telemetry' && <TelemetryTab d={d} snapshot={snapshot} now={now} />}
-        {tab === 'links' && <LinksTab d={d} id={id} snapshot={snapshot} snapNode={snapNode} names={names} neighbours={neighbours} />}
+        {tab === 'links' && <LinksTab d={d} id={id} snapshot={snapshot} names={names} neighbours={neighbours} />}
         {tab === 'radio' && <RadioTab d={d} names={names} />}
         {tab === 'packets' && <PacketsTab d={d} id={id} snapshot={snapshot} names={names} />}
       </div>

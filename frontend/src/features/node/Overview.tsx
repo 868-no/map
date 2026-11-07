@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useFlash } from '../../lib/useFlash'
 import { ApiError, getJSON } from '../../api/client'
 import type { NodeKey } from '../../api/types'
-import type { MeshNode, NodeView } from '../../derive/views'
+import type { NodeView } from '../../derive/views'
 import { formatLocal, relativeAge } from '../../lib/time'
 import { precisionErrorM } from '../../map/model'
 import { useStore } from '../../state/store'
@@ -12,9 +12,9 @@ const METHOD: Record<string, string> = { weighted_centroid: 'weighted centre of 
 const QUALITY: Record<string, string> = { very_low: 'very rough', low: 'rough' }
 
 /** The Overview tab: identity, position and activity. */
-export function OverviewTab({ d, snapNode, now, names }: { d: NodeView; snapNode: MeshNode | undefined; now: number; names: ReadonlyMap<string, string> }) {
+export function OverviewTab({ d, now, names }: { d: NodeView; now: number; names: ReadonlyMap<string, string> }) {
   const select = useStore((s) => s.select)
-  const est = snapNode?.estimate
+  const est = d.estimate
   const pos = d.position // a stale one is never shown as its position (D-094)
   return (
     <>
@@ -115,7 +115,7 @@ export function OverviewTab({ d, snapNode, now, names }: { d: NodeView; snapNode
           ) : (
             <>
               {!d.stale_position && NR}
-              {snapNode?.estimate_note && <>{!d.stale_position && <br />}<small>No estimate: {snapNode.estimate_note}</small></>}
+              {d.estimate_note && <>{!d.stale_position && <br />}<small>No estimate: {d.estimate_note}</small></>}
             </>
           )}
         </dd>
