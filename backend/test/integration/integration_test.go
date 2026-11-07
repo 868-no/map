@@ -354,9 +354,26 @@ func TestRetention(t *testing.T) {
 	conn.Exec(ctx, `SELECT pg_advisory_unlock(hashtext('meshmap:maintenance'))`) //nolint:errcheck
 	conn.Release()
 
+	// A run is announced only when it deleted rows.
+	notices := rc.R.Subscribe(ctx, maintenance.RetentionChannel)
+	defer notices.Close() //nolint:errcheck
+	if _, err := notices.Receive(ctx); err != nil {
+		t.Fatal(err)
+	}
+	notice := func() bool {
+		select {
+		case <-notices.Channel():
+			return true
+		case <-time.After(time.Second):
+			return false
+		}
+	}
 	st, err := r.RunOnce(ctx)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if !notice() {
+		t.Fatal("a run that deleted rows was not announced")
 	}
 	if st.DeletedRows != 12500 || !st.Cutoff.Equal(cutoff) {
 		t.Fatalf("deleted %d (cutoff %s), want 12500 (cutoff %s)", st.DeletedRows, st.Cutoff, cutoff)
@@ -370,6 +387,9 @@ func TestRetention(t *testing.T) {
 	st2, err := r.RunOnce(ctx)
 	if err != nil || st2.DeletedRows != 0 {
 		t.Fatalf("second run: %+v %v", st2, err)
+	}
+	if notice() {
+		t.Fatal("a run that deleted nothing was announced")
 	}
 	if got, _ := maintenance.LastStatus(ctx, rc); got == nil || got.DeletedRows != 0 {
 		t.Fatal("status not shared via Redis")

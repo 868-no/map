@@ -1,8 +1,9 @@
 // Package maintenance runs retention under an advisory lock: months wholly
 // before the configured cutoff are dropped as partitions (D-056), the rest of
 // the expired rows (in the oldest kept month) are deleted in chunks and that
-// partition vacuumed, upcoming months get their partitions, and open browsers
-// are notified. Safe to run repeatedly and from several processes.
+// partition vacuumed, upcoming months get their partitions, and, when rows
+// were deleted, serve processes and open browsers are notified. Safe to run
+// repeatedly and from several processes.
 package maintenance
 
 import (
@@ -134,8 +135,11 @@ func (r *Runner) RunOnce(ctx context.Context) (Status, error) {
 	return st, nil
 }
 
-// publish stores the status (for /health/ready) and announces the run, so
-// open browsers drop and refetch what retention removed.
+// publish stores the status (for /health/ready) on every run, and announces
+// a run that deleted rows: serve processes reload their identity index (a
+// key's announcements may be gone) and tell open browsers, which re-read
+// /retention for the new earliest bound. A run that deleted nothing changes
+// neither, so it is not announced.
 func (r *Runner) publish(ctx context.Context, st Status) {
 	if r.Cache == nil {
 		return
@@ -146,8 +150,11 @@ func (r *Runner) publish(ctx context.Context, st Status) {
 	if err := r.Cache.SetBlob(ctx, cache.MaintStatusKey, b, 0); err != nil {
 		r.Log.Warn("status store failed", "err", err)
 	}
-	// Lost, open browsers keep rows retention removed until their next
-	// sync, and serve processes their identities until the next reload.
+	if st.DeletedRows == 0 {
+		return
+	}
+	// Lost, open browsers keep the old earliest bound until they next read
+	// /retention, and serve processes their identities until the next reload.
 	if err := r.Cache.Publish(ctx, RetentionChannel, b); err != nil {
 		r.Log.Warn("retention notice not published", "err", err)
 	}
@@ -176,24 +183,31 @@ func (r *Runner) Loop(ctx context.Context) error {
 		ok = r.runLogged(ctx)
 	}
 	for {
-		wait := r.Interval
-		if !ok {
-			wait = 5 * time.Minute // retry failed runs soon, not at the next daily slot
-		} else if r.Interval == 24*time.Hour {
-			now := r.now().UTC()
-			next := time.Date(now.Year(), now.Month(), now.Day(), 3, 0, 0, 0, time.UTC)
-			if !next.After(now) {
-				next = next.Add(24 * time.Hour)
-			}
-			wait = next.Sub(now)
-		}
 		select {
 		case <-ctx.Done():
 			return nil
-		case <-time.After(wait):
+		case <-time.After(nextRun(r.now(), r.Interval, ok)):
 			ok = r.runLogged(ctx)
 		}
 	}
+}
+
+// nextRun is how long to wait after a run at now: 5 minutes after a failed
+// one, retried soon rather than at the next daily slot; otherwise until
+// 03:00 UTC when the interval is a day, or the interval.
+func nextRun(now time.Time, interval time.Duration, ok bool) time.Duration {
+	switch {
+	case !ok:
+		return 5 * time.Minute
+	case interval != 24*time.Hour:
+		return interval
+	}
+	now = now.UTC()
+	next := time.Date(now.Year(), now.Month(), now.Day(), 3, 0, 0, 0, time.UTC)
+	if !next.After(now) {
+		next = next.Add(24 * time.Hour)
+	}
+	return next.Sub(now)
 }
 
 // runLogged reports false only for failures worth retrying soon.
