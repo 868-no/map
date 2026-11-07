@@ -151,36 +151,40 @@ func TestPlaceSearch(t *testing.T) {
 		rec("St. Olavs gate", "adressenavn", "Trondheim", 0),
 		rec("100%_sikker", "annenKulturdetalj", "Oslo", 0),
 	)
-	if got, want := names(t, ctx, store, "Heimdal"), "Heimdal/Bydel/Trondheim,Heimdal/Tettbebyggelse/Arendal,Heimdal/Gass-/oljefelt i sjø/,Heimdalsbekken/Elv/Trondheim"; got != want {
-		t.Errorf("heimdal:\n got  %s\n want %s", got, want)
-	}
-	// The more important mountain first, then the shorter name.
-	if got, want := names(t, ctx, store, "galdh"), "Galdhøpiggen/Fjell/Lom,Galdhøe/Fjell/Lom,Vesle Galdhøpiggen/Fjell/Lom"; got != want {
-		t.Errorf("galdh: %s", got)
-	}
-	if got := names(t, ctx, store, "oslo"); got != "Oslo/Kommune/Oslo" { // not also as Oslo suohkan
-		t.Errorf("oslo: %s", got)
-	}
-	// Punctuation between words reads as a space on both sides (places.Fold).
-	if got := names(t, ctx, store, "fron"); got != "Sør-Fron/Kommune/Sør-Fron,Nord-Fron/Kommune/Nord-Fron" { // the shorter name first
-		t.Errorf("fron: %s", got)
-	}
-	for _, q := range []string{"nord fron", "nord-fron", "Nord–Fron", "nord fr"} {
-		if got := names(t, ctx, store, q); got != "Nord-Fron/Kommune/Nord-Fron" {
-			t.Errorf("%s: %s", q, got)
+	// Each search twice: as one matching few keys, and as a common one
+	// (walking names in rank order), which must answer the same.
+	for _, store := range []*places.Store{store, {Pool: pool, CommonPrefix: 1}} {
+		if got, want := names(t, ctx, store, "Heimdal"), "Heimdal/Bydel/Trondheim,Heimdal/Tettbebyggelse/Arendal,Heimdal/Gass-/oljefelt i sjø/,Heimdalsbekken/Elv/Trondheim"; got != want {
+			t.Errorf("heimdal:\n got  %s\n want %s", got, want)
 		}
-	}
-	gate := "St. Olavs gate/" + places.Label("adressenavn") + "/Trondheim"
-	for _, q := range []string{"st olav", "st. olav", "St.Olavs", "olavs g"} {
-		if got := names(t, ctx, store, q); got != gate {
-			t.Errorf("%s: %s", q, got)
+		// The more important mountain first, then the shorter name.
+		if got, want := names(t, ctx, store, "galdh"), "Galdhøpiggen/Fjell/Lom,Galdhøe/Fjell/Lom,Vesle Galdhøpiggen/Fjell/Lom"; got != want {
+			t.Errorf("galdh: %s", got)
 		}
-	}
-	if got := names(t, ctx, store, "%_"); got != "" { // LIKE wildcards are text
-		t.Errorf("wildcards: %s", got)
-	}
-	if got := names(t, ctx, store, "100%_"); got != "100%_sikker/Annen kulturdetalj/Oslo" {
-		t.Errorf("literal: %s", got)
+		if got := names(t, ctx, store, "oslo"); got != "Oslo/Kommune/Oslo" { // not also as Oslo suohkan
+			t.Errorf("oslo: %s", got)
+		}
+		// Punctuation between words reads as a space on both sides (places.Fold).
+		if got := names(t, ctx, store, "fron"); got != "Sør-Fron/Kommune/Sør-Fron,Nord-Fron/Kommune/Nord-Fron" { // the shorter name first
+			t.Errorf("fron: %s", got)
+		}
+		for _, q := range []string{"nord fron", "nord-fron", "Nord–Fron", "nord fr"} {
+			if got := names(t, ctx, store, q); got != "Nord-Fron/Kommune/Nord-Fron" {
+				t.Errorf("%s: %s", q, got)
+			}
+		}
+		gate := "St. Olavs gate/" + places.Label("adressenavn") + "/Trondheim"
+		for _, q := range []string{"st olav", "st. olav", "St.Olavs", "olavs g"} {
+			if got := names(t, ctx, store, q); got != gate {
+				t.Errorf("%s: %s", q, got)
+			}
+		}
+		if got := names(t, ctx, store, "%_"); got != "" { // LIKE wildcards are text
+			t.Errorf("wildcards: %s", got)
+		}
+		if got := names(t, ctx, store, "100%_"); got != "100%_sikker/Annen kulturdetalj/Oslo" {
+			t.Errorf("literal: %s", got)
+		}
 	}
 	if at, err := places.LoadedAt(ctx, pool); err != nil || time.Since(at) > time.Minute {
 		t.Errorf("loaded at %v %v", at, err)

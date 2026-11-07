@@ -37,6 +37,8 @@ func (s *Server) places(ctx context.Context, in *PlacesInput) (*PlacesOutput, er
 		return nil, huma.Error400BadRequest(err.Error())
 	case errors.Is(err, places.ErrNotLoaded):
 		return nil, huma.Error503ServiceUnavailable("place names are still being loaded")
+	case errors.Is(err, places.ErrSearchBusy):
+		return nil, huma.Error503ServiceUnavailable("place search is busy, retry shortly")
 	case err != nil:
 		if ctx.Err() == nil {
 			s.Log.Warn("place search failed", "err", err)

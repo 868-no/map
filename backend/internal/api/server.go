@@ -75,7 +75,7 @@ type Server struct {
 	// request waiting on it; trendsRefresh replaces the refresh (tests).
 	trendsFlight  singleflight.Group
 	trendsRefresh func(context.Context) error
-	once       sync.Once
+	once          sync.Once
 }
 
 // CloseStreams ends every open live stream, so a shutdown need not wait

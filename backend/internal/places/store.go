@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -24,15 +25,83 @@ var ErrNotLoaded = errors.New("places: the place-name register is not loaded yet
 // ErrBusy: another process is importing place names.
 var ErrBusy = errors.New("places: an import is already running elsewhere")
 
+// ErrSearchBusy: every search slot stayed taken for SearchWait.
+var ErrSearchBusy = errors.New("places: too many searches at once")
+
 // Store searches the place names loaded into the database (place_name and
 // place_key, storage/schema.sql).
 type Store struct {
 	Pool *pgxpool.Pool
+	// CommonPrefix is how many keys a search may match before it is
+	// treated as common (see Search); 0 means DefaultCommonPrefix.
+	CommonPrefix int
+
+	slotsOnce sync.Once
+	slots     chan struct{}
 }
 
 // candidates is how many matches are ranked before one per name and
 // municipality is kept.
 const candidates = 200
+
+// DefaultCommonPrefix: a search matching this many keys (two letters, or a
+// word start shared by tens of thousands of the register's million names)
+// is common. Below it, ranking every match costs at most a few tens of
+// milliseconds; above it, matches are dense enough (2 % of the names or
+// more) for commonSearch's walk to stop early.
+const DefaultCommonPrefix = 20000
+
+// SearchSlots bounds the searches one process runs at once, and SearchWait
+// how long one waits for a slot: even a bounded search reads thousands of
+// rows, and searches share the API's database pool.
+const (
+	SearchSlots = 4
+	SearchWait  = 2 * time.Second
+)
+
+func (s *Store) acquire(ctx context.Context) (func(), error) {
+	s.slotsOnce.Do(func() { s.slots = make(chan struct{}, SearchSlots) })
+	t := time.NewTimer(SearchWait)
+	defer t.Stop()
+	select {
+	case s.slots <- struct{}{}:
+		return func() { <-s.slots }, nil
+	case <-t.C:
+		return nil, ErrSearchBusy
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+// The order of the best matches, shared by both searches below.
+const searchOrder = `n.rank, n.importance DESC, n.alt, length(n.name_lc), n.name_lc`
+
+// A search matching fewer than CommonPrefix keys ranks all their names.
+const rareSearch = `SELECT n.place_id, n.name, n.kind, n.municipality, n.county, n.lat, n.lon
+	FROM place_name n
+	WHERE n.id IN (SELECT name_id FROM place_key WHERE key LIKE $1)
+	ORDER BY n.name_lc = $2 DESC, ` + searchOrder + `
+	LIMIT $3`
+
+// A common one never gathers and sorts all its matches. It takes the first
+// candidates names equal to the search in searchOrder (found by key: as
+// many as places share that exact name) and the first candidates matches
+// in searchOrder, walking place_name_rank_idx and testing word starts on
+// the folded name itself (its words are separated by single spaces), and
+// ranks those as rareSearch does: the same answer. A match rareSearch
+// ranks among its first candidates either equals the search, and fewer
+// than candidates names that do precede it, or follows every name that
+// does and fewer than candidates others, so fewer than candidates matches
+// precede it in searchOrder. And as the search is common, matches are
+// dense enough in that walk for it to stop early (on a synthetic register
+// of a million names, a few thousand rows for 200 matches).
+const commonSearch = `SELECT n.place_id, n.name, n.kind, n.municipality, n.county, n.lat, n.lon FROM (
+	  (SELECT * FROM place_name n WHERE n.id IN (SELECT name_id FROM place_key WHERE key = $2) AND n.name_lc = $2 ORDER BY ` + searchOrder + ` LIMIT $3)
+	  UNION
+	  (SELECT * FROM place_name n WHERE n.name_lc LIKE $1 OR n.name_lc LIKE '% ' || $1 ORDER BY ` + searchOrder + ` LIMIT $3)
+	) n
+	ORDER BY n.name_lc = $2 DESC, ` + searchOrder + `
+	LIMIT $3`
 
 // Search finds places with a word starting with q (the whole search, both
 // folded by Fold, so "st olav" finds St. Olavs gate and "nord fron"
@@ -42,17 +111,41 @@ const candidates = 200
 // others, shorter names first. A place is listed once, by its best-matching
 // name (Oslo, not also Oslo suohkan), and a name once per municipality, as
 // its best-ranked place.
+//
+// A search reads a bounded number of rows however short: one matching
+// fewer than CommonPrefix keys ranks those; a common one (two letters can
+// match a large share of the register) walks names in rank order instead
+// (commonSearch). At most SearchSlots run at once per Store.
 func (s *Store) Search(ctx context.Context, q string) ([]Place, error) {
 	q, err := Normalize(q)
 	if err != nil {
 		return nil, err
 	}
+	release, err := s.acquire(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
 	like := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(q) + "%"
-	rows, err := s.Pool.Query(ctx, `SELECT n.place_id, n.name, n.kind, n.municipality, n.county, n.lat, n.lon
-		FROM place_name n
-		WHERE n.id IN (SELECT name_id FROM place_key WHERE key LIKE $1)
-		ORDER BY n.name_lc = $2 DESC, n.rank, n.importance DESC, n.alt, length(n.name_lc), n.name_lc
-		LIMIT $3`, like, q, candidates)
+	common := s.CommonPrefix
+	if common <= 0 {
+		common = DefaultCommonPrefix
+	}
+	// Both queries are planned for their values every time (an unnamed
+	// statement, not a cached one): a cached statement's generic plan
+	// cannot turn key LIKE $1 into an index range, and PostgreSQL switches
+	// to it after five runs.
+	exec := pgx.QueryExecModeExec
+	// An index range scan of at most common keys.
+	var keys int
+	if err := s.Pool.QueryRow(ctx, `SELECT count(*) FROM (SELECT 1 FROM place_key WHERE key LIKE $1 LIMIT $2) k`, exec, like, common).Scan(&keys); err != nil {
+		return nil, err
+	}
+	sql := rareSearch
+	if keys >= common {
+		sql = commonSearch
+	}
+	rows, err := s.Pool.Query(ctx, sql, exec, like, q, candidates)
 	if err != nil {
 		return nil, err
 	}
@@ -212,6 +305,8 @@ func Load(ctx context.Context, pool *pgxpool.Pool, source string, parse func(fun
 	for _, q := range []string{
 		`ALTER TABLE places_load.place_name ADD CONSTRAINT place_name_pkey PRIMARY KEY (id)`,
 		`CREATE INDEX place_key_key_idx ON places_load.place_key (key)`,
+		// Common searches walk names in their order (commonSearch).
+		`CREATE INDEX place_name_rank_idx ON places_load.place_name (rank, importance DESC, alt, length(name_lc), name_lc)`,
 		`ANALYZE places_load.place_name`,
 		`ANALYZE places_load.place_key`,
 	} {
