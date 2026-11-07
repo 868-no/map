@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"time"
 
@@ -87,6 +88,23 @@ func (s *Server) registerStream(api huma.API) {
 		Summary: "Live updates for the rolling window (SSE)", Tags: []string{"live"},
 		Description: "Events: `delta` (new observations, each with its full row), `heartbeat` (every 15 s, current window bounds), " +
 			"`retention` (rows deleted; refetch), `status` (live availability).",
+		Errors: []int{400},
+		// The window is checked against the server's limits before the
+		// stream opens: once it has, a refusal would be a 200 that closes
+		// at once, which EventSource reconnects to forever.
+		Middlewares: huma.Middlewares{func(hc huma.Context, next func(huma.Context)) {
+			if hc.Query("start") == "" && hc.Query("end") == "" { // else StreamInput.Resolve refuses
+				if _, err := s.parseWindow(WindowParams{Duration: hc.Query("duration")}); err != nil {
+					var se huma.StatusError
+					if !errors.As(err, &se) {
+						se = huma.Error400BadRequest(err.Error())
+					}
+					_ = huma.WriteErr(api, hc, se.GetStatus(), se.Error())
+					return
+				}
+			}
+			next(hc)
+		}},
 	}, map[string]any{
 		"delta":     LiveDelta{},
 		"heartbeat": Heartbeat{},
