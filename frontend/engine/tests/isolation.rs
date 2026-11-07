@@ -51,6 +51,6 @@ fn derived_fields_come_only_from_the_window() {
     assert!(node(&mut e, t1 + 1.0, t1 + 2.0 * H).is_none(), "start 1 ms after T1 excludes it (test 13)");
     assert!(node(&mut e, t1 - H, t1).is_none(), "end exactly at T1 excludes it (test 13)");
     let detail: Value = serde_json::from_str(&e.view("node", t2 - H, t2 + H, "{}", A).unwrap()).unwrap();
-    assert!(detail["identity"].is_null() && detail["positions"].as_array().unwrap().is_empty(), "node detail obeys the window");
+    assert!(detail["identity"].is_null() && detail["position"].is_null(), "node detail obeys the window");
     assert_eq!(e.view("node", t1, t3, "{}", "!0b00000b").unwrap(), "null", "absent node");
 }

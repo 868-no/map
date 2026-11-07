@@ -300,14 +300,11 @@ export interface PresetGuess {
 
 export interface NodeView extends MeshNode {
   meta: ViewMeta
-  positions: { at: string; lat: number; lon: number; precision_bits: number; precision_known: boolean; signature: string }[]
   telemetry_series: { at: string; battery?: number; voltage?: number; ch_util?: number; air_util?: number; uptime?: number }[]
   environment_series?: { at: string; temp?: number; humidity?: number; pressure?: number }[] // environment reports, time order (D-099)
   delivery_by_recipient?: { to: string; asked: number; acked: number; errors: number; retried: number }[] // its packets that asked for an ACK (D-109)
   node_status?: { status: string; at: string }[] // status texts it broadcast, newest first, each once (D-103)
   heard_by: Hearing[]
-  heard: Hearing[]
-  recent_packets: { at: string; type: string; packet_id: number; to?: string; channel?: string; signature: string; crypto: string; receptions: number; bytes: number }[]
   truncated: boolean
   radio: Radio
   delivery?: Delivery

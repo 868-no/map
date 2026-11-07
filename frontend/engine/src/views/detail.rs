@@ -2,24 +2,13 @@
 
 use serde::Serialize;
 
-use super::{dest, first_per_reception, is_device_telemetry, is_position, Built, Node};
+use super::{first_per_reception, is_device_telemetry, Built, Node};
 use crate::graph::{self, Stats};
 use crate::row::{Interner, Row};
 use crate::util::{iso, map, node_id, set, FxMap, FxSet};
 
 const MAX_SAMPLES: usize = 500;
-const MAX_PACKETS: usize = 100;
 const MAX_GATEWAYED: usize = 200;
-
-#[derive(Serialize)]
-pub struct PositionSample {
-    pub at: String,
-    pub lat: f64,
-    pub lon: f64,
-    pub precision_bits: u32,
-    pub precision_known: bool,
-    pub signature: String,
-}
 
 #[derive(Serialize)]
 pub struct TelemetrySample {
@@ -81,26 +70,9 @@ pub struct Hearing {
 }
 
 #[derive(Serialize)]
-pub struct PacketSummary {
-    pub at: String,
-    #[serde(rename = "type")]
-    pub ty: String,
-    pub packet_id: u32,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub to: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub channel: Option<String>,
-    pub signature: String,
-    pub crypto: String,
-    pub receptions: usize,
-    pub bytes: i32,
-}
-
-#[derive(Serialize)]
 pub struct NodeDetail {
     #[serde(flatten)]
     pub node: Node,
-    pub positions: Vec<PositionSample>,
     pub telemetry_series: Vec<TelemetrySample>,
     /// Its packets that asked for an ACK, by recipient, most first (D-109).
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -112,8 +84,7 @@ pub struct NodeDetail {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub environment_series: Vec<EnvironmentSample>,
     pub heard_by: Vec<Hearing>,
-    pub heard: Vec<Hearing>,
-    pub recent_packets: Vec<PacketSummary>,
+    /// A series kept only its newest MAX_SAMPLES reports.
     pub truncated: bool,
     /// Region and LoRa preset as heard (topics, channel names) and as reported.
     pub radio: crate::radio::Radio,
@@ -155,7 +126,7 @@ pub fn build_node_detail(rows: &[&Row], num: u32, b: &Built, i: &Interner) -> Op
     radio.channels = crate::channels::channel_use(num, &mine, i);
     radio.preset = crate::channels::preset_guess(num, b.presets.get_or_init(|| crate::channels::PresetIndex::new(rows, &b.traceroute_contacts, i)));
     radio.uplink_topics = crate::radio::uplink_topics(&uplinked, i);
-    let mut d = NodeDetail { node: n, positions: vec![], telemetry_series: vec![], environment_series: vec![], node_status: vec![], delivery_by_recipient: vec![], heard_by: vec![], heard: vec![], recent_packets: vec![], truncated: false, radio, delivery: crate::packets::delivery(&mine, num, i) };
+    let mut d = NodeDetail { node: n, telemetry_series: vec![], environment_series: vec![], node_status: vec![], delivery_by_recipient: vec![], heard_by: vec![], truncated: false, radio, delivery: crate::packets::delivery(&mine, num, i) };
     if first == i64::MAX {
         // Neither sent nor uplinked anything: the snapshot's node says
         // whether others named it, and when.
@@ -183,13 +154,6 @@ pub fn build_node_detail(rows: &[&Row], num: u32, b: &Built, i: &Interner) -> Op
         list
     };
     let mut truncated = false;
-    d.positions = per_packet(&|r| is_position(r) && !b.rejected.contains_key(&r.lp), &mut truncated)
-        .into_iter()
-        .map(|r| {
-            let p = r.pos().unwrap();
-            PositionSample { at: iso(r.t), lat: p.lat, lon: p.lon, precision_bits: p.bits, precision_known: p.known, signature: i.s(r.sig).to_string() }
-        })
-        .collect();
     d.telemetry_series = per_packet(&is_device_telemetry, &mut truncated)
         .into_iter()
         .map(|r| {
@@ -212,33 +176,7 @@ pub fn build_node_detail(rows: &[&Row], num: u32, b: &Built, i: &Interner) -> Op
     let mut seen_text = set::<u32>();
     d.node_status = texts.into_iter().filter(|(_, s)| seen_text.insert(*s)).take(5).map(|(t, s)| StatusText { status: i.s(s).to_string(), at: iso(t) }).collect();
     d.heard_by = hearings(&mine, |r| r.src == num && r.gw.is_some_and(|g| g != r.src), |r| r.gw.unwrap());
-    d.heard = hearings(&mine, |r| r.gw == Some(num) && r.src != num, |r| r.src);
 
-    // Recent unique packets (no bodies, ever).
-    let mut pk: FxMap<u64, Vec<&Row>> = map();
-    for &r in &own {
-        pk.entry(r.lp).or_default().push(r);
-    }
-    // The least non-empty string among the copies, compared without copying.
-    let min_str = |v: &mut dyn Iterator<Item = u32>| -> Option<String> { v.filter(|&x| x != 0).map(|x| i.s(x)).filter(|s| !s.is_empty()).min().map(str::to_string) };
-    // The newest MAX_PACKETS, chosen before their summaries are built.
-    let mut recent: Vec<(i64, Vec<&Row>)> = pk.into_values().map(|rs| (rs.iter().map(|r| r.t).min().unwrap(), rs)).collect();
-    recent.sort_by_key(|a| std::cmp::Reverse(a.0));
-    recent.truncate(MAX_PACKETS);
-    d.recent_packets = recent
-        .into_iter()
-        .map(|(at, rs)| PacketSummary {
-            at: iso(at),
-            ty: min_str(&mut rs.iter().map(|r| r.ty)).unwrap_or_default(),
-            packet_id: rs.iter().filter_map(|r| r.pid).min().unwrap_or(0),
-            to: dest(rs.iter().filter_map(|r| r.dst).min()),
-            channel: min_str(&mut rs.iter().map(|r| r.channel)),
-            signature: min_str(&mut rs.iter().map(|r| r.sig)).unwrap_or_default(),
-            crypto: min_str(&mut rs.iter().map(|r| r.crypto)).unwrap_or_default(),
-            receptions: rs.iter().map(|r| r.ok).collect::<FxSet<u64>>().len(),
-            bytes: rs.iter().map(|r| r.bytes).min().unwrap_or(0),
-        })
-        .collect();
     Some(d)
 }
 
@@ -321,15 +259,15 @@ mod tests {
         // Packet keys rise with time, so key order would keep the oldest.
         let rows: Vec<Row> = (0..MAX_SAMPLES as i64 + 20)
             .map(|k| {
-                let text = format!(r#"{{"i":{k},"t":{},"b":"x","g":5,"s":5,"y":"position","l":"{:016x}","o":"{k:016x}","sg":"unsigned","po":{{"lat":61.0,"lon":10.0,"precision_bits":32}}}}"#, 1000 * k, 10_000 + k);
+                let text = format!(r#"{{"i":{k},"t":{},"b":"x","g":5,"s":5,"y":"telemetry","l":"{:016x}","o":"{k:016x}","sg":"unsigned","te":{{"kind":"device","battery":50}}}}"#, 1000 * k, 10_000 + k);
                 serde_json::from_str::<JRow>(&text).unwrap().into_row(&mut i)
             })
             .collect();
         let refs: Vec<&Row> = rows.iter().collect();
         let d = build_node_detail(&refs, 5, &build(&refs, &i), &i).unwrap();
         assert!(d.truncated);
-        assert_eq!(d.positions.len(), MAX_SAMPLES);
-        assert_eq!((d.positions[0].at.as_str(), d.positions[MAX_SAMPLES - 1].at.as_str()), (iso(20_000).as_str(), iso(1000 * (MAX_SAMPLES as i64 + 19)).as_str()));
+        assert_eq!(d.telemetry_series.len(), MAX_SAMPLES);
+        assert_eq!((d.telemetry_series[0].at.as_str(), d.telemetry_series[MAX_SAMPLES - 1].at.as_str()), (iso(20_000).as_str(), iso(1000 * (MAX_SAMPLES as i64 + 19)).as_str()));
     }
 
     #[test]

@@ -32,11 +32,13 @@ fn norm(v: &Value, server: bool) -> Value {
                     // And so has how many are estimated: anchors at one site count as one (D-175).
                     || k == "estimated"
                     // The server counted a packet under every status any copy had; one per packet now (D-087).
-                    || k == "signatures" || k == "uptime") {
+                    || k == "signatures" || k == "uptime"
+                    // Node panel parts no view showed, no longer built.
+                    || k == "positions" || k == "heard" || k == "recent_packets") {
                     continue;
                 }
                 let mut x = norm(x, server);
-                if (k == "heard" || k == "heard_by") && x.is_array() {
+                if k == "heard_by" && x.is_array() {
                     x.as_array_mut().unwrap().sort_by(|a, b| a["node"].as_str().cmp(&b["node"].as_str()));
                 }
                 out.insert(k.clone(), x);

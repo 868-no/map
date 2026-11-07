@@ -43,7 +43,7 @@ fn a_position_heard_directly_from_far_beyond_its_signal_is_ignored() {
     let health: Value = serde_json::from_str(&e.view("health", T0 as f64, (T0 + 3_600_000) as f64, "{}", "").unwrap()).unwrap();
     assert!(health.to_string().contains("position_contradicted"), "{health}");
     let d: Value = serde_json::from_str(&e.view("node", T0 as f64, (T0 + 3_600_000) as f64, "{}", "!00000005").unwrap()).unwrap();
-    assert_eq!(d["positions"].as_array().unwrap().len(), 0, "not in its history: {}", d["positions"]);
+    assert!(d["position"].is_null(), "not its position in the panel either: {}", d["position"]);
 }
 
 #[test]
