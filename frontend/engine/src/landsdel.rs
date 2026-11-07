@@ -14,7 +14,45 @@ struct Region {
     name: &'static str,
     /// Every ring of every polygon, as (lon, lat): even-odd over all rings
     /// handles holes.
-    rings: Vec<Vec<(f64, f64)>>,
+    rings: Vec<Ring>,
+    /// The box around all its rings.
+    bbox: Bbox,
+}
+
+struct Ring {
+    pts: Vec<(f64, f64)>,
+    bbox: Bbox,
+}
+
+/// A bounding box in degrees: (lon, lat) corners.
+#[derive(Clone, Copy)]
+struct Bbox {
+    min: (f64, f64),
+    max: (f64, f64),
+}
+
+impl Bbox {
+    const EMPTY: Bbox = Bbox { min: (f64::INFINITY, f64::INFINITY), max: (f64::NEG_INFINITY, f64::NEG_INFINITY) };
+
+    fn of(pts: &[(f64, f64)]) -> Bbox {
+        pts.iter().fold(Bbox::EMPTY, |b, &(x, y)| Bbox { min: (b.min.0.min(x), b.min.1.min(y)), max: (b.max.0.max(x), b.max.1.max(y)) })
+    }
+
+    fn union(self, o: Bbox) -> Bbox {
+        Bbox { min: (self.min.0.min(o.min.0), self.min.1.min(o.min.1)), max: (self.max.0.max(o.max.0), self.max.1.max(o.max.1)) }
+    }
+
+    fn contains(&self, lon: f64, lat: f64) -> bool {
+        (self.min.0..=self.max.0).contains(&lon) && (self.min.1..=self.max.1).contains(&lat)
+    }
+
+    /// Distance in km from a point to the box, in distance_km's flat
+    /// projection (kx, ky: km per degree): no point of a ring inside it is nearer.
+    fn distance_km(&self, lon: f64, lat: f64, kx: f64, ky: f64) -> f64 {
+        let dx = (self.min.0 - lon).max(lon - self.max.0).max(0.0) * kx;
+        let dy = (self.min.1 - lat).max(lat - self.max.1).max(0.0) * ky;
+        dx.hypot(dy)
+    }
 }
 
 /// The regions' outlines.
@@ -39,11 +77,12 @@ impl Regions {
                 for ring in p.as_array().into_iter().flatten() {
                     let pts: Vec<(f64, f64)> = ring.as_array().into_iter().flatten().filter_map(|c| Some((c[0].as_f64()?, c[1].as_f64()?))).collect();
                     if pts.len() >= 3 {
-                        rings.push(pts);
+                        rings.push(Ring { bbox: Bbox::of(&pts), pts });
                     }
                 }
             }
-            out.push(Region { name, rings });
+            let bbox = rings.iter().fold(Bbox::EMPTY, |b, r| b.union(r.bbox));
+            out.push(Region { name, rings, bbox });
         }
         Ok(Regions(out))
     }
@@ -54,23 +93,31 @@ impl Regions {
     }
 
     /// The region a point lies in, or the nearest one within NEAREST_KM;
-    /// None elsewhere (abroad, or far out at sea).
+    /// None elsewhere (abroad, or far out at sea). Bounding boxes skip the
+    /// regions and rings a point cannot lie in or near.
     pub fn region_at(&self, lat: f64, lon: f64) -> Option<&'static str> {
-        if let Some(r) = self.0.iter().find(|r| inside(&r.rings, lon, lat)) {
+        if let Some(r) = self.0.iter().find(|r| r.bbox.contains(lon, lat) && inside(&r.rings, lon, lat)) {
             return Some(r.name);
         }
-        self.0
-            .iter()
-            .map(|r| (r.name, distance_km(&r.rings, lon, lat)))
-            .filter(|&(_, d)| d <= NEAREST_KM)
-            .min_by(|a, b| a.1.total_cmp(&b.1))
-            .map(|(n, _)| n)
+        let mut best: Option<(&'static str, f64)> = None;
+        for r in &self.0 {
+            let limit = best.map_or(NEAREST_KM, |b| b.1);
+            if let Some(d) = distance_km(r, lon, lat, limit)
+                && best.is_none_or(|b| d < b.1)
+            {
+                best = Some((r.name, d));
+            }
+        }
+        best.map(|(n, _)| n)
     }
 }
 
-fn inside(rings: &[Vec<(f64, f64)>], lon: f64, lat: f64) -> bool {
+fn inside(rings: &[Ring], lon: f64, lat: f64) -> bool {
     let mut odd = false;
-    for ring in rings {
+    // A ring whose box misses the point crosses the ray from it an even
+    // number of times (none, or in and out again): it changes nothing.
+    for ring in rings.iter().filter(|r| r.bbox.contains(lon, lat)) {
+        let ring = &ring.pts;
         let mut j = ring.len() - 1;
         for i in 0..ring.len() {
             let (xi, yi) = ring[i];
@@ -85,13 +132,20 @@ fn inside(rings: &[Vec<(f64, f64)>], lon: f64, lat: f64) -> bool {
 }
 
 /// Distance in km from a point to a region's outline (flat projection
-/// around the point: fine at these distances).
-fn distance_km(rings: &[Vec<(f64, f64)>], lon: f64, lat: f64) -> f64 {
+/// around the point: fine at these distances), when it is at most `limit`;
+/// None when it is farther.
+fn distance_km(region: &Region, lon: f64, lat: f64, limit: f64) -> Option<f64> {
     let kx = 111.32 * lat.to_radians().cos();
     let ky = 110.57;
+    if region.bbox.distance_km(lon, lat, kx, ky) > limit {
+        return None;
+    }
     let mut best = f64::INFINITY;
-    for ring in rings {
-        for w in ring.windows(2) {
+    for ring in &region.rings {
+        if ring.bbox.distance_km(lon, lat, kx, ky) > best.min(limit) {
+            continue;
+        }
+        for w in ring.pts.windows(2) {
             let (ax, ay) = ((w[0].0 - lon) * kx, (w[0].1 - lat) * ky);
             let (bx, by) = ((w[1].0 - lon) * kx, (w[1].1 - lat) * ky);
             let (dx, dy) = (bx - ax, by - ay);
@@ -100,7 +154,7 @@ fn distance_km(rings: &[Vec<(f64, f64)>], lon: f64, lat: f64) -> f64 {
             best = best.min((ax + t * dx).hypot(ay + t * dy));
         }
     }
-    best
+    (best <= limit).then_some(best)
 }
 
 /// The only names a topic root may use for a region: exact, case and
@@ -147,6 +201,30 @@ pub(crate) mod tests {
         assert_eq!(region_at(69.6496, 18.9560), Some("Nord-Norge"), "Tromsø");
         assert_eq!(region_at(59.3293, 18.0686), None, "Stockholm is in none");
         assert_eq!(region_at(56.0, 3.0), None, "the North Sea is in none");
+    }
+
+    #[test]
+    fn bounding_boxes_change_no_answer() {
+        // The same lookup without boxes: every ring tested, every region measured.
+        let rs = fixture();
+        let open = Bbox { min: (f64::NEG_INFINITY, f64::NEG_INFINITY), max: (f64::INFINITY, f64::INFINITY) };
+        let unboxed: Vec<Region> = rs.0.iter().map(|r| Region { name: r.name, rings: r.rings.iter().map(|g| Ring { pts: g.pts.clone(), bbox: open }).collect(), bbox: open }).collect();
+        let naive = |lat: f64, lon: f64| -> Option<&'static str> {
+            if let Some(r) = unboxed.iter().find(|r| inside(&r.rings, lon, lat)) {
+                return Some(r.name);
+            }
+            unboxed.iter().filter_map(|r| distance_km(r, lon, lat, NEAREST_KM).map(|d| (r.name, d))).min_by(|a, b| a.1.total_cmp(&b.1)).map(|(n, _)| n)
+        };
+        let mut n = 0;
+        for a in 0..60 {
+            for b in 0..50 {
+                let (lat, lon) = (57.5 + a as f64 * 0.25, 3.0 + b as f64 * 0.6);
+                let got = rs.region_at(lat, lon);
+                assert_eq!(got, naive(lat, lon), "{lat}, {lon}");
+                n += usize::from(got.is_some());
+            }
+        }
+        assert!(n > 500, "the grid covers the regions: {n} points in one");
     }
 
     #[test]
