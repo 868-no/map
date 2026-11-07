@@ -764,6 +764,24 @@ pub fn health(rows: &[&Row], window: &[&Row], nodes: &[Node], edges: &[crate::gr
         .filter(|x| x.moved_at.is_none() && !crate::views::is_silent_role(role_of(x)) && x.status == "observed")
         .filter_map(|x| x.position.as_ref().filter(|p| p.precision_known && p.precision_bits >= SITE_MIN_BITS).map(|p| (x, crate::graph::LatLon { lat: p.lat, lon: p.lon })))
         .collect();
+    // Pairs within SITE_M, from a sweep north to south: only nodes less than
+    // SITE_M apart in latitude are measured, so a whole country costs little
+    // more than its sorting.
+    let mut by_lat: Vec<usize> = (0..placed.len()).collect();
+    by_lat.sort_unstable_by(|&a, &b| placed[a].1.lat.total_cmp(&placed[b].1.lat));
+    let band = SITE_M / 111_000.0; // degrees of latitude, a little more than SITE_M
+    let mut close: Vec<Vec<usize>> = vec![Vec::new(); placed.len()];
+    for (k, &a) in by_lat.iter().enumerate() {
+        for &b in &by_lat[k + 1..] {
+            if placed[b].1.lat - placed[a].1.lat > band {
+                break;
+            }
+            if crate::graph::distance_m(placed[a].1, placed[b].1) <= SITE_M {
+                close[a].push(b);
+                close[b].push(a);
+            }
+        }
+    }
     let mut site_of: Vec<usize> = (0..placed.len()).collect();
     fn root(v: &mut [usize], k: usize) -> usize {
         let mut k = k;
@@ -773,12 +791,10 @@ pub fn health(rows: &[&Row], window: &[&Row], nodes: &[Node], edges: &[crate::gr
         }
         k
     }
-    for a in 0..placed.len() {
-        for b in a + 1..placed.len() {
-            if crate::graph::distance_m(placed[a].1, placed[b].1) <= SITE_M {
-                let (ra, rb) = (root(&mut site_of, a), root(&mut site_of, b));
-                site_of[ra.max(rb)] = ra.min(rb);
-            }
+    for (a, near_a) in close.iter().enumerate() {
+        for &b in near_a {
+            let (ra, rb) = (root(&mut site_of, a), root(&mut site_of, b));
+            site_of[ra.max(rb)] = ra.min(rb);
         }
     }
     let mut sites: FxMap<usize, Vec<&Node>> = map();
