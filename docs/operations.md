@@ -60,7 +60,7 @@ The stack is `compose.yaml` alone, so it also runs as a Portainer stack from thi
 f=$(grep -l '^profile mosquitto' /etc/apparmor.d/*); sudo ln -s "$f" /etc/apparmor.d/disable/ && sudo apparmor_parser -R "$f"
 ```
 
-The runners appear under Settings → Actions → Runners as `meshmap-N-<time>`, one per slot waiting for a job (`RUNNER_NAME_PREFIX` per host); `docker compose logs controller` says what it issued and any API errors. Then set `RUNNER_LABELS`. Bump the runner image in `compose.yaml` at least monthly: GitHub refuses runners that are too far behind, and a runner a little behind updates itself first, at every job, since each starts from the image. Multi-platform images still build arm64 under QEMU unless the host is arm64.
+The runners appear under Settings → Actions → Runners as `meshmap-N-<time>`, one per slot waiting for a job (`RUNNER_NAME_PREFIX` per host); `docker compose logs controller` says what it issued and any API errors. Then set `RUNNER_LABELS`. Bump the runner image in `compose.yaml` at least monthly: GitHub refuses runners that are too far behind, and a runner a little behind updates itself first, at every job, since each starts from the image. Multi-platform images need no QEMU: every build stage runs on the runner's own platform, and the arm64 images' final stages only copy files in.
 
 ### Published images
 
