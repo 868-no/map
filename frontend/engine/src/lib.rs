@@ -234,7 +234,7 @@ impl Engine {
                 let window: Vec<&row::Row> = self.store.rows()[lo..hi].iter().collect();
                 let rows = self.rows();
                 let presets = b.presets.get_or_init(|| channels::PresetIndex::new(&rows, &b.traceroute_contacts, &self.i));
-                let mut h = health::health(&rows, &window, &b.snapshot.nodes, &b.snapshot.edges, &b.copies, presets, &self.i, hours, &self.regions);
+                let mut h = health::health(&rows, &window, &b.snapshot.nodes, &b.snapshot.edges, &b.readings, &b.copies, presets, &self.i, hours, &self.regions);
                 // Nodes past the snapshot's node limit get no health checks (D-182); airtime still counts every node.
                 if !b.beyond.is_empty() {
                     let cut: crate::util::FxSet<&str> = b.beyond.iter().map(|n| n.id.as_str()).collect();

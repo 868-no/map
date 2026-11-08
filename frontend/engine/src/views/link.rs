@@ -1,6 +1,7 @@
 //! One link's evidence over time (D-105): every radio sample between two
 //! nodes, per direction, for the link panel's history charts; and a
-//! router's links to other routers, for its link quality chart (D-197).
+//! router's links to other routers, for its link quality chart and the
+//! router link drop rule (D-197).
 
 use serde::Serialize;
 
@@ -107,6 +108,45 @@ pub fn link_history(readings: &LinkReadings, a: u32, b: u32) -> LinkHistory {
     LinkHistory { a: node_id(a), b: node_id(b), ab: readings.direction(a, b), ba: readings.direction(b, a) }
 }
 
+/// One direction of a router's radio link to another router (D-197): its
+/// SNR readings at the receiving end, in time order.
+#[derive(Debug, Default, Clone)]
+pub struct RouterLink {
+    pub partner: u32,
+    /// The router transmitted and the partner heard it; else the reverse.
+    pub out: bool,
+    pub t: Vec<i64>,
+    pub snr: Vec<f32>,
+}
+
+/// Every link direction between two routers that has SNR readings, by
+/// router (each direction is listed under both ends). From the window's
+/// radio readings as link statistics count them: every RF event once, over
+/// radio only (MQTT hops are links of their own), relay hints included,
+/// as an edge's SNR median includes them (D-197).
+pub fn router_links(readings: &LinkReadings, routers: &FxSet<u32>) -> FxMap<u32, Vec<RouterLink>> {
+    let keep = |r: &&Reading| !r.snr.is_nan() && routers.contains(&r.src) && routers.contains(&r.dst);
+    let all = readings.all();
+    // One vector, sized exactly and sorted, rather than one growing per direction.
+    let mut v: Vec<(u32, u32, i64, f32)> = Vec::with_capacity(all.iter().filter(keep).count());
+    v.extend(all.iter().filter(keep).map(|r| (r.src, r.dst, r.t, r.snr)));
+    drop(all);
+    v.sort_unstable_by_key(|x| (x.0, x.1, x.2)); // equal times: either order gives the same medians
+    let mut out: FxMap<u32, Vec<RouterLink>> = map();
+    for run in v.chunk_by(|a, b| (a.0, a.1) == (b.0, b.1)) {
+        let (src, dst) = (run[0].0, run[0].1);
+        let t: Vec<i64> = run.iter().map(|x| x.2).collect();
+        let snr: Vec<f32> = run.iter().map(|x| x.3).collect();
+        out.entry(dst).or_default().push(RouterLink { partner: src, out: false, t: t.clone(), snr: snr.clone() });
+        out.entry(src).or_default().push(RouterLink { partner: dst, out: true, t, snr });
+    }
+    // In a fixed order: the map's is arbitrary, and the rule must not depend on it.
+    for links in out.values_mut() {
+        links.sort_unstable_by_key(|l| (l.partner, l.out));
+    }
+    out
+}
+
 /// Bin widths for the router link quality chart, the narrowest first; a
 /// window gets the narrowest giving at most MAX_QUALITY_BINS bins.
 const QUALITY_BINS: [i64; 7] = [900_000, 1_800_000, 3_600_000, 7_200_000, 10_800_000, 21_600_000, 43_200_000];
@@ -202,6 +242,9 @@ mod tests {
         assert_eq!(q.hearing, vec![(15 * 60_000, 4.0, 1)]);
         assert!(router_quality(&r, 5, &routers, 0, 24 * H).is_none());
         assert_eq!((quality_bin(H), quality_bin(72 * H), quality_bin(168 * H), quality_bin(336 * H)), (900_000, H, 3 * H, 6 * H));
+        let links = router_links(&r, &routers);
+        assert_eq!(links[&1].iter().map(|l| (l.partner, l.out, l.t.len())).collect::<Vec<_>>(), vec![(2, true, 5), (3, false, 1)]);
+        assert_eq!(links[&2][0].snr, vec![8.0, 6.0, 1.0, -2.0, 0.0]);
         assert_eq!(median_f32(&mut [4.0, 1.0, 3.0, 2.0]), 2.5);
     }
 }

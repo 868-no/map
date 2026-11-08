@@ -31,6 +31,7 @@ export const KIND: Record<string, string> = {
   hop_limit: 'Hop limit higher than needed',
   router_overlap: 'Routers covering the same nodes',
   router_few_links: 'Routers with little reach',
+  router_link_drop: 'Router links suddenly weaker',
   co_located: 'Several relays at one site',
   admin_refused: 'Remote admin refused',
   plaintext_uplink: 'Unencrypted MQTT uplink',

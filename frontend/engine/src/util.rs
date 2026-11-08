@@ -117,6 +117,14 @@ pub fn iso(ms: i64) -> String {
     format!("{y:04}-{m:02}-{d:02}T{h:02}:{mi:02}:{s:02}.{milli:03}Z")
 }
 
+/// Unix milliseconds to "1 Nov 06:15 UTC", for sentences.
+pub fn day_time(ms: i64) -> String {
+    const MONTHS: [&str; 12] = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    let rem = ms.rem_euclid(86_400_000);
+    let (_, m, d) = civil(ms.div_euclid(86_400_000));
+    format!("{d} {} {:02}:{:02} UTC", MONTHS[(m - 1) as usize], rem / 3_600_000, rem / 60_000 % 60)
+}
+
 /// Days since 1970-01-01 to (year, month, day), proleptic Gregorian
 /// (Howard Hinnant's civil_from_days).
 fn civil(z: i64) -> (i64, i64, i64) {
