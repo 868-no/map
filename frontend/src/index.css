@@ -552,3 +552,16 @@ button.danger:hover { background: var(--err); color: var(--bg); }
 .region-stats dt { color: var(--muted); }
 .region-stats dd { margin: 0; }
 .region-page h4 { margin: 0.5rem 0 0.125rem; font-size: 0.8125rem; }
+
+/* Hardware and firmware in the Regions panel (D-196): one row per value, label | bar | count. */
+.fleet-group h4 { margin: 0.5rem 0 0.125rem; font-size: 0.8125rem; }
+.fleet-bars { list-style: none; margin: 0; padding: 0; font-size: 0.75rem; }
+.fleet-bars > li { display: grid; grid-template-columns: minmax(0, 11rem) 1fr 2.5rem; column-gap: 0.5rem; align-items: center; padding: 0.0625rem 0; }
+.fleet-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fleet-label .linkish { font-size: inherit; }
+.fleet-bar { height: 0.5rem; background: var(--panel2); border-radius: 0.125rem; overflow: hidden; }
+.fleet-bar > span { display: block; height: 100%; background: var(--accent); opacity: 0.75; }
+.fleet-count { text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); }
+.fleet-versions { grid-column: 1 / -1; list-style: none; margin: 0 0 0.25rem 0.75rem; padding: 0; }
+.fleet-versions li { display: grid; grid-template-columns: minmax(0, 10.25rem) 1fr; column-gap: 0.5rem; }
+.fleet-versions .fleet-count { text-align: left; }

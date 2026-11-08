@@ -1,6 +1,7 @@
 // Regions (D-194): the mesh per landsdel, for the people who look after it
 // there. The list compares the five; a region's page gathers its nodes,
-// problems, channel use and growth, and can be shared as a link.
+// problems, channel use and growth, and can be shared as a link. Both show
+// what the nodes run: hardware, firmware, roles and presets (D-196).
 import { memo, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { getJSON } from '../api/client'
@@ -15,6 +16,7 @@ import { useTheme } from '../theme'
 import { BarChart } from '../components/BarChart'
 import { useFlash } from '../lib/useFlash'
 import { IssueLine, KIND } from './health'
+import { FleetSection } from './fleet'
 
 type Trends = components['schemas']['TrendsBody']
 const TZ = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
@@ -73,6 +75,7 @@ export function RegionsPanel({ snapshot }: { snapshot: SnapshotView | undefined 
         })}
       </ul>
       {v.data.outside > 0 && <p className="muted small">{plural(v.data.outside, 'node')} placed outside every region (abroad or at sea).</p>}
+      <FleetSection fleet={v.data.mesh} />
     </div>
   )
 }
@@ -154,6 +157,7 @@ const RegionPage = memo(function RegionPage({ r, issues, snapshot, swatch }: { r
         </section>
       ))}
       {noticeCount > 0 && <p><button className="linkish" onClick={() => setNotices(!notices)}>{notices ? 'Hide' : 'Show'} {plural(noticeCount, 'notice')}</button></p>}
+      <FleetSection fleet={r.fleet} where={`whose position or estimate lies in ${r.name}`} />
       <h3>Growth, week by week</h3>
       <p className="muted small">Over everything the server keeps, counted from rows uplinked under a topic root naming {r.name}: gateways set to another region's topic count there, and nodes heard only by those are missed. Not affected by the period or filters.</p>
       {t.isLoading && <p className="muted">Counting…</p>}

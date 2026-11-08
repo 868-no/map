@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
-import { mockObservations, nodeRows } from './mock'
+import { mapReportRow, mockObservations, nodeRows } from './mock'
 
 // The watchlist (D-192), place search (D-193) and the Regions panel with its
 // links (D-194), on synthetic data (e2e/mock.ts), plus the filters' link
@@ -67,6 +67,34 @@ test('a region link opens its page, also when it names a node too', async ({ pag
   await expect(page.getByRole('complementary', { name: 'Regions' }).locator('.region-title')).toHaveText('Vestlandet', { timeout: 30_000 })
   await expect(page).toHaveURL(/region=Vestlandet/)
   await expect(page).not.toHaveURL(/node=/)
+})
+
+test('the Regions panel breaks the nodes down by hardware and firmware, for a region and the whole mesh', async ({ page }) => {
+  // A runs 2.8 or later as far as its key shows; the gateway states 2.7.15 in its map report.
+  // A third node, heard but never placed, counts for the mesh only.
+  const LOOSE = 0x33000003
+  await mockObservations(page, [
+    ...nodeRows(A, 'TRDA', { lat: 63.43, lon: 10.4, gw: GW, hw: 'HELTEC_V3', keyId: A }),
+    ...nodeRows(GW, 'TRGW', { lat: 63.42, lon: 10.45, role: 'ROUTER', hw: 'RAK4631' }),
+    mapReportRow(GW, { role: 'ROUTER', hw_model: 'RAK4631', modem_preset: 'NARROW_FAST', has_default_channel: true, firmware_version: '2.7.15' }),
+    ...nodeRows(LOOSE, 'LOOS', { hw: 'T_ECHO' }), // no gateway heard it: nothing to estimate a position from
+  ])
+  await open(page, '?region=Tr%C3%B8ndelag')
+  const panel = page.getByRole('complementary', { name: 'Regions' })
+  const fleet = panel.getByRole('region', { name: 'Hardware and firmware' })
+  await expect(fleet).toContainText('2 nodes heard in the selected period whose position or estimate lies in Trøndelag', { timeout: 30_000 })
+  for (const text of ['Heltec V3', 'RAK4631', 'Router', 'Narrow Fast', '2.8 or later (inferred)']) await expect(fleet).toContainText(text)
+  await expect(fleet).not.toContainText('LilyGO T-Echo')
+  // The firmware line opens to its exact versions.
+  await expect(fleet).not.toContainText('2.7.15')
+  await fleet.getByRole('button', { name: /^2\.7/ }).click()
+  await expect(fleet).toContainText('2.7.15')
+
+  // The list: the whole mesh, the unplaced node included.
+  await panel.getByRole('button', { name: '‹ All regions' }).click()
+  const mesh = panel.getByRole('region', { name: 'Hardware and firmware' })
+  await expect(mesh).toContainText('3 nodes heard in the selected period, placed on the map or not')
+  await expect(mesh).toContainText('LilyGO T-Echo')
 })
 
 test("a region's Share link names the region and period, never the selected node", async ({ page, context }) => {

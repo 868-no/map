@@ -6,6 +6,7 @@ import { NodeIcon } from '../components/NodeIcon'
 import { PALETTES } from '../map/palette'
 import { useTheme } from '../theme'
 import { BASEMAP_GROUPS } from '../map/layers'
+import { roleLabel } from '../lib/deviceNames'
 
 const TYPES = ['nodeinfo', 'position', 'telemetry', 'neighborinfo', 'traceroute', 'text', 'routing', 'direct_message', 'encrypted', 'store_forward', 'node_status', 'mapreport', 'other']
 export const TYPE_LABEL: Record<string, string> = { mapreport: 'map report', direct_message: 'direct message', store_forward: 'store & forward', node_status: 'node status' }
@@ -18,14 +19,6 @@ const TYPE_TIP: Record<string, string> = {
   other: 'Packets of any other application (admin, store and forward, range test, …)',
 }
 const EVIDENCE: [string, string][] = [['neighbor', 'NeighborInfo'], ['traceroute', 'Traceroute'], ['direct_rf', 'Heard directly by a gateway'], ['relay_hint', 'Guessed from relay byte']]
-
-/** Meshtastic device roles in plain words (the raw enum is the fallback). */
-const ROLE_LABEL: Record<string, string> = {
-  CLIENT: 'Client', CLIENT_MUTE: 'Client (mute)', CLIENT_HIDDEN: 'Client (hidden)', CLIENT_BASE: 'Client base',
-  ROUTER: 'Router', ROUTER_LATE: 'Router (late)', ROUTER_CLIENT: 'Router/client', REPEATER: 'Repeater',
-  TRACKER: 'Tracker', SENSOR: 'Sensor', TAK: 'TAK', TAK_TRACKER: 'TAK tracker', LOST_AND_FOUND: 'Lost and found',
-}
-const roleLabel = (r: string) => ROLE_LABEL[r] ?? r
 
 function toggle(list: string[], v: string): string[] {
   return list.includes(v) ? list.filter((x) => x !== v) : [...list, v]

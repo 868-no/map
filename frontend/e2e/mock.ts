@@ -56,14 +56,25 @@ export async function mockObservations(page: Page, rows: ObsRow[], live?: Promis
 let seq = 0
 const hex = (n: number) => n.toString(16).padStart(16, '0')
 
-/** Rows for one node: NodeInfo (name, role) and, when given, a position; heard directly by gateway gw if given (a link). */
-export function nodeRows(num: number, name: string, opts: { lat?: number; lon?: number; role?: string; gw?: number; t?: number } = {}): ObsRow[] {
+/**
+ * Rows for one node: NodeInfo (name, role, hardware; with keyId, a public key
+ * deriving that id) and, when given, a position; heard directly by gateway gw
+ * if given (a link).
+ */
+export function nodeRows(num: number, name: string, opts: { lat?: number; lon?: number; role?: string; hw?: string; keyId?: number; gw?: number; t?: number } = {}): ObsRow[] {
   const t = opts.t ?? Date.now() - 60_000
   const rx = opts.gw === undefined ? {} : { g: opts.gw, sn: 5, rs: -90, hs: 3, hl: 3, dr: true, rr: 'zero_hop_rf' }
   const base = (y: string) => ({ i: ++seq, t, b: 'e2e', s: num, y, l: hex(seq * 7919), o: hex(seq * 104729), sg: 'unsigned', ...rx })
-  const rows: ObsRow[] = [{ ...base('nodeinfo'), ni: { long_name: `${name} long`, short_name: name, role: opts.role, has_public_key: false } }]
+  const key = opts.keyId === undefined ? { has_public_key: false } : { has_public_key: true, key_id: opts.keyId }
+  const rows: ObsRow[] = [{ ...base('nodeinfo'), ni: { long_name: `${name} long`, short_name: name, role: opts.role, hw_model: opts.hw, ...key } }]
   if (opts.lat !== undefined && opts.lon !== undefined) rows.push({ ...base('position'), po: { lat: opts.lat, lon: opts.lon, precision_bits: 32, precision_known: true } })
   return rows
+}
+
+/** A node's own map report (sent to MQTT by itself, so its own gateway). */
+export function mapReportRow(num: number, mr: NonNullable<ObsRow['mr']>, t = Date.now() - 60_000): ObsRow {
+  ++seq
+  return { i: seq, t, b: 'e2e', g: num, s: num, y: 'mapreport', l: hex(seq * 7919), o: hex(seq * 104729), sg: 'not-applicable', mr }
 }
 
 /** A NeighborInfo report: `reporter` heard each of `neighbors` (one directed link each). */
