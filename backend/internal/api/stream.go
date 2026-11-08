@@ -113,6 +113,11 @@ func (s *Server) registerStream(api huma.API) {
 	}, s.stream)
 }
 
+// stream runs one client's live stream. A client that stops reading cannot
+// hold it: huma's sse sender moves the connection's write deadline
+// sse.WriteTimeout (5 s) ahead before each event, through the
+// ResponseWriter (nothing here wraps it), so a send to such a client fails
+// and the stream ends.
 func (s *Server) stream(ctx context.Context, in *StreamInput, send sse.Sender) {
 	wp := WindowParams{Duration: in.Duration}
 	heartbeat := func() bool {
