@@ -563,5 +563,4 @@ button.danger:hover { background: var(--err); color: var(--bg); }
 .fleet-bar > span { display: block; height: 100%; background: var(--accent); opacity: 0.75; }
 .fleet-count { text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); }
 .fleet-versions { grid-column: 1 / -1; list-style: none; margin: 0 0 0.25rem 0.75rem; padding: 0; }
-.fleet-versions li { display: grid; grid-template-columns: minmax(0, 10.25rem) 1fr; column-gap: 0.5rem; }
-.fleet-versions .fleet-count { text-align: left; }
+.fleet-versions li { display: flex; justify-content: space-between; color: var(--muted); }
