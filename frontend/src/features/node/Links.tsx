@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { Edge, MeshNode, NodeView, SnapshotView } from '../../derive/views'
+import { TimeChart } from '../../components/TimeChart'
+import { binWords, routerLinkSeries } from './routerLinks'
 import { useReach } from '../../state/data'
 import { useStore } from '../../state/store'
 import { PALETTES } from '../../map/palette'
@@ -56,6 +58,7 @@ export function LinksTab({ d, id, snapshot, names, neighbours }: {
         </tbody>
       </table>
       <RelayingSection node={d} snapshot={snapshot} />
+      <RouterLinksSection d={d} snapshot={snapshot} />
       <ReachSection key={d.id} id={d.id} name={(n) => names.get(n) ?? n} />
     </>
   )
@@ -118,6 +121,33 @@ function ReachSection({ id, name }: { id: string; name: (id: string) => string }
         relays for free over a 0-cost link (gold chevrons). Dashed lines skip relays that have no position on the map. Links never observed are missing, and intermittent ones count as always there.
         {r && r.nodes.length > 0 && shown && <> Nearest relays: {[...new Set(r.nodes.filter((n) => n.need === 1).map((n) => n.via))].slice(0, 3).map(name).join(', ')}.</>}
       </p>
+    </section>
+  )
+}
+
+const ROUTER_ROLES = ['ROUTER', 'ROUTER_LATE']
+
+/**
+ * Routers: the SNR of their radio links to other routers over the window
+ * (D-197), per time bin, in both directions. A drop on both lines that stays
+ * down is what the router link drop health rule looks for.
+ */
+function RouterLinksSection({ d, snapshot }: { d: NodeView; snapshot: SnapshotView | undefined }) {
+  const q = d.router_links
+  const series = useMemo(() => (q ? routerLinkSeries(q) : undefined), [q])
+  if (!ROUTER_ROLES.includes(d.identity?.role ?? '') || !snapshot) return null
+  const [start, end] = [Date.parse(snapshot.meta.window.start), Date.parse(snapshot.meta.window.end)]
+  return (
+    <section className="router-links">
+      <h3 title="Radio readings between this router and other routers (ROUTER, ROUTER_LATE): NeighborInfo, traceroutes, gateway receptions and resolved relays, each RF event once; MQTT hops left out">Router links</h3>
+      {q && series ? (
+        <>
+          <p className="muted small">Median SNR of its links to other routers per {binWords(q.bin_ms)}: as they heard it, and as it heard them. A sudden drop on both that stays down points at its antenna, cable or site.</p>
+          <TimeChart label="SNR" unit="dB" start={start} end={end} series={series} />
+        </>
+      ) : (
+        <p className="muted small">No SNR readings between it and another router in the selected period.</p>
+      )}
     </section>
   )
 }

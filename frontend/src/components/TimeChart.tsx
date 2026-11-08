@@ -12,6 +12,8 @@ export interface Series {
   label: string
   color: string // CSS colour
   points: [number, number | null][]
+  /** Readings behind each point, by its time (binned series, D-197): read out on hover, summed in the legend. */
+  counts?: ReadonlyMap<number, number>
 }
 
 /**
@@ -78,6 +80,9 @@ function segments(pts: [number, number][]): [number, number][][] {
 const clean = (p: [number, number | null][]) => p.filter((x): x is [number, number] => x[1] !== null && Number.isFinite(x[1])).sort((a, b) => a[0] - b[0])
 
 const HOUR = 3_600_000
+
+/** The readings behind a point read off a chart, when its series counts them. */
+const countOf = (x: { p: [number, number]; l: { label: string; counts?: ReadonlyMap<number, number> } }) => x.l.counts?.get(x.p[0])
 
 const fmtIn = (v: number, u: string, d: number) => `${v.toFixed(d)}${u === '%' ? ' %' : u ? ` ${u}` : ''}`
 
@@ -181,8 +186,8 @@ export function TimeChart(props: TimeChartProps) {
   const near = Math.max(HOUR, span / 50)
   let hit: (typeof read)[number] | undefined
   if (t !== null) for (const x of read) if (Math.abs(x.p[0] - t) <= near && (!hit || Math.abs(x.p[0] - t) < Math.abs(hit.p[0] - t))) hit = x
-  const hover = t === null ? null : hit ? { p: hit.p, l: hit.l.label } : { p: [t, NaN] as [number, number], l: '' }
-  const shownX = hover ?? { p: last.p, l: last.l.label }
+  const hover = t === null ? null : hit ? { p: hit.p, l: hit.l.label, n: countOf(hit) } : { p: [t, NaN] as [number, number], l: '', n: undefined }
+  const shownX = hover ?? { p: last.p, l: last.l.label, n: countOf(last) }
   const shown = shownX.p
   return (
     <figure className="tchart">
@@ -190,6 +195,7 @@ export function TimeChart(props: TimeChartProps) {
         <span className="tchart-label">{label}</span>
         <span className="tchart-read">
           {shownX.l && <small className="muted">{shownX.l} </small>}{Number.isNaN(shown[1]) ? <small className="muted">no reading</small> : fmt(shown[1])}
+          {shownX.n !== undefined && <small className="muted"> · {shownX.n} reading{shownX.n === 1 ? '' : 's'}</small>}
           {bands.filter((b) => b !== main).map((b) => {
             const v = bandAt(b, shown[0])
             return v && <small key={b.label} className="muted"> · {b.label} {fmtB(b, v[1])}</small>
@@ -208,7 +214,7 @@ export function TimeChart(props: TimeChartProps) {
       </div>
       {((series && series.length > 1) || bands.length > 0 || !!nights?.length) && (
         <div className="tchart-legend">
-          {series && series.length > 1 && lines0.map((l) => <span key={l.label}><i style={{ background: l.color }} />{l.label} <small className="muted">({l.pts.length})</small></span>)}
+          {series && series.length > 1 && lines0.map((l) => <span key={l.label}><i style={{ background: l.color }} />{l.label} <small className="muted">({l.counts ? `${[...l.counts.values()].reduce((a, b) => a + b, 0)} readings` : l.pts.length})</small></span>)}
           {bands.map((b) => <span key={b.label}><i className="band" style={{ background: b.color }} />{b.label}</span>)}
           {!!nights?.length && <span><i className="band night" />Night</span>}
           {notes.map((n) => <small key={n} className="muted">{n}</small>)}

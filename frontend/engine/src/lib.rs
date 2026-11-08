@@ -145,7 +145,7 @@ impl Engine {
                 let num = parse_node(arg).ok_or_else(|| err("invalid node id"))?;
                 self.build(start, end, filters)?;
                 let b = &self.built.as_ref().unwrap().1;
-                Ok(json(&build_node_detail(&self.rows(), num, b, &self.i)))
+                Ok(json(&build_node_detail(&self.rows(), num, b, &self.i, start, end)))
             }
             "packetlog" => {
                 let num = parse_node(arg).ok_or_else(|| err("invalid node id"))?;

@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test'
-import { directReception, mockObservations, nodeRows } from './mock'
+import { directReception, mockObservations, neighborRow, nodeRows } from './mock'
 
 // Details on synthetic data (e2e/mock.ts): the packet log's live rows and
 // resizable columns, and a link's cross section with its mark on the map.
@@ -184,4 +184,27 @@ test("a node's history over everything kept loads only when opened, by period, a
   await open(page, `?node=${nodeId(NEW)}`)
   await page.locator('details.node-history summary').click()
   await expect(page.getByText(/Nothing from this node is in the long-term summaries yet/)).toBeVisible()
+})
+
+test("a router's Details chart its links to other routers, a client's do not (D-197)", async ({ page }) => {
+  const R = 0x32000021, GW = 0x32000022, C = 0x32000023
+  const now = Date.now()
+  // Router GW (a gateway) hears router R every two hours over a day; R reports hearing GW; client C is heard too.
+  const heard = Array.from({ length: 12 }, (_, k) => nodeRows(R, 'RTR', { lat: 63.35, lon: 10.45, role: 'ROUTER', gw: GW, t: now - (24 - 2 * k) * 3_600_000 })).flat()
+  const hearing = Array.from({ length: 6 }, (_, k) => neighborRow(R, [GW], now - (20 - 3 * k) * 3_600_000))
+  await mockObservations(page, [...heard, ...hearing, ...nodeRows(GW, 'GATE', { lat: 63.43, lon: 10.39, role: 'ROUTER_LATE' }), ...nodeRows(C, 'CLNT', { lat: 63.4, lon: 10.4, role: 'CLIENT', gw: GW })])
+  await open(page, `?node=${nodeId(R)}`)
+  await page.getByRole('tab', { name: /^Links/ }).click()
+  const section = page.locator('section.router-links')
+  await expect(section.getByRole('heading', { name: 'Router links' })).toBeVisible({ timeout: 30_000 })
+  await expect(section.getByText(/^Median SNR of its links to other routers per/)).toBeVisible()
+  await expect(section.locator('.tchart-legend')).toContainText(/Heard by other routers \(\d+ readings\)/)
+  await expect(section.locator('.tchart-legend')).toContainText(/Hearing other routers \(\d+ readings\)/)
+  await expect(section.getByRole('img')).toHaveAttribute('aria-label', /^SNR: \d+ reports/)
+  if (process.env.ROUTER_LINKS_SHOT) await section.screenshot({ path: process.env.ROUTER_LINKS_SHOT })
+  // A client has no router links to chart.
+  await open(page, `?node=${nodeId(C)}`)
+  await page.getByRole('tab', { name: /^Links/ }).click()
+  await expect(page.getByRole('heading', { name: /^Links in window/ })).toBeVisible({ timeout: 30_000 })
+  await expect(page.locator('section.router-links')).toHaveCount(0)
 })

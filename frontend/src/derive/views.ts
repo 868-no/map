@@ -378,6 +378,18 @@ export interface NodeView extends Omit<MeshNode, 'identity' | 'position'> {
   truncated: boolean
   radio: Radio
   delivery?: Delivery
+  router_links?: RouterQuality // routers only: their links to other routers over the window (D-197)
+}
+
+/**
+ * A router's link quality over the window (D-197): per time bin (bins start
+ * at the window's start), [bin middle ms, median SNR dB, readings], bins
+ * with readings only.
+ */
+export interface RouterQuality {
+  bin_ms: number
+  heard: [number, number, number][] // its transmissions as other routers heard them
+  hearing: [number, number, number][] // other routers as it heard them
 }
 
 export interface OwnPacket {

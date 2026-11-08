@@ -34,7 +34,9 @@ fn norm(v: &Value, server: bool) -> Value {
                     // The server counted a packet under every status any copy had; one per packet now (D-087).
                     || k == "signatures" || k == "uptime"
                     // Node panel parts no view showed, no longer built.
-                    || k == "positions" || k == "heard" || k == "recent_packets") {
+                    || k == "positions" || k == "heard" || k == "recent_packets"
+                    // Router link quality (D-197) came after the server views.
+                    || k == "router_links") {
                     continue;
                 }
                 let mut x = norm(x, server);
