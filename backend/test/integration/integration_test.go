@@ -142,6 +142,24 @@ func waitCount(t *testing.T, pool *pgxpool.Pool, q string, atLeast int) int {
 	return 0
 }
 
+// provenanceGaps counts rows whose also_via does not name exactly the
+// broker other gives (an SQL expression over the row, e.g. 'b'); a row with
+// no also_via counts. The one exception is a forged signature checked only
+// once the sender's key is known: the copy before the key is kept decoded,
+// the copy after it as invalid, which is keyed without the payload, so the
+// two copies are two rows and neither names the other broker. Live, both
+// copies arrive within moments, and that is the window for this.
+func provenanceGaps(t *testing.T, pool *pgxpool.Pool, other string) int {
+	t.Helper()
+	return count(t, pool, `SELECT count(*) FROM packet_log x
+		WHERE (NOT COALESCE(decoded_metadata->'also_via' ? (`+other+`), false)
+		       OR COALESCE(jsonb_array_length(decoded_metadata->'also_via'), 0) <> 1)
+		  AND NOT EXISTS (SELECT 1 FROM packet_log y
+		      WHERE y.broker_id <> x.broker_id AND y.source_node_id = x.source_node_id AND y.packet_id = x.packet_id
+		        AND y.gateway_node_id IS NOT DISTINCT FROM x.gateway_node_id
+		        AND (x.packet_type = 'invalid') <> (y.packet_type = 'invalid'))`)
+}
+
 // design §10.2 tests 9 and 20 (identity part): the demo stream through the real
 // pipeline; re-deliveries collapse, gateways stay distinct, identities
 // rebuild from packet_log after a "restart".
@@ -176,9 +194,7 @@ func TestPipelineDemoStream(t *testing.T) {
 	}
 	// Both brokers delivered every upload (b's copies mostly long after
 	// commit): every row must name the other broker in also_via, exactly once.
-	if bad := count(t, pool, `SELECT count(*) FROM packet_log
-		WHERE NOT (decoded_metadata->'also_via' ? (CASE broker_id WHEN 'a' THEN 'b' ELSE 'a' END))
-		   OR jsonb_array_length(decoded_metadata->'also_via') <> 1`); bad != 0 {
+	if bad := provenanceGaps(t, pool, "CASE broker_id WHEN 'a' THEN 'b' ELSE 'a' END"); bad != 0 {
 		t.Fatalf("%d rows with incomplete or duplicated broker provenance", bad)
 	}
 	// Late provenance updates should be HOT (fillfactor 90): no index writes.
@@ -265,7 +281,8 @@ func TestBridgedBrokerLag(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 	}
 	wg.Wait()
-	time.Sleep(500 * time.Millisecond)
+	// The writer applies the late copies' provenance after their rows.
+	waitCount(t, pool, `SELECT count(*) FROM packet_log WHERE decoded_metadata ? 'also_via'`, 1)
 	cancel()
 	<-done
 	_, _ = pool.Exec(context.Background(), `SELECT pg_stat_force_next_flush()`)
@@ -274,7 +291,7 @@ func TestBridgedBrokerLag(t *testing.T) {
 	upd := count(t, pool, `SELECT COALESCE(sum(n_tup_upd), 0) FROM pg_stat_user_tables WHERE relname LIKE 'packet_log_p%'`)
 	hot := count(t, pool, `SELECT COALESCE(sum(n_tup_hot_upd), 0) FROM pg_stat_user_tables WHERE relname LIKE 'packet_log_p%'`)
 	t.Logf("%d rows over %s; %d with also_via; %d needed a row update (%d HOT)", rows, time.Since(start).Round(time.Second), inMem, upd, hot)
-	if bad := count(t, pool, `SELECT count(*) FROM packet_log WHERE NOT (decoded_metadata->'also_via' ? (CASE broker_id WHEN 'a' THEN 'b' ELSE 'a' END))`); bad != 0 {
+	if bad := provenanceGaps(t, pool, "CASE broker_id WHEN 'a' THEN 'b' ELSE 'a' END"); bad != 0 {
 		t.Fatalf("%d rows missing the other broker", bad)
 	}
 }
@@ -299,13 +316,13 @@ func TestDedupeWithoutRedis(t *testing.T) {
 	for _, m := range msgs { // second broker delivers again after commit
 		p.Submit(ingest.RawMessage{BrokerID: "b", Topic: m.Topic, Payload: m.Payload, ObservedAt: time.Now()})
 	}
-	time.Sleep(time.Second)
+	waitCount(t, pool, `SELECT count(*) FROM packet_log WHERE decoded_metadata ? 'also_via'`, 1)
 	cancel()
 	<-done
 	if d := count(t, pool, `SELECT count(*) FROM (SELECT observation_key FROM packet_log GROUP BY 1 HAVING count(*) > 1) x`); d != 0 {
 		t.Fatalf("%d duplicates stored without Redis", d)
 	}
-	if bad := count(t, pool, `SELECT count(*) FROM packet_log WHERE NOT (decoded_metadata->'also_via' ? 'b')`); bad != 0 {
+	if bad := provenanceGaps(t, pool, "'b'"); bad != 0 {
 		t.Fatalf("%d rows missing broker b in also_via", bad)
 	}
 }
