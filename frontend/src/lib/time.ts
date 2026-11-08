@@ -68,6 +68,14 @@ export function formatShort(iso: string | Date, zone = localZone()): string {
   return `${month(t, zone)} ${pad(w.d)} ${hm(w)}`
 }
 
+/**
+ * Writes the time marks the engine puts in sentences ("{{t:<Unix ms>}}",
+ * engine util::time_mark) in the viewer's time zone, e.g. "Nov 01 06:44".
+ */
+export function localizeTimes(text: string, zone = localZone()): string {
+  return text.replace(/\{\{t:(-?\d+)\}\}/g, (_, t: string) => formatShort(new Date(Number(t)), zone))
+}
+
 /** Compact log time: HH:mm:ss today, otherwise "LLL dd HH:mm". */
 export function formatLogTime(iso: string | Date, nowMs = Date.now(), zone = localZone()): string {
   const w = wall(ms(iso), zone)

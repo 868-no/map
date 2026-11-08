@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatLocal, formatLogTime, formatShort, fromLocalInput, isAmbiguousLocal, toLocalInput, zoneLabel } from '../src/lib/time'
+import { formatLocal, formatLogTime, formatShort, fromLocalInput, isAmbiguousLocal, localizeTimes, toLocalInput, zoneLabel } from '../src/lib/time'
 
 const OSLO = 'Europe/Oslo'
 
@@ -61,5 +61,16 @@ describe('local time handling across DST (Europe/Oslo)', () => {
     const now = Date.parse('2026-07-01T21:30:00Z') // 23:30 in Oslo
     expect(formatLogTime('2026-06-30T22:10:05Z', now, OSLO)).toBe('00:10:05')
     expect(formatLogTime('2026-06-30T21:59:00Z', now, OSLO)).toMatch(/^\S+ 30 23:59$/)
+  })
+})
+
+describe('time marks in engine sentences', () => {
+  it('writes each mark in the viewer\'s zone and leaves the rest of the text alone', () => {
+    const t = Date.UTC(2026, 10, 1, 5, 44) // 1 Nov 05:44 UTC
+    expect(localizeTimes(`Router links 9 dB weaker since {{t:${t}}}`, 'Europe/Oslo')).toBe(`Router links 9 dB weaker since ${formatShort(new Date(t), 'Europe/Oslo')}`)
+    expect(localizeTimes(`since {{t:${t}}}`, 'Europe/Oslo')).toContain('06:44')
+    expect(localizeTimes(`since {{t:${t}}}`, 'UTC')).toContain('05:44')
+    expect(localizeTimes(`a {{t:${t}}} and {{t:${t + 3_600_000}}}`, 'UTC')).toMatch(/05:44 and .*06:44$/)
+    expect(localizeTimes('no marks, {t:1} or {{x:2}}')).toBe('no marks, {t:1} or {{x:2}}')
   })
 })

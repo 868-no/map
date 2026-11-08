@@ -5,6 +5,7 @@ import { useEffect, useRef } from 'react'
 import { create } from 'zustand'
 import type { Issue } from '../derive/views'
 import { useWindowParams } from './data'
+import { localizeTimes } from '../lib/time'
 import type { Watched } from '../derive/views'
 
 const KEY = 'meshmap.watch'
@@ -104,7 +105,7 @@ export function watchChanges(prev: Watched | undefined, next: Watched, issues: I
   }
   for (const i of issues) {
     const key = `${i.kind}|${i.node}`
-    if (i.severity !== 'notice' && !seenIssues.has(key) && prev) out.push(`${i.severity === 'problem' ? 'Problem' : 'Warning'}: ${i.summary}.`)
+    if (i.severity !== 'notice' && !seenIssues.has(key) && prev) out.push(`${i.severity === 'problem' ? 'Problem' : 'Warning'}: ${localizeTimes(i.summary)}.`)
   }
   return out
 }

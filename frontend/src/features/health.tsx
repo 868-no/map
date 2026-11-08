@@ -7,6 +7,7 @@ import { useHealth } from '../state/data'
 import { useStore } from '../state/store'
 import { TYPE_LABEL } from './controls'
 import { namesOf } from '../map/model'
+import { localizeTimes } from '../lib/time'
 
 const SEVERITY: Record<Issue['severity'], { label: string; plural: string; icon: string }> = {
   problem: { label: 'problem', plural: 'problems', icon: '⛔' },
@@ -54,7 +55,8 @@ export function IssueLine({ i, name }: { i: Issue; name?: (id: string) => string
   const select = useStore((s) => s.select)
   const [open, setOpen] = useState(false)
   // Other nodes in the text by name, as the line's own node is.
-  const named = (t: string) => (name ? t.replace(/![0-9a-f]{8}/g, (id) => (name(id) === id ? id : `${name(id)} (${id})`)) : t)
+  // Node ids as names, and the engine's time marks in the viewer's time zone.
+  const named = (t: string) => { const s = localizeTimes(t); return name ? s.replace(/![0-9a-f]{8}/g, (id) => (name(id) === id ? id : `${name(id)} (${id})`)) : s }
   return (
     <li className={`issue issue-${i.severity}`} title={named(i.detail)}>
       <span className="issue-icon" aria-label={SEVERITY[i.severity].label}>{SEVERITY[i.severity].icon}</span>

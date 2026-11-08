@@ -796,12 +796,12 @@ pub fn health(rows: &[&Row], window: &[&Row], nodes: &[Node], edges: &[crate::gr
             .collect();
         let detail = format!(
             "From {} on, its radio links to other routers were {:.0} dB weaker (the median change per link and direction, each against itself), and still were at the newest data, {} later: {}. Median SNR at the receiving end before and after, from NeighborInfo, traceroutes, gateway receptions and resolved relays. Several links falling at once point at the router itself rather than its partners: check the antenna, cable, connectors and mount (water in a connector, or a mount loosened by wind, often follows rain and gusts). Icing can do the same until it melts. The Links tab of its Details charts its router links over the period.",
-            crate::util::day_time(d.at),
+            crate::util::time_mark(d.at),
             -d.drop,
             span_words(newest - d.at),
             fell.join("; ")
         );
-        weighted.push(Issue { node: node_id(r.num), kind: "router_link_drop", severity: "warning", summary: format!("Router links {:.0} dB weaker since {}", -d.drop, crate::util::day_time(d.at)), detail, weight: -d.drop });
+        weighted.push(Issue { node: node_id(r.num), kind: "router_link_drop", severity: "warning", summary: format!("Router links {:.0} dB weaker since {}", -d.drop, crate::util::time_mark(d.at)), detail, weight: -d.drop });
     }
     // Co-located relays: nodes that rebroadcast, at one site. They repeat
     // the same packets from the same place; all but one could be CLIENT_MUTE.
@@ -1391,7 +1391,7 @@ mod tests {
         let d: Vec<&Issue> = got.iter().filter(|x| x.kind == "router_link_drop").collect();
         assert_eq!(d.len(), 1, "router 1 only: 2 and 3 each see one partner fall");
         assert_eq!((d[0].node.as_str(), d[0].severity), ("!00000001", "warning"));
-        assert!(d[0].summary.starts_with("Router links 10 dB weaker since 2 Jan "), "{}", d[0].summary);
+        assert!(d[0].summary.starts_with("Router links 10 dB weaker since {{t:"), "{}", d[0].summary);
         assert!(d[0].detail.contains("heard by !00000002") && d[0].detail.contains("hearing !00000002") && !d[0].detail.contains("!00000009"), "{}", d[0].detail);
     }
 }
