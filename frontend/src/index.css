@@ -33,6 +33,7 @@
   --bar-dim: #2b4a5c; /* gateway receptions behind unique packets */
   /* The map's overlay colours the legend draws (map/palette.ts, per theme). */
   --link-infra: rgb(76, 201, 240);
+  --link-infra-late: rgb(138, 128, 255);
   --link-other: rgb(150, 163, 184);
   --ping-origin: rgb(125, 224, 255);
   --ping-relay: rgb(255, 196, 110);
@@ -76,6 +77,7 @@
   --ctrl-icon-filter: none;
   --bar-dim: #b9dcea;
   --link-infra: rgb(8, 126, 164);
+  --link-infra-late: rgb(92, 72, 214);
   --link-other: rgb(98, 110, 128);
   --ping-origin: rgb(0, 150, 210);
   --ping-relay: rgb(222, 128, 0);
@@ -365,6 +367,7 @@ table.hear th:not(:first-child), table.hear td:not(:first-child) { white-space: 
 .optout-ring { display: inline-flex; flex: none; border-radius: 50%; box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--optout); }
 .ln { display: inline-block; width: 1.625rem; height: 0; border-top: 2px solid; vertical-align: middle; margin-right: 0.25rem; }
 .ln.infra { border-color: var(--link-infra); }
+.ln.infra-late { border-color: var(--link-infra-late); }
 .ln.other { border-color: var(--link-other); }
 .ln.c-high { opacity: 0.92; }
 .ln.c-medium { opacity: 0.6; }

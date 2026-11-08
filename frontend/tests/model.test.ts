@@ -63,6 +63,17 @@ describe('map view model', () => {
     expect(infra('!b', '!d')).toBe(false)
     expect(isInfraRole('CLIENT')).toBe(false)
   })
+  it('marks a router link late when either end is a ROUTER_LATE, and only router links', () => {
+    const pos = new Map<string, [number, number]>([['!a', [10, 63]], ['!b', [10.1, 63]], ['!c', [10.2, 63]], ['!d', [10.3, 63]], ['!e', [10.4, 63]]])
+    const roles = new Map<string, string | undefined>([['!a', 'ROUTER'], ['!b', 'ROUTER_LATE'], ['!c', 'ROUTER'], ['!d', 'CLIENT'], ['!e', 'ROUTER_LATE']])
+    const g = linkGeometry([edge('!a', '!b'), edge('!a', '!c'), edge('!b', '!d'), edge('!b', '!e'), edge('!b', '!e', { mqtt: true })], pos, roles)
+    const late = (a: string, b: string, mqtt = false) => g.find((l) => l.a === a && l.b === b && l.mqtt === mqtt)!.late
+    expect(late('!a', '!b')).toBe(true) // ROUTER and ROUTER_LATE
+    expect(late('!b', '!e')).toBe(true) // both ROUTER_LATE
+    expect(late('!a', '!c')).toBe(false) // both ROUTER
+    expect(late('!b', '!d')).toBe(false) // a client link, not a router link
+    expect(late('!b', '!e', true)).toBe(false) // MQTT links are never router links
+  })
   it('keeps MQTT links apart from radio links, never as infrastructure (D-055)', () => {
     const pos = new Map<string, [number, number]>([['!a', [10, 63]], ['!b', [10.1, 63]]])
     const roles = new Map<string, string | undefined>([['!a', 'ROUTER'], ['!b', 'ROUTER']])

@@ -50,7 +50,7 @@ export function LayersPanel() {
     <div className="panel layers-panel">
       <h3>Mesh</h3>
       {check('Router links', t.infraLinks, (v) => setT({ infraLinks: v }),
-        'Radio links between two nodes that both announce the ROUTER or ROUTER_LATE role in the selected window. Thick blue lines, one per node pair. Each is backed by evidence from the window: NeighborInfo, a traceroute hop, a direct gateway reception, or a relay\'s last-hop byte resolved to a single node. Internet links are never included. A gold chevron marks a 0-cost direction: the router it points at relays the other\'s packets without spending a hop.')}
+        'Radio links between two nodes that both announce the ROUTER or ROUTER_LATE role in the selected window. Thick lines, one per node pair: blue between two ROUTERs, violet when either end is a ROUTER_LATE. Each is backed by evidence from the window: NeighborInfo, a traceroute hop, a direct gateway reception, or a relay\'s last-hop byte resolved to a single node. Internet links are never included. A gold chevron marks a 0-cost direction: the router it points at relays the other\'s packets without spending a hop.')}
       {check('Client links', t.otherLinks, (v) => setT({ otherLinks: v }),
         'Radio links where at least one node has another role (a client role) or announced no role in the selected window. Thin grey lines, backed by the same kinds of evidence as router links.')}
       {check('Internet links', t.mqttLinks, (v) => setT({ mqttLinks: v }),
@@ -192,7 +192,8 @@ export function Legend({ snapshot }: { snapshot: SnapshotView | undefined }) {
       </ul>
       <h3>Links (one line per node pair)</h3>
       <ul>
-        <li><span className="ln infra thick" /> Router: both ends are ROUTER or ROUTER_LATE</li>
+        <li><span className="ln infra thick" /> Router: both ends are ROUTER</li>
+        <li><span className="ln infra-late thick" /> Late router: both ends are routers, at least one of them ROUTER_LATE</li>
         <li><span className="ln other thin" /> Client: at least one end has another role (or none reported)</li>
         <li><span className="ln mqtt" /> Internet (dotted green): not radio; the packet crossed an MQTT broker (a traceroute hop recorded at exactly 0 dB)</li>
         <li><span className="chev" aria-hidden>›</span> 0-cost (gold chevron, pointing at the receiver): a ROUTER, ROUTER_LATE or CLIENT_BASE that relays what it hears from this sender (a favourite of its own) without spending a hop. One direction only; the other may cost a hop. On router and client links alike.</li>

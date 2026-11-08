@@ -226,6 +226,7 @@ export interface LinkGeom {
   inferred: boolean // only when every present direction is inferred
   samples: number
   infra: boolean // both ends have an infrastructure role (ROUTER / ROUTER_LATE); never for MQTT links
+  late: boolean // a router link with a ROUTER_LATE at either end: drawn in its own colour
   mqtt: boolean // carried over MQTT, not radio (D-055): drawn in its own layer
 }
 
@@ -250,8 +251,9 @@ export function linkGeometry(edges: Edge[], pos: Map<string, [number, number]>, 
     if (!pa || !pb || (pa[0] === pb[0] && pa[1] === pb[1])) continue
     const dirs = [ab, ba].filter((e): e is Edge => !!e)
     const best = dirs.reduce((x, y) => (rank[y.confidence] > rank[x.confidence] ? y : x))
+    const infra = !mqtt && isInfraRole(roles.get(a)) && isInfraRole(roles.get(b))
     out.push({ a, b, ab, ba, path: [pa, pb], confidence: best.confidence, inferred: dirs.every((e) => e.inferred),
-      samples: dirs.reduce((n, e) => n + e.samples, 0), infra: !mqtt && isInfraRole(roles.get(a)) && isInfraRole(roles.get(b)), mqtt })
+      samples: dirs.reduce((n, e) => n + e.samples, 0), infra, late: infra && (roles.get(a) === 'ROUTER_LATE' || roles.get(b) === 'ROUTER_LATE'), mqtt })
   }
   return out.sort((x, y) => y.samples - x.samples)
 }

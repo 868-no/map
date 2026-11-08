@@ -265,7 +265,7 @@ export function meshLayerBuilder(): (input: MeshLayerInput) => Layer[] {
     // Stable string keys for updateTriggers: a node selection does not recolour links, nor a link selection nodes.
     const selLink = sel?.kind === 'edge' ? `${sel.src}|${sel.dst}|${!!sel.mqtt}` : ''
     const isSelLink = (g: LinkGeom) => sel?.kind === 'edge' && !!sel.mqtt === g.mqtt && ((sel.src === g.a && sel.dst === g.b) || (sel.src === g.b && sel.dst === g.a))
-    const linkColor = (g: LinkGeom) => (isSelLink(g) ? c.selected : [...(g.infra ? c.linkInfra : c.linkOther), CONFIDENCE_ALPHA[g.confidence] ?? 150]) as RGBA
+    const linkColor = (g: LinkGeom) => (isSelLink(g) ? c.selected : [...(g.late ? c.linkInfraLate : g.infra ? c.linkInfra : c.linkOther), CONFIDENCE_ALPHA[g.confidence] ?? 150]) as RGBA
     const layers: Layer[] = regions ? regionLayers(regions, zoom, c) : []
 
     const circles = circlesOf(placed, toggles.uncertainty, selId)

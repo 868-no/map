@@ -15,7 +15,7 @@ const placed: PlacedNode[] = [
   { node: node('!a'), kind: 'reported', lon: 10, lat: 60, age: 0 },
   { node: node('!b'), kind: 'estimated', lon: 10.1, lat: 60.1, age: 0.5, radiusM: 900 },
 ]
-const link: LinkGeom = { a: '!a', b: '!b', path: [[10, 60], [10.1, 60.1]], confidence: 'high', inferred: false, samples: 3, infra: false, mqtt: false }
+const link: LinkGeom = { a: '!a', b: '!b', path: [[10, 60], [10.1, 60.1]], confidence: 'high', inferred: false, samples: 3, infra: false, late: false, mqtt: false }
 const base: MeshLayerInput = {
   placed, links: [link], selection: null, search: '', toggles: { ...defaultToggles, labels: false, uncertainty: true },
   zoom: 9, clusters: [], exploded: new Set(), route: null, palette: PALETTES.dark,

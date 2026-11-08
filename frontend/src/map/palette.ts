@@ -21,6 +21,7 @@ export interface MapPalette {
   dimmed: RGBA // nodes not matching the search
   highlight: RGBA // hovered link
   linkInfra: RGB
+  linkInfraLate: RGB // router links with a ROUTER_LATE at either end
   linkOther: RGB
   linkMqtt: RGB // hops that went over MQTT, not radio
   precision: RGB // reported position's precision cell
@@ -50,6 +51,7 @@ export const PALETTES: Record<Theme, MapPalette> = {
     dimmed: [80, 85, 90, 120],
     highlight: [255, 255, 255, 80],
     linkInfra: [76, 201, 240],
+    linkInfraLate: [138, 128, 255],
     linkOther: [150, 163, 184],
     linkMqtt: [120, 230, 140],
     precision: [230, 237, 243],
@@ -75,6 +77,7 @@ export const PALETTES: Record<Theme, MapPalette> = {
     dimmed: [150, 155, 160, 120],
     highlight: [0, 0, 0, 50],
     linkInfra: [8, 126, 164],
+    linkInfraLate: [92, 72, 214],
     linkOther: [98, 110, 128],
     linkMqtt: [20, 140, 60],
     precision: [40, 46, 54],

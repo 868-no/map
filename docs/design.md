@@ -492,7 +492,7 @@ UI chrome floats over the map, which runs edge to edge and never resizes (checke
 ### 7.4 Links on the map
 
 - **One line per node pair.** Directed edges stay separate in the data and the panel; on the map a pair takes the better direction's confidence and is dashed only if every present direction is inferred. There are no arrowheads; direction is in hover text and the panel (D-021).
-- **Classes:** router links (both ends announce ROUTER or ROUTER_LATE in the window) are 3 px bright blue; client links (any other combination, including no role) are 1.25 px grey-blue. Width never depends on sample count. Router links draw above client links (D-021).
+- **Classes:** router links (both ends announce ROUTER or ROUTER_LATE in the window) are 3 px bright blue, or violet when either end is a ROUTER_LATE, so links that wait before relaying stand out; client links (any other combination, including no role) are 1.25 px grey-blue. Width never depends on sample count. Router links draw above client links (D-021).
 - **Confidence** is opacity (high solid, medium fainter, low fainter still) plus dashes for inferred links.
 - **Internet links** are dotted green, beneath the radio links, one per pair, in both themes. Their panel is titled "Internet link" with "Why internet", and says who passed what on (D-055, D-062, D-087).
 - **0-cost:** a gold chevron on the link near the router that relays for free, pointing at it; a "0-cost" row in that direction of the link panel, ", 0-cost" in the hover text, and a legend entry (D-068).
