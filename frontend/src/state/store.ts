@@ -32,6 +32,7 @@ export interface Toggles {
   maxNodes: number // the most active nodes the map shows (D-182)
   theme: ThemeChoice
   uiScale: number // the size of the header, rail and panels: one of UI_SCALES
+  northUp: boolean // the map never turns: north stays up (D-200)
   basemap: Record<BasemapGroup, boolean>
 }
 
@@ -108,7 +109,7 @@ export const MAX_NODES_RANGE: [number, number] = [100, 100_000]
 /** UI scales offered in Settings: the header, rail, panels and banners, not the map. */
 export const UI_SCALES = [0.85, 1, 1.15, 1.3, 1.5] as const
 
-export const defaultToggles: Toggles = { infraLinks: false, otherLinks: false, mqttLinks: false, inferred: true, uncertainty: false, animation: !prefersReducedMotion, labels: true, regions: false, trails: false, maxNodes: DEFAULT_MAX_NODES, theme: 'system', uiScale: 1, basemap: defaultBasemap }
+export const defaultToggles: Toggles = { infraLinks: false, otherLinks: false, mqttLinks: false, inferred: true, uncertainty: false, animation: !prefersReducedMotion, labels: true, regions: false, trails: false, maxNodes: DEFAULT_MAX_NODES, theme: 'system', uiScale: 1, northUp: true, basemap: defaultBasemap }
 
 // Layer choices are a per-viewer convenience kept in browser storage; the
 // map works the same when storage is unavailable.

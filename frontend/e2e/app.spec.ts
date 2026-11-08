@@ -804,10 +804,33 @@ test('the map view is remembered: a reload opens where it was left, without fitt
   expect(v.lat).toBeCloseTo(61.5, 2)
 })
 
-// A two-finger twist or Shift+arrows can turn the map; one button turns it back.
+// D-200: north is kept up by default; the map can't turn and there is no Reset north.
+test('north is kept up by default, and keeping it up turns a rotated map back', async ({ page }) => {
+  type M = { map: { jumpTo: (o: object) => void; getBearing: () => number } }
+  await ready(page)
+  await expect(page.getByRole('button', { name: 'Reset north' })).toHaveCount(0)
+  // Shift+arrow keys, which would turn the map, leave it north up.
+  await page.locator('.maplibregl-canvas').focus()
+  await page.keyboard.press('Shift+ArrowLeft')
+  await page.waitForTimeout(500)
+  expect(await page.evaluate(() => (window as unknown as { __meshmap: M }).__meshmap.map.getBearing())).toBe(0)
+  await showPanel(page, 'Settings')
+  const keep = page.getByRole('complementary', { name: 'Settings' }).getByLabel('Keep north up')
+  await expect(keep).toBeChecked()
+  await keep.uncheck()
+  await expect(page.getByRole('button', { name: 'Reset north' })).toBeVisible()
+  await page.evaluate(() => (window as unknown as { __meshmap: M }).__meshmap.map.jumpTo({ bearing: 60 }))
+  await keep.check()
+  await expect.poll(() => page.evaluate(() => (window as unknown as { __meshmap: M }).__meshmap.map.getBearing())).toBe(0)
+  await expect(page.getByRole('button', { name: 'Reset north' })).toHaveCount(0)
+})
+
+// With north no longer kept up, a two-finger twist or Shift+arrows can turn the map; one button turns it back.
 test('Reset north turns a rotated map back to north up', async ({ page }) => {
   type M = { map: { jumpTo: (o: object) => void; getBearing: () => number } }
   await ready(page)
+  await showPanel(page, 'Settings')
+  await page.getByRole('complementary', { name: 'Settings' }).getByLabel('Keep north up').uncheck()
   await page.evaluate(() => (window as unknown as { __meshmap: M }).__meshmap.map.jumpTo({ bearing: 60 }))
   await page.getByRole('button', { name: 'Reset north' }).click()
   await expect.poll(() => page.evaluate(() => (window as unknown as { __meshmap: M }).__meshmap.map.getBearing()), { timeout: 5000 }).toBe(0)

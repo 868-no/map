@@ -74,6 +74,19 @@ function UiScale() {
   )
 }
 
+/** Whether the map may turn at all (D-200): north up, by default. */
+function NorthUp() {
+  const on = useStore((s) => s.toggles.northUp)
+  const setT = useStore((s) => s.setToggles)
+  return (
+    <>
+      <h3>Map</h3>
+      <label><input type="checkbox" checked={on} onChange={(e) => setT({ northUp: e.target.checked })} /> Keep north up</label>
+      <p className="muted small">The map never turns. Switch off to let a two-finger twist or Shift+arrow keys rotate it.</p>
+    </>
+  )
+}
+
 export function SettingsPanel({ canInstall, install }: { canInstall: boolean; install: () => void }) {
   const theme = useStore((s) => s.toggles.theme)
   const setT = useStore((s) => s.setToggles)
@@ -90,6 +103,7 @@ export function SettingsPanel({ canInstall, install }: { canInstall: boolean; in
         ))}
       </div>
       <UiScale />
+      <NorthUp />
       <MaxNodes />
       {canInstall && (
         <>

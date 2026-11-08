@@ -58,6 +58,22 @@ function startLon(width: number, zoom: number): number {
 // The map view (centre and zoom) is remembered per browser (D-111): a
 // convenience, so storage errors only mean starting afresh.
 const VIEW_KEY = 'meshmap.view'
+/**
+ * Whether the map may turn (D-200). Mouse drag never rotates it; locked, a
+ * two-finger twist and Shift+arrow keys don't either, and a turned map
+ * snaps back to north up.
+ */
+function lockNorth(map: maplibregl.Map, locked: boolean) {
+  if (locked) {
+    map.touchZoomRotate.disableRotation()
+    map.keyboard.disableRotation()
+    if (map.getBearing() !== 0) map.jumpTo({ bearing: 0 })
+  } else {
+    map.touchZoomRotate.enableRotation()
+    map.keyboard.enableRotation()
+  }
+}
+
 function savedView(): { center: [number, number]; zoom: number } | null {
   try {
     const v = JSON.parse(localStorage.getItem(VIEW_KEY) ?? 'null') as { lng?: number; lat?: number; zoom?: number } | null
@@ -131,7 +147,7 @@ export default memo(function MapView({ caps, snapshot, onPositions }: Props) {
   const [error, setError] = useState<string | null>(null)
   const coords = useRef<HTMLDivElement>(null) // written directly: a re-render per mousemove is too costly
   const [zoom, setZoom] = useState(caps.map.zoom)
-  // Mouse drag never rotates, but a two-finger twist or Shift+arrow keys do.
+  // Mouse drag never rotates; a two-finger twist or Shift+arrow keys do unless north is kept up (D-200).
   const needle = useRef<SVGSVGElement>(null) // turned directly: a re-render per rotate frame is too costly
   const [bounds, setBounds] = useState<[number, number, number, number] | null>(null)
   const filters = useStore((s) => s.filters)
@@ -169,6 +185,7 @@ export default memo(function MapView({ caps, snapshot, onPositions }: Props) {
           maxPitch: 0,
           dragRotate: false,
         })
+        lockNorth(map, useStore.getState().toggles.northUp)
         // The box's centre lies over Sweden (Finnmark reaches 31°E): keep its
         // zoom, but move the view west towards the country's mass as far as
         // the whole country stays in view (D-074).
@@ -248,6 +265,12 @@ export default memo(function MapView({ caps, snapshot, onPositions }: Props) {
     themeRef.current = theme
     applyStylePaint(map, styleFor(theme)).catch((e: Error) => console.warn('theme style', e.message))
   }, [ready, theme]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Keep north up, or let the map turn (D-200).
+  useEffect(() => {
+    const map = mapRef.current
+    if (ready && map) lockNorth(map, toggles.northUp)
+  }, [ready, toggles.northUp])
 
   // Basemap layer groups the viewer switched on or off.
   useEffect(() => {
@@ -548,13 +571,15 @@ export default memo(function MapView({ caps, snapshot, onPositions }: Props) {
             <path d="M3 7V3h4M13 3h4v4M17 13v4h-4M7 17H3v-4" />
           </svg>
         </button>
-        <button type="button" onClick={() => mapRef.current?.resetNorth({ duration: 400 })} aria-label="Reset north" title="Turn the map so north is up">
-          {/* The needle points north wherever the map is turned. */}
-          <svg ref={needle} viewBox="0 0 20 20" width="18" height="18" aria-hidden>
-            <path d="M10 1.5 14.5 10h-9z" fill="var(--err)" />
-            <path d="M10 18.5 5.5 10h9z" fill="currentColor" opacity="0.7" />
-          </svg>
-        </button>
+        {!toggles.northUp && (
+          <button type="button" onClick={() => mapRef.current?.resetNorth({ duration: 400 })} aria-label="Reset north" title="Turn the map so north is up">
+            {/* The needle points north wherever the map is turned. */}
+            <svg ref={needle} viewBox="0 0 20 20" width="18" height="18" aria-hidden>
+              <path d="M10 1.5 14.5 10h-9z" fill="var(--err)" />
+              <path d="M10 18.5 5.5 10h9z" fill="currentColor" opacity="0.7" />
+            </svg>
+          </button>
+        )}
       </div>
       <div ref={coords} className="coords" aria-hidden hidden />
       <div className="attribution">
