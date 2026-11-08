@@ -130,3 +130,58 @@ test("a link's cross section marks the hovered point on the map, and the mark go
   await expect(plot).toBeHidden()
   await expect.poll(probe).toBe(false)
 })
+
+test("a node's history over everything kept loads only when opened, by period, and says when there is none (D-195)", async ({ page }) => {
+  const N = 0x32000031, GW = 0x32000032, NEW = 0x32000033
+  await mockObservations(page, [
+    ...nodeRows(N, 'HIST', { lat: 59.91, lon: 10.75, gw: GW, role: 'ROUTER' }),
+    ...nodeRows(GW, 'GATE', { lat: 59.95, lon: 11.05 }),
+    ...nodeRows(NEW, 'NEWB', { lat: 59.93, lon: 10.9, gw: GW }),
+  ])
+  // The demo stack holds days, not months: the server's answer is synthetic.
+  const asked: string[] = []
+  const week = (k: number) => new Date(Date.UTC(2026, 5, 1) + k * 7 * 86_400_000).toISOString()
+  await page.route(/\/api\/v1\/trends\/node\//, (route) => {
+    const u = new URL(route.request().url())
+    asked.push(`${decodeURIComponent(u.pathname.split('/').pop()!)} ${u.searchParams.get('bucket')}`)
+    if (u.pathname.endsWith(nodeId(NEW))) return route.fulfill({ status: 404, contentType: 'application/problem+json', body: '{"status":404,"detail":"node not heard in the retained log"}' })
+    const n = u.searchParams.get('bucket') === 'month' ? 3 : 12
+    return route.fulfill({
+      headers: { 'cache-control': 'public, max-age=900, stale-while-revalidate=3600' },
+      json: {
+        node: nodeId(N), bucket: u.searchParams.get('bucket'), since: week(0),
+        buckets: Array.from({ length: n }, (_, k) => ({
+          start: week(k), hours: 168, hours_heard: k < 6 ? 160 : 90, hours_gateway: 0, packets: 400 - k, receptions: k < 6 ? 1200 : 500,
+          receptions_per_packet: (k < 6 ? 1200 : 500) / (400 - k), ...(k === n - 1 ? {} : { battery_min: k === 2 ? 101 : 80 - k }),
+        })),
+      },
+    })
+  })
+  await open(page, `?node=${nodeId(N)}`)
+  await page.getByRole('tab', { name: /^Overview/ }).click()
+  const history = page.locator('details.node-history')
+  await expect(history).toBeVisible({ timeout: 30_000 })
+  expect(asked).toEqual([]) // nothing fetched while closed
+
+  await history.locator('summary').click()
+  await expect(history.getByText(/everything it keeps/)).toBeVisible()
+  const table = history.getByRole('table', { name: 'History by period' })
+  await expect(table.locator('tbody tr')).toHaveCount(12)
+  // Newest first: the last week, heard 90 of 168 hours, no battery report.
+  await expect(table.locator('tbody tr').first()).toContainText('90/168 h')
+  await expect(table.locator('tbody tr').first().locator('td').last()).toHaveText('—')
+  await expect(table.locator('tbody tr').filter({ hasText: 'external power' })).toHaveCount(1)
+  await expect(history.locator('figure.bchart')).toHaveCount(4) // never a gateway: no chart of gateway hours
+  await expect(history.locator('figure.bchart').filter({ hasText: 'Heard' }).locator('svg')).toHaveAttribute('aria-label', /95 %/)
+  await expect(history.locator('figure.bchart').filter({ hasText: 'Gateways per packet' }).locator('.tchart-read')).toContainText('1.3')
+  expect(asked).toEqual([`${nodeId(N)} week`])
+
+  await history.getByRole('button', { name: 'Monthly' }).click()
+  await expect(table.locator('tbody tr')).toHaveCount(3)
+  expect(asked).toContain(`${nodeId(N)} month`)
+
+  // A node not yet in the summaries.
+  await open(page, `?node=${nodeId(NEW)}`)
+  await page.locator('details.node-history summary').click()
+  await expect(page.getByText(/Nothing from this node is in the long-term summaries yet/)).toBeVisible()
+})

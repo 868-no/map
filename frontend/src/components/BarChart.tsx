@@ -1,17 +1,21 @@
-// Bars per period for the trends pane (D-104), with an optional highlighted
-// part of each bar (e.g. new nodes among those heard) and a hover readout.
+// Bars per period for the trends pane (D-104) and a node's history (D-195),
+// with an optional highlighted part of each bar (e.g. new nodes among those
+// heard) and a hover readout. A period with nothing to show has no bar.
 import { useState } from 'react'
 
 export interface Bar {
   label: string // the period, as shown
-  value: number
+  value: number | null // null: no bar
   part?: number // highlighted share of the bar, drawn from its base
+  text?: string // the readout instead of the value, e.g. why there is no bar
 }
 
-export function BarChart({ title, bars, partLabel, note }: { title: string; bars: Bar[]; partLabel?: string; note?: string }) {
+export function BarChart({ title, bars, partLabel, note, unit, max: fixedMax }: { title: string; bars: Bar[]; partLabel?: string; note?: string; unit?: string; max?: number }) {
   const [hover, setHover] = useState<number | null>(null)
   if (bars.length === 0) return null
-  const max = Math.max(1, ...bars.map((b) => b.value))
+  const max = fixedMax ?? Math.max(1, ...bars.map((b) => b.value ?? 0))
+  const suffix = unit ? ` ${unit}` : ''
+  const fmt = (v: number) => `${v.toLocaleString()}${suffix}`
   const shown = bars[hover ?? bars.length - 1]
   const w = 100 / bars.length
   return (
@@ -19,17 +23,18 @@ export function BarChart({ title, bars, partLabel, note }: { title: string; bars
       <figcaption>
         <span className="tchart-label" title={note}>{title}</span>
         <span className="tchart-read">
-          {shown.value.toLocaleString()}
+          {shown.text ?? (shown.value === null ? '—' : fmt(shown.value))}
           {partLabel && shown.part !== undefined && <small className="muted"> · {shown.part.toLocaleString()} {partLabel}</small>}
           <small className="muted"> {shown.label}</small>
         </span>
       </figcaption>
       <div className="bchart-plot" onPointerLeave={() => setHover(null)}>
-        <span className="tchart-y top">{max.toLocaleString()}</span>
-        <svg viewBox="0 0 100 60" preserveAspectRatio="none" role="img" aria-label={`${title}: ${bars.map((b) => `${b.label} ${b.value}`).join(', ')}`}>
+        <span className="tchart-y top">{fmt(max)}</span>
+        <svg viewBox="0 0 100 60" preserveAspectRatio="none" role="img" aria-label={`${title}: ${bars.map((b) => `${b.label} ${b.text ?? (b.value === null ? 'none' : `${b.value}${suffix}`)}`).join(', ')}`}>
           {bars.map((b, k) => {
-            const h = (b.value / max) * 56
-            const ph = b.part !== undefined ? (Math.min(b.part, b.value) / max) * 56 : 0
+            const v = Math.min(b.value ?? 0, max)
+            const h = (v / max) * 56
+            const ph = b.part !== undefined ? (Math.min(b.part, v) / max) * 56 : 0
             return (
               <g key={k} onPointerEnter={() => setHover(k)} onPointerDown={() => setHover(k)}>
                 <rect x={k * w} y={0} width={w} height={60} fill="transparent" />

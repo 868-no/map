@@ -344,6 +344,10 @@ table.hear th:not(:first-child), table.hear td:not(:first-child) { white-space: 
 .bchart-key { background: color-mix(in srgb, var(--accent) 55%, transparent) !important; }
 .bchart-key.part { background: var(--warn) !important; }
 .trends-table td:first-child { white-space: nowrap; }
+.node-history { margin-top: 0.875rem; }
+.node-history > summary { cursor: pointer; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.node-history[open] > summary { margin-bottom: 0.5rem; }
+.node-history table { margin-top: 0.75rem; }
 .tchart-legend { display: flex; flex-wrap: wrap; gap: 0.25rem 0.75rem; font-size: 0.6875rem; margin-top: 0.1875rem; }
 .tchart-legend i { display: inline-block; width: 0.625rem; height: 0.1875rem; border-radius: 0.125rem; margin-right: 0.25rem; vertical-align: middle; }
 .tchart-legend i.band { height: 0.5rem; opacity: .4; }

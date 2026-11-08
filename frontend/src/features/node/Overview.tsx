@@ -7,6 +7,7 @@ import { formatLocal, relativeAge } from '../../lib/time'
 import { precisionErrorM } from '../../map/model'
 import { useStore } from '../../state/store'
 import { NR, SigBadge, dist } from './shared'
+import { NodeHistory } from './History'
 
 const METHOD: Record<string, string> = { weighted_centroid: 'weighted centre of the nodes that hear it', ranged_centroid: 'weighted centre of the nodes that hear it, moved by distances from signal strength (they are all to one side)', log_distance_wls: 'distances from signal strength' }
 const QUALITY: Record<string, string> = { very_low: 'very rough', low: 'rough' }
@@ -141,6 +142,7 @@ export function OverviewTab({ d, now, names }: { d: NodeView; now: number; names
           {d.is_gateway && <span title="Other nodes' packets it uplinked as a gateway"> · uplinked {d.gateway_receptions - (d.own_uplinks ?? 0)} of others'</span>}
         </dd>
       </dl>
+      <NodeHistory id={d.id} />
     </>
   )
 }

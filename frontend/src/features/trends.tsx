@@ -5,17 +5,10 @@ import { useQuery } from '@tanstack/react-query'
 import { getJSON } from '../api/client'
 import type { components } from '../api/schema'
 import { BarChart } from '../components/BarChart'
+import { PERIOD_NAME, VIEWER_TZ as TZ, periodLabels, type Period as Bucket } from '../lib/periods'
 import { TYPE_LABEL } from './controls'
 
 type Trends = components['schemas']['TrendsBody']
-type Bucket = 'day' | 'week' | 'month'
-
-const TZ = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
-const FORMAT: Record<Bucket, Intl.DateTimeFormatOptions> = {
-  day: { weekday: 'short', day: 'numeric', month: 'short' },
-  week: { day: 'numeric', month: 'short' },
-  month: { month: 'short', year: 'numeric' },
-}
 
 function useTrends(bucket: Bucket) {
   return useQuery({
@@ -34,9 +27,8 @@ export const TrendsPanel = memo(function TrendsPanel() {
   const t = useTrends(bucket)
   // Labels and totals once per answer, not per render.
   const { buckets, labels, shares, allPackets } = useMemo(() => {
-    const fmt = new Intl.DateTimeFormat(undefined, { ...FORMAT[bucket], timeZone: TZ })
     const buckets = t.data?.buckets ?? []
-    const labels = buckets.map((b) => (bucket === 'week' ? `week of ${fmt.format(new Date(b.start))}` : fmt.format(new Date(b.start))))
+    const labels = periodLabels(buckets.map((b) => b.start), bucket)
     const totals = new Map<string, number>()
     for (const b of buckets) for (const [k, v] of Object.entries(b.by_type ?? {})) totals.set(k, (totals.get(k) ?? 0) + v)
     const max = Math.max(1, ...totals.values())
@@ -53,7 +45,7 @@ export const TrendsPanel = memo(function TrendsPanel() {
     <div className="panel trends-panel">
       <div className="segmented" role="group" aria-label="Summary period">
         {(['day', 'week', 'month'] as const).map((b) => (
-          <button key={b} aria-pressed={bucket === b} onClick={() => setBucket(b)}>{{ day: 'Daily', week: 'Weekly', month: 'Monthly' }[b]}</button>
+          <button key={b} aria-pressed={bucket === b} onClick={() => setBucket(b)}>{PERIOD_NAME[b]}</button>
         ))}
       </div>
       <p className="muted small">

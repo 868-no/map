@@ -29,6 +29,18 @@ describe('BarChart', () => {
     const { container } = render(<BarChart title="Gateways" bars={[]} />)
     expect(container.innerHTML).toBe('')
   })
+
+  it('draws no bar for a period without a value, and reads out why (D-195)', () => {
+    const { container } = render(<BarChart title="Lowest battery" unit="%" max={100} bars={[{ label: 'w1', value: 40 }, { label: 'w2', value: null, text: 'external power' }]} />)
+    expect(container.querySelector('.tchart-read')!.textContent).toContain('external power')
+    expect(container.querySelector('.tchart-y.top')!.textContent).toBe('100 %')
+    const heights = [...container.querySelectorAll('rect.bchart-bar')].map((r) => Number(r.getAttribute('height')))
+    expect(heights[0]).toBeCloseTo(22.4)
+    expect(heights[1]).toBe(0)
+    expect(screen.getByRole('img').getAttribute('aria-label')).toBe('Lowest battery: w1 40 %, w2 external power')
+    fireEvent.pointerEnter(container.querySelectorAll('svg g')[0])
+    expect(container.querySelector('.tchart-read')!.textContent).toContain('40 %')
+  })
 })
 
 describe('Settings: nodes on the map (D-182)', () => {
