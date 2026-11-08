@@ -69,9 +69,9 @@ test('a region link opens its page, also when it names a node too', async ({ pag
   await expect(page).not.toHaveURL(/node=/)
 })
 
-test('the Regions panel breaks the nodes down by hardware and firmware, for a region and the whole mesh', async ({ page }) => {
+test("a region's page breaks its nodes down by hardware and firmware; the list leaves the whole mesh to Trends", async ({ page }) => {
   // A runs 2.8 or later as far as its key shows; the gateway states 2.7.15 in its map report.
-  // A third node, heard but never placed, counts for the mesh only.
+  // A third node, heard but never placed, counts in no region.
   const LOOSE = 0x33000003
   await mockObservations(page, [
     ...nodeRows(A, 'TRDA', { lat: 63.43, lon: 10.4, gw: GW, hw: 'HELTEC_V3', keyId: A }),
@@ -90,11 +90,11 @@ test('the Regions panel breaks the nodes down by hardware and firmware, for a re
   await fleet.getByRole('button', { name: /^2\.7/ }).click()
   await expect(fleet).toContainText('2.7.15')
 
-  // The list: the whole mesh, the unplaced node included.
+  // The list has no breakdown of its own: it points to Trends (D-198).
   await panel.getByRole('button', { name: '‹ All regions' }).click()
-  const mesh = panel.getByRole('region', { name: 'Hardware and firmware' })
-  await expect(mesh).toContainText('3 nodes heard in the selected period, placed on the map or not')
-  await expect(mesh).toContainText('LilyGO T-Echo')
+  await expect(panel.getByRole('button', { name: /Vestlandet/ })).toBeVisible()
+  await expect(panel.getByRole('region', { name: 'Hardware and firmware' })).toHaveCount(0)
+  await expect(panel).toContainText('for the whole mesh over everything the server keeps, see Trends')
 })
 
 test("a region's Share link names the region and period, never the selected node", async ({ page, context }) => {

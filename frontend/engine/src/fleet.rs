@@ -1,6 +1,8 @@
 //! What the mesh's nodes are (D-196): the nodes heard in the window counted
-//! by role, hardware model, modem preset and firmware, for the whole mesh
-//! and per region (the Regions panel, regions.rs).
+//! by role, hardware model, modem preset and firmware, per region (the
+//! Regions panel, regions.rs). The whole mesh is counted by the server over
+//! everything kept, by these rules as far as its hourly summaries hold them
+//! (D-198, backend storage/fleet.go): change both together.
 //!
 //! - Role and hardware: the node's identity (its latest NodeInfo, else its
 //!   own map report); enum names as sent, humanised by the UI.
@@ -170,7 +172,7 @@ impl Tally {
     }
 }
 
-/// One node's values, worked out once and counted for the mesh and its region.
+/// One node's values, counted for its region.
 pub struct Facts {
     role: String,
     hardware: String,

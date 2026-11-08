@@ -218,7 +218,6 @@ export interface RegionsView {
   loaded: boolean // the outlines are in
   regions: RegionSummary[]
   outside: number
-  mesh: Fleet // every node heard in the window, placed or not (D-196)
 }
 
 /** A value and how many nodes have it ("unknown" when they do not say). */

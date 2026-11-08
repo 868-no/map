@@ -2,9 +2,9 @@
 //! panel. Nodes count for the region their reported position or estimate
 //! lies in (landsdel::Regions, as the map's Regions layer draws them); what
 //! gateways uplinked under a topic root naming a region counts for it too,
-//! as the long-term trends count it. Each region, and the mesh as a whole,
-//! also gets its nodes' breakdown by role, hardware, preset and firmware
-//! (fleet.rs, D-196).
+//! as the long-term trends count it. Each region also gets its nodes'
+//! breakdown by role, hardware, preset and firmware (fleet.rs, D-196); the
+//! whole mesh's is the server's, over everything kept (D-198).
 
 use serde::Serialize;
 
@@ -45,9 +45,6 @@ pub struct RegionsView {
     pub regions: Vec<RegionSummary>,
     /// Placed nodes outside every region (abroad, or far out at sea).
     pub outside: usize,
-    /// Every node heard in the window, placed or not, by role, hardware,
-    /// preset and firmware (D-196).
-    pub mesh: Fleet,
 }
 
 fn median(v: &mut [f64]) -> Option<f64> {
@@ -70,20 +67,15 @@ pub fn regions<'a>(regions: &Regions, nodes: impl Iterator<Item = &'a Node>, row
     let mut util: Vec<Vec<f64>> = vec![Vec::new(); NAMES.len()];
     let mut outside = 0;
     let firmware = FirmwareIndex::new(rows);
-    let mut mesh = Tally::default();
     let mut fleets: Vec<Tally> = NAMES.iter().map(|_| Tally::default()).collect();
     for x in nodes {
-        let facts = Facts::of(x, presets, &firmware, i);
-        if let Some(f) = &facts {
-            mesh.add(f);
-        }
         let Some((lat, lon)) = x.position.as_ref().map(|p| (p.lat, p.lon)).or_else(|| x.estimate.as_ref().map(|e| (e.lat, e.lon))) else { continue };
         let Some(name) = regions.region_at(lat, lon) else {
             outside += 1;
             continue;
         };
-        if let Some(f) = &facts {
-            fleets[at(name)].add(f);
+        if let Some(f) = Facts::of(x, presets, &firmware, i) {
+            fleets[at(name)].add(&f);
         }
         let r = &mut out[at(name)];
         r.nodes += 1;
@@ -122,7 +114,7 @@ pub fn regions<'a>(regions: &Regions, nodes: impl Iterator<Item = &'a Node>, row
         r.ch_util_nodes = util[k].len();
         r.ch_util = median(&mut util[k]);
     }
-    RegionsView { loaded: true, regions: out, outside, mesh: mesh.finish() }
+    RegionsView { loaded: true, regions: out, outside }
 }
 
 #[cfg(test)]
@@ -177,7 +169,7 @@ mod tests {
     }
 
     #[test]
-    fn nodes_break_down_by_role_hardware_preset_and_firmware_per_region_and_mesh_wide() {
+    fn nodes_break_down_by_role_hardware_preset_and_firmware_per_region() {
         let rs = crate::landsdel::tests::fixture();
         let with = |mut x: Node, hw: &str, from: Option<&'static str>| {
             let id = x.identity.as_mut().unwrap();
@@ -228,13 +220,7 @@ mod tests {
         let o = &v.regions.iter().find(|r| r.name == "Østlandet").unwrap().fleet;
         assert_eq!((o.nodes, counts(&o.presets), lines(o)), (1, vec![("unknown", 1)], vec![("no_hop_start", "", 1)]));
         assert_eq!(v.regions.iter().find(|r| r.name == "Vestlandet").unwrap().fleet, crate::fleet::Fleet::default());
-
-        // The whole mesh: placed or not, inside a region or not.
-        let m = &v.mesh;
-        assert_eq!(m.nodes, 5);
-        assert_eq!(counts(&m.roles), [("CLIENT", 3), ("CLIENT_BASE", 1), ("ROUTER", 1)]);
-        assert_eq!(counts(&m.hardware), [("HELTEC_V3", 2), ("RAK4631", 1), ("T_ECHO", 1), ("unknown", 1)]);
-        assert_eq!(counts(&m.presets), [("LONG_FAST", 1), ("MEDIUM_FAST", 1), ("unknown", 3)]);
-        assert_eq!(lines(m), [("reported", "2.7", 1), ("key", "", 1), ("hardware", "", 1), ("no_hop_start", "", 1), ("unknown", "", 1)]);
+        // Nodes outside every region, or never placed, count in none (the whole mesh is the server's, D-198).
+        assert_eq!(v.regions.iter().map(|r| r.fleet.nodes).sum::<usize>(), 3);
     }
 }

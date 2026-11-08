@@ -1,6 +1,6 @@
-// What a set of nodes runs (D-196): roles, hardware, presets and firmware,
-// as the regions view counts them, for the Regions panel's list (the whole
-// mesh) and each region's page.
+// What a region's nodes run (D-196): roles, hardware, presets and firmware,
+// as the regions view counts them, for each region's page. The whole mesh
+// over everything kept is in Trends (D-198).
 import { useState } from 'react'
 import type { FirmwareCount, Fleet, FleetCount } from '../derive/views'
 import { hardwareName, presetName, roleLabel } from '../lib/deviceNames'
@@ -87,14 +87,14 @@ function Bars({ title, bars, total, fold = true }: { title: string; bars: Bar[];
   )
 }
 
-/** The breakdown, with what it counts in words. `where`: "in the region" or empty for the whole mesh. */
-export function FleetSection({ fleet, where }: { fleet: Fleet; where?: string }) {
+/** The breakdown, with what it counts in words. `where`: which nodes, e.g. "whose position or estimate lies in Trøndelag". */
+export function FleetSection({ fleet, where }: { fleet: Fleet; where: string }) {
   const n = fleet.nodes
   return (
     <section className="fleet" aria-label="Hardware and firmware">
       <h3>Hardware and firmware</h3>
       <p className="muted small">
-        {n === 1 ? '1 node' : `${n} nodes`} heard in the selected period{where ? ` ${where}` : ', placed on the map or not'}.
+        {n === 1 ? '1 node' : `${n} nodes`} heard in the selected period {where}.
         Firmware is exact only where a node's own map report states it; for the rest the generation is inferred from its packets.
         Presets are as each node's Radio tab infers them.
       </p>

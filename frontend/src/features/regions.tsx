@@ -1,7 +1,8 @@
 // Regions (D-194): the mesh per landsdel, for the people who look after it
 // there. The list compares the five; a region's page gathers its nodes,
-// problems, channel use and growth, and can be shared as a link. Both show
-// what the nodes run: hardware, firmware, roles and presets (D-196).
+// problems, channel use and growth, and can be shared as a link, and shows
+// what its nodes run: hardware, firmware, roles and presets (D-196). The
+// whole mesh's is in Trends, over everything kept (D-198).
 import { memo, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { getJSON } from '../api/client'
@@ -75,7 +76,7 @@ export function RegionsPanel({ snapshot }: { snapshot: SnapshotView | undefined 
         })}
       </ul>
       {v.data.outside > 0 && <p className="muted small">{plural(v.data.outside, 'node')} placed outside every region (abroad or at sea).</p>}
-      <FleetSection fleet={v.data.mesh} />
+      <p className="muted small">Each region's page shows what its nodes run; for the whole mesh over everything the server keeps, see Trends.</p>
     </div>
   )
 }

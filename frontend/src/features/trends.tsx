@@ -47,7 +47,7 @@ function FleetTrend({ bucket }: { bucket: Bucket }) {
         ))}
       </div>
       <p className="muted small">
-        The share of the nodes heard each {bucket}, over everything the server keeps, each node with what it ran then. {DIMENSION_NOTE[dim]} Per region, over the selected period: each region's page in Regions.
+        The share of the nodes heard each {bucket}, over everything the server keeps, each node with what it ran then. {DIMENSION_NOTE[dim]} For one region over the selected period, see its page in Regions.
       </p>
       {f.isLoading && <p className="muted">Counting…</p>}
       {f.error && <p className="muted">This breakdown is unavailable right now.</p>}
