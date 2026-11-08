@@ -80,8 +80,10 @@ func seedCmd() *cobra.Command {
 			seen := map[[16]byte]bool{}
 			for stored+len(batch) < rows {
 				for _, m := range sim.Step() {
-					t = t.Add(step)
-					obs, err := ingest.Process(ingest.RawMessage{BrokerID: "bench", Topic: m.Topic, Payload: m.Payload, ObservedAt: t}, o)
+					// The clock moves on only for a stored row: rejected inputs
+					// and repeats would otherwise push the last rows past now.
+					at := t.Add(step)
+					obs, err := ingest.Process(ingest.RawMessage{BrokerID: "bench", Topic: m.Topic, Payload: m.Payload, ObservedAt: at}, o)
 					if err != nil {
 						rejected++
 						continue
@@ -89,6 +91,7 @@ func seedCmd() *cobra.Command {
 					if seen[obs.ObservationKey] {
 						continue
 					}
+					t = at
 					seen[obs.ObservationKey] = true
 					if obs.Promote != nil {
 						ids[obs.Promote.Node] = *obs.Promote
