@@ -461,9 +461,16 @@ test('the map flies to a selected node once, not again when data refreshes', asy
   test.setTimeout(90_000)
   await ready(page)
   await openPanel(page)
+  type Cam = { __meshmap: { map: { getCenter: () => { lng: number; lat: number }; isMoving: () => boolean } } }
+  const camera = () => page.evaluate(() => { const m = (window as unknown as Cam).__meshmap.map; const c = m.getCenter(); return { lng: c.lng, lat: c.lat, moving: m.isMoving() } })
+  const before = await camera()
   await page.locator('.node-row').first().click()
   await expect(page.locator('.node-panel h2')).toBeVisible()
-  await page.waitForTimeout(1500) // the fly-to
+  // The fly-to: it starts a frame or two after the panel opens, later on a
+  // loaded machine, so wait until it has moved the map and come to rest
+  // rather than for a fixed time (a late start after the jump below would
+  // look like a second flight).
+  await expect.poll(async () => { const c = await camera(); return !c.moving && Math.hypot(c.lng - before.lng, c.lat - before.lat) > 1e-6 }, { timeout: 10_000 }).toBe(true)
   // Move away; live rows keep rebuilding the views (at most 15 s apart for the default 72 h).
   await page.evaluate(() => (window as unknown as { __meshmap: { map: { jumpTo: (o: object) => void } } }).__meshmap.map.jumpTo({ center: [5.0, 58.0], zoom: 7 }))
   await page.waitForTimeout(20_000)
