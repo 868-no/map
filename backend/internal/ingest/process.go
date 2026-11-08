@@ -19,11 +19,12 @@ import (
 )
 
 // DecodeVersion is bumped whenever decoded_metadata semantics change; rows of
-// an older version are decoded again from their envelopes (D-107). 4:
+// an older version are decoded again from their envelopes (D-107). 5: local
+// statistics telemetry (kind local: noise floor and radio counters). 4:
 // channel_name and topic_root cleaned of control and format characters. 3: node
 // status, store-and-forward, header-only rows instead of rejections.
 // 2: map reports stored (mapreport), not_ok_to_mqtt marking (D-032).
-const DecodeVersion = 4
+const DecodeVersion = 5
 
 // RawMessage is one MQTT delivery. ObservedAt is captured in the MQTT
 // callback before queuing and is the authoritative event time (design §3.4).

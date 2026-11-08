@@ -730,6 +730,11 @@ export interface components {
             humidity?: number;
             kind: string;
             /**
+             * Format: int32
+             * @description Noise floor the node measures, dBm (local statistics)
+             */
+            noise_floor?: number;
+            /**
              * Format: double
              * @description Barometric pressure, hPa
              */

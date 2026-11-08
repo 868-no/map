@@ -167,3 +167,27 @@ func TestNodeInfoWithNameCutMidCharacter(t *testing.T) {
 		t.Fatal("truncated payload decoded")
 	}
 }
+
+// Local statistics keep the noise floor and the radio counters; a floor of 0
+// (not measured) or outside a receiver's range is left out.
+func TestLocalStatsKeepNoiseFloor(t *testing.T) {
+	tel := func(floor int32) *Telemetry {
+		got, err := Decode(data(t, pb.PortNum_TELEMETRY_APP, &pb.Telemetry{Variant: &pb.Telemetry_LocalStats{LocalStats: &pb.LocalStats{
+			UptimeSeconds: 3600, ChannelUtilization: 12.5, AirUtilTx: 1.5, NumPacketsTx: 40, NumPacketsRx: 900, NumPacketsRxBad: 7,
+			NumRxDupe: 300, NumTxRelay: 20, NumTxRelayCanceled: 5, NumTxDropped: 1, NumOnlineNodes: 30, NumTotalNodes: 80, NoiseFloor: floor,
+		}}}), 0xaaaaaaaa)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return got.Telemetry
+	}
+	l := tel(-112)
+	if l.Kind != "local" || l.NoiseFloor == nil || *l.NoiseFloor != -112 || *l.Uptime != 3600 || *l.ChUtil != 12.5 || *l.PacketsRxBad != 7 || *l.RxDupe != 300 || *l.TxRelayCanceled != 5 || *l.TotalNodes != 80 {
+		t.Fatalf("local stats %+v", l)
+	}
+	for _, floor := range []int32{0, 20, -200} {
+		if l := tel(floor); l.NoiseFloor != nil {
+			t.Errorf("noise floor %d kept as %d", floor, *l.NoiseFloor)
+		}
+	}
+}

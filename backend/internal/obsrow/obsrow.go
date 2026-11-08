@@ -134,6 +134,8 @@ type ObsTelemetry struct {
 	Temp     *float64 `json:"temp,omitempty" doc:"Temperature, °C"`
 	Humidity *float64 `json:"humidity,omitempty" doc:"Relative humidity, %"`
 	Pressure *float64 `json:"pressure,omitempty" doc:"Barometric pressure, hPa"`
+	// Local statistics (kind local).
+	NoiseFloor *int32 `json:"noise_floor,omitempty" doc:"Noise floor the node measures, dBm (local statistics)"`
 }
 
 type ObsNeighbor struct {
@@ -199,8 +201,8 @@ type storedMeta struct {
 // over, and stored encodings of an older version are rebuilt (D-046)
 // (2: tp, mr; 3: map report identity and has_default_channel; 4: rt; 5: iv;
 // 6: environment telemetry; 7: ns, sf, traceroute request_id; 8: wa;
-// 9: ni.key_id; 10: mr.firmware_version).
-const Version = 10
+// 9: ni.key_id; 10: mr.firmware_version; 11: te.noise_floor).
+const Version = 11
 
 // Fields are the packet_log columns an ObsRow carries.
 type Fields struct {
@@ -254,6 +256,8 @@ func New(f Fields, meta []byte) ObsRow {
 			case "device":
 			case "environment":
 				r.Telemetry = &ObsTelemetry{Kind: t.Kind, Temp: t.Temp, Humidity: t.Humidity, Pressure: t.Pressure}
+			case "local":
+				r.Telemetry = &ObsTelemetry{Kind: t.Kind, NoiseFloor: t.NoiseFloor}
 			default:
 				r.Telemetry = &ObsTelemetry{Kind: t.Kind}
 			}

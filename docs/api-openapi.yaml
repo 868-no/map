@@ -862,6 +862,10 @@ components:
           type: number
         kind:
           type: string
+        noise_floor:
+          description: Noise floor the node measures, dBm (local statistics)
+          format: int32
+          type: integer
         pressure:
           description: Barometric pressure, hPa
           format: double

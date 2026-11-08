@@ -85,3 +85,15 @@ func TestNodeInfoRowCarriesKeyID(t *testing.T) {
 		t.Fatalf("a short key gave key id %d", *r.NodeInfo.KeyID)
 	}
 }
+
+// Local statistics reach the row as their noise floor only (row format 11).
+func TestLocalStatsRowCarriesNoiseFloor(t *testing.T) {
+	r := New(Fields{ID: 1, At: time.UnixMilli(1_800_000_000_000), Source: 7, Type: "telemetry", Sig: "unsigned"},
+		[]byte(`{"telemetry":{"kind":"local","noise_floor":-108,"uptime":60,"packets_rx":900,"rx_dupe":300}}`))
+	if r.Telemetry == nil || r.Telemetry.Kind != "local" || r.Telemetry.NoiseFloor == nil || *r.Telemetry.NoiseFloor != -108 {
+		t.Fatalf("telemetry %+v", r.Telemetry)
+	}
+	if b, _ := json.Marshal(r); bytes.Contains(b, []byte("uptime")) || bytes.Contains(b, []byte("rx_dupe")) {
+		t.Fatalf("row carries counters the browser does not use: %s", b)
+	}
+}

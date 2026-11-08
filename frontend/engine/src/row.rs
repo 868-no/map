@@ -164,6 +164,8 @@ pub struct Telemetry {
     pub temp: Option<f64>,
     pub humidity: Option<f64>,
     pub pressure: Option<f64>,
+    /// The noise floor the node measures, dBm (local statistics).
+    pub noise_floor: Option<i32>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -460,6 +462,9 @@ struct JTe<'a> {
     humidity: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pressure: Option<f64>,
+    /// Local statistics (kind local, row format 11): dBm.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    noise_floor: Option<i32>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -656,7 +661,7 @@ impl JRow<'_> {
                 untrusted: n.identity_untrusted,
             }))
         } else if let Some(t) = self.te {
-            Some(Detail::Telemetry(Telemetry { kind: i.id(&t.kind), battery: t.battery, voltage: t.voltage, ch_util: t.ch_util, air_util: t.air_util, uptime: t.uptime, temp: t.temp, humidity: t.humidity, pressure: t.pressure }))
+            Some(Detail::Telemetry(Telemetry { kind: i.id(&t.kind), battery: t.battery, voltage: t.voltage, ch_util: t.ch_util, air_util: t.air_util, uptime: t.uptime, temp: t.temp, humidity: t.humidity, pressure: t.pressure, noise_floor: t.noise_floor }))
         } else if let Some(n) = self.ns {
             Some(Detail::NodeStatus(i.id(&n.status)))
         } else if let Some(f) = self.sf {
@@ -799,7 +804,7 @@ pub fn to_json<'a>(r: &Row, i: &'a Interner) -> JRow<'a> {
         Some(Detail::NodeInfo(n)) => {
             j.ni = Some(JNi { long_name: s(n.long_name), short_name: s(n.short_name), hw_model: s(n.hw_model), role: s(n.role), has_public_key: n.has_public_key, key_id: n.key_id, identity_untrusted: n.untrusted })
         }
-        Some(Detail::Telemetry(t)) => j.te = Some(JTe { kind: s(t.kind), battery: t.battery, voltage: t.voltage, ch_util: t.ch_util, air_util: t.air_util, uptime: t.uptime, temp: t.temp, humidity: t.humidity, pressure: t.pressure }),
+        Some(Detail::Telemetry(t)) => j.te = Some(JTe { kind: s(t.kind), battery: t.battery, voltage: t.voltage, ch_util: t.ch_util, air_util: t.air_util, uptime: t.uptime, temp: t.temp, humidity: t.humidity, pressure: t.pressure, noise_floor: t.noise_floor }),
         Some(Detail::Invalid(v)) => j.iv = Some(s(*v)),
         Some(Detail::NodeStatus(v)) => j.ns = Some(JNs { status: s(*v) }),
         Some(Detail::StoreForward(f)) => j.sf = Some(JSf { kind: s(f.kind), text_bytes: f.text_bytes, period: (f.period != 0).then_some(f.period), messages: (f.messages != 0).then_some(f.messages) }),
@@ -866,6 +871,17 @@ mod tests {
         assert_eq!(i.s(r.map_report().unwrap().firmware), "2.7.15");
         let back = serde_json::to_string(&to_json(&r, &i)).unwrap();
         assert!(back.contains(r#""firmware_version":"2.7.15""#), "a saved copy keeps it: {back}");
+        assert_eq!(serde_json::from_str::<JRow>(&back).unwrap().into_row(&mut i), r);
+    }
+
+    #[test]
+    fn a_local_stats_noise_floor_round_trips() {
+        let text = r#"{"i":9,"t":1793414269260,"b":"no868","g":7,"s":7,"y":"telemetry","l":"6d09cc29ab957b74","o":"3fc571de3bbcedfa","sg":"unsigned","te":{"kind":"local","noise_floor":-108}}"#;
+        let mut i = Interner::default();
+        let r = serde_json::from_str::<JRow>(text).unwrap().into_row(&mut i);
+        assert_eq!(r.telemetry().unwrap().noise_floor, Some(-108));
+        let back = serde_json::to_string(&to_json(&r, &i)).unwrap();
+        assert!(back.contains(r#""noise_floor":-108"#), "a saved copy keeps it: {back}");
         assert_eq!(serde_json::from_str::<JRow>(&back).unwrap().into_row(&mut i), r);
     }
 }

@@ -108,7 +108,23 @@ type Telemetry struct {
 	Temp     *float64 `json:"temp,omitempty"`
 	Humidity *float64 `json:"humidity,omitempty"`
 	Pressure *float64 `json:"pressure,omitempty"`
+	// Local statistics (kind "local"): the node's own radio counters, and the
+	// noise floor it measures, which tells a noisier site from a weaker antenna.
+	NoiseFloor      *int32  `json:"noise_floor,omitempty"` // dBm
+	PacketsTx       *uint32 `json:"packets_tx,omitempty"`
+	PacketsRx       *uint32 `json:"packets_rx,omitempty"`
+	PacketsRxBad    *uint32 `json:"packets_rx_bad,omitempty"`
+	RxDupe          *uint32 `json:"rx_dupe,omitempty"`
+	TxRelay         *uint32 `json:"tx_relay,omitempty"`
+	TxRelayCanceled *uint32 `json:"tx_relay_canceled,omitempty"`
+	TxDropped       *uint32 `json:"tx_dropped,omitempty"`
+	OnlineNodes     *uint32 `json:"online_nodes,omitempty"`
+	TotalNodes      *uint32 `json:"total_nodes,omitempty"`
 }
+
+// NoiseFloorRange bounds a plausible noise floor, dBm: firmware sends 0 when
+// it has not measured one, and a LoRa receiver's floor lies well inside this.
+var NoiseFloorRange = [2]int32{-150, -30}
 
 func decodeTelemetry(b []byte) (*Telemetry, error) {
 	var t pb.Telemetry
@@ -137,6 +153,18 @@ func decodeTelemetry(b []byte) (*Telemetry, error) {
 			Pressure: finite32(m.BarometricPressure, 300, 1100),
 			Voltage:  finite32(m.Voltage, 0, 60),
 		}, nil
+	case *pb.Telemetry_LocalStats:
+		m := v.LocalStats
+		u := func(x uint32) *uint32 { return &x }
+		out := &Telemetry{Kind: "local", Uptime: u(m.UptimeSeconds),
+			ChUtil: finite32(&m.ChannelUtilization, 0, 100), AirUtil: finite32(&m.AirUtilTx, 0, 100),
+			PacketsTx: u(m.NumPacketsTx), PacketsRx: u(m.NumPacketsRx), PacketsRxBad: u(m.NumPacketsRxBad), RxDupe: u(m.NumRxDupe),
+			TxRelay: u(m.NumTxRelay), TxRelayCanceled: u(m.NumTxRelayCanceled), TxDropped: u(m.NumTxDropped),
+			OnlineNodes: u(m.NumOnlineNodes), TotalNodes: u(m.NumTotalNodes)}
+		if n := m.NoiseFloor; n >= NoiseFloorRange[0] && n <= NoiseFloorRange[1] {
+			out.NoiseFloor = &n
+		}
+		return out, nil
 	case nil:
 		return nil, ErrInvalid
 	default:
