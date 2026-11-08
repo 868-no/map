@@ -756,7 +756,7 @@ func TestNodeTrends(t *testing.T) {
 		t.Fatal(err)
 	}
 	resp.Body.Close()
-	if cc := resp.Header.Get("Cache-Control"); cc != "public, max-age=900, stale-while-revalidate=3600" {
+	if cc := resp.Header.Get("Cache-Control"); cc != "public, max-age=3600, stale-while-revalidate=86400" {
 		t.Fatalf("Cache-Control %q", cc)
 	}
 }

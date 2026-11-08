@@ -147,7 +147,7 @@ test("a node's history over everything kept loads only when opened, by period, a
     if (u.pathname.endsWith(nodeId(NEW))) return route.fulfill({ status: 404, contentType: 'application/problem+json', body: '{"status":404,"detail":"node not heard in the retained log"}' })
     const n = u.searchParams.get('bucket') === 'month' ? 3 : 12
     return route.fulfill({
-      headers: { 'cache-control': 'public, max-age=900, stale-while-revalidate=3600' },
+      headers: { 'cache-control': 'public, max-age=3600, stale-while-revalidate=86400' },
       json: {
         node: nodeId(N), bucket: u.searchParams.get('bucket'), since: week(0),
         buckets: Array.from({ length: n }, (_, k) => ({

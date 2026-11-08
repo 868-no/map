@@ -47,12 +47,12 @@ type TrendsOutput struct {
 	Body         TrendsBody
 }
 
-// trendsCC lets browsers and shared caches (Cloudflare) reuse a trend for a
-// quarter of an hour, and show it up to an hour longer while asking again:
-// trends cover months in day, week and month buckets, so only the newest
-// bucket can be behind, by minutes, and every visitor asks for the same few
-// URLs.
-const trendsCC = "public, max-age=900, stale-while-revalidate=3600"
+// trendsCC lets browsers and shared caches (Cloudflare) reuse a trend for an
+// hour, and show it up to a day longer while asking again: trends cover
+// months in day, week and month buckets, so only the newest bucket can be
+// behind, by at most about an hour, which nobody reading months notices; and
+// every visitor asks for the same few URLs.
+const trendsCC = "public, max-age=3600, stale-while-revalidate=86400"
 
 // TrendsTTL is how long a computed trend is reused before the hourly
 // summaries are refreshed again (D-112). Shorter than trendsCC's max-age, so
