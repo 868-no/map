@@ -5,7 +5,8 @@ import { useCallback, useEffect, useRef, useState, type KeyboardEvent, type Poin
 
 export type PanelId = 'nodes' | 'details' | 'health' | 'regions' | 'trends' | 'period' | 'filters' | 'layers' | 'legend' | 'settings'
 
-const ICON_PROPS = { viewBox: '0 0 20 20', width: 20, height: 20, 'aria-hidden': true, fill: 'none', stroke: 'currentColor', strokeWidth: 1.6, strokeLinecap: 'round', strokeLinejoin: 'round' } as const
+// Sized in rem, so the icons follow the UI scale with the rail.
+const ICON_PROPS = { viewBox: '0 0 20 20', style: { width: '1.25rem', height: '1.25rem' }, 'aria-hidden': true, fill: 'none', stroke: 'currentColor', strokeWidth: 1.6, strokeLinecap: 'round', strokeLinejoin: 'round' } as const
 
 const ICONS: Record<PanelId, ReactNode> = {
   nodes: (
@@ -88,7 +89,7 @@ export function Rail({ open, onToggle, badges }: { open: PanelId | null; onToggl
   const page = (dir: 1 | -1) => tools.current?.scrollBy({ left: dir * tools.current.clientWidth * 0.8, behavior: 'smooth' })
   const arrow = (side: 'left' | 'right') => (
     <button type="button" className={`rail-more rail-more-${side}`} tabIndex={-1} aria-hidden title="More tools" onClick={() => page(side === 'left' ? -1 : 1)}>
-      <svg viewBox="0 0 20 20" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <svg viewBox="0 0 20 20" style={{ width: '1rem', height: '1rem' }} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <path d={side === 'left' ? 'M12.5 4.5 7 10l5.5 5.5' : 'M7.5 4.5 13 10l-5.5 5.5'} />
       </svg>
     </button>

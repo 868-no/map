@@ -23,6 +23,33 @@ test('settings hold the theme, source code, API docs, license and privacy policy
   await expect(page.locator('.attribution')).toHaveText('© OpenMapTiles © OpenStreetMap contributors')
 })
 
+// The interface size (Settings): scales the header, rail and panels, not
+// the map, and is kept in this browser across visits.
+test('the interface size scales the panels and rail, not the map, and is kept after a reload', async ({ page }) => {
+  await page.goto('/')
+  const rootPx = () => page.evaluate(() => parseFloat(getComputedStyle(document.documentElement).fontSize))
+  const width = (sel: string) => page.locator(sel).first().evaluate((el) => el.getBoundingClientRect().width)
+  await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  const menu = page.getByRole('complementary', { name: 'Settings' })
+  const sizes = menu.getByRole('radiogroup', { name: 'Interface size' })
+  await expect(sizes.getByRole('radio', { name: '100%' })).toBeChecked()
+  expect(await rootPx()).toBe(16)
+  const [rail, dock, map] = [await width('.rail'), await width('#dock'), await width('.map')]
+
+  await sizes.getByRole('radio', { name: '130%' }).check()
+  await expect.poll(rootPx).toBeCloseTo(20.8)
+  expect(await width('.rail')).toBeCloseTo(rail * 1.3, 0)
+  expect(await width('#dock')).toBeCloseTo(dock * 1.3, 0)
+  expect(await width('.map')).toBe(map) // the map keeps its size
+
+  await page.reload()
+  expect(await rootPx()).toBeCloseTo(20.8) // kept in this browser
+  await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  await expect(page.getByRole('radiogroup', { name: 'Interface size' }).getByRole('radio', { name: '130%' })).toBeChecked()
+  await page.getByRole('radiogroup', { name: 'Interface size' }).getByRole('radio', { name: '100%' }).check()
+  await expect.poll(rootPx).toBe(16)
+})
+
 test('the privacy policy fills in retention and operator details from the API', async ({ page, request }) => {
   const caps = await (await request.get('/api/v1/capabilities')).json()
   await page.goto('/privacy.html')

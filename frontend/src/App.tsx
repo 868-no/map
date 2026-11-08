@@ -19,7 +19,7 @@ import type { Counts } from './derive/views'
 import { useLiveStream } from './state/live'
 import { initDerive, setMaxNodes } from './derive/client'
 import { toQuery, useStore } from './state/store'
-import { applyTheme, useTheme } from './theme'
+import { applyTheme, applyUiScale, useTheme } from './theme'
 
 export default function App() {
   const caps = useCapabilities()
@@ -37,6 +37,8 @@ export default function App() {
   const geo = useRef<Map<string, [number, number]>>(new Map())
   const theme = useTheme()
   useEffect(() => applyTheme(theme), [theme])
+  const uiScale = useStore((s) => s.toggles.uiScale)
+  useEffect(() => applyUiScale(uiScale), [uiScale])
   const onPositions = useCallback((pos: Map<string, [number, number]>) => {
     geo.current = pos
     setPingPositions(pos) // pings follow the markers as estimates move

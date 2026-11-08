@@ -32,3 +32,11 @@ export function applyTheme(t: Theme): void {
   document.documentElement.dataset.theme = t
   document.querySelector('meta[name="theme-color"]')?.setAttribute('content', THEME_BG[t])
 }
+
+/**
+ * Sets the UI scale (Settings) on <html>: index.css sizes everything in rem
+ * from it. public/theme-boot.js sets the saved scale before the first paint.
+ */
+export function applyUiScale(scale: number): void {
+  document.documentElement.style.setProperty('--ui-scale', String(scale))
+}

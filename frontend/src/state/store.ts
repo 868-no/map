@@ -31,6 +31,7 @@ export interface Toggles {
   trails: boolean // tracks behind moving nodes (D-073)
   maxNodes: number // the most active nodes the map shows (D-182)
   theme: ThemeChoice
+  uiScale: number // the size of the header, rail and panels: one of UI_SCALES
   basemap: Record<BasemapGroup, boolean>
 }
 
@@ -104,16 +105,22 @@ const prefersReducedMotion = typeof window !== 'undefined' && window.matchMedia?
 export const DEFAULT_MAX_NODES = 5000
 export const MAX_NODES_RANGE: [number, number] = [100, 100_000]
 
-export const defaultToggles: Toggles = { infraLinks: false, otherLinks: false, mqttLinks: false, inferred: true, uncertainty: false, animation: !prefersReducedMotion, labels: true, regions: false, trails: false, maxNodes: DEFAULT_MAX_NODES, theme: 'system', basemap: defaultBasemap }
+/** UI scales offered in Settings: the header, rail, panels and banners, not the map. */
+export const UI_SCALES = [0.85, 1, 1.15, 1.3, 1.5] as const
+
+export const defaultToggles: Toggles = { infraLinks: false, otherLinks: false, mqttLinks: false, inferred: true, uncertainty: false, animation: !prefersReducedMotion, labels: true, regions: false, trails: false, maxNodes: DEFAULT_MAX_NODES, theme: 'system', uiScale: 1, basemap: defaultBasemap }
 
 // Layer choices are a per-viewer convenience kept in browser storage; the
 // map works the same when storage is unavailable.
-// public/theme-boot.js reads the theme from this key too.
+// public/theme-boot.js reads the theme and UI scale from this key too.
 export const TOGGLES_KEY = 'meshmap:toggles:v6' // bumped when defaults change (v2 node names on, v3 major roads off, v4 accuracy circles off, v5 links off, v6 roads and city names on)
 function loadToggles(): Toggles {
   try {
     const saved = JSON.parse(window.localStorage.getItem(TOGGLES_KEY) ?? 'null') as Partial<Toggles> | null
-    if (saved && typeof saved === 'object') return { ...defaultToggles, ...saved, basemap: { ...defaultBasemap, ...(saved.basemap ?? {}) } }
+    if (saved && typeof saved === 'object') {
+      const uiScale = (UI_SCALES as readonly number[]).includes(saved.uiScale as number) ? saved.uiScale! : 1
+      return { ...defaultToggles, ...saved, uiScale, basemap: { ...defaultBasemap, ...(saved.basemap ?? {}) } }
+    }
   } catch {
     /* storage blocked or corrupt */
   }

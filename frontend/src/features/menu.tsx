@@ -1,7 +1,7 @@
 // The Settings panel (tool rail, D-066): display settings, installing the
 // app, and what the site is: source code, API docs, license and privacy policy.
 import { useState } from 'react'
-import { DEFAULT_MAX_NODES, MAX_NODES_RANGE, useStore } from '../state/store'
+import { DEFAULT_MAX_NODES, MAX_NODES_RANGE, UI_SCALES, useStore } from '../state/store'
 import type { ThemeChoice } from '../theme'
 import { API_DOCS_URL, LICENSE_HREF, PRIVACY_URL, REVISION_HREF, SOURCE_HREF, SOURCE_REVISION } from '../links'
 import { resetEverything } from '../reset'
@@ -51,6 +51,29 @@ function MaxNodes() {
   )
 }
 
+/**
+ * The size of the header, rail, panels and banners (not the map), kept with
+ * the theme in this browser: a choice of fixed steps, 100 % by default.
+ */
+function UiScale() {
+  const scale = useStore((s) => s.toggles.uiScale)
+  const setT = useStore((s) => s.setToggles)
+  return (
+    <>
+      <h3 id="settings-ui-scale">Interface size</h3>
+      <div className="segmented" role="radiogroup" aria-labelledby="settings-ui-scale">
+        {UI_SCALES.map((v) => (
+          <label key={v} title={v === 1 ? 'The default size' : undefined}>
+            <input type="radio" name="settings-ui-scale" value={v} checked={scale === v} onChange={() => setT({ uiScale: v })} />
+            <span>{Math.round(v * 100)}%</span>
+          </label>
+        ))}
+      </div>
+      <p className="muted small">The header, tool rail and panels; the map keeps its size (zoom it as usual).</p>
+    </>
+  )
+}
+
 export function SettingsPanel({ canInstall, install }: { canInstall: boolean; install: () => void }) {
   const theme = useStore((s) => s.toggles.theme)
   const setT = useStore((s) => s.setToggles)
@@ -66,6 +89,7 @@ export function SettingsPanel({ canInstall, install }: { canInstall: boolean; in
           </label>
         ))}
       </div>
+      <UiScale />
       <MaxNodes />
       {canInstall && (
         <>
@@ -89,7 +113,7 @@ export function SettingsPanel({ canInstall, install }: { canInstall: boolean; in
         )}
       </p>
       <h3>Reset</h3>
-      <p className="muted">Forget everything this site stored in your browser: layer choices, theme, watched nodes, the saved copy of the mesh data and the offline cache. The page then reloads and fetches the data again.</p>
+      <p className="muted">Forget everything this site stored in your browser: layer choices, theme, interface size, watched nodes, the saved copy of the mesh data and the offline cache. The page then reloads and fetches the data again.</p>
       <button className="danger" onClick={() => window.confirm('Clear all stored data and settings, and reload?') && void resetEverything()}>
         Reset and reload
       </button>

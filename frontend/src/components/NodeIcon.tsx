@@ -17,7 +17,8 @@ export function NodeIcon({ icon, palette, uplink, estimated, size = 20 }: { icon
   const box = GLYPH_UNITS + pad * 2
   const id = `node-icon-cut-${icon}-${estimated ? 'e' : 'f'}`
   return (
-    <svg className="node-icon" width={(size * box) / GLYPH_UNITS} height={(size * box) / GLYPH_UNITS} viewBox={`${-box / 2} ${-box / 2} ${box} ${box}`} aria-hidden>
+    // Sized in rem, so the icon follows the UI scale with the text beside it.
+    <svg className="node-icon" style={{ width: `${(size * box) / GLYPH_UNITS / 16}rem`, height: `${(size * box) / GLYPH_UNITS / 16}rem` }} viewBox={`${-box / 2} ${-box / 2} ${box} ${box}`} aria-hidden>
       {glyph.cut && (
         <mask id={id}>
           <rect x={-half} y={-half} width={GLYPH_UNITS} height={GLYPH_UNITS} fill="#fff" />
