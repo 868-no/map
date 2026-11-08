@@ -28,6 +28,7 @@ func TestSimulatorThroughIngest(t *testing.T) {
 	rejected := map[string]int{}
 	notes := map[string]map[string]int{}
 	firmware := map[string]int{}
+	floors := map[uint32][]int32{}
 	for range 3000 {
 		for _, m := range sim.Step() {
 			obs, err := ingest.Process(ingest.RawMessage{BrokerID: "demo", Topic: m.Topic, Payload: m.Payload, ObservedAt: time.Now()}, o)
@@ -47,6 +48,9 @@ func TestSimulatorThroughIngest(t *testing.T) {
 			accepted[obs.PacketType+"/"+string(obs.SignatureStatus)+"/"+string(obs.Meta.Crypto)]++
 			if mr := obs.Meta.MapReport; mr != nil {
 				firmware[mr.FirmwareVersion]++
+			}
+			if te := obs.Meta.Telemetry; te != nil && te.Kind == "local" && te.NoiseFloor != nil {
+				floors[obs.Source] = append(floors[obs.Source], *te.NoiseFloor)
 			}
 			if obs.Promote != nil {
 				store[obs.Promote.Node] = *obs.Promote
@@ -82,6 +86,57 @@ func TestSimulatorThroughIngest(t *testing.T) {
 	}
 	if firmware["2.8.1.demo"] == 0 || firmware["2.8.0.demo"] == 0 || firmware["2.4.3.demo"] == 0 || len(firmware) != 3 {
 		t.Errorf("map reports' firmware versions: %v", firmware)
+	}
+	// Routers send their noise floor (D-199), Gråkallen's the noisiest.
+	if n := notes["local stats"]; n["ok"] == 0 || len(n) != 1 {
+		t.Errorf("local stats should all be accepted: %v", n)
+	}
+	for i, n := range s.Nodes {
+		got := floors[n.Num]
+		if (n.NoiseFloor != 0) != (len(got) > 0) {
+			t.Errorf("node %s (floor %d) sent %d noise floors", n.Short, n.NoiseFloor, len(got))
+		}
+		for _, f := range got {
+			if f < n.NoiseFloor-5 || f > n.NoiseFloor+5 || f < -115 || f > -92 {
+				t.Errorf("node %d: noise floor %d strays from %d", i, f, n.NoiseFloor)
+			}
+		}
+	}
+}
+
+// Local statistics draw nothing from the random source or the packet id
+// sequence: every other message is the one the demo sent before them.
+func TestLocalStatsLeaveTheOtherMessagesAsTheyWere(t *testing.T) {
+	for _, s := range []func() *Scenario{DefaultScenario, func() *Scenario { return LargeScenario(200, 7) }} {
+		with, without := s(), s()
+		senders := 0
+		for _, n := range without.Nodes {
+			if n.NoiseFloor != 0 {
+				senders++
+			}
+			n.NoiseFloor = 0
+		}
+		if senders == 0 {
+			t.Fatal("no node sends local stats")
+		}
+		a, b := NewSimulator(with, 3), NewSimulator(without, 3)
+		for step := range 4000 {
+			var got []Message
+			for _, m := range a.Step() {
+				if m.Note != "local stats" {
+					got = append(got, m)
+				}
+			}
+			want := b.Step()
+			if len(got) != len(want) {
+				t.Fatalf("step %d: %d messages, want %d", step, len(got), len(want))
+			}
+			for k := range got {
+				if got[k].Topic != want[k].Topic || got[k].Note != want[k].Note || len(got[k].Payload) != len(want[k].Payload) {
+					t.Fatalf("step %d message %d differs: %s %q, want %s %q", step, k, got[k].Topic, got[k].Note, want[k].Topic, want[k].Note)
+				}
+			}
+		}
 	}
 }
 

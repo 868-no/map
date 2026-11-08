@@ -2,6 +2,7 @@ package demo
 
 import (
 	"crypto/ed25519"
+	"math"
 	"math/rand/v2"
 	"time"
 
@@ -88,6 +89,9 @@ func (sim *Simulator) Step() []Message {
 		}
 	case k == 2:
 		d = sim.telemetry()
+		if n.NoiseFloor != 0 {
+			also = append(also, sim.localStats(src)...)
+		}
 	case k == 3:
 		d = sim.neighborInfo(src)
 	case k == 4:
@@ -112,6 +116,35 @@ func (sim *Simulator) mapReport(n *Node) Message {
 	env, _ := proto.Marshal(&pb.ServiceEnvelope{ChannelId: PublicChannel, GatewayId: protocol.NodeID(n.Num), Packet: &pb.MeshPacket{From: n.Num, To: protocol.Broadcast,
 		PayloadVariant: &pb.MeshPacket_Decoded{Decoded: &pb.Data{Portnum: pb.PortNum_MAP_REPORT_APP, Payload: b}}}})
 	return Message{Topic: TopicRoot + "/2/map/", Payload: env, Note: "map report"}
+}
+
+// localStats is a node's local statistics (D-199), sent beside its device
+// telemetry: its noise floor drifting slowly around the node's own (a few
+// dB over some hundred turns, and a dB or two from turn to turn). Heard only
+// by gateways in direct range, without lost or duplicated copies, so it
+// draws nothing from the random source nor from the packet id sequence,
+// and leaves every other message as it was.
+func (sim *Simulator) localStats(src int) []Message {
+	n := sim.S.Nodes[src]
+	turn := sim.tick / len(sim.S.Nodes)
+	floor := n.NoiseFloor + int32(math.Round(3*math.Sin(float64(turn)/40+float64(src)))) + int32((turn*7+src*3)%3) - 1
+	cu := float32(5 + (turn+src)%15)
+	up := uint32(3600 + 600*turn)
+	b, _ := proto.Marshal(&pb.Telemetry{Time: uint32(time.Now().Unix()), Variant: &pb.Telemetry_LocalStats{LocalStats: &pb.LocalStats{
+		UptimeSeconds: up, ChannelUtilization: cu, NumPacketsTx: uint32(40 * turn), NumPacketsRx: uint32(300 * turn), NumOnlineNodes: uint32(len(sim.S.Links[src])),
+		NumTotalNodes: uint32(len(sim.S.Nodes)), NoiseFloor: floor}}})
+	d := &pb.Data{Portnum: pb.PortNum_TELEMETRY_APP, Payload: b}
+	var direct []hop
+	for _, l := range sim.S.Links[src] {
+		direct = append(direct, hop{node: l.Dst, prev: src, depth: 1, link: l})
+	}
+	// Its packet id from the node and turn, not sim.id: the other packets keep theirs.
+	id := (n.Num*2654435761 ^ uint32(turn)*40503) | 1
+	msgs := sim.uplinks(src, protocol.Broadcast, id, d, PublicChannel, 3, nil, direct, false)
+	for j := range msgs {
+		msgs[j].Note = "local stats"
+	}
+	return msgs
 }
 
 func (sim *Simulator) topic(channel string, gw *Node) string {
@@ -165,6 +198,13 @@ func (sim *Simulator) reach(src, hopStart int) []hop {
 // flood encrypts one packet and emits an uplink from each gateway that
 // hears it, with correct hop_limit and relay_node for its reception.
 func (sim *Simulator) flood(src int, to, id uint32, d *pb.Data, channel string, hopStart uint32, mutate func(*pb.MeshPacket)) []Message {
+	return sim.uplinks(src, to, id, d, channel, hopStart, mutate, nil, true)
+}
+
+// uplinks emits one uplink per gateway among the nodes hearing the packet:
+// those in hops, or with hops nil as a flood reaches them; dups lets the
+// broker deliver an upload twice now and then.
+func (sim *Simulator) uplinks(src int, to, id uint32, d *pb.Data, channel string, hopStart uint32, mutate func(*pb.MeshPacket), hops []hop, dups bool) []Message {
 	n := sim.S.Nodes[src]
 	if channel == PrivateChannel && !n.Private {
 		channel = PublicChannel
@@ -206,7 +246,10 @@ func (sim *Simulator) flood(src int, to, id uint32, d *pb.Data, channel string, 
 		emit(n, mp, "own packet")
 	}
 	now := uint32(time.Now().Unix())
-	for _, h := range sim.reach(src, int(hopStart)) {
+	if hops == nil {
+		hops = sim.reach(src, int(hopStart))
+	}
+	for _, h := range hops {
 		gw := sim.S.Nodes[h.node]
 		if !gw.Gateway {
 			continue
@@ -220,7 +263,7 @@ func (sim *Simulator) flood(src int, to, id uint32, d *pb.Data, channel string, 
 		mp.RxTime = &now
 		emit(gw, mp, "reception")
 		// Occasionally the broker delivers the same upload twice (QoS retry / bridge).
-		if sim.r.IntN(20) == 0 {
+		if dups && sim.r.IntN(20) == 0 {
 			emit(gw, proto.Clone(mp).(*pb.MeshPacket), "duplicate delivery")
 		}
 	}

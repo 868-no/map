@@ -29,6 +29,20 @@ type Node struct {
 	HW        pb.HardwareModel
 	Private   bool   // also member of the AEAD channel
 	Firmware  string // version a gateway states in its map reports ("" sends none)
+	// NoiseFloor is the noise floor (dBm) its local statistics drift
+	// around; 0 sends none (D-199).
+	NoiseFloor int32
+}
+
+// noiseFloorOf is a demo node's noise floor by index, from -112 to -103
+// dBm, or the noisier -97 for a site sharing its hill with broadcast
+// transmitters: no random draw, so the scenarios' random sequences
+// (positions, links) stay as they were.
+func noiseFloorOf(i int, noisy bool) int32 {
+	if noisy {
+		return -97
+	}
+	return int32(-112 + 3*(i%4))
 }
 
 // firmwareOf is the version a node runs as its map reports state it: 2.8
@@ -119,6 +133,11 @@ func DefaultScenario() *Scenario {
 		n.Plaintext = st.short == "ORKA"
 		if n.Gateway {
 			n.Firmware = firmwareOf(i, n.Key == nil)
+		}
+		// Routers send local statistics with their noise floor; Gråkallen
+		// shares its hill with broadcast masts, so it is the noisy one.
+		if n.Role == pb.Config_DeviceConfig_ROUTER {
+			n.NoiseFloor = noiseFloorOf(i, st.short == "GRAK")
 		}
 		s.index[n.Num] = len(s.Nodes)
 		s.Nodes = append(s.Nodes, n)

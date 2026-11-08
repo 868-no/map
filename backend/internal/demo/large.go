@@ -35,6 +35,10 @@ func LargeScenario(n int, seed uint64) *Scenario {
 		}
 		if node.Gateway {
 			node.Firmware = firmwareOf(i, node.Key == nil)
+			// Every other gateway sends its noise floor, every tenth node a noisy one.
+			if i%2 == 0 {
+				node.NoiseFloor = noiseFloorOf(i, i%10 == 0)
+			}
 		}
 		if _, dup := s.index[node.Num]; dup {
 			continue
