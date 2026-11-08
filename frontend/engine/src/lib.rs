@@ -5,6 +5,7 @@
 
 pub mod channels;
 pub mod copies;
+pub mod fleet;
 pub mod geo;
 pub mod health;
 pub mod landsdel;
@@ -216,11 +217,12 @@ impl Engine {
                 Ok(json(&serde_json::json!({ "nodes": watch::watch(&ids, &rows, &live, b.snapshot.nodes.iter().chain(&b.beyond)) })))
             }
             "regions" => {
-                // The window per region, for the Regions panel (D-194).
+                // The window per region, with the nodes' breakdown, for the Regions panel (D-194, D-196).
                 self.build(start, end, filters)?;
                 let b = &self.built.as_ref().unwrap().1;
                 let rows = self.rows();
-                Ok(json(&regions::regions(&self.regions, b.snapshot.nodes.iter().chain(&b.beyond), &rows, &self.i)))
+                let presets = b.presets.get_or_init(|| channels::PresetIndex::new(&rows, &b.traceroute_contacts, &self.i));
+                Ok(json(&regions::regions(&self.regions, b.snapshot.nodes.iter().chain(&b.beyond), &rows, presets, &self.i)))
             }
             "health" => {
                 self.build(start, end, filters)?;

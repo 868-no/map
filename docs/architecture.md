@@ -112,7 +112,8 @@ backend/
   test/fixtures           real MQTT captures (public RF traffic) replayed by unit tests
 frontend/                 React + MapLibre GL 5 + deck.gl 9 (Vite); e2e/ Playwright
   engine/                 Rust → WebAssembly: row store, links, location estimates, traffic,
-                          node details, packet logs and routes, ping attribution (D-040)
+                          node details, packet logs and routes, ping attribution (D-040), region summaries
+                          with the nodes by role, hardware, preset and firmware (D-194, D-196)
   src/derive/             Web Worker: sync and coverage, IndexedDB chunks and deltas, drives the engine;
                           view types (views.ts)
   src/state/              store, window queries, live stream (live.ts), watchlist, weather and terrain fetches

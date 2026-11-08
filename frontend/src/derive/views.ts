@@ -211,12 +211,36 @@ export interface RegionSummary {
   ch_util?: number // median of its nodes' medians
   ch_util_nodes: number
   busiest?: [string, number] // node id, its median channel utilisation
+  fleet: Fleet // its nodes heard in the window (D-196)
 }
 export interface RegionsView {
   meta: ViewMeta
   loaded: boolean // the outlines are in
   regions: RegionSummary[]
   outside: number
+  mesh: Fleet // every node heard in the window, placed or not (D-196)
+}
+
+/** A value and how many nodes have it ("unknown" when they do not say). */
+export interface FleetCount {
+  name: string
+  nodes: number
+}
+/** Nodes on a firmware line their map reports state, or of a generation inferred without one (D-196). */
+export interface FirmwareCount {
+  /** reported: from map reports; key: 2.8 or later; hardware: 2.7 or earlier; no_hop_start: before 2.3 (all three inferred). */
+  basis: 'reported' | 'key' | 'hardware' | 'no_hop_start' | 'unknown'
+  version?: string // major.minor, reported only
+  nodes: number
+  versions?: FleetCount[] // exact versions, newest first, reported only
+}
+/** Nodes by role, hardware model, modem preset and firmware (D-196). Lists: most first, "unknown" last. */
+export interface Fleet {
+  nodes: number
+  roles: FleetCount[]
+  hardware: FleetCount[]
+  presets: FleetCount[]
+  firmware: FirmwareCount[] // reported lines newest first, then the inferred generations
 }
 
 /** A watched node's state (D-192). */

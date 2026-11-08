@@ -8436,11 +8436,193 @@
   },
   "regions": {
     "loaded": true,
+    "mesh": {
+      "firmware": [
+        {
+          "basis": "unknown",
+          "nodes": 179
+        }
+      ],
+      "hardware": [
+        {
+          "name": "RAK4631",
+          "nodes": 24
+        },
+        {
+          "name": "HELTEC_V3",
+          "nodes": 19
+        },
+        {
+          "name": "SEEED_SOLAR_NODE",
+          "nodes": 15
+        },
+        {
+          "name": "HELTEC_V4",
+          "nodes": 13
+        },
+        {
+          "name": "SEEED_XIAO_S3",
+          "nodes": 13
+        },
+        {
+          "name": "HELTEC_MESH_NODE_T114",
+          "nodes": 11
+        },
+        {
+          "name": "TRACKER_T1000_E",
+          "nodes": 9
+        },
+        {
+          "name": "XIAO_NRF52_KIT",
+          "nodes": 9
+        },
+        {
+          "name": "SEEED_WIO_TRACKER_L1",
+          "nodes": 8
+        },
+        {
+          "name": "TLORA_T3_S3",
+          "nodes": 5
+        },
+        {
+          "name": "T_ECHO",
+          "nodes": 5
+        },
+        {
+          "name": "T_DECK",
+          "nodes": 4
+        },
+        {
+          "name": "HELTEC_MESH_POCKET",
+          "nodes": 2
+        },
+        {
+          "name": "LILYGO_TBEAM_S3_CORE",
+          "nodes": 2
+        },
+        {
+          "name": "RAK3401",
+          "nodes": 2
+        },
+        {
+          "name": "THINKNODE_M1",
+          "nodes": 2
+        },
+        {
+          "name": "TLORA_V2_1_1P6",
+          "nodes": 2
+        },
+        {
+          "name": "HELTEC_MESH_NODE_T1",
+          "nodes": 1
+        },
+        {
+          "name": "HELTEC_VISION_MASTER_T190",
+          "nodes": 1
+        },
+        {
+          "name": "MESHSTICK_1262",
+          "nodes": 1
+        },
+        {
+          "name": "PORTDUINO",
+          "nodes": 1
+        },
+        {
+          "name": "PRIVATE_HW",
+          "nodes": 1
+        },
+        {
+          "name": "RAK6421",
+          "nodes": 1
+        },
+        {
+          "name": "SENSECAP_INDICATOR",
+          "nodes": 1
+        },
+        {
+          "name": "WISMESH_TAG",
+          "nodes": 1
+        },
+        {
+          "name": "unknown",
+          "nodes": 26
+        }
+      ],
+      "nodes": 179,
+      "presets": [
+        {
+          "name": "NARROW_FAST",
+          "nodes": 171
+        },
+        {
+          "name": "LONG_FAST",
+          "nodes": 3
+        },
+        {
+          "name": "unknown",
+          "nodes": 5
+        }
+      ],
+      "roles": [
+        {
+          "name": "CLIENT",
+          "nodes": 57
+        },
+        {
+          "name": "ROUTER",
+          "nodes": 32
+        },
+        {
+          "name": "CLIENT_MUTE",
+          "nodes": 31
+        },
+        {
+          "name": "CLIENT_BASE",
+          "nodes": 27
+        },
+        {
+          "name": "ROUTER_LATE",
+          "nodes": 6
+        },
+        {
+          "name": "unknown",
+          "nodes": 26
+        }
+      ]
+    },
     "outside": 0,
     "regions": [
       {
         "bases": 0,
         "ch_util_nodes": 0,
+        "fleet": {
+          "firmware": [
+            {
+              "basis": "unknown",
+              "nodes": 2
+            }
+          ],
+          "hardware": [
+            {
+              "name": "unknown",
+              "nodes": 2
+            }
+          ],
+          "nodes": 2,
+          "presets": [
+            {
+              "name": "unknown",
+              "nodes": 2
+            }
+          ],
+          "roles": [
+            {
+              "name": "unknown",
+              "nodes": 2
+            }
+          ]
+        },
         "gateways": 2,
         "members": [
           "!0408e834",
@@ -8460,6 +8642,105 @@
         ],
         "ch_util": 3.734,
         "ch_util_nodes": 14,
+        "fleet": {
+          "firmware": [
+            {
+              "basis": "unknown",
+              "nodes": 32
+            }
+          ],
+          "hardware": [
+            {
+              "name": "SEEED_SOLAR_NODE",
+              "nodes": 6
+            },
+            {
+              "name": "HELTEC_V4",
+              "nodes": 5
+            },
+            {
+              "name": "HELTEC_V3",
+              "nodes": 4
+            },
+            {
+              "name": "RAK4631",
+              "nodes": 3
+            },
+            {
+              "name": "RAK3401",
+              "nodes": 2
+            },
+            {
+              "name": "SEEED_XIAO_S3",
+              "nodes": 2
+            },
+            {
+              "name": "T_ECHO",
+              "nodes": 2
+            },
+            {
+              "name": "HELTEC_MESH_NODE_T114",
+              "nodes": 1
+            },
+            {
+              "name": "HELTEC_MESH_POCKET",
+              "nodes": 1
+            },
+            {
+              "name": "PORTDUINO",
+              "nodes": 1
+            },
+            {
+              "name": "RAK6421",
+              "nodes": 1
+            },
+            {
+              "name": "TRACKER_T1000_E",
+              "nodes": 1
+            },
+            {
+              "name": "unknown",
+              "nodes": 3
+            }
+          ],
+          "nodes": 32,
+          "presets": [
+            {
+              "name": "NARROW_FAST",
+              "nodes": 31
+            },
+            {
+              "name": "unknown",
+              "nodes": 1
+            }
+          ],
+          "roles": [
+            {
+              "name": "CLIENT",
+              "nodes": 10
+            },
+            {
+              "name": "ROUTER",
+              "nodes": 8
+            },
+            {
+              "name": "CLIENT_BASE",
+              "nodes": 5
+            },
+            {
+              "name": "ROUTER_LATE",
+              "nodes": 4
+            },
+            {
+              "name": "CLIENT_MUTE",
+              "nodes": 2
+            },
+            {
+              "name": "unknown",
+              "nodes": 3
+            }
+          ]
+        },
         "gateways": 8,
         "members": [
           "!02638f1c",
@@ -8510,6 +8791,85 @@
         ],
         "ch_util": 0.0,
         "ch_util_nodes": 8,
+        "fleet": {
+          "firmware": [
+            {
+              "basis": "unknown",
+              "nodes": 21
+            }
+          ],
+          "hardware": [
+            {
+              "name": "HELTEC_V3",
+              "nodes": 6
+            },
+            {
+              "name": "HELTEC_V4",
+              "nodes": 4
+            },
+            {
+              "name": "RAK4631",
+              "nodes": 2
+            },
+            {
+              "name": "SEEED_SOLAR_NODE",
+              "nodes": 2
+            },
+            {
+              "name": "TLORA_T3_S3",
+              "nodes": 2
+            },
+            {
+              "name": "LILYGO_TBEAM_S3_CORE",
+              "nodes": 1
+            },
+            {
+              "name": "SEEED_XIAO_S3",
+              "nodes": 1
+            },
+            {
+              "name": "TLORA_V2_1_1P6",
+              "nodes": 1
+            },
+            {
+              "name": "T_DECK",
+              "nodes": 1
+            },
+            {
+              "name": "unknown",
+              "nodes": 1
+            }
+          ],
+          "nodes": 21,
+          "presets": [
+            {
+              "name": "NARROW_FAST",
+              "nodes": 21
+            }
+          ],
+          "roles": [
+            {
+              "name": "CLIENT",
+              "nodes": 11
+            },
+            {
+              "name": "CLIENT_BASE",
+              "nodes": 4
+            },
+            {
+              "name": "ROUTER",
+              "nodes": 4
+            },
+            {
+              "name": "CLIENT_MUTE",
+              "nodes": 1
+            },
+            {
+              "name": "unknown",
+              "nodes": 1
+            }
+          ]
+        },
         "gateways": 5,
         "members": [
           "!0aca39a8",
@@ -8549,6 +8909,121 @@
         ],
         "ch_util": 5.80675,
         "ch_util_nodes": 24,
+        "fleet": {
+          "firmware": [
+            {
+              "basis": "unknown",
+              "nodes": 52
+            }
+          ],
+          "hardware": [
+            {
+              "name": "RAK4631",
+              "nodes": 13
+            },
+            {
+              "name": "SEEED_SOLAR_NODE",
+              "nodes": 6
+            },
+            {
+              "name": "HELTEC_V3",
+              "nodes": 4
+            },
+            {
+              "name": "HELTEC_V4",
+              "nodes": 4
+            },
+            {
+              "name": "HELTEC_MESH_NODE_T114",
+              "nodes": 3
+            },
+            {
+              "name": "SEEED_XIAO_S3",
+              "nodes": 3
+            },
+            {
+              "name": "XIAO_NRF52_KIT",
+              "nodes": 3
+            },
+            {
+              "name": "SEEED_WIO_TRACKER_L1",
+              "nodes": 2
+            },
+            {
+              "name": "TRACKER_T1000_E",
+              "nodes": 2
+            },
+            {
+              "name": "HELTEC_MESH_POCKET",
+              "nodes": 1
+            },
+            {
+              "name": "LILYGO_TBEAM_S3_CORE",
+              "nodes": 1
+            },
+            {
+              "name": "SENSECAP_INDICATOR",
+              "nodes": 1
+            },
+            {
+              "name": "TLORA_T3_S3",
+              "nodes": 1
+            },
+            {
+              "name": "TLORA_V2_1_1P6",
+              "nodes": 1
+            },
+            {
+              "name": "T_DECK",
+              "nodes": 1
+            },
+            {
+              "name": "unknown",
+              "nodes": 6
+            }
+          ],
+          "nodes": 52,
+          "presets": [
+            {
+              "name": "NARROW_FAST",
+              "nodes": 48
+            },
+            {
+              "name": "LONG_FAST",
+              "nodes": 2
+            },
+            {
+              "name": "unknown",
+              "nodes": 2
+            }
+          ],
+          "roles": [
+            {
+              "name": "ROUTER",
+              "nodes": 17
+            },
+            {
+              "name": "CLIENT",
+              "nodes": 12
+            },
+            {
+              "name": "CLIENT_BASE",
+              "nodes": 9
+            },
+            {
+              "name": "CLIENT_MUTE",
+              "nodes": 7
+            },
+            {
+              "name": "ROUTER_LATE",
+              "nodes": 1
+            },
+            {
+              "name": "unknown",
+              "nodes": 6
+            }
+          ]
+        },
         "gateways": 12,
         "members": [
           "!02eb8e7c",
@@ -8613,6 +9088,61 @@
       {
         "bases": 1,
         "ch_util_nodes": 0,
+        "fleet": {
+          "firmware": [
+            {
+              "basis": "unknown",
+              "nodes": 5
+            }
+          ],
+          "hardware": [
+            {
+              "name": "HELTEC_MESH_NODE_T114",
+              "nodes": 1
+            },
+            {
+              "name": "SEEED_SOLAR_NODE",
+              "nodes": 1
+            },
+            {
+              "name": "SEEED_WIO_TRACKER_L1",
+              "nodes": 1
+            },
+            {
+              "name": "SEEED_XIAO_S3",
+              "nodes": 1
+            },
+            {
+              "name": "TLORA_T3_S3",
+              "nodes": 1
+            }
+          ],
+          "nodes": 5,
+          "presets": [
+            {
+              "name": "NARROW_FAST",
+              "nodes": 5
+            }
+          ],
+          "roles": [
+            {
+              "name": "CLIENT",
+              "nodes": 2
+            },
+            {
+              "name": "CLIENT_BASE",
+              "nodes": 1
+            },
+            {
+              "name": "ROUTER",
+              "nodes": 1
+            },
+            {
+              "name": "ROUTER_LATE",
+              "nodes": 1
+            }
+          ]
+        },
         "gateways": 2,
         "members": [
           "!0423d27e",
