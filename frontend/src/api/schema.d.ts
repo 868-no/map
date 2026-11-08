@@ -180,6 +180,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/trends/fleet": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The mesh's nodes by firmware, hardware, role and preset per day, week or month over the whole retained log */
+        get: operations["fleet-trends"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/trends/node/{id}": {
         parameters: {
             query?: never;
@@ -338,6 +355,68 @@ export interface components {
              * @example https://example.com/errors/example
              */
             type: string;
+        };
+        FleetDimension: {
+            /** @description Each bucket's counts follow this order: the largest values over the whole range (firmware: reported lines newest first, then the inferred generations newest first), then others and unknown when any */
+            values: components["schemas"]["FleetValue"][] | null;
+        };
+        FleetTrendBucket: {
+            /** @description Nodes per firmware value, in the order of firmware.values */
+            firmware: number[] | null;
+            /** @description Nodes per hardware model, in the order of hardware.values */
+            hardware: number[] | null;
+            /**
+             * Format: int64
+             * @description Distinct nodes heard (senders); each dimension's counts sum to it
+             */
+            nodes: number;
+            /** @description Nodes per modem preset, in the order of preset.values */
+            preset: number[] | null;
+            /** @description Nodes per role, in the order of role.values */
+            role: number[] | null;
+            /**
+             * Format: date-time
+             * @description Bucket start in the requested time zone
+             */
+            start: string;
+        };
+        FleetTrendsBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/api/schemas/FleetTrendsBody.json
+             */
+            readonly $schema?: string;
+            bucket: string;
+            buckets: components["schemas"]["FleetTrendBucket"][] | null;
+            firmware: components["schemas"]["FleetDimension"];
+            hardware: components["schemas"]["FleetDimension"];
+            preset: components["schemas"]["FleetDimension"];
+            role: components["schemas"]["FleetDimension"];
+            /**
+             * Format: date-time
+             * @description Oldest retained observation: the first bucket may be partial
+             */
+            since?: string;
+        };
+        FleetValue: {
+            /**
+             * @description Firmware only: reported, a line the nodes' own map reports state; else the generation inferred from their packets, never a version: key (node id derived from its key, 2.8 or later), hardware (node id from its hardware while it announces a key, 2.7 or earlier), no_hop_start (no hop start in its packets, before 2.3)
+             * @enum {string}
+             */
+            basis?: "reported" | "key" | "hardware" | "no_hop_start";
+            /**
+             * Format: int64
+             * @description others: how many values it sums
+             */
+            folded?: number;
+            /**
+             * @description others: the values past the largest few, summed; unknown: nodes nothing tells this of
+             * @enum {string}
+             */
+            kind: "value" | "others" | "unknown";
+            /** @description A protobuf enum name (hardware model, role, modem preset), a firmware major.minor line (e.g. 2.7) or inferred generation (key, hardware, no_hop_start), or others or unknown */
+            name: string;
         };
         GeoSettings: {
             calibration?: components["schemas"]["Calibration"];
@@ -1540,6 +1619,68 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TrendsBody"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "fleet-trends": {
+        parameters: {
+            query?: {
+                /** @description Bucket length */
+                bucket?: "day" | "week" | "month";
+                /** @description IANA time zone the buckets start in, e.g. Europe/Oslo */
+                tz?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FleetTrendsBody"];
                 };
             };
             /** @description Bad Request */

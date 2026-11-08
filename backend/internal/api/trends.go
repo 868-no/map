@@ -68,8 +68,9 @@ type trendsCache[B interface{ computedAt() time.Time }] struct {
 	byKey map[string]B
 }
 
-func (b TrendsBody) computedAt() time.Time     { return b.Computed }
-func (b NodeTrendsBody) computedAt() time.Time { return b.Computed }
+func (b TrendsBody) computedAt() time.Time      { return b.Computed }
+func (b NodeTrendsBody) computedAt() time.Time  { return b.Computed }
+func (b FleetTrendsBody) computedAt() time.Time { return b.Computed }
 
 func (c *trendsCache[B]) get(key string, now time.Time) (B, bool) {
 	c.mu.Lock()

@@ -235,14 +235,14 @@ func New(f Fields, meta []byte) ObsRow {
 	case "nodeinfo":
 		if n := m.NodeInfo; n != nil {
 			r.NodeInfo = &ObsNodeInfo{LongName: n.LongName, ShortName: n.ShortName, HwModel: n.HwModel, Role: n.Role,
-				HasPublicKey: n.PublicKey != "", KeyID: keyID(n.PublicKey), Untrusted: n.Untrusted}
+				HasPublicKey: n.PublicKey != "", KeyID: KeyID(n.PublicKey), Untrusted: n.Untrusted}
 		}
 	case "position":
 		r.Position = m.Position
 	case "mapreport":
 		r.Position = m.Position
 		if mr := m.MapReport; mr != nil {
-			mr.FirmwareVersion = shortVersion(mr.FirmwareVersion)
+			mr.FirmwareVersion = ShortVersion(mr.FirmwareVersion)
 			if *mr != (ObsMapReport{}) {
 				r.MapReport = mr
 			}
@@ -325,12 +325,12 @@ func badMeta(id int64, err error) {
 	}
 }
 
-// shortVersion is a firmware version's leading major.minor.patch
+// ShortVersion is a firmware version's leading major.minor.patch
 // ("2.7.15.567b8ea" gives "2.7.15"), or "" when it does not start with three
 // dot-separated numbers of one to four digits: the build hash names the same
 // release on every node, and anything else is no version the browser can
 // group.
-func shortVersion(v string) string {
+func ShortVersion(v string) string {
 	end := 0
 	for part := range 3 {
 		if part > 0 {
@@ -350,9 +350,9 @@ func shortVersion(v string) string {
 	return v[:end]
 }
 
-// keyID is the node id derived from a base64 X25519 key, or nil without a
+// KeyID is the node id derived from a base64 X25519 key, or nil without a
 // valid 32-byte key.
-func keyID(b64 string) *uint32 {
+func KeyID(b64 string) *uint32 {
 	k, err := base64.StdEncoding.DecodeString(b64)
 	if err != nil || len(k) != 32 {
 		return nil

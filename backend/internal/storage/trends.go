@@ -38,6 +38,16 @@ type HourSummary struct {
 	// 400 nodes heard an hour over six months (the ids in Nodes take 14).
 	NodePackets, NodeReceptions []uint16
 	NodeBattery                 []int8
+	// Per node of Nodes, for what the nodes run (D-198): NodeRadio holds
+	// whether its packets (map reports aside) carried a hop start (the low
+	// two bits: HopNone, HopWithout or HopWith) and, above them, 1 + the
+	// index in PresetNames of the preset whose default channel name it was
+	// heard on most that hour (0: none). NodeFacts indexes the TrendHours'
+	// table of what nodes said about themselves (its newest trusted
+	// NodeInfo, named map report, stated firmware version and proven preset
+	// that hour; 0: nothing). 3 bytes per node and hour.
+	NodeRadio []uint8
+	NodeFacts []uint16
 }
 
 const (
@@ -83,6 +93,7 @@ type TrendHours struct {
 
 	mu       sync.Mutex
 	hours    map[time.Time]*HourSummary
+	facts    factTable  // what NodeFacts index (D-198)
 	oldest   *time.Time // the oldest retained row at the last refresh
 	last     time.Time  // wall clock of the last complete refresh counted fresh
 	complete bool       // some refresh (or warm-up) has completed
@@ -91,7 +102,12 @@ type TrendHours struct {
 // Rows that failed verification never count (D-093); rows stored as "other"
 // before node status and store-and-forward were decoded count as those (D-103).
 // Per-node figures (pn) come from the same rows (r, read once), ordered by
-// node id like the hour's node set (D-195).
+// node id like the hour's node set (D-195), as is each node's radio evidence
+// (radio: hop start and the preset of its most heard default channel name,
+// cp, from $4 and $5, the channel names lower case and their presets, as
+// 1 + an index into $6, PresetNames); what nodes said about themselves (nf:
+// newest trusted NodeInfo, named map report, stated version and proven
+// preset) comes per hour only for the nodes that said anything (D-198).
 var trendRangeSQL = `
 	WITH r AS (
 	  SELECT date_trunc('hour', observed_at) AS h, source_node_id AS s, gateway_node_id AS g, logical_packet_key AS l, decode_version AS dv,
@@ -99,17 +115,37 @@ var trendRangeSQL = `
 	    CASE WHEN packet_type = 'other' AND decoded_metadata->'other'->>'port_name' = 'STORE_FORWARD_APP' THEN 'store_forward'
 	         WHEN packet_type = 'other' AND decoded_metadata->'other'->>'port_name' = 'NODE_STATUS_APP' THEN 'node_status'
 	         ELSE packet_type END AS ty,
-	    CASE WHEN packet_type = 'telemetry' AND decoded_metadata->'telemetry'->>'kind' = 'device' THEN (decoded_metadata->'telemetry'->>'battery')::float8 END AS bat
+	    CASE WHEN packet_type = 'telemetry' AND decoded_metadata->'telemetry'->>'kind' = 'device' THEN (decoded_metadata->'telemetry'->>'battery')::float8 END AS bat,
+	    hop_start IS NOT NULL AS hs, lower(channel_name) AS ch,
+	    CASE WHEN packet_type IN ('nodeinfo', 'mapreport') THEN decoded_metadata END AS meta, observed_at AS at, id
 	  FROM packet_log WHERE ` + window.Predicate(1, 2) + ` AND packet_type <> 'invalid'),
 	agg AS (SELECT h, array_agg(DISTINCT s ORDER BY s) AS nodes, array_remove(array_agg(DISTINCT g ORDER BY g), NULL) AS gws, count(DISTINCT l) AS p, count(*) AS rc, bool_or(dv < $3) AS stale FROM r GROUP BY h),
 	types AS (SELECT h, jsonb_object_agg(ty, c) AS j FROM (SELECT h, ty, count(DISTINCT l) AS c FROM r GROUP BY h, ty) x GROUP BY h),
 	regs AS (SELECT h, jsonb_object_agg(reg, jsonb_build_object('n', nodes, 'g', gws, 'p', p, 'r', rc)) AS j FROM (
 	  SELECT h, reg, array_agg(DISTINCT s ORDER BY s) AS nodes, array_remove(array_agg(DISTINCT g ORDER BY g), NULL) AS gws, count(DISTINCT l) AS p, count(*) AS rc
 	  FROM r WHERE reg IS NOT NULL GROUP BY h, reg) x GROUP BY h),
-	pn AS (SELECT h, array_agg(p ORDER BY s) AS p, array_agg(rc ORDER BY s) AS rc, array_agg(COALESCE(bat, -1) ORDER BY s) AS bat FROM (
-	  SELECT h, s, LEAST(count(DISTINCT l), 65535)::int AS p, LEAST(count(*) FILTER (WHERE g IS DISTINCT FROM s), 65535)::int AS rc, round(min(bat))::int AS bat FROM r GROUP BY h, s) x GROUP BY h)
-	SELECT agg.h, agg.nodes, agg.gws, agg.p, agg.rc, COALESCE(types.j, '{}'::jsonb), agg.stale, COALESCE(regs.j, '{}'::jsonb), pn.p, pn.rc, pn.bat
-	FROM agg JOIN pn USING (h) LEFT JOIN types USING (h) LEFT JOIN regs USING (h)`
+	cp AS (SELECT DISTINCT ON (h, s) h, s, pre FROM (
+	  SELECT h, s, d.pre, count(*) AS c FROM r JOIN unnest($4::text[], $5::text[]) AS d(name, pre) ON r.ch = d.name WHERE r.ty <> 'mapreport' GROUP BY h, s, d.pre) x
+	  ORDER BY h, s, c DESC, pre),
+	pn AS (SELECT h, array_agg(p ORDER BY s) AS p, array_agg(rc ORDER BY s) AS rc, array_agg(COALESCE(bat, -1) ORDER BY s) AS bat,
+	    array_agg(hop + 4 * COALESCE(array_position($6::text[], cp.pre), 0) ORDER BY s) AS radio FROM (
+	  SELECT h, s, LEAST(count(DISTINCT l), 65535)::int AS p, LEAST(count(*) FILTER (WHERE g IS DISTINCT FROM s), 65535)::int AS rc, round(min(bat))::int AS bat,
+	    CASE bool_or(hs) FILTER (WHERE ty <> 'mapreport') WHEN true THEN 2 WHEN false THEN 1 ELSE 0 END AS hop FROM r GROUP BY h, s) x LEFT JOIN cp USING (h, s) GROUP BY h),
+	nf AS (SELECT h, s,
+	    (array_agg(meta->'nodeinfo' ORDER BY at DESC, id DESC) FILTER (WHERE ty = 'nodeinfo' AND meta ? 'nodeinfo'
+	      AND NOT COALESCE((meta->'nodeinfo'->>'identity_untrusted')::boolean, false)))[1] AS ni,
+	    (array_agg(meta->'mapreport' ORDER BY at DESC, id DESC) FILTER (WHERE ty = 'mapreport'
+	      AND (COALESCE(meta->'mapreport'->>'long_name', '') <> '' OR COALESCE(meta->'mapreport'->>'short_name', '') <> '')))[1] AS mr,
+	    (array_agg(meta->'mapreport'->>'firmware_version' ORDER BY at DESC, id DESC) FILTER (WHERE ty = 'mapreport'
+	      AND meta->'mapreport'->>'firmware_version' ~ '^[0-9]{1,4}\.[0-9]{1,4}\.[0-9]{1,4}([^0-9]|$)'))[1] AS fw,
+	    (array_agg(meta->'mapreport'->>'modem_preset' ORDER BY at DESC, id DESC) FILTER (WHERE ty = 'mapreport'
+	      AND (meta->'mapreport'->>'has_default_channel')::boolean AND COALESCE(meta->'mapreport'->>'modem_preset', '') <> ''))[1] AS pre
+	  FROM r WHERE meta IS NOT NULL GROUP BY h, s),
+	facts AS (SELECT h, jsonb_agg(jsonb_build_object('s', s, 'ni', ni, 'mr', mr, 'fw', fw, 'p', pre) ORDER BY s) AS j FROM nf
+	  WHERE ni IS NOT NULL OR mr IS NOT NULL OR fw IS NOT NULL OR pre IS NOT NULL GROUP BY h)
+	SELECT agg.h, agg.nodes, agg.gws, agg.p, agg.rc, COALESCE(types.j, '{}'::jsonb), agg.stale, COALESCE(regs.j, '{}'::jsonb), pn.p, pn.rc, pn.bat, pn.radio,
+	  COALESCE(facts.j, '[]'::jsonb)
+	FROM agg JOIN pn USING (h) LEFT JOIN types USING (h) LEFT JOIN regs USING (h) LEFT JOIN facts USING (h)`
 
 // Refresh brings the summaries up to date: hours never summed, the most
 // recent TrendRecent, hours summed under an older decoder, and every hour
@@ -253,21 +289,25 @@ func (t *TrendHours) readChunks(ctx context.Context, pool *pgxpool.Pool, lo, hi 
 }
 
 func (t *TrendHours) readRange(ctx context.Context, pool *pgxpool.Pool, lo, hi time.Time) error {
-	rows, err := pool.Query(ctx, trendRangeSQL, lo, hi, ingest.DecodeVersion)
+	rows, err := pool.Query(ctx, trendRangeSQL, lo, hi, ingest.DecodeVersion, presetChannels, presetChannelPresets, PresetNames)
 	if err != nil {
 		return err
 	}
 	defer rows.Close()
 	fresh := map[time.Time]*HourSummary{}
+	said := map[time.Time][]saidFacts{}
 	for rows.Next() {
 		var h time.Time
 		s := &HourSummary{DecodeVersion: ingest.DecodeVersion}
 		var stale bool
-		var pk, rc, bat []int32
-		if err := rows.Scan(&h, &s.Nodes, &s.Gateways, &s.Packets, &s.Receptions, &s.ByType, &stale, &s.Regions, &pk, &rc, &bat); err != nil {
+		var pk, rc, bat, radio []int32
+		var facts []factRow
+		if err := rows.Scan(&h, &s.Nodes, &s.Gateways, &s.Packets, &s.Receptions, &s.ByType, &stale, &s.Regions, &pk, &rc, &bat, &radio, &facts); err != nil {
 			return err
 		}
 		s.setNodeFigures(pk, rc, bat)
+		s.setNodeRadio(radio)
+		said[h.UTC()] = s.alignFacts(facts)
 		if stale {
 			// Some rows are still to be decoded again: read this hour again later.
 			s.DecodeVersion = 0
@@ -283,6 +323,7 @@ func (t *TrendHours) readRange(ctx context.Context, pool *pgxpool.Pool, lo, hi t
 		delete(t.hours, h)
 	}
 	for h, s := range fresh {
+		t.setFacts(s, said[h])
 		t.hours[h] = s
 	}
 	return nil

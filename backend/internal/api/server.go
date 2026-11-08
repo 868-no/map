@@ -75,8 +75,10 @@ type Server struct {
 	// nodeTrendsMemo keeps per-node trends (D-195), bounded where the
 	// handler is registered.
 	nodeTrendsMemo trendsCache[NodeTrendsBody]
-	histMemo       historyMemo
-	trendHours     storage.TrendHours // hourly summaries for trends (D-112)
+	// fleetTrendsMemo keeps what the nodes run over time (D-198).
+	fleetTrendsMemo trendsCache[FleetTrendsBody]
+	histMemo        historyMemo
+	trendHours      storage.TrendHours // hourly summaries for trends (D-112)
 	// trendsFlight runs one refresh of trendHours at a time for every
 	// request waiting on it; trendsRefresh replaces the refresh (tests).
 	trendsFlight  singleflight.Group
@@ -268,6 +270,8 @@ func (s *Server) register(api huma.API) {
 		Summary: "A node's announced and trusted public keys from the retained log", Tags: []string{"mesh"}, Errors: []int{400, 404}}, s.nodeKey)
 	huma.Register(api, huma.Operation{OperationID: "trends", Method: http.MethodGet, Path: "/api/v1/trends",
 		Summary: "Daily, weekly or monthly summaries over the whole retained log", Tags: []string{"mesh"}, Errors: []int{400, 503}}, s.trends)
+	huma.Register(api, huma.Operation{OperationID: "fleet-trends", Method: http.MethodGet, Path: "/api/v1/trends/fleet",
+		Summary: "The mesh's nodes by firmware, hardware, role and preset per day, week or month over the whole retained log", Tags: []string{"mesh"}, Errors: []int{400, 503}}, s.fleetTrends)
 	s.nodeTrendsMemo.max = nodeTrendsMemoMax
 	huma.Register(api, huma.Operation{OperationID: "node-trends", Method: http.MethodGet, Path: "/api/v1/trends/node/{id}",
 		Summary: "One node's daily, weekly or monthly history over the whole retained log", Tags: []string{"mesh"}, Errors: []int{400, 404, 503}}, s.nodeTrends)

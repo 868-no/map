@@ -59,8 +59,8 @@ func TestShortVersion(t *testing.T) {
 		"2..1":           "",
 		"custom":         "",
 	} {
-		if got := shortVersion(in); got != want {
-			t.Errorf("shortVersion(%q) = %q, want %q", in, got, want)
+		if got := ShortVersion(in); got != want {
+			t.Errorf("ShortVersion(%q) = %q, want %q", in, got, want)
 		}
 	}
 }

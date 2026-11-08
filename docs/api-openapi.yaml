@@ -202,6 +202,137 @@ components:
           format: uri
           type: string
       type: object
+    FleetDimension:
+      additionalProperties: false
+      properties:
+        values:
+          description: "Each bucket's counts follow this order: the largest values over the whole range (firmware: reported lines newest first, then the inferred generations newest first), then others and unknown when any"
+          items:
+            $ref: "#/components/schemas/FleetValue"
+          type:
+            - array
+            - "null"
+      required:
+        - values
+      type: object
+    FleetTrendBucket:
+      additionalProperties: false
+      properties:
+        firmware:
+          description: Nodes per firmware value, in the order of firmware.values
+          items:
+            format: int64
+            type: integer
+          type:
+            - array
+            - "null"
+        hardware:
+          description: Nodes per hardware model, in the order of hardware.values
+          items:
+            format: int64
+            type: integer
+          type:
+            - array
+            - "null"
+        nodes:
+          description: Distinct nodes heard (senders); each dimension's counts sum to it
+          format: int64
+          type: integer
+        preset:
+          description: Nodes per modem preset, in the order of preset.values
+          items:
+            format: int64
+            type: integer
+          type:
+            - array
+            - "null"
+        role:
+          description: Nodes per role, in the order of role.values
+          items:
+            format: int64
+            type: integer
+          type:
+            - array
+            - "null"
+        start:
+          description: Bucket start in the requested time zone
+          format: date-time
+          type: string
+      required:
+        - start
+        - nodes
+        - firmware
+        - hardware
+        - role
+        - preset
+      type: object
+    FleetTrendsBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/api/schemas/FleetTrendsBody.json
+          format: uri
+          readOnly: true
+          type: string
+        bucket:
+          type: string
+        buckets:
+          items:
+            $ref: "#/components/schemas/FleetTrendBucket"
+          type:
+            - array
+            - "null"
+        firmware:
+          $ref: "#/components/schemas/FleetDimension"
+        hardware:
+          $ref: "#/components/schemas/FleetDimension"
+        preset:
+          $ref: "#/components/schemas/FleetDimension"
+        role:
+          $ref: "#/components/schemas/FleetDimension"
+        since:
+          description: "Oldest retained observation: the first bucket may be partial"
+          format: date-time
+          type: string
+      required:
+        - bucket
+        - firmware
+        - hardware
+        - role
+        - preset
+        - buckets
+      type: object
+    FleetValue:
+      additionalProperties: false
+      properties:
+        basis:
+          description: "Firmware only: reported, a line the nodes' own map reports state; else the generation inferred from their packets, never a version: key (node id derived from its key, 2.8 or later), hardware (node id from its hardware while it announces a key, 2.7 or earlier), no_hop_start (no hop start in its packets, before 2.3)"
+          enum:
+            - reported
+            - key
+            - hardware
+            - no_hop_start
+          type: string
+        folded:
+          description: "others: how many values it sums"
+          format: int64
+          type: integer
+        kind:
+          description: "others: the values past the largest few, summed; unknown: nodes nothing tells this of"
+          enum:
+            - value
+            - others
+            - unknown
+          type: string
+        name:
+          description: A protobuf enum name (hardware model, role, modem preset), a firmware major.minor line (e.g. 2.7) or inferred generation (key, hardware, no_hop_start), or others or unknown
+          type: string
+      required:
+        - name
+        - kind
+      type: object
     GeoSettings:
       additionalProperties: false
       properties:
@@ -1930,6 +2061,68 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Service Unavailable
       summary: Daily, weekly or monthly summaries over the whole retained log
+      tags:
+        - mesh
+  /api/v1/trends/fleet:
+    get:
+      operationId: fleet-trends
+      parameters:
+        - description: Bucket length
+          explode: false
+          in: query
+          name: bucket
+          schema:
+            default: day
+            description: Bucket length
+            enum:
+              - day
+              - week
+              - month
+            type: string
+        - description: IANA time zone the buckets start in, e.g. Europe/Oslo
+          explode: false
+          in: query
+          name: tz
+          schema:
+            default: UTC
+            description: IANA time zone the buckets start in, e.g. Europe/Oslo
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FleetTrendsBody"
+          description: OK
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+        "400":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Bad Request
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Service Unavailable
+      summary: The mesh's nodes by firmware, hardware, role and preset per day, week or month over the whole retained log
       tags:
         - mesh
   /api/v1/trends/node/{id}:
