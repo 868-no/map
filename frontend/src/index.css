@@ -141,7 +141,7 @@ button[aria-pressed='true'], button[aria-selected='true'] { background: var(--pr
 .rail-badge { position: absolute; top: 0.1875rem; right: 0.375rem; min-width: 0.9375rem; height: 0.9375rem; padding: 0 0.25rem; border-radius: 0.5rem; background: var(--accent); color: var(--bg); font-size: 0.625rem; font-weight: 700; line-height: 0.9375rem; text-align: center; }
 /* The open panel overlays the map beside the rail (no resize). The
    coordinates and credits stay in the bottom-right corner, beneath it if need be (D-082). */
-.dock { position: absolute; top: calc(var(--head-h) + 2 * var(--gap)); right: calc(var(--rail) + 2 * var(--gap)); max-height: calc(100% - var(--head-h) - 3 * var(--gap)); width: var(--dock); z-index: 7; overflow: hidden;
+.dock { position: absolute; top: calc(var(--head-h) + 2 * var(--gap)); right: calc(var(--rail) + 2 * var(--gap)); max-height: calc(100% - 2 * var(--head-h) - 4 * var(--gap)); width: var(--dock); z-index: 7; overflow: hidden;
   border: 1px solid var(--line); border-radius: var(--island-r); background: var(--overlay-strong); backdrop-filter: blur(8px); box-shadow: var(--elev-island); display: flex; flex-direction: column; min-height: 0; }
 .dock[hidden] { display: none; }
 /* Drag handle on the panel's left edge (D-097). */
@@ -187,11 +187,6 @@ body.resizing { cursor: ew-resize; user-select: none; }
 button.banner { color: var(--text); text-align: left; border-color: var(--line); border-left-color: var(--accent); } /* a dismissable notice looks like the others */
 
 .main:not(.panel-closed) .banners { right: calc(var(--rail) + var(--dock) + 4 * var(--gap)); }
-/* The panel reaches down to one gap above the bottom edge, as it starts one
-   gap below the header: the map credits and coordinates beneath its column
-   move left of it, so the credits stay readable. */
-.main:not(.panel-closed) .attribution { right: calc(var(--rail) + var(--dock) + 3 * var(--gap)); border-radius: 0.25rem; }
-.main:not(.panel-closed) .coords { right: calc(var(--rail) + var(--dock) + 3 * var(--gap)); }
 .panel { padding: 0.625rem 0.75rem; position: relative; }
 .panel h2 { font-size: 1rem; margin: 0 0 0.25rem; padding-right: 1.5rem; }
 .panel h3 { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 0.875rem 0 0.375rem; }
@@ -473,9 +468,6 @@ table.hear th:not(:first-child), table.hear td:not(:first-child) { white-space: 
   .maplibregl-ctrl-bottom-left, .maplibregl-ctrl-bottom-right { bottom: calc(var(--rail-h) + var(--gap)); }
   .attribution { bottom: calc(var(--rail-h) + 2 * var(--gap)); right: var(--gap); border-radius: 0.25rem; }
   .coords { bottom: calc(var(--rail-h) + 2 * var(--gap) + 1.375rem); }
-  /* Phones: the panel sits on the rail, so these keep their place (above the desktop rule's move). */
-  .main:not(.panel-closed) .attribution { right: var(--gap); }
-  .main:not(.panel-closed) .coords { right: 0.625rem; }
 }
 /* Phones: a slimmer rail, icons only (labels stay as accessible names and tooltips). */
 @media (max-width: 560px) {
