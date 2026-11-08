@@ -20,7 +20,7 @@ interface Bar {
 const UNKNOWN = 'unknown'
 
 /** Inferred firmware generations: never a version, so labelled as such. */
-const GENERATION: Record<string, [string, string]> = {
+export const GENERATION: Record<string, [string, string]> = {
   key: ['2.8 or later (inferred)', 'No map report states its version, but its node id is derived from its public key, as firmware 2.8 and later do'],
   hardware: ['2.7 or earlier (inferred)', 'No map report states its version, but it announces a public key while its node id comes from its hardware, as on firmware 2.7 and earlier'],
   no_hop_start: ['before 2.3 (inferred)', 'No map report states its version, and its packets carry no hop start, which firmware has sent since 2.3'],

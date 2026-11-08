@@ -1,14 +1,60 @@
 // Long-term trends (D-104): daily, weekly and monthly summaries over the whole
-// retained log, computed by the server (views stop at a week of rows).
+// retained log, computed by the server (views stop at a week of rows), and
+// what the nodes run over the same buckets (D-198).
 import { memo, useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { getJSON } from '../api/client'
 import type { components } from '../api/schema'
 import { BarChart } from '../components/BarChart'
+import { StackedBarChart } from '../components/StackedBarChart'
 import { PERIOD_NAME, VIEWER_TZ as TZ, periodLabels, type Period as Bucket } from '../lib/periods'
 import { TYPE_LABEL } from './controls'
+import { DIMENSION_NAME, fleetStacks, type Dimension } from './fleetTrend'
 
 type Trends = components['schemas']['TrendsBody']
+type FleetTrends = components['schemas']['FleetTrendsBody']
+
+function useFleetTrends(bucket: Bucket) {
+  return useQuery({
+    queryKey: ['trends', 'fleet', bucket, TZ],
+    queryFn: ({ signal }) => getJSON<FleetTrends>('/api/v1/trends/fleet', new URLSearchParams({ bucket, tz: TZ }), signal),
+    staleTime: 15 * 60_000,
+  })
+}
+
+const DIMENSION_NOTE: Record<Dimension, string> = {
+  firmware: 'Exact (major.minor) only where a node\'s own map report states it; for the rest the generation its packets show, labelled inferred. A version is counted from the period it was first stated in, never earlier.',
+  hardware: 'Hardware model from each node\'s NodeInfo, else its own map report.',
+  role: 'Role from each node\'s NodeInfo, else its own map report.',
+  preset: 'Preset from each node\'s own map report where its default channel proves it, else the preset whose default channel name it was heard on most. Unlike a node\'s Radio tab, nodes around it are not consulted, so more are unknown.',
+}
+
+/** Nodes by firmware, hardware, role or preset per period, as shares (D-198). */
+function FleetTrend({ bucket }: { bucket: Bucket }) {
+  const [dim, setDim] = useState<Dimension>('firmware')
+  const f = useFleetTrends(bucket)
+  const { series, bars } = useMemo(() => {
+    const { series, stacks } = fleetStacks(f.data, dim)
+    const labels = periodLabels(stacks.map((s) => s.start), bucket)
+    return { series, bars: stacks.map((s, i) => ({ label: labels[i], total: s.total, counts: s.counts })) }
+  }, [f.data, dim, bucket])
+  return (
+    <section className="fleet-trend" aria-label="What the nodes run">
+      <h3>What the nodes run</h3>
+      <div className="segmented" role="group" aria-label="Breakdown">
+        {(['firmware', 'hardware', 'role', 'preset'] as const).map((d) => (
+          <button key={d} aria-pressed={dim === d} onClick={() => setDim(d)}>{DIMENSION_NAME[d]}</button>
+        ))}
+      </div>
+      <p className="muted small">
+        The share of the nodes heard each {bucket}, over everything the server keeps, each node with what it ran then. {DIMENSION_NOTE[dim]} Per region, over the selected period: each region's page in Regions.
+      </p>
+      {f.isLoading && <p className="muted">Counting…</p>}
+      {f.error && <p className="muted">This breakdown is unavailable right now.</p>}
+      <StackedBarChart title={`${DIMENSION_NAME[dim]}, share of nodes`} note={DIMENSION_NOTE[dim]} unit={['node', 'nodes']} series={series} bars={bars} />
+    </section>
+  )
+}
 
 function useTrends(bucket: Bucket) {
   return useQuery({
@@ -62,6 +108,7 @@ export const TrendsPanel = memo(function TrendsPanel() {
             <BarChart title="Packets" note="Distinct packets, each once however many gateways heard it" bars={charts.packets} />
             <BarChart title="Receptions" note="Gateway receptions of those packets" bars={charts.receptions} />
           </div>
+          <FleetTrend bucket={bucket} />
           <h3>Packets by type, whole period</h3>
           <ul className="shares">
             {shares.map(({ k, v, w }) => (

@@ -159,3 +159,52 @@ test('the last link evidence box left checked cannot be unchecked', async ({ pag
   await boxes[0].check()
   await expect(boxes[3]).toBeEnabled()
 })
+
+/** A synthetic /trends/fleet answer (the demo stack holds days, not months): n periods, 2.8 spreading. */
+function fleetAnswer(bucket: string, n: number) {
+  const start = (k: number) => new Date(Date.UTC(2026, 5, 1) + k * 7 * 86_400_000).toISOString()
+  return {
+    bucket, since: start(0),
+    firmware: { values: [{ name: '2.7', kind: 'value', basis: 'reported' }, { name: 'key', kind: 'value', basis: 'key' }, { name: 'hardware', kind: 'value', basis: 'hardware' }, { name: 'unknown', kind: 'unknown' }] },
+    hardware: { values: [{ name: 'HELTEC_V3', kind: 'value' }, { name: 'RAK4631', kind: 'value' }, { name: 'others', kind: 'others', folded: 4 }, { name: 'unknown', kind: 'unknown' }] },
+    role: { values: [{ name: 'CLIENT', kind: 'value' }, { name: 'ROUTER', kind: 'value' }] },
+    preset: { values: [{ name: 'LONG_FAST', kind: 'value' }, { name: 'NARROW_FAST', kind: 'value' }, { name: 'unknown', kind: 'unknown' }] },
+    buckets: Array.from({ length: n }, (_, k) => ({
+      start: start(k), nodes: 100,
+      firmware: [10, 10 + 5 * k, 70 - 5 * k, 10], hardware: [40, 30, 20, 10], role: [80, 20], preset: [60 - k, 20 + k, 20],
+    })),
+  }
+}
+
+test('Trends graphs what the nodes run over everything kept, by firmware, hardware, role and preset', async ({ page }) => {
+  const asked: string[] = []
+  await page.route(/\/api\/v1\/trends\/fleet/, (route) => {
+    const bucket = new URL(route.request().url()).searchParams.get('bucket') ?? 'day'
+    asked.push(bucket)
+    return route.fulfill({ headers: { 'cache-control': 'public, max-age=3600, stale-while-revalidate=86400' }, json: fleetAnswer(bucket, bucket === 'month' ? 3 : 10) })
+  })
+  await open(page)
+  await showPanel(page, 'Trends')
+  const fleet = page.getByRole('region', { name: 'What the nodes run' })
+  await expect(fleet).toContainText('over everything the server keeps', { timeout: 30_000 })
+  await expect(fleet.locator('g.schart-col')).toHaveCount(10)
+  // Firmware first: the newest period read out, inferred generations labelled as such.
+  const legend = fleet.locator('.schart-legend li')
+  await expect(legend).toHaveText(['2.7' + '10' + '10 %', '2.8 or later (inferred)' + '55' + '55 %', '2.7 or earlier (inferred)' + '25' + '25 %', 'unknown' + '10' + '10 %'])
+  await expect(legend.nth(1)).toHaveAttribute('title', /derived from its public key/)
+  // Hovering a period reads it out instead.
+  await fleet.locator('g.schart-col').first().hover()
+  await expect(legend.nth(1)).toContainText('10 %')
+  await expect(fleet.locator('.tchart-read')).toContainText('100 nodes')
+  for (const [dim, text] of [['Hardware', 'Heltec V3'], ['Role', 'Router'], ['Preset', 'Narrow Fast']] as const) {
+    await fleet.getByRole('button', { name: dim, exact: true }).click()
+    await expect(fleet.getByRole('button', { name: dim, exact: true })).toHaveAttribute('aria-pressed', 'true')
+    await expect(fleet.locator('.schart-legend')).toContainText(text)
+  }
+  await fleet.getByRole('button', { name: 'Hardware', exact: true }).click()
+  await expect(fleet.locator('.schart-legend')).toContainText('4 others')
+  // The panel's period applies: monthly buckets are asked for.
+  await page.locator('.trends-panel').getByRole('button', { name: 'Monthly' }).click()
+  await expect(fleet.locator('g.schart-col')).toHaveCount(3)
+  expect(asked).toContain('month')
+})
