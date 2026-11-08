@@ -202,7 +202,8 @@ impl Engine {
                 let (a, b) = arg.split_once('|').and_then(|(a, b)| Some((parse_node(a)?, parse_node(b)?))).ok_or_else(|| err("invalid link"))?;
                 self.build(start, end, filters)?;
                 let built = &self.built.as_ref().unwrap().1;
-                Ok(json(&views::link::link_history(&built.readings, a, b)))
+                let floors = built.floors.get_or_init(|| views::noise::NoiseFloors::new(&self.rows(), &self.i));
+                Ok(json(&views::link::link_history(&built.readings, floors, a, b)))
             }
             "watch" => {
                 // The watchlist's nodes (D-192): arg is their ids, comma-separated.

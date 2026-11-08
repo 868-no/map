@@ -7,7 +7,8 @@
 //! picks behind them. downlinks: probable MQTT downlinks (D-054). edges:
 //! links, MQTT ones kept apart (D-055). snapshot: nodes, links and counts.
 //! estimate: locations of unpositioned nodes. traffic: packets over time.
-//! detail: one node's panel.
+//! detail: one node's panel. link: one link's history. noise: the noise
+//! floors nodes measure.
 
 mod detail;
 mod downlinks;
@@ -16,6 +17,7 @@ mod estimate;
 mod filters;
 mod node;
 pub mod link;
+pub mod noise;
 mod snapshot;
 mod traffic;
 

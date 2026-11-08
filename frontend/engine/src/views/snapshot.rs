@@ -76,6 +76,8 @@ pub struct Built {
     pub presets: OnceCell<crate::channels::PresetIndex>,
     /// Routing replies by what they answer (node view, packet log), made on first use.
     pub replies: OnceCell<crate::packets::ReplyIndex>,
+    /// Noise floors nodes measure (node and link views, D-199), made on first use.
+    pub floors: OnceCell<super::noise::NoiseFloors>,
 }
 
 /// Roles that never rebroadcast: a relay byte can never mean them.
@@ -341,6 +343,7 @@ pub fn build_snapshot(rows: &[&Row], i: &Interner, g: &GeoOptions, rules: Rules)
         rejected,
         presets: OnceCell::new(),
         replies: OnceCell::new(),
+        floors: OnceCell::new(),
     }
 }
 

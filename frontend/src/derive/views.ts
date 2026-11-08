@@ -196,6 +196,8 @@ export interface LinkHistory {
   b: string
   ab: LinkPoint[] // a heard by b
   ba: LinkPoint[]
+  floor_a?: [number, number][] // the noise floor a measures, [ms, dBm], oldest first; absent without local stats (D-199)
+  floor_b?: [number, number][]
 }
 
 /** One region's part of the window (D-194). */
@@ -371,6 +373,7 @@ export interface NodeView extends Omit<MeshNode, 'identity' | 'position'> {
   estimate_note?: string // why an unpositioned node has no estimate
   telemetry_series: { at: string; battery?: number; voltage?: number; ch_util?: number; air_util?: number; uptime?: number }[]
   environment_series?: { at: string; temp?: number; humidity?: number; pressure?: number }[] // environment reports, time order (D-099)
+  noise_floor_series?: [number, number][] // the noise floor it measures, [ms, dBm], one per local stats packet, time order (D-199)
   delivery_by_recipient?: { to: string; asked: number; acked: number; errors: number; retried: number }[] // its packets that asked for an ACK (D-109)
   node_status?: { status: string; at: string }[] // status texts it broadcast, newest first, each once (D-103)
   heard_by: Hearing[]
@@ -389,6 +392,7 @@ export interface RouterQuality {
   bin_ms: number
   heard: [number, number, number][] // its transmissions as other routers heard them
   hearing: [number, number, number][] // other routers as it heard them
+  floor?: [number, number, number][] // the noise floor it measures: [bin middle ms, median dBm, readings] (D-199)
 }
 
 export interface OwnPacket {

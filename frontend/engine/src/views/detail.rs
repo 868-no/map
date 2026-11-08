@@ -85,6 +85,10 @@ pub struct NodeDetail {
     /// Environment reports in time order, one per packet (D-099).
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub environment_series: Vec<EnvironmentSample>,
+    /// The noise floor it measures, [Unix ms, dBm], one per local statistics
+    /// packet, in time order (D-199).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub noise_floor_series: Vec<(i64, i32)>,
     pub heard_by: Vec<Hearing>,
     /// A series kept only its newest MAX_SAMPLES reports.
     pub truncated: bool,
@@ -132,7 +136,7 @@ pub fn build_node_detail(rows: &[&Row], num: u32, b: &Built, i: &Interner, start
     radio.channels = crate::channels::channel_use(num, &mine, i);
     radio.preset = crate::channels::preset_guess(num, b.presets.get_or_init(|| crate::channels::PresetIndex::new(rows, &b.traceroute_contacts, i)));
     radio.uplink_topics = crate::radio::uplink_topics(&uplinked, i);
-    let mut d = NodeDetail { node: n, telemetry_series: vec![], environment_series: vec![], node_status: vec![], delivery_by_recipient: vec![], heard_by: vec![], truncated: false, radio, delivery: crate::packets::delivery(&mine, num, i), router_links: None };
+    let mut d = NodeDetail { node: n, telemetry_series: vec![], environment_series: vec![], noise_floor_series: vec![], node_status: vec![], delivery_by_recipient: vec![], heard_by: vec![], truncated: false, radio, delivery: crate::packets::delivery(&mine, num, i), router_links: None };
     if first == i64::MAX {
         // Neither sent nor uplinked anything: the snapshot's node says
         // whether others named it, and when.
@@ -174,6 +178,9 @@ pub fn build_node_detail(rows: &[&Row], num: u32, b: &Built, i: &Interner, start
             EnvironmentSample { at: iso(r.t), temp: t.temp, humidity: t.humidity, pressure: t.pressure }
         })
         .collect();
+    let floors = b.floors.get_or_init(|| super::noise::NoiseFloors::new(rows, i));
+    truncated |= floors.of(num).len() > MAX_SAMPLES;
+    d.noise_floor_series = floors.newest(num, MAX_SAMPLES);
     d.truncated = truncated;
     d.delivery_by_recipient = delivery_by_recipient(rows, &mine, &own, num, b.replies.get_or_init(|| crate::packets::ReplyIndex::new(rows)), i);
     // Status texts: newest first, each once. Opt-out nodes' texts are never stored (empty).
@@ -185,7 +192,7 @@ pub fn build_node_detail(rows: &[&Row], num: u32, b: &Built, i: &Interner, start
     // Routers: their links to other routers over time (D-197).
     if b.roles.get(&num).is_some_and(|r| crate::health::ROUTER_ROLES.contains(&r.as_str())) {
         let routers: FxSet<u32> = b.roles.iter().filter(|(_, r)| crate::health::ROUTER_ROLES.contains(&r.as_str())).map(|(&n, _)| n).collect();
-        d.router_links = super::link::router_quality(&b.readings, num, &routers, start, end);
+        d.router_links = super::link::router_quality(&b.readings, num, &routers, floors.of(num), start, end);
     }
 
     Some(d)
@@ -317,5 +324,26 @@ mod tests {
         let refs: Vec<&Row> = rows.iter().collect();
         let d = build_node_detail(&refs, 5, &build(&refs, &i), &i, 0, 1).unwrap();
         assert_eq!(d.delivery_by_recipient, vec![PairDelivery { to: node_id(9), asked: 4, acked: 3, errors: 1, retried: 1 }], "the traceroute counts as confirmed by its reply; the packet that asked for no ACK is left out");
+    }
+
+    #[test]
+    fn the_noise_floor_series_is_one_reading_per_local_stats_packet() {
+        let mut i = Interner::default();
+        let text = r#"[
+          {"i":1,"t":1000,"b":"x","g":7,"s":5,"y":"telemetry","l":"01","o":"01","sg":"unsigned","te":{"kind":"local","noise_floor":-108}},
+          {"i":2,"t":1200,"b":"x","g":8,"s":5,"y":"telemetry","l":"01","o":"02","sg":"unsigned","te":{"kind":"local","noise_floor":-108}},
+          {"i":3,"t":2000,"b":"x","g":7,"s":5,"y":"telemetry","l":"03","o":"03","sg":"unsigned","te":{"kind":"device","battery":90}},
+          {"i":4,"t":3000,"b":"x","g":7,"s":5,"y":"telemetry","l":"04","o":"04","sg":"unsigned","te":{"kind":"local","noise_floor":-97}},
+          {"i":5,"t":4000,"b":"x","g":7,"s":6,"y":"telemetry","l":"05","o":"05","sg":"unsigned","te":{"kind":"local","noise_floor":-90}}
+        ]"#;
+        let rows: Vec<Row> = serde_json::from_str::<Vec<JRow>>(text).unwrap().into_iter().map(|r| r.into_row(&mut i)).collect();
+        let refs: Vec<&Row> = rows.iter().collect();
+        let b = build(&refs, &i);
+        let d = build_node_detail(&refs, 5, &b, &i, 0, 5000).unwrap();
+        assert_eq!(d.noise_floor_series, vec![(1000, -108), (3000, -97)]);
+        assert_eq!(d.telemetry_series.len(), 1, "device telemetry apart");
+        let d = build_node_detail(&refs, 7, &b, &i, 0, 5000).unwrap();
+        assert!(d.noise_floor_series.is_empty());
+        assert!(!serde_json::to_string(&d).unwrap().contains("noise_floor_series"), "left out without readings");
     }
 }
