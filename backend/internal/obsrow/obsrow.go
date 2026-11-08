@@ -88,6 +88,8 @@ type ObsRouting struct {
 // radio. Firmware copies the stored modem preset even when the node uses a
 // custom modem configuration (use_preset off); only HasDefaultChannel, which
 // firmware sets only with use_preset on, confirms the preset is in use.
+// FirmwareVersion is the reported version cut to major.minor.patch (the
+// build hash dropped), for the Regions panel's firmware breakdown (D-196).
 type ObsMapReport struct {
 	Region            string `json:"region,omitempty"`
 	ModemPreset       string `json:"modem_preset,omitempty"`
@@ -96,6 +98,7 @@ type ObsMapReport struct {
 	ShortName         string `json:"short_name,omitempty"`
 	HwModel           string `json:"hw_model,omitempty"`
 	Role              string `json:"role,omitempty"`
+	FirmwareVersion   string `json:"firmware_version,omitempty" doc:"The reported firmware version as major.minor.patch, e.g. 2.7.15 (the build hash dropped); absent when the report's version does not start with one"`
 }
 
 type ObsNodeInfo struct {
@@ -196,8 +199,8 @@ type storedMeta struct {
 // over, and stored encodings of an older version are rebuilt (D-046)
 // (2: tp, mr; 3: map report identity and has_default_channel; 4: rt; 5: iv;
 // 6: environment telemetry; 7: ns, sf, traceroute request_id; 8: wa;
-// 9: ni.key_id).
-const Version = 9
+// 9: ni.key_id; 10: mr.firmware_version).
+const Version = 10
 
 // Fields are the packet_log columns an ObsRow carries.
 type Fields struct {
@@ -238,8 +241,11 @@ func New(f Fields, meta []byte) ObsRow {
 		r.Position = m.Position
 	case "mapreport":
 		r.Position = m.Position
-		if mr := m.MapReport; mr != nil && *mr != (ObsMapReport{}) {
-			r.MapReport = mr
+		if mr := m.MapReport; mr != nil {
+			mr.FirmwareVersion = shortVersion(mr.FirmwareVersion)
+			if *mr != (ObsMapReport{}) {
+				r.MapReport = mr
+			}
 		}
 	case "telemetry":
 		if t := m.Telemetry; t != nil {
@@ -317,6 +323,31 @@ func badMeta(id int64, err error) {
 	if n := badMetas.Add(1); bits.OnesCount64(uint64(n)) == 1 {
 		slog.Default().Warn("stored metadata did not decode; row sent without it", "row", id, "count", n, "err", err)
 	}
+}
+
+// shortVersion is a firmware version's leading major.minor.patch
+// ("2.7.15.567b8ea" gives "2.7.15"), or "" when it does not start with three
+// dot-separated numbers of one to four digits: the build hash names the same
+// release on every node, and anything else is no version the browser can
+// group.
+func shortVersion(v string) string {
+	end := 0
+	for part := range 3 {
+		if part > 0 {
+			if end >= len(v) || v[end] != '.' {
+				return ""
+			}
+			end++
+		}
+		start := end
+		for end < len(v) && v[end] >= '0' && v[end] <= '9' {
+			end++
+		}
+		if n := end - start; n == 0 || n > 4 {
+			return ""
+		}
+	}
+	return v[:end]
 }
 
 // keyID is the node id derived from a base64 X25519 key, or nil without a

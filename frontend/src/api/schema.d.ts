@@ -510,6 +510,8 @@ export interface components {
             unknown?: boolean;
         };
         ObsMapReport: {
+            /** @description The reported firmware version as major.minor.patch, e.g. 2.7.15 (the build hash dropped); absent when the report's version does not start with one */
+            firmware_version?: string;
             /** @description the node uses a modem preset, the default frequency slot and a channel with the default name and key */
             has_default_channel?: boolean;
             hw_model?: string;

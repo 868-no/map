@@ -199,6 +199,8 @@ pub struct MapReport {
     pub short_name: u32,
     pub hw_model: u32,
     pub role: u32,
+    /// Its firmware version, major.minor.patch (0 = not reported; row format 10, D-196).
+    pub firmware: u32,
 }
 
 /// A routing packet's outcome (interned kind and error name): an ACK or an
@@ -300,7 +302,7 @@ impl Row {
             Some(Detail::NodeStatus(v) | Detail::Invalid(v)) => f(v),
             Some(Detail::StoreForward(s)) => f(&mut s.kind),
             Some(Detail::MapReport(m)) => {
-                for x in [&mut m.region, &mut m.preset, &mut m.long_name, &mut m.short_name, &mut m.hw_model, &mut m.role] {
+                for x in [&mut m.region, &mut m.preset, &mut m.long_name, &mut m.short_name, &mut m.hw_model, &mut m.role, &mut m.firmware] {
                     f(x);
                 }
             }
@@ -489,6 +491,8 @@ struct JMr<'a> {
     hw_model: Cow<'a, str>,
     #[serde(borrow, default, skip_serializing_if = "is_empty")]
     role: Cow<'a, str>,
+    #[serde(borrow, default, skip_serializing_if = "is_empty")]
+    firmware_version: Cow<'a, str>,
 }
 
 #[derive(Deserialize, Serialize)]
@@ -639,6 +643,7 @@ impl JRow<'_> {
                 short_name: i.id(&m.short_name),
                 hw_model: i.id(&m.hw_model),
                 role: i.id(&m.role),
+                firmware: i.id(&m.firmware_version),
             }))
         } else if let Some(n) = self.ni {
             Some(Detail::NodeInfo(NodeInfo {
@@ -788,6 +793,7 @@ pub fn to_json<'a>(r: &Row, i: &'a Interner) -> JRow<'a> {
                 short_name: s(m.short_name),
                 hw_model: s(m.hw_model),
                 role: s(m.role),
+                firmware_version: s(m.firmware),
             })
         }
         Some(Detail::NodeInfo(n)) => {
@@ -850,5 +856,16 @@ mod tests {
         let back = serde_json::to_string(&to_json(&r, &i)).unwrap();
         let again: JRow = serde_json::from_str(&back).unwrap();
         assert_eq!(again.into_row(&mut i), r);
+    }
+
+    #[test]
+    fn a_map_reports_firmware_version_round_trips() {
+        let text = r#"{"i":8,"t":1793414269260,"b":"no868","g":7,"s":7,"y":"mapreport","l":"6d09cc29ab957b73","o":"3fc571de3bbcedf9","sg":"not-applicable","mr":{"modem_preset":"LONG_FAST","hw_model":"RAK4631","role":"ROUTER","firmware_version":"2.7.15"}}"#;
+        let mut i = Interner::default();
+        let r = serde_json::from_str::<JRow>(text).unwrap().into_row(&mut i);
+        assert_eq!(i.s(r.map_report().unwrap().firmware), "2.7.15");
+        let back = serde_json::to_string(&to_json(&r, &i)).unwrap();
+        assert!(back.contains(r#""firmware_version":"2.7.15""#), "a saved copy keeps it: {back}");
+        assert_eq!(serde_json::from_str::<JRow>(&back).unwrap().into_row(&mut i), r);
     }
 }

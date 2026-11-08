@@ -25,16 +25,43 @@ func TestTailRoundTrip(t *testing.T) {
 // A map report's identity and has_default_channel reach the row (version 3):
 // the browser names nodes heard only through their own map reports, and
 // trusts the reported preset only when a default channel proves it is used.
+// Its firmware version comes too, without the build hash (version 10, D-196).
 func TestMapReportRowCarriesIdentity(t *testing.T) {
 	r := New(Fields{ID: 1, At: time.UnixMilli(1_800_000_000_000), Source: 7, Type: "mapreport", Sig: "not-applicable"},
-		[]byte(`{"mapreport":{"role":"CLIENT_BASE","region":"EU_868","hw_model":"SEEED_XIAO_S3","long_name":"NT Motorklubb","short_name":"NTMK","modem_preset":"LONG_FAST","firmware_version":"2.7.19","online_local_nodes":1}}`))
-	want := ObsMapReport{Region: "EU_868", ModemPreset: "LONG_FAST", LongName: "NT Motorklubb", ShortName: "NTMK", HwModel: "SEEED_XIAO_S3", Role: "CLIENT_BASE"}
+		[]byte(`{"mapreport":{"role":"CLIENT_BASE","region":"EU_868","hw_model":"SEEED_XIAO_S3","long_name":"NT Motorklubb","short_name":"NTMK","modem_preset":"LONG_FAST","firmware_version":"2.7.19.bb3d6d5","online_local_nodes":1}}`))
+	want := ObsMapReport{Region: "EU_868", ModemPreset: "LONG_FAST", LongName: "NT Motorklubb", ShortName: "NTMK", HwModel: "SEEED_XIAO_S3", Role: "CLIENT_BASE", FirmwareVersion: "2.7.19"}
 	if r.MapReport == nil || *r.MapReport != want {
 		t.Fatalf("map report %+v, want %+v", r.MapReport, want)
 	}
 	b, _ := json.Marshal(r)
-	if bytes.Contains(b, []byte("firmware_version")) || bytes.Contains(b, []byte("online_local_nodes")) {
+	if bytes.Contains(b, []byte("bb3d6d5")) || bytes.Contains(b, []byte("online_local_nodes")) {
 		t.Fatalf("row carries fields the browser does not use: %s", b)
+	}
+	// A report with nothing but a version that is none is no report.
+	if r := New(Fields{ID: 2, Source: 7, Type: "mapreport", Sig: "not-applicable"}, []byte(`{"mapreport":{"firmware_version":"custom build"}}`)); r.MapReport != nil {
+		t.Fatalf("map report %+v, want none", r.MapReport)
+	}
+}
+
+// Firmware versions are cut to major.minor.patch; what does not start with
+// one is dropped rather than grouped wrongly.
+func TestShortVersion(t *testing.T) {
+	for in, want := range map[string]string{
+		"2.7.15.567b8ea": "2.7.15",
+		"2.6.11":         "2.6.11",
+		"2.8.0-alpha":    "2.8.0",
+		"10.20.3000.x":   "10.20.3000",
+		"":               "",
+		"2.7":            "",
+		"2.7.":           "",
+		"v2.7.15":        "",
+		"2.7.12345":      "",
+		"2..1":           "",
+		"custom":         "",
+	} {
+		if got := shortVersion(in); got != want {
+			t.Errorf("shortVersion(%q) = %q, want %q", in, got, want)
+		}
 	}
 }
 
