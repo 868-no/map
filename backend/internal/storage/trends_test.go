@@ -74,3 +74,56 @@ func TestBucketsForARegionCountOnlyItsRows(t *testing.T) {
 		t.Fatalf("a region with no rows: %+v", o)
 	}
 }
+
+// D-195: per-node figures are kept only when they align with Nodes, and
+// clamped to their compact types.
+func TestSetNodeFigures(t *testing.T) {
+	s := HourSummary{Nodes: []int64{1, 2}}
+	s.setNodeFigures([]int32{3, 70000}, []int32{9, 70000}, []int32{-1, 101})
+	if s.NodePackets[1] != MaxNodeHourCount || s.NodeReceptions[0] != 9 || s.NodeBattery[0] != NoBattery || s.NodeBattery[1] != BatteryPowered {
+		t.Fatalf("figures: %+v", s)
+	}
+	m := HourSummary{Nodes: []int64{1, 2}}
+	m.setNodeFigures([]int32{3}, []int32{9}, []int32{-1})
+	if m.NodePackets != nil {
+		t.Fatalf("misaligned figures kept: %+v", m)
+	}
+}
+
+// D-195: one node's hours, bucketed: from its first bucket to the newest
+// hour, silent buckets zero, gateway hours counted whether or not it sent,
+// and the lowest battery level, external power only when nothing lower.
+func TestNodeBuckets(t *testing.T) {
+	h0 := time.Date(2026, 11, 2, 10, 0, 0, 0, time.UTC)
+	th := TrendHours{hours: map[time.Time]*HourSummary{
+		h0.Add(-24 * time.Hour): {Nodes: []int64{2}, Gateways: []int64{9}, NodePackets: []uint16{1}, NodeReceptions: []uint16{1}, NodeBattery: []int8{NoBattery}},
+		h0:                      {Nodes: []int64{1, 2}, Gateways: []int64{1, 9}, NodePackets: []uint16{4, 1}, NodeReceptions: []uint16{10, 1}, NodeBattery: []int8{BatteryPowered, NoBattery}},
+		h0.Add(time.Hour):       {Nodes: []int64{1}, Gateways: []int64{9}, NodePackets: []uint16{2}, NodeReceptions: []uint16{2}, NodeBattery: []int8{80}},
+		h0.Add(2 * time.Hour):   {Nodes: []int64{2}, Gateways: []int64{1}, NodePackets: []uint16{1}, NodeReceptions: []uint16{1}, NodeBattery: []int8{NoBattery}},
+		h0.Add(24 * time.Hour):  {Nodes: []int64{2}, Gateways: []int64{9}, NodePackets: []uint16{1}, NodeReceptions: []uint16{1}, NodeBattery: []int8{NoBattery}},
+		h0.Add(48 * time.Hour):  {Nodes: []int64{1}, Gateways: []int64{9}, NodePackets: []uint16{1}, NodeReceptions: []uint16{3}, NodeBattery: []int8{BatteryPowered}},
+	}}
+	b, ok := th.NodeBuckets(1, "day", time.UTC)
+	if !ok || len(b) != 3 {
+		t.Fatalf("%v %+v", ok, b)
+	}
+	if d := b[0]; !d.Start.Equal(time.Date(2026, 11, 2, 0, 0, 0, 0, time.UTC)) || d.Hours != 3 || d.HoursHeard != 2 || d.HoursGateway != 2 || d.Packets != 6 || d.Receptions != 12 || d.Battery != 80 {
+		t.Fatalf("day 1: %+v", d)
+	}
+	if d := b[1]; d.Hours != 1 || d.HoursHeard != 0 || d.Packets != 0 || d.Battery != NoBattery {
+		t.Fatalf("silent day: %+v", d)
+	}
+	if d := b[2]; d.HoursHeard != 1 || d.Battery != BatteryPowered {
+		t.Fatalf("day 3: %+v", d)
+	}
+	if m, _ := th.NodeBuckets(2, "month", time.UTC); len(m) != 1 || m[0].Hours != 6 || m[0].HoursHeard != 4 || m[0].Packets != 4 || m[0].HoursGateway != 0 {
+		t.Fatalf("month of node 2: %+v", m)
+	}
+	if _, ok := th.NodeBuckets(3, "day", time.UTC); ok {
+		t.Fatal("a node never heard has buckets")
+	}
+	// Heard only as a gateway: still a node with a history.
+	if g, ok := th.NodeBuckets(9, "day", time.UTC); !ok || len(g) != 4 || g[0].HoursGateway != 1 || g[0].HoursHeard != 0 {
+		t.Fatalf("gateway only: %v %+v", ok, g)
+	}
+}

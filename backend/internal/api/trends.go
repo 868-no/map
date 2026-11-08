@@ -9,6 +9,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 
+	"github.com/868-no/map/internal/protocol"
 	"github.com/868-no/map/internal/storage"
 )
 
@@ -58,40 +59,50 @@ const trendsCC = "public, max-age=900, stale-while-revalidate=3600"
 // a shared cache asking again gets a recent sum.
 const TrendsTTL = 5 * time.Minute
 
-// trendsCache keeps computed trends per bucket and time zone for TrendsTTL.
-type trendsCache struct {
+// trendsCache keeps computed trends per key (bucket, time zone, region or
+// node) for TrendsTTL. Mesh-wide and per-node trends keep one each, so
+// viewers browsing nodes never push the few mesh-wide answers out.
+type trendsCache[B interface{ computedAt() time.Time }] struct {
 	mu    sync.Mutex
-	byKey map[string]TrendsBody
+	max   int // entries kept at most; 0: trendsMemoMax
+	byKey map[string]B
 }
 
-func (c *trendsCache) get(key string, now time.Time) (TrendsBody, bool) {
+func (b TrendsBody) computedAt() time.Time     { return b.Computed }
+func (b NodeTrendsBody) computedAt() time.Time { return b.Computed }
+
+func (c *trendsCache[B]) get(key string, now time.Time) (B, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	b, ok := c.byKey[key]
-	return b, ok && now.Sub(b.Computed) < TrendsTTL
+	return b, ok && now.Sub(b.computedAt()) < TrendsTTL
 }
 
-// trendsMemoMax bounds the memo: any IANA zone can be asked for.
+// trendsMemoMax bounds the mesh-wide memo: any IANA zone can be asked for.
 const trendsMemoMax = 64
 
 // put keeps b (computed now), first dropping expired entries; when the memo
 // is still full it drops the oldest.
-func (c *trendsCache) put(key string, b TrendsBody) {
+func (c *trendsCache[B]) put(key string, b B) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.byKey == nil {
-		c.byKey = map[string]TrendsBody{}
+		c.byKey = map[string]B{}
 	}
-	if _, ok := c.byKey[key]; !ok && len(c.byKey) >= trendsMemoMax {
+	limit := c.max
+	if limit == 0 {
+		limit = trendsMemoMax
+	}
+	if _, ok := c.byKey[key]; !ok && len(c.byKey) >= limit {
 		oldest := ""
 		for k, v := range c.byKey {
-			if b.Computed.Sub(v.Computed) >= TrendsTTL {
+			if b.computedAt().Sub(v.computedAt()) >= TrendsTTL {
 				delete(c.byKey, k)
-			} else if oldest == "" || v.Computed.Before(c.byKey[oldest].Computed) {
+			} else if oldest == "" || v.computedAt().Before(c.byKey[oldest].computedAt()) {
 				oldest = k
 			}
 		}
-		if len(c.byKey) >= trendsMemoMax {
+		if len(c.byKey) >= limit {
 			delete(c.byKey, oldest)
 		}
 	}
@@ -211,4 +222,87 @@ func (s *Server) refreshTrends(ctx context.Context) (fresh bool, err error) {
 		}
 		return false, ctx.Err()
 	}
+}
+
+// ---- one node's long-term history (D-195) ----
+//
+// The window shows a node over at most 14 days; whether it has got worse
+// since it was moved takes months. Its figures come from the same hourly
+// summaries as the mesh-wide trends, so this never reads the log.
+
+type NodeTrendsInput struct {
+	ID     string `path:"id" doc:"Node id, !xxxxxxxx or decimal" example:"!98644b01"`
+	Bucket string `query:"bucket" enum:"day,week,month" default:"day" doc:"Bucket length"`
+	TZ     string `query:"tz" default:"UTC" doc:"IANA time zone the buckets start in, e.g. Europe/Oslo"`
+}
+
+type NodeTrendBucket struct {
+	Start            time.Time `json:"start" doc:"Bucket start in the requested time zone"`
+	Hours            int       `json:"hours" doc:"Hours of the bucket in which anything at all was logged (hours the collector heard nothing are not held against the node)"`
+	HoursHeard       int       `json:"hours_heard" doc:"Of those, hours in which the node sent anything"`
+	HoursGateway     int       `json:"hours_gateway" doc:"Of those, hours in which it uplinked anything as a gateway"`
+	Packets          int       `json:"packets" doc:"Its distinct packets"`
+	Receptions       int       `json:"receptions" doc:"Receptions of them by other gateways (its own uplinks of them left out)"`
+	ReceptionsPerPkt *float64  `json:"receptions_per_packet,omitempty" doc:"Receptions divided by packets: how many other gateways heard each of its packets on average (the reach of its signal); absent without packets"`
+	BatteryMin       *int      `json:"battery_min,omitempty" doc:"Lowest battery level (%) its device telemetry reported; 101 means it reported only external power; absent when it reported none"`
+}
+
+type NodeTrendsBody struct {
+	Node     string            `json:"node" example:"!98644b01"`
+	Bucket   string            `json:"bucket"`
+	Since    *time.Time        `json:"since,omitempty" doc:"Oldest retained observation: nothing older is known"`
+	Buckets  []NodeTrendBucket `json:"buckets" doc:"From the bucket it was first heard in (as a sender or gateway) to the newest, those it was silent in included"`
+	Computed time.Time         `json:"-"` // for the response cache's expiry
+}
+
+type NodeTrendsOutput struct {
+	CacheControl string `header:"Cache-Control"`
+	Body         NodeTrendsBody
+}
+
+// nodeTrendsMemoMax bounds the per-node memo: a few hundred nodes, each in
+// three bucket lengths, mostly in one zone.
+const nodeTrendsMemoMax = 512
+
+func (s *Server) nodeTrends(ctx context.Context, in *NodeTrendsInput) (*NodeTrendsOutput, error) {
+	n, ok := protocol.ParseNodeID(in.ID)
+	if !ok || !protocol.ValidNode(n) {
+		return nil, huma.Error400BadRequest("invalid node id")
+	}
+	loc, ok := zone(in.TZ)
+	if !ok {
+		return nil, huma.Error400BadRequest("unknown time zone")
+	}
+	node := protocol.NodeID(n)
+	key := node + "|" + in.Bucket + "|" + in.TZ
+	if b, ok := s.nodeTrendsMemo.get(key, s.now()); ok {
+		return &NodeTrendsOutput{CacheControl: trendsCC, Body: b}, nil
+	}
+	fresh, err := s.refreshTrends(ctx)
+	if err != nil {
+		return nil, err
+	}
+	buckets, heard := s.trendHours.NodeBuckets(int64(n), in.Bucket, loc)
+	if !heard {
+		return nil, huma.Error404NotFound("node not heard in the retained log")
+	}
+	body := NodeTrendsBody{Node: node, Bucket: in.Bucket, Buckets: make([]NodeTrendBucket, 0, len(buckets)), Computed: s.now(), Since: s.trendHours.Oldest()}
+	for _, b := range buckets {
+		o := NodeTrendBucket{Start: b.Start, Hours: b.Hours, HoursHeard: b.HoursHeard, HoursGateway: b.HoursGateway, Packets: b.Packets, Receptions: b.Receptions}
+		if b.Packets > 0 {
+			r := float64(b.Receptions) / float64(b.Packets)
+			o.ReceptionsPerPkt = &r
+		}
+		if b.Battery != storage.NoBattery {
+			v := b.Battery
+			o.BatteryMin = &v
+		}
+		body.Buckets = append(body.Buckets, o)
+	}
+	if !fresh {
+		// As for /trends: the previous refresh's sums, neither kept nor shared.
+		return &NodeTrendsOutput{CacheControl: "no-store", Body: body}, nil
+	}
+	s.nodeTrendsMemo.put(key, body)
+	return &NodeTrendsOutput{CacheControl: trendsCC, Body: body}, nil
 }

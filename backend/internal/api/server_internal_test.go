@@ -52,7 +52,7 @@ func errDetails(m *huma.ErrorModel) (s string) {
 // The trends memo keeps at most trendsMemoMax entries, dropping expired
 // ones first and then the oldest.
 func TestTrendsMemoIsBounded(t *testing.T) {
-	var c trendsCache
+	var c trendsCache[TrendsBody]
 	t0 := time.Date(2026, 11, 6, 12, 0, 0, 0, time.UTC)
 	c.put("stale", TrendsBody{Computed: t0.Add(-TrendsTTL)})
 	for i := 1; i < trendsMemoMax; i++ {

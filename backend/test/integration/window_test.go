@@ -675,6 +675,92 @@ func TestTrends(t *testing.T) {
 	}
 }
 
+// D-195: one node's history from the hourly summaries: its packets and
+// their receptions by other gateways (and per packet), hours heard and as a gateway,
+// its lowest battery (external power only when nothing lower), silent days
+// counted, invalid rows never; 404 for a node never heard.
+func TestNodeTrends(t *testing.T) {
+	pool := freshDB(t)
+	f := newFixture(t, pool)
+	gw2 := uint32(0x0e00000e)
+	h := func(n time.Duration) time.Time { return base.Add(n * time.Hour) }
+	// Day 1, 10:00: a position heard by two gateways, and a telemetry report.
+	f.position(h(10), nodeA, gw1, 63.0)
+	f.pid-- // the same packet again, by another gateway
+	f.position(h(10).Add(time.Second), nodeA, gw2, 63.0)
+	f.telemetry(h(10).Add(30*time.Minute), nodeA, gw1, 80)
+	// 11:00: a lower battery; 12:00: A uplinks B's packet as a gateway, and one
+	// of its own that no other gateway heard (not a reception of it by others).
+	f.telemetry(h(11), nodeA, gw1, 60)
+	f.position(h(12), nodeB, nodeA, 63.1)
+	f.position(h(12).Add(time.Minute), nodeA, nodeA, 63.0)
+	// 13:00: only an invalid row from A (plaintext from a broker not trusted for it).
+	gw := protocol.NodeID(gw1)
+	env, _ := proto.Marshal(&pb.ServiceEnvelope{ChannelId: "LongFast", GatewayId: gw, Packet: &pb.MeshPacket{From: nodeA, To: protocol.Broadcast, Id: 9001,
+		PayloadVariant: &pb.MeshPacket_Decoded{Decoded: &pb.Data{Portnum: pb.PortNum_TEXT_MESSAGE_APP, Payload: []byte("hi")}}}})
+	if err := f.insert(ingest.RawMessage{BrokerID: "it", Topic: "msh/EU_868/2/e/LongFast/" + gw, Payload: env, ObservedAt: h(13)}); err != nil {
+		t.Fatal(err)
+	}
+	if n := count(t, pool, `SELECT count(*) FROM packet_log WHERE packet_type = 'invalid' AND source_node_id = $1`, int64(nodeA)); n != 1 {
+		t.Fatalf("%d invalid rows, want 1", n)
+	}
+	// Day 2: external power only. Day 3: A silent, B heard.
+	f.telemetry(h(34), nodeA, gw1, 101)
+	f.position(h(58), nodeB, gw1, 63.1)
+
+	c := newAPI(t, pool, nil, testNow)
+	type bucket struct {
+		Start                      time.Time
+		Hours, Packets, Receptions int
+		HoursHeard                 int      `json:"hours_heard"`
+		HoursGateway               int      `json:"hours_gateway"`
+		RxPerPacket                *float64 `json:"receptions_per_packet"`
+		BatteryMin                 *int     `json:"battery_min"`
+	}
+	var got struct {
+		Node    string
+		Buckets []bucket
+	}
+	path := "/api/v1/trends/node/" + url.PathEscape(protocol.NodeID(nodeA))
+	if code := c.get(path, url.Values{"bucket": {"day"}, "tz": {"UTC"}}, &got); code != 200 || got.Node != protocol.NodeID(nodeA) || len(got.Buckets) != 3 {
+		t.Fatalf("HTTP %d: %+v", code, got)
+	}
+	d1, d2, d3 := got.Buckets[0], got.Buckets[1], got.Buckets[2]
+	if !d1.Start.Equal(base) || d1.Hours != 3 || d1.HoursHeard != 3 || d1.HoursGateway != 1 || d1.Packets != 4 || d1.Receptions != 4 ||
+		d1.RxPerPacket == nil || *d1.RxPerPacket != 1 || d1.BatteryMin == nil || *d1.BatteryMin != 60 {
+		t.Fatalf("day 1: %+v", d1)
+	}
+	if d2.Hours != 1 || d2.HoursHeard != 1 || d2.Packets != 1 || d2.BatteryMin == nil || *d2.BatteryMin != 101 {
+		t.Fatalf("day 2: %+v", d2)
+	}
+	if d3.Hours != 1 || d3.HoursHeard != 0 || d3.Packets != 0 || d3.RxPerPacket != nil || d3.BatteryMin != nil {
+		t.Fatalf("day 3 (silent): %+v", d3)
+	}
+	// Decimal ids work as elsewhere; a node never heard is 404.
+	if code := c.get(fmt.Sprintf("/api/v1/trends/node/%d", nodeA), url.Values{"bucket": {"week"}}, &got); code != 200 || len(got.Buckets) != 1 || got.Buckets[0].Packets != 5 || got.Buckets[0].HoursGateway != 1 {
+		t.Fatalf("week: HTTP %d %+v", code, got.Buckets)
+	}
+	if code := c.get("/api/v1/trends/node/!0d00000d", nil, nil); code != 404 {
+		t.Fatalf("never heard: HTTP %d", code)
+	}
+	for _, bad := range []struct {
+		id string
+		q  url.Values
+	}{{"zz", nil}, {"!ffffffff", nil}, {protocol.NodeID(nodeA), url.Values{"tz": {"Mars/Olympus"}}}, {protocol.NodeID(nodeA), url.Values{"bucket": {"year"}}}} {
+		if code := c.get("/api/v1/trends/node/"+url.PathEscape(bad.id), bad.q, nil); code != 400 && code != 422 {
+			t.Fatalf("%s %v: HTTP %d", bad.id, bad.q, code)
+		}
+	}
+	resp, err := http.Get(c.srv.URL + path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if cc := resp.Header.Get("Cache-Control"); cc != "public, max-age=900, stale-while-revalidate=3600" {
+		t.Fatalf("Cache-Control %q", cc)
+	}
+}
+
 // D-107: rows decoded by an older decoder are decoded again from their
 // envelopes; rows the decoder would now reject are kept, only marked.
 func TestRedecodeOldRows(t *testing.T) {

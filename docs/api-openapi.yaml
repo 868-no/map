@@ -377,6 +377,81 @@ components:
       required:
         - node
       type: object
+    NodeTrendBucket:
+      additionalProperties: false
+      properties:
+        battery_min:
+          description: Lowest battery level (%) its device telemetry reported; 101 means it reported only external power; absent when it reported none
+          format: int64
+          type: integer
+        hours:
+          description: Hours of the bucket in which anything at all was logged (hours the collector heard nothing are not held against the node)
+          format: int64
+          type: integer
+        hours_gateway:
+          description: Of those, hours in which it uplinked anything as a gateway
+          format: int64
+          type: integer
+        hours_heard:
+          description: Of those, hours in which the node sent anything
+          format: int64
+          type: integer
+        packets:
+          description: Its distinct packets
+          format: int64
+          type: integer
+        receptions:
+          description: Receptions of them by other gateways (its own uplinks of them left out)
+          format: int64
+          type: integer
+        receptions_per_packet:
+          description: "Receptions divided by packets: how many other gateways heard each of its packets on average (the reach of its signal); absent without packets"
+          format: double
+          type: number
+        start:
+          description: Bucket start in the requested time zone
+          format: date-time
+          type: string
+      required:
+        - start
+        - hours
+        - hours_heard
+        - hours_gateway
+        - packets
+        - receptions
+      type: object
+    NodeTrendsBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/api/schemas/NodeTrendsBody.json
+          format: uri
+          readOnly: true
+          type: string
+        bucket:
+          type: string
+        buckets:
+          description: From the bucket it was first heard in (as a sender or gateway) to the newest, those it was silent in included
+          items:
+            $ref: "#/components/schemas/NodeTrendBucket"
+          type:
+            - array
+            - "null"
+        node:
+          examples:
+            - "!98644b01"
+          type: string
+        since:
+          description: "Oldest retained observation: nothing older is known"
+          format: date-time
+          type: string
+      required:
+        - node
+        - bucket
+        - buckets
+      type: object
     ObsHop:
       additionalProperties: false
       properties:
@@ -1852,6 +1927,83 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Service Unavailable
       summary: Daily, weekly or monthly summaries over the whole retained log
+      tags:
+        - mesh
+  /api/v1/trends/node/{id}:
+    get:
+      operationId: node-trends
+      parameters:
+        - description: Node id, !xxxxxxxx or decimal
+          in: path
+          name: id
+          required: true
+          schema:
+            description: Node id, !xxxxxxxx or decimal
+            examples:
+              - "!98644b01"
+            type: string
+        - description: Bucket length
+          explode: false
+          in: query
+          name: bucket
+          schema:
+            default: day
+            description: Bucket length
+            enum:
+              - day
+              - week
+              - month
+            type: string
+        - description: IANA time zone the buckets start in, e.g. Europe/Oslo
+          explode: false
+          in: query
+          name: tz
+          schema:
+            default: UTC
+            description: IANA time zone the buckets start in, e.g. Europe/Oslo
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NodeTrendsBody"
+          description: OK
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+        "400":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Bad Request
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Not Found
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Service Unavailable
+      summary: One node's daily, weekly or monthly history over the whole retained log
       tags:
         - mesh
   /api/v1/weather:

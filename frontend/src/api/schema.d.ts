@@ -180,6 +180,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/trends/node/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One node's daily, weekly or monthly history over the whole retained log */
+        get: operations["node-trends"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/weather": {
         parameters: {
             query?: never;
@@ -426,6 +443,66 @@ export interface components {
             trusted_key?: string;
             /** Format: date-time */
             trusted_since?: string;
+        };
+        NodeTrendBucket: {
+            /**
+             * Format: int64
+             * @description Lowest battery level (%) its device telemetry reported; 101 means it reported only external power; absent when it reported none
+             */
+            battery_min?: number;
+            /**
+             * Format: int64
+             * @description Hours of the bucket in which anything at all was logged (hours the collector heard nothing are not held against the node)
+             */
+            hours: number;
+            /**
+             * Format: int64
+             * @description Of those, hours in which it uplinked anything as a gateway
+             */
+            hours_gateway: number;
+            /**
+             * Format: int64
+             * @description Of those, hours in which the node sent anything
+             */
+            hours_heard: number;
+            /**
+             * Format: int64
+             * @description Its distinct packets
+             */
+            packets: number;
+            /**
+             * Format: int64
+             * @description Receptions of them by other gateways (its own uplinks of them left out)
+             */
+            receptions: number;
+            /**
+             * Format: double
+             * @description Receptions divided by packets: how many other gateways heard each of its packets on average (the reach of its signal); absent without packets
+             */
+            receptions_per_packet?: number;
+            /**
+             * Format: date-time
+             * @description Bucket start in the requested time zone
+             */
+            start: string;
+        };
+        NodeTrendsBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/api/schemas/NodeTrendsBody.json
+             */
+            readonly $schema?: string;
+            bucket: string;
+            /** @description From the bucket it was first heard in (as a sender or gateway) to the newest, those it was silent in included */
+            buckets: components["schemas"]["NodeTrendBucket"][] | null;
+            /** @example !98644b01 */
+            node: string;
+            /**
+             * Format: date-time
+             * @description Oldest retained observation: nothing older is known
+             */
+            since?: string;
         };
         ObsHop: {
             /** Format: int32 */
@@ -1465,6 +1542,80 @@ export interface operations {
             };
             /** @description Bad Request */
             400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "node-trends": {
+        parameters: {
+            query?: {
+                /** @description Bucket length */
+                bucket?: "day" | "week" | "month";
+                /** @description IANA time zone the buckets start in, e.g. Europe/Oslo */
+                tz?: string;
+            };
+            header?: never;
+            path: {
+                /** @description Node id, !xxxxxxxx or decimal */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NodeTrendsBody"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Not Found */
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

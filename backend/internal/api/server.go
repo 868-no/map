@@ -71,9 +71,12 @@ type Server struct {
 	dayLargeN  atomic.Int32 // entries in dayLarge, to bound it
 	heavy      chan struct{}
 	closing    chan struct{}
-	trendsMemo trendsCache
-	histMemo   historyMemo
-	trendHours storage.TrendHours // hourly summaries for trends (D-112)
+	trendsMemo trendsCache[TrendsBody]
+	// nodeTrendsMemo keeps per-node trends (D-195), bounded where the
+	// handler is registered.
+	nodeTrendsMemo trendsCache[NodeTrendsBody]
+	histMemo       historyMemo
+	trendHours     storage.TrendHours // hourly summaries for trends (D-112)
 	// trendsFlight runs one refresh of trendHours at a time for every
 	// request waiting on it; trendsRefresh replaces the refresh (tests).
 	trendsFlight  singleflight.Group
@@ -265,6 +268,9 @@ func (s *Server) register(api huma.API) {
 		Summary: "A node's announced and trusted public keys from the retained log", Tags: []string{"mesh"}, Errors: []int{400, 404}}, s.nodeKey)
 	huma.Register(api, huma.Operation{OperationID: "trends", Method: http.MethodGet, Path: "/api/v1/trends",
 		Summary: "Daily, weekly or monthly summaries over the whole retained log", Tags: []string{"mesh"}, Errors: []int{400, 503}}, s.trends)
+	s.nodeTrendsMemo.max = nodeTrendsMemoMax
+	huma.Register(api, huma.Operation{OperationID: "node-trends", Method: http.MethodGet, Path: "/api/v1/trends/node/{id}",
+		Summary: "One node's daily, weekly or monthly history over the whole retained log", Tags: []string{"mesh"}, Errors: []int{400, 404, 503}}, s.nodeTrends)
 	huma.Register(api, huma.Operation{OperationID: "weather", Method: http.MethodGet, Path: "/api/v1/weather",
 		Summary: "Hourly weather at a point from MET Norway's analysis (temperature, precipitation)", Tags: []string{"meta"}, Errors: []int{400, 404, 422}}, s.weather)
 	huma.Register(api, huma.Operation{OperationID: "places", Method: http.MethodGet, Path: "/api/v1/places",

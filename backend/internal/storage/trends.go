@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"slices"
 	"sort"
 	"sync"
 	"time"
@@ -28,7 +29,27 @@ type HourSummary struct {
 	// Per region (landsdel) its MQTT topic root names, of the rows uplinked
 	// under such a topic (D-194).
 	Regions map[string]RegionHour
+	// Per node of Nodes, in the same order (D-195): its distinct packets
+	// and their receptions by other gateways that hour (its own uplinks of
+	// them left out, as in Details; each at most MaxNodeHourCount), and the
+	// lowest battery level its device telemetry reported (NoBattery when
+	// none; BatteryPowered when it reported only external power). Parallel
+	// arrays rather than a map: 5 bytes per node and hour, about 9 MB for
+	// 400 nodes heard an hour over six months (the ids in Nodes take 14).
+	NodePackets, NodeReceptions []uint16
+	NodeBattery                 []int8
 }
+
+const (
+	// MaxNodeHourCount caps a node's packets and receptions in one hour, so
+	// they fit in 16 bits: 18 a second, far beyond any real node.
+	MaxNodeHourCount = 65535
+	// NoBattery marks an hour without a battery level from the node.
+	NoBattery = -1
+	// BatteryPowered is the level firmware reports on external power, as
+	// stored (ports.Telemetry keeps levels up to 101) and as the engine reads it.
+	BatteryPowered = 101
+)
 
 // RegionHour is one hour of one region's rows: those uplinked under a topic
 // root naming it.
@@ -69,20 +90,26 @@ type TrendHours struct {
 
 // Rows that failed verification never count (D-093); rows stored as "other"
 // before node status and store-and-forward were decoded count as those (D-103).
+// Per-node figures (pn) come from the same rows (r, read once), ordered by
+// node id like the hour's node set (D-195).
 var trendRangeSQL = `
 	WITH r AS (
 	  SELECT date_trunc('hour', observed_at) AS h, source_node_id AS s, gateway_node_id AS g, logical_packet_key AS l, decode_version AS dv,
 	    substring(mqtt_topic from '/(Nord-Norge|Trøndelag|Vestlandet|Østlandet|Sørlandet)(?:/|$)') AS reg,
 	    CASE WHEN packet_type = 'other' AND decoded_metadata->'other'->>'port_name' = 'STORE_FORWARD_APP' THEN 'store_forward'
 	         WHEN packet_type = 'other' AND decoded_metadata->'other'->>'port_name' = 'NODE_STATUS_APP' THEN 'node_status'
-	         ELSE packet_type END AS ty
+	         ELSE packet_type END AS ty,
+	    CASE WHEN packet_type = 'telemetry' AND decoded_metadata->'telemetry'->>'kind' = 'device' THEN (decoded_metadata->'telemetry'->>'battery')::float8 END AS bat
 	  FROM packet_log WHERE ` + window.Predicate(1, 2) + ` AND packet_type <> 'invalid'),
 	agg AS (SELECT h, array_agg(DISTINCT s ORDER BY s) AS nodes, array_remove(array_agg(DISTINCT g ORDER BY g), NULL) AS gws, count(DISTINCT l) AS p, count(*) AS rc, bool_or(dv < $3) AS stale FROM r GROUP BY h),
 	types AS (SELECT h, jsonb_object_agg(ty, c) AS j FROM (SELECT h, ty, count(DISTINCT l) AS c FROM r GROUP BY h, ty) x GROUP BY h),
 	regs AS (SELECT h, jsonb_object_agg(reg, jsonb_build_object('n', nodes, 'g', gws, 'p', p, 'r', rc)) AS j FROM (
 	  SELECT h, reg, array_agg(DISTINCT s ORDER BY s) AS nodes, array_remove(array_agg(DISTINCT g ORDER BY g), NULL) AS gws, count(DISTINCT l) AS p, count(*) AS rc
-	  FROM r WHERE reg IS NOT NULL GROUP BY h, reg) x GROUP BY h)
-	SELECT agg.h, agg.nodes, agg.gws, agg.p, agg.rc, COALESCE(types.j, '{}'::jsonb), agg.stale, COALESCE(regs.j, '{}'::jsonb) FROM agg LEFT JOIN types USING (h) LEFT JOIN regs USING (h)`
+	  FROM r WHERE reg IS NOT NULL GROUP BY h, reg) x GROUP BY h),
+	pn AS (SELECT h, array_agg(p ORDER BY s) AS p, array_agg(rc ORDER BY s) AS rc, array_agg(COALESCE(bat, -1) ORDER BY s) AS bat FROM (
+	  SELECT h, s, LEAST(count(DISTINCT l), 65535)::int AS p, LEAST(count(*) FILTER (WHERE g IS DISTINCT FROM s), 65535)::int AS rc, round(min(bat))::int AS bat FROM r GROUP BY h, s) x GROUP BY h)
+	SELECT agg.h, agg.nodes, agg.gws, agg.p, agg.rc, COALESCE(types.j, '{}'::jsonb), agg.stale, COALESCE(regs.j, '{}'::jsonb), pn.p, pn.rc, pn.bat
+	FROM agg JOIN pn USING (h) LEFT JOIN types USING (h) LEFT JOIN regs USING (h)`
 
 // Refresh brings the summaries up to date: hours never summed, the most
 // recent TrendRecent, hours summed under an older decoder, and every hour
@@ -236,9 +263,11 @@ func (t *TrendHours) readRange(ctx context.Context, pool *pgxpool.Pool, lo, hi t
 		var h time.Time
 		s := &HourSummary{DecodeVersion: ingest.DecodeVersion}
 		var stale bool
-		if err := rows.Scan(&h, &s.Nodes, &s.Gateways, &s.Packets, &s.Receptions, &s.ByType, &stale, &s.Regions); err != nil {
+		var pk, rc, bat []int32
+		if err := rows.Scan(&h, &s.Nodes, &s.Gateways, &s.Packets, &s.Receptions, &s.ByType, &stale, &s.Regions, &pk, &rc, &bat); err != nil {
 			return err
 		}
+		s.setNodeFigures(pk, rc, bat)
 		if stale {
 			// Some rows are still to be decoded again: read this hour again later.
 			s.DecodeVersion = 0
@@ -257,6 +286,20 @@ func (t *TrendHours) readRange(ctx context.Context, pool *pgxpool.Pool, lo, hi t
 		t.hours[h] = s
 	}
 	return nil
+}
+
+// setNodeFigures keeps the per-node figures compactly, if they align with
+// Nodes (both are ordered by node id, so they always should).
+func (s *HourSummary) setNodeFigures(pk, rc, bat []int32) {
+	if len(pk) != len(s.Nodes) || len(rc) != len(s.Nodes) || len(bat) != len(s.Nodes) {
+		return
+	}
+	s.NodePackets, s.NodeReceptions, s.NodeBattery = make([]uint16, len(pk)), make([]uint16, len(rc)), make([]int8, len(bat))
+	for i := range pk {
+		s.NodePackets[i] = uint16(min(max(pk[i], 0), MaxNodeHourCount))
+		s.NodeReceptions[i] = uint16(min(max(rc[i], 0), MaxNodeHourCount))
+		s.NodeBattery[i] = int8(min(max(bat[i], NoBattery), BatteryPowered))
+	}
 }
 
 // Fresh reports whether the summaries were refreshed within every.
@@ -408,4 +451,85 @@ func (t *TrendHours) Buckets(unit string, loc *time.Location, region string) []T
 		out = append(out, a.b)
 	}
 	return out
+}
+
+// NodeBucket is one day, week or month of one node's hours (D-195).
+type NodeBucket struct {
+	Start        time.Time // in the requested zone
+	Hours        int       // summarised hours: any row was logged in them
+	HoursHeard   int       // hours it sent anything in
+	HoursGateway int       // hours it uplinked anything as a gateway
+	Packets      int       // its distinct packets, summed per hour
+	Receptions   int       // gateway receptions of them
+	Battery      int       // lowest level reported, NoBattery or BatteryPowered
+}
+
+// NodeBuckets sums one node's hours into days, weeks or months starting in
+// loc, from the bucket it was first heard in (as a sender or a gateway) up
+// to the newest summarised hour, so buckets it was silent in count zero; ok
+// is false when no summarised hour holds it. A bucket's hours are those in
+// which anything at all was logged, so hours the collector heard nothing
+// are not counted against the node.
+func (t *TrendHours) NodeBuckets(node int64, unit string, loc *time.Location) (out []NodeBucket, ok bool) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	hours := make([]time.Time, 0, len(t.hours))
+	for h := range t.hours {
+		hours = append(hours, h)
+	}
+	sort.Slice(hours, func(i, j int) bool { return hours[i].Before(hours[j]) })
+	var from time.Time
+	for _, h := range hours {
+		s := t.hours[h]
+		if _, in := slices.BinarySearch(s.Nodes, node); in {
+			from = bucketStart(h, unit, loc)
+			break
+		}
+		if _, in := slices.BinarySearch(s.Gateways, node); in {
+			from = bucketStart(h, unit, loc)
+			break
+		}
+	}
+	if from.IsZero() {
+		return nil, false
+	}
+	for _, h := range hours {
+		k := bucketStart(h, unit, loc)
+		if k.Before(from) {
+			continue
+		}
+		if len(out) == 0 || !out[len(out)-1].Start.Equal(k) {
+			out = append(out, NodeBucket{Start: k, Battery: NoBattery})
+		}
+		b := &out[len(out)-1]
+		s := t.hours[h]
+		b.Hours++
+		if _, in := slices.BinarySearch(s.Gateways, node); in {
+			b.HoursGateway++
+		}
+		i, in := slices.BinarySearch(s.Nodes, node)
+		if !in {
+			continue
+		}
+		b.HoursHeard++
+		if len(s.NodePackets) != len(s.Nodes) {
+			continue
+		}
+		b.Packets += int(s.NodePackets[i])
+		b.Receptions += int(s.NodeReceptions[i])
+		b.Battery = lowerBattery(b.Battery, int(s.NodeBattery[i]))
+	}
+	return out, true
+}
+
+// lowerBattery is the lower of two levels, any level below external power
+// counting lower than it and either lower than none.
+func lowerBattery(a, b int) int {
+	switch {
+	case b == NoBattery:
+		return a
+	case a == NoBattery:
+		return b
+	}
+	return min(a, b)
 }

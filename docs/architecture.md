@@ -20,8 +20,8 @@ This page shows the components and where the code lives. The rules the system fo
 │                                                                                  │
 │  HTTP API (huma, OpenAPI 3.1): capabilities, retention, observations (paged,     │
 │  streamed rows), observations/day/{date} (whole days, cached), stream (SSE:      │
-│  every new row), nodes/{id}/public-key, trends, weather, places (search),        │
-│  terrain/profile, terrain/classes · health · metrics                             │
+│  every new row), nodes/{id}/public-key, trends, trends/node/{id}, weather,       │
+│  places (search), terrain/profile, terrain/classes · health · metrics            │
 │  query layer: every SQL via window.Predicate                                     │
 └───────────────┬───────────────────────────────┬──────────────────────────────────┘
                 │                               │
