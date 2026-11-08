@@ -27,8 +27,25 @@ type Node struct {
 	Plaintext bool // gateway uplinks decoded packets (discouraged, but real)
 	Role      pb.Config_DeviceConfig_Role
 	HW        pb.HardwareModel
-	Private   bool // also member of the AEAD channel
+	Private   bool   // also member of the AEAD channel
+	Firmware  string // version a gateway states in its map reports ("" sends none)
 }
+
+// firmwareOf is the version a node runs as its map reports state it: 2.8
+// for keyed nodes (their number derives from the key, as on 2.8 and
+// later), and pre-PKI 2.4 for legacy ones (a hardware number, never
+// signing). The build suffix stands in for firmware's git hash.
+func firmwareOf(i int, legacy bool) string {
+	if legacy {
+		return "2.4.3.demo"
+	}
+	return [...]string{"2.8.1.demo", "2.8.0.demo", "2.8.1.demo"}[i%3]
+}
+
+// hardware is a demo node's board by index: no random draw, so adding it
+// left the scenarios' random sequences (positions, links) as they were.
+var hardware = []pb.HardwareModel{pb.HardwareModel_HELTEC_V3, pb.HardwareModel_RAK4631, pb.HardwareModel_HELTEC_V4, pb.HardwareModel_T_ECHO,
+	pb.HardwareModel_SEEED_XIAO_S3, pb.HardwareModel_HELTEC_V3, pb.HardwareModel_TRACKER_T1000_E, pb.HardwareModel_RAK4631, pb.HardwareModel_STATION_G2}
 
 // Link is a directed RF path with its receive quality at Dst.
 type Link struct {
@@ -100,6 +117,9 @@ func DefaultScenario() *Scenario {
 		}
 		n.Private = i%3 == 0
 		n.Plaintext = st.short == "ORKA"
+		if n.Gateway {
+			n.Firmware = firmwareOf(i, n.Key == nil)
+		}
 		s.index[n.Num] = len(s.Nodes)
 		s.Nodes = append(s.Nodes, n)
 	}

@@ -71,11 +71,15 @@ func (sim *Simulator) Step() []Message {
 	}
 
 	var d *pb.Data
+	var also []Message
 	to := protocol.Broadcast
 	channel := PublicChannel
 	switch k := sim.tick / len(sim.S.Nodes) % 6; {
 	case k == 0 || sim.tick <= len(sim.S.Nodes):
 		d = sim.nodeInfo(n)
+		if n.Gateway && n.Firmware != "" {
+			also = append(also, sim.mapReport(n))
+		}
 	case k == 1:
 		if !n.SharesPos {
 			d = sim.telemetry()
@@ -94,7 +98,20 @@ func (sim *Simulator) Step() []Message {
 			channel = PrivateChannel
 		}
 	}
-	return sim.flood(src, to, sim.id(), d, channel, 3, nil)
+	return append(sim.flood(src, to, sim.id(), d, channel, 3, nil), also...)
+}
+
+// mapReport is a gateway's own map report (MAP_REPORT_APP on {root}/2/map/):
+// firmware publishes it only from a node connected to MQTT, so only demo
+// gateways send one, stating their firmware version. Without a location
+// (as when reporting it is not opted into), so it never moves a node; with
+// packet id 0, as firmware sends it.
+func (sim *Simulator) mapReport(n *Node) Message {
+	b, _ := proto.Marshal(&pb.MapReport{LongName: n.Long, ShortName: n.Short, Role: n.Role, HwModel: n.HW, FirmwareVersion: n.Firmware,
+		Region: pb.Config_LoRaConfig_EU_868, ModemPreset: pb.Config_LoRaConfig_LONG_FAST, HasDefaultChannel: true, NumOnlineLocalNodes: uint32(len(sim.S.Links[sim.S.index[n.Num]]))})
+	env, _ := proto.Marshal(&pb.ServiceEnvelope{ChannelId: PublicChannel, GatewayId: protocol.NodeID(n.Num), Packet: &pb.MeshPacket{From: n.Num, To: protocol.Broadcast,
+		PayloadVariant: &pb.MeshPacket_Decoded{Decoded: &pb.Data{Portnum: pb.PortNum_MAP_REPORT_APP, Payload: b}}}})
+	return Message{Topic: TopicRoot + "/2/map/", Payload: env, Note: "map report"}
 }
 
 func (sim *Simulator) topic(channel string, gw *Node) string {

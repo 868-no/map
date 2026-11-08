@@ -24,7 +24,7 @@ func LargeScenario(n int, seed uint64) *Scenario {
 			Long: fmt.Sprintf("Bench node %d", i), Short: fmt.Sprintf("B%03d", i%1000),
 			Lat: lat, Lon: lon, Alt: int32(r.IntN(900)),
 			SharesPos: r.Float64() > 0.25, Gateway: r.Float64() < 0.08,
-			Role: pb.Config_DeviceConfig_CLIENT, HW: pb.HardwareModel_HELTEC_V3,
+			Role: pb.Config_DeviceConfig_CLIENT, HW: hardware[i%len(hardware)],
 		}
 		if i%4 == 3 {
 			node.Num = 0x0b000000 | (crc32.ChecksumIEEE([]byte(node.Long)) & 0x00ffffff)
@@ -32,6 +32,9 @@ func LargeScenario(n int, seed uint64) *Scenario {
 			k := testutil.NewXKey(uint64(100000 + i))
 			node.Key = &k
 			node.Num = k.NodeNum()
+		}
+		if node.Gateway {
+			node.Firmware = firmwareOf(i, node.Key == nil)
 		}
 		if _, dup := s.index[node.Num]; dup {
 			continue

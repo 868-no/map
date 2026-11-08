@@ -27,6 +27,7 @@ func TestSimulatorThroughIngest(t *testing.T) {
 	accepted := map[string]int{}
 	rejected := map[string]int{}
 	notes := map[string]map[string]int{}
+	firmware := map[string]int{}
 	for range 3000 {
 		for _, m := range sim.Step() {
 			obs, err := ingest.Process(ingest.RawMessage{BrokerID: "demo", Topic: m.Topic, Payload: m.Payload, ObservedAt: time.Now()}, o)
@@ -44,6 +45,9 @@ func TestSimulatorThroughIngest(t *testing.T) {
 				notes[m.Note]["ok"]++
 			}
 			accepted[obs.PacketType+"/"+string(obs.SignatureStatus)+"/"+string(obs.Meta.Crypto)]++
+			if mr := obs.Meta.MapReport; mr != nil {
+				firmware[mr.FirmwareVersion]++
+			}
 			if obs.Promote != nil {
 				store[obs.Promote.Node] = *obs.Promote
 			}
@@ -71,6 +75,13 @@ func TestSimulatorThroughIngest(t *testing.T) {
 	}
 	if len(store) == 0 {
 		t.Error("no identities learned")
+	}
+	// Gateways state their firmware in map reports (D-196): 2.8 when keyed, 2.4 when legacy.
+	if n := notes["map report"]; n["ok"] == 0 || len(n) != 1 {
+		t.Errorf("map reports should all be accepted: %v", n)
+	}
+	if firmware["2.8.1.demo"] == 0 || firmware["2.8.0.demo"] == 0 || firmware["2.4.3.demo"] == 0 || len(firmware) != 3 {
+		t.Errorf("map reports' firmware versions: %v", firmware)
 	}
 }
 
