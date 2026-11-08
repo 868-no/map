@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { Edge, MeshNode, NodeView, SnapshotView } from '../../derive/views'
 import { TimeChart } from '../../components/TimeChart'
-import { binWords, routerLinkSeries } from './routerLinks'
+import { binWords, routerFloorAxis, routerLinkSeries } from './routerLinks'
 import { useReach } from '../../state/data'
 import { useStore } from '../../state/store'
 import { PALETTES } from '../../map/palette'
@@ -135,6 +135,7 @@ const ROUTER_ROLES = ['ROUTER', 'ROUTER_LATE']
 function RouterLinksSection({ d, snapshot }: { d: NodeView; snapshot: SnapshotView | undefined }) {
   const q = d.router_links
   const series = useMemo(() => (q ? routerLinkSeries(q) : undefined), [q])
+  const floor = useMemo(() => (q ? routerFloorAxis(q) : undefined), [q])
   if (!ROUTER_ROLES.includes(d.identity?.role ?? '') || !snapshot) return null
   const [start, end] = [Date.parse(snapshot.meta.window.start), Date.parse(snapshot.meta.window.end)]
   return (
@@ -142,8 +143,11 @@ function RouterLinksSection({ d, snapshot }: { d: NodeView; snapshot: SnapshotVi
       <h3 title="Radio readings between this router and other routers (ROUTER, ROUTER_LATE): NeighborInfo, traceroutes, gateway receptions and resolved relays, each RF event once; MQTT hops left out">Router links</h3>
       {q && series ? (
         <>
-          <p className="muted small">Median SNR of its links to other routers per {binWords(q.bin_ms)}: as they heard it, and as it heard them. A sudden drop on both that stays down points at its antenna, cable or site.</p>
-          <TimeChart label="SNR" unit="dB" start={start} end={end} series={series} />
+          <p className="muted small">
+            Median SNR of its links to other routers per {binWords(q.bin_ms)}: as they heard it, and as it heard them. A sudden drop on both that stays down points at its antenna, cable or site.
+            {floor && <> Dashed, on its own dBm scale at the right: the noise floor it measures, as its median per {binWords(q.bin_ms)}. A rise there means more interference near it; a weaker antenna lowers signals but not its floor.</>}
+          </p>
+          <TimeChart label="SNR" unit="dB" start={start} end={end} series={series} right={floor} />
         </>
       ) : (
         <p className="muted small">No SNR readings between it and another router in the selected period.</p>

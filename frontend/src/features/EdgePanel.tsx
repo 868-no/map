@@ -4,8 +4,9 @@ import { useLinkHistory } from '../state/data'
 import { useStore } from '../state/store'
 import { formatLocal } from '../lib/time'
 import { ChartGroup, TimeChart, type Band } from '../components/TimeChart'
+import { linkFloorSeries } from './noiseFloor'
 import { meanPoints, useWeather, weatherPoints, weatherSite } from '../state/weather'
-import { namesOf } from '../map/model'
+import { namesOf, shortNamesOf } from '../map/model'
 import { terrainEnd, useTerrainEnabled, useTerrainProfile } from '../state/terrain'
 import { CrossSection, LOS_LABEL, LOS_TITLE } from '../components/CrossSection'
 
@@ -122,14 +123,19 @@ function LinkHistoryCharts({ a, b, name, snapshot, start, end }: { a: string; b:
   }, [w0, w1, rainNote])
   const rainLoading = ends.length > 0 && !rain[0]?.points.length && weather.some((w) => w.isLoading || w.data?.incomplete)
   const [nameA, nameB] = [name(a), name(b)]
+  const shorts = shortNamesOf(snapshot.nodes)
+  const [shortA, shortB] = [shorts.get(a) ?? nameA, shorts.get(b) ?? nameB]
   const series = useMemo(() => {
     const { ab = [], ba = [] } = h.data ?? {}
     const of = (k: 'snr' | 'rssi') => [
       { label: `${nameA} → ${nameB}`, color: 'var(--accent)', points: ab.map((p) => [p.t, p[k] ?? null] as [number, number | null]) },
       { label: `${nameB} → ${nameA}`, color: 'var(--warn)', points: ba.map((p) => [p.t, p[k] ?? null] as [number, number | null]) },
     ]
-    return { snr: of('snr'), rssi: of('rssi') }
-  }, [h.data, nameA, nameB])
+    // Each end's noise floor beside the RSSI (D-199), only when there is RSSI to set it beside.
+    const rssi = of('rssi')
+    const floors = rssi.some((l) => l.points.some((p) => p[1] !== null)) && h.data ? linkFloorSeries(h.data, shortA, shortB) : []
+    return { snr: of('snr'), rssi: [...rssi, ...floors], floors: floors.length > 0 }
+  }, [h.data, nameA, nameB, shortA, shortB])
   if (!h.data) return null
   const { ab, ba } = h.data
   if (ab.length + ba.length === 0) return null
@@ -139,6 +145,7 @@ function LinkHistoryCharts({ a, b, name, snapshot, start, end }: { a: string; b:
       <h3 title="Every measured reading of this link in the selected period, each RF event once">Signal over time</h3>
       {rainLoading && <p className="muted small">Loading precipitation from MET Norway…</p>}
       <p className="muted small">Each reading as the receiving node measured it ({kinds.join(', ')}). A falling line across days can mean a degrading antenna, cable or site; short dips are often weather or traffic.</p>
+      {series.floors && <p className="muted small">Dashed in the RSSI chart: the noise floor each end measures, in the colour of the direction it receives. A rise in a floor means more interference near that node; a weaker antenna lowers signals but not the floor.</p>}
       <ChartGroup>
         <TimeChart label="SNR" unit="dB" start={start} end={end} series={series.snr} bands={rain} />
         <TimeChart label="RSSI" unit="dBm" decimals={0} start={start} end={end} series={series.rssi} empty="only measured by gateway receptions" />

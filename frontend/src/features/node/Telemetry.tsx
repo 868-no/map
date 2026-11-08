@@ -17,8 +17,9 @@ const battery = (v: number | undefined) => (v === undefined || v === null ? '—
 export function TelemetryTab({ d, snapshot, now }: { d: NodeView; snapshot: SnapshotView | undefined; now: number }) {
   const env = d.environment_series ?? NO_SERIES
   const dev = d.telemetry_series ?? NO_SERIES
-  const telemetryCount = dev.length + env.length
-  const winStart = snapshot ? Date.parse(snapshot.meta.window.start) : Math.min(...[...dev, ...env].map((s) => Date.parse(s.at)))
+  const floor = d.noise_floor_series ?? NO_SERIES
+  const telemetryCount = dev.length + env.length + floor.length
+  const winStart = snapshot ? Date.parse(snapshot.meta.window.start) : Math.min(...[...dev, ...env].map((s) => Date.parse(s.at)), ...floor.map((p) => p[0]))
   const winEnd = now
   // Routers get the weather at their site behind their own readings (D-133).
   const [weather] = useWeather([weatherSite(d)], winStart, winEnd)
@@ -54,8 +55,9 @@ export function TelemetryTab({ d, snapshot, now }: { d: NodeView; snapshot: Snap
       envTemp: env.map((s): Point => [at(s), s.temp ?? null]),
       envHumidity: env.map((s): Point => [at(s), s.humidity ?? null]),
       pressure: env.map((s): Point => [at(s), s.pressure ?? null]),
+      floor: floor.map(([t, v]): Point => [t, v]),
     }
-  }, [d, w, loading, winStart, winEnd, dev, env])
+  }, [d, w, loading, winStart, winEnd, dev, env, floor])
   const hasWeather = !!w && w.hours != null && w.hours.length > 0
   // Until the first hours arrive there is nothing to chart: say so.
   const weatherLoading = !hasWeather && !!weatherSite(d) && (weather?.isLoading || !!w?.incomplete) && (
@@ -129,6 +131,12 @@ export function TelemetryTab({ d, snapshot, now }: { d: NodeView; snapshot: Snap
           <TimeChart label="Voltage" unit="V" decimals={2} start={winStart} end={winEnd} points={c.voltage} bands={c.sky} nights={c.nights} />
           <TimeChart label="Channel utilisation" unit="%" start={winStart} end={winEnd} points={c.chUtil} />
           <TimeChart label="Own airtime" unit="%" decimals={2} start={winStart} end={winEnd} points={c.airUtil} />
+          {floor.length > 0 && (
+            <div className="noise-floor">
+              <TimeChart label="Noise floor" unit="dBm" decimals={0} start={winStart} end={winEnd} points={c.floor} />
+              <p className="muted small">The background radio noise it measures (local statistics). A rise means more interference near it; a weaker antenna lowers the signals it hears, not its floor.</p>
+            </div>
+          )}
           <TimeChart label="Uptime" unit="days" decimals={1} start={winStart} end={winEnd} points={c.uptime} />
           <TimeChart label="Temperature" unit="°C" start={winStart} end={winEnd} points={c.envTemp} bands={c.temp} />
           <TimeChart label="Humidity" unit="%" decimals={0} domain={PERCENT} start={winStart} end={winEnd} points={c.envHumidity} bands={c.humidity} />
