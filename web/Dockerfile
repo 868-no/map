@@ -56,7 +56,7 @@ RUN VITE_E2E_HOOKS=$E2E_HOOKS VITE_SOURCE_URL=$SOURCE_URL VITE_SOURCE_REVISION=$
 RUN mkdir -p /src/version && printf '%s\n' "$SOURCE_REVISION" > /src/version/version.txt
 
 # Map glyphs: OpenMapTiles fonts v2.0 (SIL OFL), pinned by checksum.
-FROM --platform=$BUILDPLATFORM alpine:3.24 AS fonts
+FROM --platform=$BUILDPLATFORM alpine:3.24.4 AS fonts
 ARG FONTS_URL=https://github.com/openmaptiles/fonts/releases/download/v2.0/v2.0.zip
 ARG FONTS_SHA256=3a7a6c2dcd940a840aa6ffac8f39758252a667a0b329945b071fb44bf00e7f47
 RUN apk add --no-cache curl unzip && curl -fsSL -o /fonts.zip "$FONTS_URL" \
@@ -64,7 +64,7 @@ RUN apk add --no-cache curl unzip && curl -fsSL -o /fonts.zip "$FONTS_URL" \
  && mkdir -p /out && unzip -q /fonts.zip "Noto Sans Regular/*" "Noto Sans Bold/*" -d /out \
  && mkdir -p /dirs/etc/caddy/auth /dirs/srv/tiles
 
-FROM caddy:2.10-alpine
+FROM caddy:2.10.2-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d
 # No RUN in this stage: every image builds without emulating its platform.
 COPY --from=fonts /dirs/ /
 COPY web/Caddyfile /etc/caddy/Caddyfile
