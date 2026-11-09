@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"fmt"
 	"slices"
 	"testing"
 	"time"
@@ -117,4 +118,52 @@ func TestSetNodeRadioAndAlignFacts(t *testing.T) {
 	if slices.Contains(PresetNames, "") || !slices.IsSorted(PresetNames) || len(PresetNames) > 63 {
 		t.Fatalf("preset names: %v", PresetNames)
 	}
+}
+
+// Sums are taken from a snapshot without the lock while a refresh replaces
+// hours and interns new facts: hours are replaced, never changed, and the
+// fact table only grows (run with -race).
+func TestSumsRunBesideARefresh(t *testing.T) {
+	h0 := time.Date(2026, 11, 2, 0, 0, 0, 0, time.UTC)
+	th := TrendHours{hours: map[time.Time]*HourSummary{}}
+	// The hour at pos, as read the i-th time: the same nodes, a new version
+	// stated each time; under th.mu (setFacts interns).
+	hour := func(pos, i int) *HourSummary {
+		s := &HourSummary{Nodes: []int64{1, int64(2 + pos%5)}, Gateways: []int64{1}, Packets: 2, Receptions: 3, NodeRadio: []uint8{HopWith, HopWithout}, NodePackets: []uint16{1, 1}, NodeReceptions: []uint16{1, 1}, NodeBattery: []int8{NoBattery, 50}}
+		th.setFacts(s, []saidFacts{{1, NodeFacts{Firmware: fmt.Sprintf("2.7.%d", i)}}})
+		return s
+	}
+	th.mu.Lock()
+	for pos := range 48 {
+		th.hours[h0.Add(time.Duration(pos)*time.Hour)] = hour(pos, pos)
+	}
+	th.mu.Unlock()
+	stop := make(chan struct{})
+	refreshed := make(chan struct{})
+	go func() {
+		defer close(refreshed)
+		for i := 48; ; i++ {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			th.mu.Lock()
+			th.hours[h0.Add(time.Duration(i%48)*time.Hour)] = hour(i%48, i)
+			th.mu.Unlock()
+		}
+	}()
+	for range 50 {
+		if b := th.Buckets("day", time.UTC, ""); len(b) != 2 || b[0].Packets != 48 || b[0].Nodes != 6 {
+			t.Fatalf("buckets %+v", b)
+		}
+		if b, ok := th.NodeBuckets(1, "day", time.UTC); !ok || len(b) != 2 || b[1].HoursHeard != 24 {
+			t.Fatalf("node %v %+v", ok, b)
+		}
+		if b := th.FleetBuckets("day", time.UTC); len(b) != 2 || b[0].Nodes != 6 {
+			t.Fatalf("fleet %+v", b)
+		}
+	}
+	close(stop)
+	<-refreshed
 }

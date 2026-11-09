@@ -2,7 +2,6 @@ package storage
 
 import (
 	"slices"
-	"sort"
 	"strings"
 	"time"
 
@@ -311,17 +310,11 @@ func (ft *factTable) classify(k factsKnown, h heardIn) (firmware, hardware, role
 // radio evidence (hop starts, channel names) decides, as it does for the
 // browser's window.
 func (t *TrendHours) FleetBuckets(unit string, loc *time.Location) []FleetBucket {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	hours := make([]time.Time, 0, len(t.hours))
-	for h := range t.hours {
-		hours = append(hours, h)
-	}
-	sort.Slice(hours, func(i, j int) bool { return hours[i].Before(hours[j]) })
+	hours, facts := t.snapshot()
 	// The oldest facts of each kind per node, for the fallback.
 	first := map[int64]*factsKnown{}
-	for _, h := range hours {
-		s := t.hours[h]
+	for _, hs := range hours {
+		s := hs.s
 		for i, fi := range s.NodeFacts {
 			if fi == 0 || i >= len(s.Nodes) {
 				continue
@@ -331,7 +324,7 @@ func (t *TrendHours) FleetBuckets(unit string, loc *time.Location) []FleetBucket
 				k = &factsKnown{}
 				first[s.Nodes[i]] = k
 			}
-			k.see(fi, t.facts.get(fi), false)
+			k.see(fi, facts.get(fi), false)
 		}
 	}
 	latest := map[int64]*factsKnown{}
@@ -351,7 +344,7 @@ func (t *TrendHours) FleetBuckets(unit string, loc *time.Location) []FleetBucket
 			if f := first[n]; f != nil {
 				k = k.or(*f)
 			}
-			fw, hw, role, pre := t.facts.classify(k, *hi)
+			fw, hw, role, pre := facts.classify(k, *hi)
 			b.Firmware[fw]++
 			b.Hardware[hw]++
 			b.Roles[role]++
@@ -359,12 +352,12 @@ func (t *TrendHours) FleetBuckets(unit string, loc *time.Location) []FleetBucket
 		}
 		out = append(out, b)
 	}
-	for _, h := range hours {
-		if k := bucketStart(h, unit, loc); heard == nil || !k.Equal(cur) {
+	for _, hs := range hours {
+		if k := bucketStart(hs.h, unit, loc); heard == nil || !k.Equal(cur) {
 			flush()
 			cur, heard = k, map[int64]*heardIn{}
 		}
-		s := t.hours[h]
+		s := hs.s
 		for i, n := range s.Nodes {
 			hi := heard[n]
 			if hi == nil {
@@ -387,7 +380,7 @@ func (t *TrendHours) FleetBuckets(unit string, loc *time.Location) []FleetBucket
 					l = &factsKnown{}
 					latest[n] = l
 				}
-				l.see(s.NodeFacts[i], t.facts.get(s.NodeFacts[i]), true)
+				l.see(s.NodeFacts[i], facts.get(s.NodeFacts[i]), true)
 			}
 		}
 	}

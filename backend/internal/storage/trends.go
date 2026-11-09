@@ -3,7 +3,6 @@ package storage
 import (
 	"context"
 	"slices"
-	"sort"
 	"sync"
 	"time"
 
@@ -81,9 +80,12 @@ var Regions = []string{"Nord-Norge", "Trøndelag", "Vestlandet", "Østlandet", "
 // unions of hours.
 //
 // One refresh runs at a time (refreshing); the summaries themselves are
-// only locked (mu) while read or while a refreshed range replaces its
-// hours, so sums can be taken while a refresh reads the log: they are then
-// the previous refresh's, some hours already newer.
+// only locked (mu) while a refreshed range replaces its hours or while
+// sums take a snapshot of them (snapshot), so sums can be taken while a
+// refresh reads the log: they are then the previous refresh's, some hours
+// already newer. A summary is never changed once it is in hours (a
+// refreshed hour gets a new one) and the fact table only grows, so sums are
+// computed from the snapshot without the lock.
 type TrendHours struct {
 	refreshing sync.Mutex
 	// The highest packet_log id at the last refresh and at the one before:
@@ -95,6 +97,7 @@ type TrendHours struct {
 	hours    map[time.Time]*HourSummary
 	facts    factTable  // what NodeFacts index (D-198)
 	oldest   *time.Time // the oldest retained row at the last refresh
+	newest   *time.Time // the newest row at the last refresh
 	last     time.Time  // wall clock of the last complete refresh counted fresh
 	complete bool       // some refresh (or warm-up) has completed
 }
@@ -176,7 +179,7 @@ func (t *TrendHours) refresh(ctx context.Context, pool *pgxpool.Pool, now time.T
 	if t.hours == nil {
 		t.hours = map[time.Time]*HourSummary{}
 	}
-	t.oldest = oldest
+	t.oldest, t.newest = oldest, newest
 	if oldest == nil {
 		t.hours = map[time.Time]*HourSummary{}
 		t.last, t.complete = time.Now(), true
@@ -392,6 +395,13 @@ func (t *TrendHours) Oldest() *time.Time {
 	return t.oldest
 }
 
+// Span is the oldest and newest rows as of the last refresh (nil: none).
+func (t *TrendHours) Span() (oldest, newest *time.Time) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return t.oldest, t.newest
+}
+
 // Len is how many hours are summarised.
 func (t *TrendHours) Len() int {
 	t.mu.Lock()
@@ -408,6 +418,30 @@ func (t *TrendHours) Hour(h time.Time) (HourSummary, bool) {
 		return HourSummary{}, false
 	}
 	return *s, true
+}
+
+// hourSum is one summarised hour.
+type hourSum struct {
+	h time.Time
+	s *HourSummary
+}
+
+// snapshot is the summaries, oldest first, and the fact table they index,
+// as of now. Only copying the map's pointers and the table's slice header
+// takes t.mu; the sums are taken from the snapshot without it, as hours are
+// replaced, never changed, and the table is only appended to (its entries
+// up to here never change; the full slice expression keeps an append to the
+// copy from writing into the shared array).
+func (t *TrendHours) snapshot() ([]hourSum, factTable) {
+	t.mu.Lock()
+	hours := make([]hourSum, 0, len(t.hours))
+	for h, s := range t.hours {
+		hours = append(hours, hourSum{h, s})
+	}
+	facts := factTable{list: t.facts.list[:len(t.facts.list):len(t.facts.list)]}
+	t.mu.Unlock()
+	slices.SortFunc(hours, func(a, b hourSum) int { return a.h.Compare(b.h) })
+	return hours, facts
 }
 
 // TrendBucket is one day, week or month of summaries.
@@ -439,13 +473,7 @@ func bucketStart(t time.Time, unit string, loc *time.Location) time.Time {
 // (one of Regions), only the rows uplinked under a topic root naming it
 // count, and packets are not split by type (D-194).
 func (t *TrendHours) Buckets(unit string, loc *time.Location, region string) []TrendBucket {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	hours := make([]time.Time, 0, len(t.hours))
-	for h := range t.hours {
-		hours = append(hours, h)
-	}
-	sort.Slice(hours, func(i, j int) bool { return hours[i].Before(hours[j]) })
+	hours, _ := t.snapshot()
 	type acc struct {
 		b          TrendBucket
 		nodes, gws map[int64]struct{}
@@ -453,8 +481,8 @@ func (t *TrendHours) Buckets(unit string, loc *time.Location, region string) []T
 	var order []time.Time
 	by := map[time.Time]*acc{}
 	firstSeen := map[int64]time.Time{}
-	for _, h := range hours {
-		s := t.hours[h]
+	for _, hs := range hours {
+		h, s := hs.h, hs.s
 		if region != "" {
 			r := s.Regions[region]
 			s = &HourSummary{Nodes: r.Nodes, Gateways: r.Gateways, Packets: r.Packets, Receptions: r.Receptions}
@@ -512,16 +540,10 @@ type NodeBucket struct {
 // which anything at all was logged, so hours the collector heard nothing
 // are not counted against the node.
 func (t *TrendHours) NodeBuckets(node int64, unit string, loc *time.Location) (out []NodeBucket, ok bool) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	hours := make([]time.Time, 0, len(t.hours))
-	for h := range t.hours {
-		hours = append(hours, h)
-	}
-	sort.Slice(hours, func(i, j int) bool { return hours[i].Before(hours[j]) })
+	hours, _ := t.snapshot()
 	var from time.Time
-	for _, h := range hours {
-		s := t.hours[h]
+	for _, hs := range hours {
+		h, s := hs.h, hs.s
 		if _, in := slices.BinarySearch(s.Nodes, node); in {
 			from = bucketStart(h, unit, loc)
 			break
@@ -534,7 +556,8 @@ func (t *TrendHours) NodeBuckets(node int64, unit string, loc *time.Location) (o
 	if from.IsZero() {
 		return nil, false
 	}
-	for _, h := range hours {
+	for _, hs := range hours {
+		h, s := hs.h, hs.s
 		k := bucketStart(h, unit, loc)
 		if k.Before(from) {
 			continue
@@ -543,7 +566,6 @@ func (t *TrendHours) NodeBuckets(node int64, unit string, loc *time.Location) (o
 			out = append(out, NodeBucket{Start: k, Battery: NoBattery})
 		}
 		b := &out[len(out)-1]
-		s := t.hours[h]
 		b.Hours++
 		if _, in := slices.BinarySearch(s.Gateways, node); in {
 			b.HoursGateway++

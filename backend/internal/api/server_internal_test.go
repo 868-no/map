@@ -100,3 +100,94 @@ func TestTrendsWaitersRespectTheirDeadline(t *testing.T) {
 		t.Fatal("the refresh did not answer its waiter")
 	}
 }
+
+// Requests missing the memo for one key at the same time compute it once,
+// and the ones after it are answered from the memo.
+func TestTrendsMemoComputesOnce(t *testing.T) {
+	var c trendsCache[TrendsBody]
+	now := func() time.Time { return time.Date(2026, 11, 6, 12, 0, 0, 0, time.UTC) }
+	gate := make(chan struct{})
+	var runs, waiting atomic.Int32
+	compute := func() (TrendsBody, error) {
+		runs.Add(1)
+		<-gate
+		return TrendsBody{Bucket: "day", Computed: now()}, nil
+	}
+	const n = 8
+	done := make(chan TrendsBody, n)
+	for range n {
+		go func() {
+			waiting.Add(1)
+			b, _ := c.load("day|3600|", true, now, compute)
+			done <- b
+		}()
+	}
+	// Let every caller reach the flight before the computation ends.
+	for deadline := time.Now().Add(time.Second); (runs.Load() == 0 || waiting.Load() < n) && time.Now().Before(deadline); {
+		time.Sleep(time.Millisecond)
+	}
+	time.Sleep(20 * time.Millisecond)
+	close(gate)
+	for range n {
+		if b := <-done; b.Bucket != "day" {
+			t.Fatalf("answer %+v", b)
+		}
+	}
+	if _, err := c.load("day|3600|", true, now, compute); err != nil || runs.Load() != 1 {
+		t.Fatalf("%d computations, %v", runs.Load(), err)
+	}
+	// Sums from before a running refresh are computed apart and not kept.
+	if _, err := c.load("week|3600|", false, now, compute); err != nil || runs.Load() != 2 || len(c.byKey) != 1 {
+		t.Fatalf("stale sums: %d computations, %d kept", runs.Load(), len(c.byKey))
+	}
+}
+
+// The memo names a zone by its offsets over the summaries' span: zones with
+// the same rules there share an entry, while a different offset, a
+// different summer time or a half-hour offset each keep their own.
+func TestZoneKeyNamesZonesByTheirRules(t *testing.T) {
+	oldest, newest := time.Date(2026, 5, 9, 0, 0, 0, 0, time.UTC), time.Date(2026, 11, 9, 0, 0, 0, 0, time.UTC)
+	key := func(name string) string {
+		l, ok := zone(name)
+		if !ok {
+			t.Fatalf("zone %s", name)
+		}
+		return zoneKey(l, &oldest, &newest, newest)
+	}
+	for _, same := range [][2]string{{"Europe/Oslo", "Europe/Stockholm"}, {"Europe/London", "Europe/Lisbon"}, {"Asia/Kolkata", "Asia/Colombo"}, {"UTC", "Etc/GMT"}} {
+		if a, b := key(same[0]), key(same[1]); a != b {
+			t.Errorf("%s %q and %s %q differ", same[0], a, same[1], b)
+		}
+	}
+	seen := map[string]string{}
+	for _, name := range []string{"Europe/Oslo", "Africa/Lagos", "Europe/London", "UTC", "Asia/Kolkata", "Asia/Dhaka", "America/New_York", "America/Bogota", "Australia/Adelaide"} {
+		k := key(name)
+		if other, ok := seen[k]; ok {
+			t.Errorf("%s and %s share %q", name, other, k)
+		}
+		seen[k] = name
+	}
+	// Summer time ends inside the span (01:00 UTC on 25 October): Oslo's
+	// key holds the change.
+	end := time.Date(2026, 10, 25, 1, 0, 0, 0, time.UTC).Unix()
+	if k, want := key("Europe/Oslo"), fmt.Sprintf("7200;%d:3600", end); k != want {
+		t.Errorf("Oslo: %q, want %q", k, want)
+	}
+}
+
+// Two zone names with the same rules share one memo entry: the second is
+// answered without summing again.
+func TestTrendsShareTheMemoAcrossEquivalentZones(t *testing.T) {
+	s := &Server{Log: slog.New(slog.DiscardHandler), trendsRefresh: func(context.Context) error { return nil }}
+	for _, tz := range []string{"Europe/Oslo", "Europe/Stockholm", "Europe/Berlin"} {
+		if out, err := s.trends(context.Background(), &TrendsInput{Bucket: "week", TZ: tz}); err != nil || out.CacheControl != trendsCC {
+			t.Fatalf("%s: %v %+v", tz, err, out)
+		}
+	}
+	if len(s.trendsMemo.byKey) != 1 {
+		t.Fatalf("memo keys %v", s.trendsMemo.byKey)
+	}
+	if _, err := s.trends(context.Background(), &TrendsInput{Bucket: "week", TZ: "Europe/London"}); err != nil || len(s.trendsMemo.byKey) != 2 {
+		t.Fatalf("London: %v, %d keys", err, len(s.trendsMemo.byKey))
+	}
+}

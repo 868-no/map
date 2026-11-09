@@ -189,20 +189,22 @@ func (s *Server) fleetTrends(ctx context.Context, in *FleetTrendsInput) (*FleetT
 	if !ok {
 		return nil, huma.Error400BadRequest("unknown time zone")
 	}
-	key := in.Bucket + "|" + in.TZ
-	if b, ok := s.fleetTrendsMemo.get(key, s.now()); ok {
+	key := func() string { return in.Bucket + "|" + s.zoneKey(loc) }
+	if b, ok := s.fleetTrendsMemo.get(key(), s.now()); ok {
 		return &FleetTrendsOutput{CacheControl: trendsCC, Body: b}, nil
 	}
 	fresh, err := s.refreshTrends(ctx)
 	if err != nil {
 		return nil, err
 	}
-	body := fleetBody(s.trendHours.FleetBuckets(in.Bucket, loc))
-	body.Bucket, body.Since, body.Computed = in.Bucket, s.trendHours.Oldest(), s.now()
+	body, _ := s.fleetTrendsMemo.load(key(), fresh, s.now, func() (FleetTrendsBody, error) {
+		body := fleetBody(s.trendHours.FleetBuckets(in.Bucket, loc))
+		body.Bucket, body.Since, body.Computed = in.Bucket, s.trendHours.Oldest(), s.now()
+		return body, nil
+	})
 	if !fresh {
 		// As for /trends: the previous refresh's sums, neither kept nor shared.
 		return &FleetTrendsOutput{CacheControl: "no-store", Body: body}, nil
 	}
-	s.fleetTrendsMemo.put(key, body)
 	return &FleetTrendsOutput{CacheControl: trendsCC, Body: body}, nil
 }

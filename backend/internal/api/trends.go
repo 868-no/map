@@ -4,10 +4,13 @@ import (
 	"context"
 	"errors"
 	"slices"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
+	"golang.org/x/sync/singleflight"
 
 	"github.com/868-no/map/internal/protocol"
 	"github.com/868-no/map/internal/storage"
@@ -59,13 +62,15 @@ const trendsCC = "public, max-age=3600, stale-while-revalidate=86400"
 // a shared cache asking again gets a recent sum.
 const TrendsTTL = 5 * time.Minute
 
-// trendsCache keeps computed trends per key (bucket, time zone, region or
-// node) for TrendsTTL. Mesh-wide and per-node trends keep one each, so
-// viewers browsing nodes never push the few mesh-wide answers out.
+// trendsCache keeps computed trends per key (bucket, time zone as
+// zoneKey names it, region or node) for TrendsTTL. Mesh-wide and per-node
+// trends keep one each, so viewers browsing nodes never push the few
+// mesh-wide answers out.
 type trendsCache[B interface{ computedAt() time.Time }] struct {
-	mu    sync.Mutex
-	max   int // entries kept at most; 0: trendsMemoMax
-	byKey map[string]B
+	mu     sync.Mutex
+	max    int // entries kept at most; 0: trendsMemoMax
+	byKey  map[string]B
+	flight singleflight.Group // one computation per key at a time
 }
 
 func (b TrendsBody) computedAt() time.Time      { return b.Computed }
@@ -110,6 +115,66 @@ func (c *trendsCache[B]) put(key string, b B) {
 	c.byKey[key] = b
 }
 
+// load answers key from the memo or, when it holds none, computes it once
+// for every request missing it at the same time (the sums walk every hour
+// kept), keeping it when it was computed from fresh summaries. Sums from
+// before a refresh still running (fresh false) are computed apart and not
+// kept.
+func (c *trendsCache[B]) load(key string, fresh bool, now func() time.Time, compute func() (B, error)) (B, error) {
+	fk := "fresh|" + key
+	if !fresh {
+		fk = "stale|" + key
+	}
+	v, err, _ := c.flight.Do(fk, func() (any, error) {
+		if b, ok := c.get(key, now()); ok && fresh {
+			return b, nil // computed by a flight that just ended
+		}
+		b, err := compute()
+		if err == nil && fresh {
+			c.put(key, b)
+		}
+		return b, err
+	})
+	b, _ := v.(B)
+	return b, err
+}
+
+// zoneKey names loc for the memo by all that bucketing depends on: its UTC
+// offset at the start of the summaries' span and each change of it up to
+// the end, so zones with the same rules over the span (Europe/Oslo and
+// Europe/Stockholm) share an entry, and a client cycling through zone names
+// cannot make each one a new sum. The span runs from a month before the
+// oldest row (a week or month bucket can start up to then) to two days
+// after the newest row or now, whichever is later.
+func zoneKey(loc *time.Location, oldest, newest *time.Time, now time.Time) string {
+	lo, hi := now, now
+	if oldest != nil && oldest.Before(lo) {
+		lo = *oldest
+	}
+	if newest != nil && newest.After(hi) {
+		hi = *newest
+	}
+	lo, hi = lo.AddDate(0, 0, -32), hi.AddDate(0, 0, 2)
+	var b strings.Builder
+	t := lo.In(loc)
+	_, prev := t.Zone()
+	b.WriteString(strconv.Itoa(prev))
+	// A zone changes offset a few times a year at most; the bound only
+	// guards against a zone that never moves on.
+	for range 1000 {
+		_, end := t.ZoneBounds()
+		if end.IsZero() || !end.After(t) || !end.Before(hi) {
+			break
+		}
+		t = end
+		if _, off := t.Zone(); off != prev {
+			b.WriteString(";" + strconv.FormatInt(t.Unix(), 10) + ":" + strconv.Itoa(off))
+			prev = off
+		}
+	}
+	return b.String()
+}
+
 // zones caches parsed time zones: LoadLocation reads tzdata each time.
 var zones sync.Map
 
@@ -151,25 +216,34 @@ func (s *Server) trends(ctx context.Context, in *TrendsInput) (*TrendsOutput, er
 	if in.Region != "" && !slices.Contains(storage.Regions, in.Region) {
 		return nil, huma.Error400BadRequest("unknown region")
 	}
-	key := in.Bucket + "|" + in.TZ + "|" + in.Region
-	if b, ok := s.trendsMemo.get(key, s.now()); ok {
+	key := func() string { return in.Bucket + "|" + s.zoneKey(loc) + "|" + in.Region }
+	if b, ok := s.trendsMemo.get(key(), s.now()); ok {
 		return &TrendsOutput{CacheControl: trendsCC, Body: b}, nil
 	}
 	fresh, err := s.refreshTrends(ctx)
 	if err != nil {
 		return nil, err
 	}
-	body := TrendsBody{Bucket: in.Bucket, Buckets: []TrendBucket{}, Computed: s.now(), Since: s.trendHours.Oldest()}
-	for _, b := range s.trendHours.Buckets(in.Bucket, loc, in.Region) {
-		body.Buckets = append(body.Buckets, TrendBucket{Start: b.Start, Nodes: b.Nodes, Gateways: b.Gateways, NewNodes: b.NewNodes, Packets: b.Packets, Receptions: b.Receptions, ByType: b.ByType})
-	}
+	// The key again: the refresh may have moved the span.
+	body, _ := s.trendsMemo.load(key(), fresh, s.now, func() (TrendsBody, error) {
+		body := TrendsBody{Bucket: in.Bucket, Buckets: []TrendBucket{}, Computed: s.now(), Since: s.trendHours.Oldest()}
+		for _, b := range s.trendHours.Buckets(in.Bucket, loc, in.Region) {
+			body.Buckets = append(body.Buckets, TrendBucket{Start: b.Start, Nodes: b.Nodes, Gateways: b.Gateways, NewNodes: b.NewNodes, Packets: b.Packets, Receptions: b.Receptions, ByType: b.ByType})
+		}
+		return body, nil
+	})
 	if !fresh {
 		// The previous refresh's sums, while the next one runs: neither
 		// kept nor shared, so the next request has the fresh ones.
 		return &TrendsOutput{CacheControl: "no-store", Body: body}, nil
 	}
-	s.trendsMemo.put(key, body)
 	return &TrendsOutput{CacheControl: trendsCC, Body: body}, nil
+}
+
+// zoneKey is zoneKey over the summaries' span as of the last refresh.
+func (s *Server) zoneKey(loc *time.Location) string {
+	oldest, newest := s.trendHours.Span()
+	return zoneKey(loc, oldest, newest, s.now())
 }
 
 // trendsWaitStale is how long a request waits for a refresh when the sums
@@ -275,35 +349,40 @@ func (s *Server) nodeTrends(ctx context.Context, in *NodeTrendsInput) (*NodeTren
 		return nil, huma.Error400BadRequest("unknown time zone")
 	}
 	node := protocol.NodeID(n)
-	key := node + "|" + in.Bucket + "|" + in.TZ
-	if b, ok := s.nodeTrendsMemo.get(key, s.now()); ok {
+	key := func() string { return node + "|" + in.Bucket + "|" + s.zoneKey(loc) }
+	if b, ok := s.nodeTrendsMemo.get(key(), s.now()); ok {
 		return &NodeTrendsOutput{CacheControl: trendsCC, Body: b}, nil
 	}
 	fresh, err := s.refreshTrends(ctx)
 	if err != nil {
 		return nil, err
 	}
-	buckets, heard := s.trendHours.NodeBuckets(int64(n), in.Bucket, loc)
-	if !heard {
-		return nil, huma.Error404NotFound("node not heard in the retained log")
-	}
-	body := NodeTrendsBody{Node: node, Bucket: in.Bucket, Buckets: make([]NodeTrendBucket, 0, len(buckets)), Computed: s.now(), Since: s.trendHours.Oldest()}
-	for _, b := range buckets {
-		o := NodeTrendBucket{Start: b.Start, Hours: b.Hours, HoursHeard: b.HoursHeard, HoursGateway: b.HoursGateway, Packets: b.Packets, Receptions: b.Receptions}
-		if b.Packets > 0 {
-			r := float64(b.Receptions) / float64(b.Packets)
-			o.ReceptionsPerPkt = &r
+	body, err := s.nodeTrendsMemo.load(key(), fresh, s.now, func() (NodeTrendsBody, error) {
+		buckets, heard := s.trendHours.NodeBuckets(int64(n), in.Bucket, loc)
+		if !heard {
+			return NodeTrendsBody{}, huma.Error404NotFound("node not heard in the retained log")
 		}
-		if b.Battery != storage.NoBattery {
-			v := b.Battery
-			o.BatteryMin = &v
+		body := NodeTrendsBody{Node: node, Bucket: in.Bucket, Buckets: make([]NodeTrendBucket, 0, len(buckets)), Computed: s.now(), Since: s.trendHours.Oldest()}
+		for _, b := range buckets {
+			o := NodeTrendBucket{Start: b.Start, Hours: b.Hours, HoursHeard: b.HoursHeard, HoursGateway: b.HoursGateway, Packets: b.Packets, Receptions: b.Receptions}
+			if b.Packets > 0 {
+				r := float64(b.Receptions) / float64(b.Packets)
+				o.ReceptionsPerPkt = &r
+			}
+			if b.Battery != storage.NoBattery {
+				v := b.Battery
+				o.BatteryMin = &v
+			}
+			body.Buckets = append(body.Buckets, o)
 		}
-		body.Buckets = append(body.Buckets, o)
+		return body, nil
+	})
+	if err != nil {
+		return nil, err
 	}
 	if !fresh {
 		// As for /trends: the previous refresh's sums, neither kept nor shared.
 		return &NodeTrendsOutput{CacheControl: "no-store", Body: body}, nil
 	}
-	s.nodeTrendsMemo.put(key, body)
 	return &NodeTrendsOutput{CacheControl: trendsCC, Body: body}, nil
 }
