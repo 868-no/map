@@ -242,8 +242,12 @@ button.banner { color: var(--text); text-align: left; border-color: var(--line);
 .issue { display: flex; gap: 0.375rem; align-items: baseline; padding: 0.125rem 0; font-size: 0.8125rem; }
 .issue-icon { flex: none; width: 1.2em; text-align: center; font-size: 0.75rem; }
 .issue-problem > span:last-child { color: var(--err); }
-.shares { list-style: none; margin: 0.25rem 0 0.625rem; padding: 0; }
-.share { display: grid; grid-template-columns: minmax(0, 1fr) 5.625rem 2.75rem; gap: 0.375rem; align-items: center; font-size: 0.75rem; padding: 1px 0; }
+/* One grid for the whole list, its rows on subgrids so the bars line up: the
+   labels take what they need (up to 60 %) before the bars, which keep at least
+   2.5rem. Fixed bar and percentage widths in rem left a large interface size
+   or system text size no room for the labels on a phone. */
+.shares { list-style: none; margin: 0.25rem 0 0.625rem; padding: 0; display: grid; grid-template-columns: fit-content(60%) minmax(2.5rem, 1fr) auto; column-gap: 0.375rem; }
+.share { display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; align-items: center; font-size: 0.75rem; padding: 1px 0; }
 .share-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
 .share-bar { height: 0.375rem; background: var(--line, rgba(127,127,127,.2)); border-radius: 0.1875rem; overflow: hidden; }
 .share-bar > span { display: block; height: 100%; background: var(--accent); }

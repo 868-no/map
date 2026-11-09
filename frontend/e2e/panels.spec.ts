@@ -176,6 +176,19 @@ function fleetAnswer(bucket: string, n: number) {
   }
 }
 
+// Packet type names keep their room on a small phone at the largest interface
+// size: fixed bar and percentage widths in rem once left them none.
+test('Trends packet types are named in full on a small phone at the largest interface size', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 667 })
+  await page.addInitScript(() => localStorage.setItem('meshmap:toggles:v6', JSON.stringify({ uiScale: 1.5 })))
+  await open(page)
+  await showPanel(page, 'Trends')
+  const labels = page.locator('.shares').first().locator('.share-label')
+  await expect(labels.first()).toBeVisible({ timeout: 30_000 })
+  const clipped = await labels.evaluateAll((els) => els.filter((e) => e.scrollWidth > e.clientWidth + 1 || e.clientWidth < 20).map((e) => e.textContent))
+  expect(clipped).toEqual([])
+})
+
 test('Trends graphs what the nodes run over everything kept, by firmware, hardware, role and preset', async ({ page }) => {
   const asked: string[] = []
   await page.route(/\/api\/v1\/trends\/fleet/, (route) => {
