@@ -42,8 +42,11 @@ pub fn dest(d: Option<u32>) -> Option<String> {
 
 // ---- helpers ----
 
-fn newer(a: &Row, b: &Row) -> bool {
-    b.t > a.t || (b.t == a.t && b.id > a.id)
+/// Whether `b` is a later copy than `a`: by observed_at, then id, so rows
+/// observed at the same instant still have one order, whatever order they
+/// come in.
+pub(crate) fn newer(a: &Row, b: &Row) -> bool {
+    (b.t, b.id) > (a.t, a.id)
 }
 
 /// The window's rows of the packet types whose views look at only them, in
@@ -109,6 +112,32 @@ fn latest_by<'a>(rows: &[&'a Row], keep: impl Fn(&Row) -> bool, key: impl Fn(&Ro
     m.into_iter().map(|(k, (_, last))| (k, last)).collect()
 }
 
+/// One row per logical packet: its first copy by (observed_at, id), in
+/// order of each packet's first appearance among `rows`. A packet's later
+/// copies (other gateways, a gateway uplinking it again hours on) are not
+/// the node sending it again.
+pub(crate) fn first_per_packet<'a>(rows: impl IntoIterator<Item = &'a Row>, keep: impl Fn(&Row) -> bool) -> Vec<&'a Row> {
+    let mut idx: FxMap<u64, usize> = map();
+    let mut out: Vec<&Row> = Vec::new();
+    for r in rows {
+        if !keep(r) {
+            continue;
+        }
+        match idx.get(&r.lp) {
+            Some(&k) => {
+                if newer(r, out[k]) {
+                    out[k] = r
+                }
+            }
+            None => {
+                idx.insert(r.lp, out.len());
+                out.push(r)
+            }
+        }
+    }
+    out
+}
+
 /// One row per reception (observation key): the lowest id, in first-appearance order.
 fn first_per_reception<'a>(rows: &[&'a Row], keep: impl Fn(&Row) -> bool) -> Vec<&'a Row> {
     let mut idx: FxMap<u64, usize> = map();
@@ -142,5 +171,24 @@ pub(crate) mod test_rows {
             id, t, broker: 0, gw: None, src: 1, dst: None, pid: None, channel: 0, ty, lp: id as u64, ok: id as u64, snr: None, rssi: None, hs: None, hl: None,
             relay: None, sig: 0, dr: false, rr: 0, crypto: 0, bytes: 0, nk: false, wa: false, topic: 0, pos: Some(Box::new(P { lat, lon: 10.7, alt: None, bits, known: bits > 0 })), detail: None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::test_rows::pos;
+    use super::*;
+
+    #[test]
+    fn first_copy_ties_go_to_the_lowest_id_whatever_the_row_order() {
+        // Packet 7: three copies, two observed at the same instant and
+        // listed highest id first; packet 8: one copy, kept out at first.
+        let copy = |id: i64, t: i64, lp: u64| Row { lp, ..pos(id, ty::POSITION, 59.9, 32, t) };
+        let rows = [copy(12, 1000, 7), copy(11, 1000, 7), copy(10, 2000, 7), copy(13, 500, 8)];
+        let refs: Vec<&Row> = rows.iter().collect();
+        let first = first_per_packet(refs.iter().copied(), |r| r.lp == 7);
+        assert_eq!(first.iter().map(|r| r.id).collect::<Vec<_>>(), vec![11]);
+        let reversed: Vec<&Row> = refs.iter().rev().copied().collect();
+        assert_eq!(first_per_packet(reversed, |_| true).iter().map(|r| (r.lp, r.id)).collect::<Vec<_>>(), vec![(8, 13), (7, 11)], "in order of first appearance");
     }
 }

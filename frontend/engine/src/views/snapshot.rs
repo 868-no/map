@@ -5,7 +5,7 @@ use std::cell::OnceCell;
 use serde::Serialize;
 
 use super::estimate::estimate;
-use super::{brokers, build_edges, downlinks, identity_of, identity_of_report, is_device_telemetry, is_identity, is_named_report, latest_by, origins, position_of, fresh_position_rows, referenced, sig_counts, telemetry_of, traceroute_hops, Contradiction, Node, RejectedPosition};
+use super::{brokers, build_edges, downlinks, first_per_packet, identity_of, identity_of_report, is_device_telemetry, is_identity, is_named_report, latest_by, origins, position_of, fresh_position_rows, referenced, sig_counts, telemetry_of, traceroute_hops, Contradiction, Node, RejectedPosition};
 use crate::geo;
 use crate::graph::{Edge, LatLon, RelayContext};
 use crate::row::{Interner, Row};
@@ -215,12 +215,8 @@ pub fn build_snapshot(rows: &[&Row], i: &Interner, g: &GeoOptions, rules: Rules)
     }
     // Channel utilisation over the window, for the Regions panel (D-194):
     // each report once (its first copy), however many gateways heard it.
-    let mut first: FxMap<u64, &Row> = map();
-    for &r in by.telemetry.iter().filter(|r| is_device_telemetry(r)) {
-        first.entry(r.lp).and_modify(|c| if (r.t, r.id) < (c.t, c.id) { *c = r }).or_insert(r);
-    }
     let mut ch: FxMap<u32, Vec<f64>> = map();
-    for r in first.into_values() {
+    for r in first_per_packet(by.telemetry.iter().copied(), is_device_telemetry) {
         if let Some(c) = r.telemetry().and_then(|t| t.ch_util).filter(|c| c.is_finite() && *c >= 0.0) {
             ch.entry(r.src).or_default().push(c);
         }

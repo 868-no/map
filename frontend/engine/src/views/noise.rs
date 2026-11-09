@@ -2,6 +2,7 @@
 //! reading per packet, per node, for the Telemetry tab's chart, the link
 //! panel's RSSI chart and a router's link quality chart.
 
+use super::first_per_packet;
 use crate::row::{ty, Interner, Row};
 use crate::util::{map, FxMap};
 
@@ -14,15 +15,9 @@ pub struct NoiseFloors(FxMap<u32, Vec<(i64, i32)>>);
 impl NoiseFloors {
     pub fn new(rows: &[&Row], i: &Interner) -> Self {
         let Some(local) = i.get("local") else { return NoiseFloors::default() };
-        // Per packet: its first copy by (observed_at, id).
-        let mut first: FxMap<u64, &Row> = map();
-        for &r in rows {
-            if r.ty == ty::TELEMETRY && r.telemetry().is_some_and(|t| t.kind == local && t.noise_floor.is_some()) {
-                first.entry(r.lp).and_modify(|cur| if r.t < cur.t || (r.t == cur.t && r.id < cur.id) { *cur = r }).or_insert(r);
-            }
-        }
+        let first = first_per_packet(rows.iter().copied(), |r| r.ty == ty::TELEMETRY && r.telemetry().is_some_and(|t| t.kind == local && t.noise_floor.is_some()));
         let mut by: FxMap<u32, Vec<(i64, u64, i32)>> = map();
-        for r in first.into_values() {
+        for r in first {
             by.entry(r.src).or_default().push((r.t, r.lp, r.telemetry().unwrap().noise_floor.unwrap()));
         }
         NoiseFloors(

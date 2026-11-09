@@ -1,9 +1,9 @@
 //! Evidence-backed links, MQTT ones kept apart (D-055).
 
-use super::first_per_reception;
+use super::{first_per_packet, first_per_reception};
 use crate::graph::{self, traceroute_samples, Edge, Ev, LatLon, RelayContext, SKey, Sample};
 use crate::row::{ty, HeardFrom, Row};
-use crate::util::{map, FxMap, FxSet};
+use crate::util::{FxMap, FxSet};
 
 pub const MAX_EDGES: usize = 20000;
 
@@ -52,26 +52,7 @@ pub fn build_edges(rows: &[&Row], neighborinfo: &[&Row], hops: &[Sample], known:
     let current = |s: &Sample| moved.get(&s.src).is_none_or(|&t| s.t >= t) && moved.get(&s.dst).is_none_or(|&t| s.t >= t);
     let mut samples: Vec<Sample> = Vec::new();
     // A. NeighborInfo: neighbour -> reporter, the first copy of each logical packet.
-    let mut first_nb: Vec<&Row> = Vec::new();
-    let mut nb_idx: FxMap<u64, usize> = map();
-    for &r in neighborinfo {
-        if r.ty != ty::NEIGHBORINFO {
-            continue;
-        }
-        match nb_idx.get(&r.lp) {
-            Some(&k) => {
-                let cur = first_nb[k];
-                if r.t < cur.t || (r.t == cur.t && r.id < cur.id) {
-                    first_nb[k] = r
-                }
-            }
-            None => {
-                nb_idx.insert(r.lp, first_nb.len());
-                first_nb.push(r)
-            }
-        }
-    }
-    for r in &first_nb {
+    for r in first_per_packet(neighborinfo.iter().copied(), |r| r.ty == ty::NEIGHBORINFO) {
         for &(id, snr) in r.neighbors() {
             samples.push(Sample { src: id, dst: r.src, ev: Ev::Neighbor, t: r.t, snr, rssi: None, key: SKey::Lp(r.lp) });
         }

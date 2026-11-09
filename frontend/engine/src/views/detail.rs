@@ -2,7 +2,7 @@
 
 use serde::Serialize;
 
-use super::{first_per_reception, is_device_telemetry, Built, Node};
+use super::{first_per_packet, first_per_reception, is_device_telemetry, Built, Node};
 use crate::graph;
 use crate::row::{Interner, Row};
 use crate::util::{iso, map, node_id, set, FxMap, FxSet};
@@ -148,14 +148,7 @@ pub fn build_node_detail(rows: &[&Row], num: u32, b: &Built, i: &Interner, start
     // One sample per logical packet (its first copy), in time order; the
     // newest MAX_SAMPLES when there are more.
     let per_packet = |keep: &dyn Fn(&Row) -> bool, truncated: &mut bool| -> Vec<&Row> {
-        let mut m: FxMap<u64, &Row> = map();
-        for &r in &own {
-            if !keep(r) {
-                continue;
-            }
-            m.entry(r.lp).and_modify(|cur| if r.t < cur.t || (r.t == cur.t && r.id < cur.id) { *cur = r }).or_insert(r);
-        }
-        let mut list: Vec<&Row> = m.into_values().collect();
+        let mut list = first_per_packet(own.iter().copied(), keep);
         list.sort_by_key(|r| (r.t, r.lp));
         if list.len() > MAX_SAMPLES {
             list.drain(..list.len() - MAX_SAMPLES);
@@ -202,17 +195,12 @@ pub fn build_node_detail(rows: &[&Row], num: u32, b: &Built, i: &Interner, start
 /// and errors answering them (D-109). rows: those `replies` was made from;
 /// mine: the rows it sent, uplinked or was sent.
 fn delivery_by_recipient(rows: &[&Row], mine: &[&Row], own: &[&Row], num: u32, replies: &crate::packets::ReplyIndex, i: &Interner) -> Vec<PairDelivery> {
-    let mut first: FxMap<u64, &Row> = map();
-    for &r in own {
-        if r.wa && r.pid.is_some() && r.dst.is_some_and(|d| d != crate::util::BROADCAST && d != num) {
-            first.entry(r.lp).or_insert(r);
-        }
-    }
+    let first = first_per_packet(own.iter().copied(), |r| r.wa && r.pid.is_some() && r.dst.is_some_and(|d| d != crate::util::BROADCAST && d != num));
     // Replies answering one of its packets: (replier, request id).
     let answered: FxSet<(u32, u32)> = mine.iter().filter(|r| r.dst == Some(num)).filter_map(|r| r.traceroute().filter(|t| t.is_reply && t.request != 0).map(|t| (r.src, t.request))).collect();
     let (ack, error) = (i.get("ack"), i.get("error"));
     let mut per: FxMap<u32, PairDelivery> = map();
-    for r in first.values() {
+    for r in first {
         let to = r.dst.unwrap();
         let e = per.entry(to).or_insert_with(|| PairDelivery { to: node_id(to), asked: 0, acked: 0, errors: 0, retried: 0 });
         e.asked += 1;

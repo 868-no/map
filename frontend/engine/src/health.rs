@@ -12,7 +12,7 @@ use crate::copies::Copies;
 use crate::row::{ty, Interner, Row};
 use crate::util::{map, node_id, FxMap, FxSet};
 use crate::views::link::{LinkReadings, RouterLink};
-use crate::views::Node;
+use crate::views::{first_per_packet, Node};
 
 /// Traceroute requests per hour from one node that count as flooding the
 /// mesh (warning), and as a problem. Each request is flooded and answered.
@@ -375,8 +375,8 @@ pub fn health(rows: &[&Row], window: &[&Row], nodes: &[Node], edges: &[crate::gr
     let invalid_ty = i.get("invalid");
     let (invalid, live): (Vec<&Row>, Vec<&Row>) = window.iter().partition(|r| Some(r.ty) == invalid_ty);
     let mut own: FxMap<u32, FxMap<u64, &Row>> = map();
-    for &r in rows {
-        own.entry(r.src).or_default().entry(r.lp).and_modify(|c| if r.t < c.t { *c = r }).or_insert(r);
+    for r in first_per_packet(rows.iter().copied(), |_| true) {
+        own.entry(r.src).or_default().insert(r.lp, r);
     }
     let count = |n: u32, t: u32, keep: &dyn Fn(&Row) -> bool| own.get(&n).map_or(0, |m| m.values().filter(|r| r.ty == t && keep(r)).count());
 
@@ -1044,17 +1044,13 @@ const EVENT_MS: i64 = 60_000;
 /// speaking again) and its uplinks as a gateway, in time order, with events
 /// less than a minute after the last kept one merged into it.
 pub fn heard_times(rows: &[&Row], want: impl Fn(u32) -> bool) -> FxMap<u32, Vec<i64>> {
-    let mut first: FxMap<u64, &Row> = map();
     let mut out: FxMap<u32, Vec<i64>> = map();
     for &r in rows {
-        if want(r.src) {
-            first.entry(r.lp).and_modify(|c| if r.t < c.t { *c = r }).or_insert(r);
-        }
         if let Some(g) = r.gw.filter(|&g| want(g)) {
             out.entry(g).or_default().push(r.t);
         }
     }
-    for r in first.into_values() {
+    for r in first_per_packet(rows.iter().copied(), |r| want(r.src)) {
         out.entry(r.src).or_default().push(r.t);
     }
     for ts in out.values_mut() {

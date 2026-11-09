@@ -6,7 +6,7 @@ use serde::Serialize;
 use crate::graph::{last_byte, zero_cost_role, RelayContext};
 use crate::row::{HeardFrom, Interner, Row};
 use crate::util::{iso, key_hex, map, node_id, set, FxMap, FxSet, BROADCAST};
-use crate::views::dest;
+use crate::views::{dest, first_per_packet, newer};
 
 pub const MAX_LOG: usize = 200;
 
@@ -139,15 +139,13 @@ pub fn packet_log(rows: &[&Row], invalid: &[&Row], num: u32, ctx: &RelayContext,
     let mut relayed: FxMap<u64, Rel> = map();
     let routing_ty = i.get("routing");
     let dm_ty = i.get("direct_message");
-    let mut inbound: FxMap<u64, &Row> = map();
+    // Routing replies and direct messages sent to it, first copy each.
+    let inbound = first_per_packet(rows.iter().chain(invalid).copied(), |r| r.src != num && r.dst == Some(num) && (Some(r.ty) == routing_ty || Some(r.ty) == dm_ty));
     let more = replies.more_ids(invalid);
     for &r in rows.iter().chain(invalid) {
         if r.src == num {
             own.entry(r.lp).or_default().push(r);
             continue;
-        }
-        if r.dst == Some(num) && (Some(r.ty) == routing_ty || Some(r.ty) == dm_ty) {
-            inbound.entry(r.lp).and_modify(|cur| if r.t < cur.t { *cur = r }).or_insert(r);
         }
         let mut note = |route: bool, gw: Option<u32>| {
             let e = relayed.entry(r.lp).or_insert_with(|| Rel { first: r.t, row: r, byte: false, route: false, gateways: set() });
@@ -188,10 +186,10 @@ pub fn packet_log(rows: &[&Row], invalid: &[&Row], num: u32, ctx: &RelayContext,
     }
     let own = newest(own.into_values().map(|rs| (rs.iter().map(|r| r.t).min().unwrap(), rs)).collect());
     let relayed = newest(relayed.into_values().map(|e| (e.first, e)).collect());
-    let inbound = newest(inbound.into_values().map(|r| (r.t, r)).collect());
+    let inbound = newest(inbound.into_iter().map(|r| (r.t, r)).collect());
     let own_list: Vec<OwnPacket> = own
         .map(|rs| {
-            let first = rs.iter().copied().reduce(|a, b| if b.t < a.t { b } else { a }).unwrap();
+            let first = rs.iter().copied().reduce(|a, b| if newer(b, a) { b } else { a }).unwrap();
             let others: Vec<&Row> = rs.iter().copied().filter(|r| r.gw.is_some_and(|g| g != num)).collect();
             let radio = |r: &&&Row| r.over_radio();
             let hops = others.iter().filter(radio).filter_map(|r| r.hops()).min();
