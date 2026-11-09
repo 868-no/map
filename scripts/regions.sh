@@ -15,6 +15,7 @@
 #   Sørlandet   42 Agder
 set -euo pipefail
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+. "$repo/versions.env"
 src_commit="ae8782500090144c2b74d6bb2a89365a7ff2236d"
 mapshaper="mapshaper@0.7.86"
 work="$(mktemp -d)"
@@ -23,7 +24,7 @@ curl -sSfL -o "$work/fylker.geojson" \
   "https://raw.githubusercontent.com/robhop/fylker-og-kommuner/$src_commit/Fylker-M.geojson"
 cp "$repo/scripts/regions.js" "$work/regions.js"
 docker run --rm -u "$(id -u):$(id -g)" -e HOME=/tmp -e npm_config_cache=/tmp/npm \
-  -v "$work":/work -w /work "${NODE_IMAGE:-node:22.21.1-bookworm}" \
+  -v "$work":/work -w /work "${NODE_IMAGE:-node:$NODE_VERSION-bookworm}" \
   npx -y "$mapshaper" fylker.geojson \
     -require regions.js alias=r \
     -each 'region = r.region(fylkesnummer)' \

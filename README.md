@@ -95,7 +95,7 @@ scripts/node.sh npm run gen:api && git diff --exit-code frontend/src/api/schema.
 
 A known vulnerability found by govulncheck, cargo-deny or npm audit fails CI, and with it the image build and the production deploy.
 
-Dependencies are pinned and upgraded by hand. `scripts/outdated.sh` lists newer releases of the Go modules, npm packages and Rust crates; it only reports, so upgrades happen when there is time to test them (prefer releases at least two weeks old).
+Dependencies are pinned and upgraded by hand. `scripts/outdated.sh` lists newer releases of the Go modules, npm packages and Rust crates; it only reports, so upgrades happen when there is time to test them (prefer releases at least two weeks old). Toolchain versions (Go, Rust, Node, wasm-bindgen, wasm-opt, the Go linters, Playwright) live in `versions.env`, which `scripts/*.sh` and CI read; the files that cannot read it keep copies, and `scripts/check-versions.sh` (run in CI) names any copy that differs.
 
 The two Go tools install once into the cached GOBIN: `scripts/go.sh go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0` and `scripts/go.sh go install golang.org/x/vuln/cmd/govulncheck@v1.9.0`. Formatters beyond `gofmt` (rustfmt, Prettier) are not used: the code keeps its own layout, which they would rewrite.
 

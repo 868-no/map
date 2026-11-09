@@ -32,5 +32,5 @@ sed -n '/^\[dependencies\]/,/^\[/p' "$repo/frontend/engine/Cargo.toml" |
   done
 
 echo
-echo "Toolchains and tools are pinned elsewhere (images in scripts/*.sh and the Dockerfiles,"
-echo "linters in .github/workflows/tests.yml and README.md); check those by hand when upgrading."
+echo "Toolchains and tools are pinned in versions.env; check those by hand when upgrading,"
+echo "then run scripts/check-versions.sh to find the copies that must change with them."

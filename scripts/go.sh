@@ -3,7 +3,8 @@
 # Usage: scripts/go.sh go test ./...      (cwd inside container: backend/)
 set -euo pipefail
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-image="${GO_IMAGE:-golang:1.26.10-bookworm}"
+. "$repo/versions.env"
+image="${GO_IMAGE:-golang:$GO_VERSION-bookworm}"
 tty_flag=()
 [ -t 1 ] && tty_flag=(-t)
 # The cache: a named volume, or with MESHMAP_CACHE a directory under it

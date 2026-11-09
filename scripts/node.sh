@@ -3,7 +3,8 @@
 #   scripts/node.sh npm install          (cwd inside container: frontend/)
 set -euo pipefail
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-image="${NODE_IMAGE:-node:22.21.1-bookworm}"
+. "$repo/versions.env"
+image="${NODE_IMAGE:-node:$NODE_VERSION-bookworm}"
 tty_flag=()
 [ -t 1 ] && tty_flag=(-t)
 # The cache: a named volume, or with MESHMAP_CACHE a directory under it

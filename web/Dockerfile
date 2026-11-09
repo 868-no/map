@@ -1,10 +1,11 @@
 # syntax=docker/dockerfile:1.7
 # Build context: repository root.
 # Build stages run natively on the build machine; their output is platform independent.
+# Versions are copies of versions.env, kept equal by scripts/check-versions.sh.
 
 # The WebAssembly engine (frontend/engine): every view is derived in the browser.
 FROM --platform=$BUILDPLATFORM rust:1.99.1-slim-bookworm AS engine
-# Must equal the wasm-bindgen crate version in frontend/engine/Cargo.toml (and bindgen in scripts/wasm.sh).
+# Must equal the wasm-bindgen crate version in frontend/engine/Cargo.toml.
 # --experimental-reset-state-function: the worker recreates the engine instance to give memory back (D-183).
 ARG WASM_BINDGEN=0.2.130
 RUN rustup target add wasm32-unknown-unknown \

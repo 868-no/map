@@ -8,14 +8,15 @@
 #   UPDATE_GOLDEN=1 scripts/wasm.sh test   re-record tests/fixtures/mesh-12h/engine.json
 set -euo pipefail
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-image="${RUST_IMAGE:-rust:1.99.1-slim-bookworm}"
-bindgen="0.2.130" # must equal the wasm-bindgen crate version in Cargo.toml (and WASM_BINDGEN in web/Dockerfile)
-deny="0.20.2"
+. "$repo/versions.env"
+image="${RUST_IMAGE:-rust:$RUST_VERSION-slim-bookworm}"
+bindgen="$WASM_BINDGEN_VERSION" # must equal the wasm-bindgen crate version in Cargo.toml
+deny="$CARGO_DENY_VERSION"
 # Binaryen's wasm-opt optimises the bindgen output (-O3, as the release
 # profile's opt-level 3) and strips the name section (debug names only). The image has no curl, so the
 # release is fetched on the host, checked and cached outside the repo.
-binaryen="version_133"
-binaryen_sha256="2dc9c7813f5375db93d96ead4b78222fcc3e2677bbb832297af4797782a37489" # binaryen-version_133-x86_64-linux.tar.gz
+binaryen="$BINARYEN_VERSION"
+binaryen_sha256="$BINARYEN_SHA256" # binaryen-$binaryen-x86_64-linux.tar.gz
 # The cache: a named volume, or with MESHMAP_CACHE a directory under it
 # (CI saves and restores it between runs on GitHub-hosted runners).
 if [ -n "${MESHMAP_CACHE:-}" ]; then
@@ -44,7 +45,7 @@ case "${1:-build}" in
   clippy) run "rustup component add clippy >/dev/null &&
       cargo clippy --locked --release --all-targets -- -D warnings" ;;
   # The full image: cargo-deny clones the advisory database with git, which slim lacks.
-  deny) image="${RUST_FULL_IMAGE:-rust:1.99.1-bookworm}"
+  deny) image="${RUST_FULL_IMAGE:-rust:$RUST_VERSION-bookworm}"
     run "[ -x /cache/cargo/bin/cargo-deny ] && /cache/cargo/bin/cargo-deny --version | grep -q $deny \
         || cargo install --locked cargo-deny --version $deny
       /cache/cargo/bin/cargo-deny check advisories bans sources" ;;

@@ -1,5 +1,6 @@
 # syntax=docker/dockerfile:1.7
 # Generated protobuf bindings are committed, so the build needs only Go.
+# The Go version is a copy of versions.env, kept equal by scripts/check-versions.sh.
 FROM --platform=$BUILDPLATFORM golang:1.26.10-bookworm AS build
 WORKDIR /src
 COPY go.mod go.sum ./
