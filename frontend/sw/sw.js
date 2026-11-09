@@ -14,6 +14,9 @@ const DATA_BUDGET_BYTES = 30 * 1024 * 1024
 const DATA_MAX_ENTRY_BYTES = 10 * 1024 * 1024
 const DATA_INDEX = '/__meshmap-data-index__'
 const API_TIMEOUT_MS = 8000
+// A page or entry file still unanswered after this is served from the cache,
+// when it is there: a stalled connection must not hold up the app's start.
+const SHELL_TIMEOUT_MS = 5000
 const KEEP = [SHELL, FONTS, DATA]
 
 self.addEventListener('install', (event) => {
@@ -57,7 +60,10 @@ self.addEventListener('fetch', (event) => {
   if (req.mode === 'navigate') {
     // Pages of their own (the privacy policy, the API docs) are cached under their own
     // path; every other navigation is the app, whose offline copy is /index.html.
-    event.respondWith(networkFirst(req, SHELL, p !== '/' && PRECACHE.includes(p) ? p : '/index.html'))
+    // Only a page is kept as the shell: a navigation to any other file (JSON,
+    // an image) answered 200 must not become what an offline start shows.
+    const key = p !== '/' && PRECACHE.includes(p) ? p : '/index.html'
+    event.respondWith(networkFirst(req, SHELL, key, (res) => res.ok && (res.headers.get('content-type') || '').includes('text/html')))
     return
   }
   if (p.startsWith('/fonts/')) {
@@ -68,7 +74,16 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(staleWhileRevalidate(req, SHELL))
     return
   }
-  event.respondWith(cacheFirst(req, SHELL))
+  // Built files are named by their content: a cached copy is never stale.
+  if (p.startsWith('/assets/')) {
+    event.respondWith(cacheFirst(req, SHELL))
+    return
+  }
+  // The rest (theme-boot.js, the pages' scripts, the manifest, icons) keep
+  // their names across deploys and are served no-cache: the first load after a
+  // deploy, still under the old worker, must get the new ones, not the old
+  // build's from its cache.
+  event.respondWith(networkFirst(req, SHELL, req, (res) => cacheable(req, res)))
 })
 
 async function cacheFirst(req, name) {
@@ -99,15 +114,28 @@ async function staleWhileRevalidate(req, name) {
   return hit || fresh
 }
 
-async function networkFirst(req, name, fallbackPath) {
-  try {
-    const res = await fetch(req)
-    // Only a page is kept as the shell: a navigation to any other file (JSON,
-    // an image) answered 200 must not become what an offline start shows.
-    if (res.ok && (res.headers.get('content-type') || '').includes('text/html')) (await caches.open(name)).put(fallbackPath, res.clone())
+// The network's answer, kept in `name` under `key` when `keep(res)`; the cached
+// copy when the network fails, or has not answered within SHELL_TIMEOUT_MS
+// (a late answer still refreshes the cache for next time).
+async function networkFirst(req, name, key, keep) {
+  const fresh = fetch(req).then((res) => {
+    if (keep(res)) {
+      const copy = res.clone()
+      caches.open(name).then((c) => c.put(key, copy)).catch(() => {})
+    }
     return res
+  })
+  fresh.catch(() => {}) // a failure after the cached copy was served is no error
+  let timer
+  const slow = new Promise((resolve) => { timer = setTimeout(resolve, SHELL_TIMEOUT_MS) })
+    .then(() => caches.match(key))
+    .then((hit) => hit || fresh) // nothing cached: keep waiting for the network
+  try {
+    return await Promise.race([fresh, slow])
   } catch {
-    return (await caches.match(fallbackPath)) || Response.error()
+    return (await caches.match(key)) || Response.error()
+  } finally {
+    clearTimeout(timer)
   }
 }
 
