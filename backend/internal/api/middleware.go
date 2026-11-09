@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"net/netip"
@@ -135,7 +136,7 @@ func Protect(next http.Handler, l Limits) http.Handler {
 	}
 	tooMany := func(w http.ResponseWriter) {
 		w.Header().Set("Retry-After", "2")
-		http.Error(w, `{"title":"Too Many Requests","status":429}`, http.StatusTooManyRequests)
+		writeProblem(w, http.StatusTooManyRequests, "too many requests, retry shortly")
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !strings.HasPrefix(r.URL.Path, "/api/") {
@@ -192,7 +193,7 @@ func Protect(next http.Handler, l Limits) http.Handler {
 				t.Stop()
 				if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 					w.Header().Set("Retry-After", "2")
-					http.Error(w, `{"title":"Service Unavailable","status":503,"detail":"timed out, retry shortly"}`, http.StatusServiceUnavailable)
+					writeProblem(w, http.StatusServiceUnavailable, "timed out, retry shortly")
 				} else {
 					w.WriteHeader(statusClientClosed)
 				}
@@ -201,4 +202,15 @@ func Protect(next http.Handler, l Limits) http.Handler {
 		}
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+// writeProblem answers as huma's own errors do (RFC 9457, problem+json). The
+// browser tells the backend's 503 "retry shortly" from a proxy's (backend
+// down) by that content type (D-156), which http.Error would make text/plain.
+func writeProblem(w http.ResponseWriter, status int, detail string) {
+	h := w.Header()
+	h.Set("Content-Type", "application/problem+json")
+	h.Set("X-Content-Type-Options", "nosniff")
+	w.WriteHeader(status)
+	_, _ = fmt.Fprintf(w, `{"title":%q,"status":%d,"detail":%q}`+"\n", http.StatusText(status), status, detail)
 }

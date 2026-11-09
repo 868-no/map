@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
@@ -96,6 +97,17 @@ func TestQueuedReadOutOfTimeIs503(t *testing.T) {
 	h.ServeHTTP(w, httptest.NewRequest(http.MethodGet, heavyPath, nil))
 	if w.Code != http.StatusServiceUnavailable || w.Header().Get("Retry-After") == "" {
 		t.Fatalf("queued past the deadline: %d %v", w.Code, w.Header())
+	}
+	// The backend's own 503: problem+json, which the browser does not take for a proxy's (D-156).
+	var p struct {
+		Status int    `json:"status"`
+		Detail string `json:"detail"`
+	}
+	if ct := w.Header().Get("Content-Type"); ct != "application/problem+json" {
+		t.Fatalf("content type %q", ct)
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &p); err != nil || p.Status != 503 || p.Detail == "" {
+		t.Fatalf("body %q: %v", w.Body.String(), err)
 	}
 }
 
