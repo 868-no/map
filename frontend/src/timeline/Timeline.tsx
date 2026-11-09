@@ -147,8 +147,8 @@ export function PeriodPanel({ caps, retention, snapshot }: { caps: Capabilities;
         <div className="dual" title={`Selectable: ${formatShort(new Date(minMs))} – now`}>
           <div className="dual-track" />
           <div className="dual-sel" style={{ left: `${pct(selStart)}%`, width: `${Math.max(pct(selEnd) - pct(selStart), 0.3)}%` }} />
-          <input type="range" aria-label="Window start" min={minMs} max={now} step={60_000} value={selStart} onChange={(e) => setDraft([+e.target.value, selEnd])} {...commitDraft} />
-          <input type="range" aria-label="Window end" min={minMs} max={now} step={60_000} value={selEnd} onChange={(e) => setDraft([selStart, +e.target.value])} {...commitDraft} />
+          <input type="range" aria-label="Window start" aria-valuetext={formatLocal(new Date(selStart))} min={minMs} max={now} step={60_000} value={selStart} onChange={(e) => setDraft([+e.target.value, selEnd])} {...commitDraft} />
+          <input type="range" aria-label="Window end" aria-valuetext={formatLocal(new Date(selEnd))} min={minMs} max={now} step={60_000} value={selEnd} onChange={(e) => setDraft([selStart, +e.target.value])} {...commitDraft} />
         </div>
         <button aria-label="Move window forward" title="Move window forward by half its length" onClick={() => applyFixed(startMs + durMs / 2, endMs + durMs / 2)} disabled={endMs >= now - 60_000}>
           ▶
