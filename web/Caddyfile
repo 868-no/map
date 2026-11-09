@@ -74,10 +74,17 @@
 	}
 	# Content-hashed build output: cache forever. Its own block with no
 	# fallback, so a file from an older deploy is a 404, never the app's HTML
-	# stored under an asset URL for a year.
+	# stored under an asset URL for a year. Only files that exist are
+	# immutable: during a rolling deploy an old replica answers a new page's
+	# asset with 404, which Cloudflare and browsers would otherwise keep for
+	# a year under that URL (it happened: an unstyled map until the CSS hash
+	# changed). A miss is no-store, so the next request reaches a new replica.
 	handle /assets/* {
 		root * /srv/app
-		header Cache-Control "public, max-age=31536000, immutable"
+		@built file
+		header @built Cache-Control "public, max-age=31536000, immutable"
+		@missing not file
+		header @missing Cache-Control "no-store"
 		file_server
 	}
 	handle {
