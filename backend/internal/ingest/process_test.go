@@ -142,6 +142,19 @@ func TestProcessNotDirect(t *testing.T) {
 	}
 }
 
+// Hop values a 3-bit header field cannot carry are dropped, and so prove no
+// direct RF reception either (only a forged or garbled upload has them).
+func TestProcessImpossibleHopsNotDirect(t *testing.T) {
+	p := pkt{from: 0x11111111, id: 5, to: 0xffffffff, gw: "!aabbccdd", data: posData(t), hopStart: 9, hopLimit: 9, snr: 7.5, rssi: -90}
+	obs, err := Process(msg(topicLF, envelope(t, p, security.DefaultPSK[:], security.ModeCTR, "LongFast")), opts(t, longFast))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if obs.HopStart != nil || obs.Meta.Rx.DirectRF || obs.Meta.Rx.Reason != "no_hop_start" {
+		t.Fatalf("got hops %v, %+v", obs.HopStart, obs.Meta.Rx)
+	}
+}
+
 // design §10.2 test 2: wrong key / malformed protobuf discarded.
 func TestProcessWrongKeyAndMalformed(t *testing.T) {
 	wrong := make([]byte, 16)

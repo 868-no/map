@@ -330,7 +330,7 @@ func setHeader(obs *Observation, p *pb.MeshPacket, gw uint32) {
 		ri := int32(r)
 		obs.RelayHint = &ri
 	}
-	obs.Meta.Rx = directRF(p, gw, obs.RxSNR, obs.RxRSSI)
+	obs.Meta.Rx = directRF(p, gw, obs.HopStart, obs.HopLimit, obs.RxSNR, obs.RxRSSI)
 }
 
 // headerOnly keeps only a packet's cleartext header (D-091, D-093): who
@@ -446,7 +446,7 @@ func transportName(t pb.MeshPacket_TransportMechanism) string {
 
 // directRF decides whether the gateway demonstrably received this packet
 // over RF directly from its originator (design §2.2). Absent fields -> false.
-func directRF(p *pb.MeshPacket, gw uint32, snr *float32, rssi *int32) RxInfo {
+func directRF(p *pb.MeshPacket, gw uint32, hopStart, hopLimit *int16, snr *float32, rssi *int32) RxInfo {
 	switch {
 	case gw == 0:
 		return RxInfo{Reason: "no_gateway"}
@@ -459,9 +459,11 @@ func directRF(p *pb.MeshPacket, gw uint32, snr *float32, rssi *int32) RxInfo {
 		p.GetTransportMechanism() == pb.MeshPacket_TRANSPORT_UNICAST_UDP ||
 		p.GetTransportMechanism() == pb.MeshPacket_TRANSPORT_API:
 		return RxInfo{Reason: "non_rf_transport"}
-	case p.GetHopStart() == 0:
+	// The hops setHeader kept: values a 3-bit header field cannot carry
+	// were dropped there, so they prove nothing here either.
+	case hopStart == nil:
 		return RxInfo{Reason: "no_hop_start"}
-	case p.GetHopLimit() != p.GetHopStart():
+	case *hopLimit != *hopStart:
 		return RxInfo{Reason: "relayed"}
 	case snr == nil && rssi == nil:
 		return RxInfo{Reason: "no_rx_metrics"}
