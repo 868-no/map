@@ -2,6 +2,8 @@
 //! internal/graph via the TypeScript worker. Pure: callers pass only rows
 //! inside the window.
 
+use std::cell::RefCell;
+
 use serde::Serialize;
 
 use crate::row::Hop;
@@ -366,6 +368,10 @@ pub struct RelayContext {
     /// about where they were when a copy was heard, so the signal rule
     /// treats them as unpositioned, as relay or as gateway (D-153).
     pub mobile: FxSet<u32>,
+    /// Distances from gateways to relay candidates, (gateway, candidate) ->
+    /// metres, as resolve_detail measures them: a gateway's relayed copies
+    /// ask after the same few candidates again and again.
+    dist: RefCell<FxMap<(u32, u32), f64>>,
 }
 
 fn pair(a: u32, b: u32) -> (u32, u32) {
@@ -377,7 +383,7 @@ impl RelayContext {
     /// non-relay evidence pairs (src, dst), one per sample; silent: nodes
     /// that never rebroadcast; mobile: nodes that moved in the window.
     pub fn new(known: impl IntoIterator<Item = u32>, pos: FxMap<u32, LatLon>, confirmed: impl IntoIterator<Item = (u32, u32)>, silent: FxSet<u32>, mobile: FxSet<u32>) -> Self {
-        let mut c = RelayContext { by_byte: vec![Vec::new(); 256], pos, confirmed: set(), silent, max_range_m: MIN_RELAY_RANGE_M, loose_range_m: MIN_RELAY_RANGE_M, downlinkers: set(), signal_rule: true, origin_rule: true, mobile };
+        let mut c = RelayContext { by_byte: vec![Vec::new(); 256], pos, confirmed: set(), silent, max_range_m: MIN_RELAY_RANGE_M, loose_range_m: MIN_RELAY_RANGE_M, downlinkers: set(), signal_rule: true, origin_rule: true, mobile, dist: RefCell::default() };
         for k in known {
             c.by_byte[last_byte(k) as usize].push(k);
         }
@@ -432,7 +438,8 @@ impl RelayContext {
             _ => self.max_range_m,
         };
         // Called for every relayed copy: one pass, each candidate's distance
-        // measured once, candidates counted rather than collected.
+        // measured once per gateway, candidates counted rather than collected.
+        let mut dist = self.dist.borrow_mut();
         let (mut n, mut first) = (0, 0);
         let (mut n_confirmed, mut first_confirmed) = (0, 0);
         for &k in self.by_byte.get(hint as usize).map_or(&[][..], |v| v) {
@@ -440,7 +447,7 @@ impl RelayContext {
                 continue;
             }
             if let (Some(&p), Some(&g)) = (self.pos.get(&k), gp)
-                && distance_m(p, g) > range(k)
+                && *dist.entry((gw, k)).or_insert_with(|| distance_m(p, g)) > range(k)
             {
                 continue;
             }

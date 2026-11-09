@@ -935,7 +935,7 @@ pub fn find_link_drop(links: &[RouterLink], newest: i64) -> Option<LinkDrop> {
         .map(|l| {
             let mut s = Vec::with_capacity(l.snr.len() + 1);
             s.push(0.0);
-            for &x in &l.snr {
+            for &x in l.snr.iter() {
                 s.push(s[s.len() - 1] + x as f64);
             }
             s
@@ -1310,16 +1310,16 @@ mod tests {
     /// A link direction read every 20 minutes over 72 h, at `snr(hour)` with
     /// a repeatable ±1.5 dB of noise; `keep(hour)` picks which readings exist.
     fn link(partner: u32, out: bool, snr: impl Fn(f64) -> f64, keep: impl Fn(f64) -> bool) -> RouterLink {
-        let mut l = RouterLink { partner, out, ..Default::default() };
+        let (mut t, mut s) = (Vec::new(), Vec::new());
         for k in 0..216u32 {
             let h = k as f64 / 3.0;
             if keep(h) {
                 let noise = ((k.wrapping_mul(2_654_435_761) ^ partner.wrapping_mul(40_503)) % 31) as f64 / 10.0 - 1.5;
-                l.t.push((h * H as f64) as i64);
-                l.snr.push((snr(h) + noise) as f32);
+                t.push((h * H as f64) as i64);
+                s.push((snr(h) + noise) as f32);
             }
         }
-        l
+        RouterLink { partner, out, t: t.into(), snr: s.into() }
     }
     const ALL: fn(f64) -> bool = |_| true;
     const END: i64 = 72 * H;
@@ -1375,7 +1375,7 @@ mod tests {
         let mut samples: Vec<crate::graph::Sample> = Vec::new();
         for l in [link(2, true, step, ALL), link(2, false, step, ALL), link(3, true, step, ALL), link(9, true, step, ALL)] {
             let (src, dst) = if l.out { (1, l.partner) } else { (l.partner, 1) };
-            for (k, (&t, &snr)) in l.t.iter().zip(&l.snr).enumerate() {
+            for (k, (&t, &snr)) in l.t.iter().zip(l.snr.iter()).enumerate() {
                 samples.push(crate::graph::Sample { src, dst, ev: crate::graph::Ev::Traceroute, t, snr: Some(snr as f64), rssi: None, key: crate::graph::SKey::Ok((src as u64) << 40 | (dst as u64) << 20 | k as u64) });
             }
         }

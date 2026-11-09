@@ -3,6 +3,8 @@
 //! router's links to other routers, for its link quality chart and the
 //! router link drop rule (D-197).
 
+use std::rc::Rc;
+
 use serde::Serialize;
 
 use crate::graph::{Ev, Sample};
@@ -115,14 +117,15 @@ pub fn link_history(readings: &LinkReadings, floors: &super::noise::NoiseFloors,
 }
 
 /// One direction of a router's radio link to another router (D-197): its
-/// SNR readings at the receiving end, in time order.
+/// SNR readings at the receiving end, in time order. Both ends list the same
+/// direction, so its readings are shared, not copied.
 #[derive(Debug, Default, Clone)]
 pub struct RouterLink {
     pub partner: u32,
     /// The router transmitted and the partner heard it; else the reverse.
     pub out: bool,
-    pub t: Vec<i64>,
-    pub snr: Vec<f32>,
+    pub t: Rc<[i64]>,
+    pub snr: Rc<[f32]>,
 }
 
 /// Every link direction between two routers that has SNR readings, by
@@ -141,9 +144,9 @@ pub fn router_links(readings: &LinkReadings, routers: &FxSet<u32>) -> FxMap<u32,
     let mut out: FxMap<u32, Vec<RouterLink>> = map();
     for run in v.chunk_by(|a, b| (a.0, a.1) == (b.0, b.1)) {
         let (src, dst) = (run[0].0, run[0].1);
-        let t: Vec<i64> = run.iter().map(|x| x.2).collect();
-        let snr: Vec<f32> = run.iter().map(|x| x.3).collect();
-        out.entry(dst).or_default().push(RouterLink { partner: src, out: false, t: t.clone(), snr: snr.clone() });
+        let t: Rc<[i64]> = run.iter().map(|x| x.2).collect();
+        let snr: Rc<[f32]> = run.iter().map(|x| x.3).collect();
+        out.entry(dst).or_default().push(RouterLink { partner: src, out: false, t: Rc::clone(&t), snr: Rc::clone(&snr) });
         out.entry(src).or_default().push(RouterLink { partner: dst, out: true, t, snr });
     }
     // In a fixed order: the map's is arbitrary, and the rule must not depend on it.
@@ -262,7 +265,8 @@ mod tests {
         assert_eq!((quality_bin(H), quality_bin(72 * H), quality_bin(168 * H), quality_bin(336 * H)), (900_000, H, 3 * H, 6 * H));
         let links = router_links(&r, &routers);
         assert_eq!(links[&1].iter().map(|l| (l.partner, l.out, l.t.len())).collect::<Vec<_>>(), vec![(2, true, 5), (3, false, 1)]);
-        assert_eq!(links[&2][0].snr, vec![8.0, 6.0, 1.0, -2.0, 0.0]);
+        assert_eq!(*links[&2][0].snr, [8.0, 6.0, 1.0, -2.0, 0.0]);
+        assert!(Rc::ptr_eq(&links[&2][0].snr, &links[&1][0].snr), "one direction's readings, listed under both ends, held once");
         assert_eq!(median_f32(&mut [4.0, 1.0, 3.0, 2.0]), 2.5);
     }
 

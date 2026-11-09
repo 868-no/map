@@ -24,6 +24,8 @@ pub mod views;
 pub mod watch;
 pub mod zerocost;
 
+use std::cell::OnceCell;
+
 use serde::Deserialize;
 use wasm_bindgen::prelude::*;
 
@@ -93,6 +95,17 @@ impl Key {
     }
 }
 
+/// The rows a window and filters select (Engine::filter), as indices into
+/// the store in row order; and, made on first use, the same by logical
+/// packet, so a route finds its packet's copies without a scan.
+struct Selected {
+    key: Key,
+    idx: Vec<u32>,
+    /// idx sorted by (logical packet key, index): each packet's copies a
+    /// run, in row order.
+    by_lp: OnceCell<Vec<u32>>,
+}
+
 #[wasm_bindgen]
 pub struct Engine {
     i: Interner,
@@ -100,9 +113,9 @@ pub struct Engine {
     geo: GeoOptions,
     rules: Rules,
     built: Option<(Key, Built)>,
-    /// The filtered window's rows as indices into the store, shared by the
-    /// views of one rebuild (snapshot, traffic, node, packet log, route).
-    rows: Option<(Key, Vec<u32>)>,
+    /// The filtered window's rows, shared by the views of one rebuild
+    /// (snapshot, traffic, node, packet log, route).
+    rows: Option<Selected>,
     /// Interned strings at which to drop those no row holds any more (compact).
     compact_at: usize,
     /// The regions' outlines for health (D-161), empty until set_regions.
@@ -164,7 +177,7 @@ impl Engine {
                 let lp = key64(arg);
                 self.build(start, end, filters)?;
                 let all = self.rows();
-                let rows: Vec<&row::Row> = all.iter().copied().filter(|r| r.lp == lp).collect();
+                let rows = self.copies_of(lp);
                 // ACKs answering it: their senders received it (D-096).
                 let ack = self.i.get("ack");
                 let index = self.built.as_ref().unwrap().1.replies.get_or_init(|| packets::ReplyIndex::new(&all));
@@ -195,7 +208,7 @@ impl Engine {
                 // about where a packet sent now would go.
                 let silent: util::FxSet<u32> = b.roles.iter().filter(|(_, r)| roles::is_silent(r)).map(|(&n, _)| n).collect();
                 let rows = self.store.rows();
-                let own: Vec<&row::Row> = self.rows.as_ref().map_or(&[][..], |(_, idx)| idx).iter().map(|&k| &rows[k as usize]).filter(|r| r.src == num).collect();
+                let own: Vec<&row::Row> = self.rows.as_ref().map_or(&[][..], |s| &s.idx).iter().map(|&k| &rows[k as usize]).filter(|r| r.src == num).collect();
                 Ok(json(&reach::reach(num, &b.snapshot.edges, &silent, internet, &own)))
             }
             "link" => {
@@ -253,12 +266,12 @@ impl Engine {
     /// memoised until the store or the request changes.
     fn filter(&mut self, start: i64, end: i64, filters: &str) -> Result<(), JsError> {
         let version = self.store.version;
-        if self.rows.as_ref().is_none_or(|(k, _)| !k.is(start, end, filters, version)) {
+        if self.rows.as_ref().is_none_or(|s| !s.key.is(start, end, filters, version)) {
             let f: Filters = serde_json::from_str(filters).map_err(err)?;
             let keep = filter_fn(&f, &self.i);
             let (a, b) = self.store.range(start, end);
             let idx = (a..b).filter(|&k| keep(&self.store.rows()[k])).map(|k| k as u32).collect();
-            self.rows = Some((Key { start, end, filters: filters.to_string(), version }, idx));
+            self.rows = Some(Selected { key: Key { start, end, filters: filters.to_string(), version }, idx, by_lp: OnceCell::new() });
         }
         Ok(())
     }
@@ -282,7 +295,22 @@ impl Engine {
 
     /// The rows selected by the last Engine::filter.
     fn rows(&self) -> Vec<&row::Row> {
-        self.rows.as_ref().map_or(vec![], |(_, idx)| idx.iter().map(|&k| &self.store.rows()[k as usize]).collect())
+        let rows = self.store.rows();
+        self.rows.as_ref().map_or(vec![], |s| s.idx.iter().map(|&k| &rows[k as usize]).collect())
+    }
+
+    /// The copies of logical packet `lp` among the rows selected by the last
+    /// Engine::filter, in row order.
+    fn copies_of(&self, lp: u64) -> Vec<&row::Row> {
+        let Some(s) = &self.rows else { return vec![] };
+        let rows = self.store.rows();
+        let by = s.by_lp.get_or_init(|| {
+            let mut v = s.idx.clone();
+            v.sort_unstable_by_key(|&k| (rows[k as usize].lp, k));
+            v
+        });
+        let lo = by.partition_point(|&k| rows[k as usize].lp < lp);
+        by[lo..].iter().map(|&k| &rows[k as usize]).take_while(|r| r.lp == lp).collect()
     }
 
     /// The snapshot (and relay context) for a window and filters, memoised
