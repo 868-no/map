@@ -114,13 +114,16 @@ pub const MULTI_UPLINK_MIN_PACKETS: usize = 3;
 /// only the first copy of a packet; a gateway with a future option to upload
 /// each copy reports one packet several times, from different last hops (or
 /// hop limits, or traceroute routes). Its own packets do not count. Copies
-/// are distinct receptions: byte-identical re-deliveries collapse at ingest.
+/// are distinct receptions (observation keys): ingest collapses
+/// byte-identical re-deliveries only within its dedupe window, so a late
+/// re-upload of one reception is another row with the same key, not a copy.
 pub fn multi_uplinkers(rows: &[&Row]) -> FxSet<u32> {
     // Copies per (gateway, packet), then packets per gateway with more than one.
     let mut copies: FxMap<(u32, u64), usize> = map();
+    let mut seen: FxSet<u64> = set();
     for &r in rows {
         let Some(g) = r.gw else { continue };
-        if g == r.src || r.ty == ty::MAPREPORT || !r.over_radio() {
+        if g == r.src || r.ty == ty::MAPREPORT || !r.over_radio() || !seen.insert(r.ok) {
             continue;
         }
         *copies.entry((g, r.lp)).or_default() += 1;

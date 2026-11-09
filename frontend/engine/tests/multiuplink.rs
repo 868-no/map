@@ -51,3 +51,20 @@ fn a_gateway_reporting_several_copies_of_packets_uplinks_every_copy() {
 fn a_couple_of_doubles_are_not_enough() {
     assert_eq!(flags(packets(2)), (false, false, Value::Null));
 }
+
+#[test]
+fn a_reception_delivered_again_is_one_copy() {
+    // Besides the usual traffic, G's one reception of three more packets each
+    // arrives twice (a late re-upload, a bridge re-delivering after a
+    // restart): another row, the same observation key.
+    let mut rows = packets(3);
+    for k in 0..3 {
+        let lp = 0x200 + k;
+        for i in [100 + k * 2, 101 + k * 2] {
+            let mut r = row(i, lp, O, G, 3, O);
+            r["o"] = json!(format!("{:016x}", 0x1000 + k));
+            rows.push(r);
+        }
+    }
+    assert_eq!(flags(rows), (true, false, json!(true)), "re-delivered receptions flagged G as uplinking every copy");
+}
