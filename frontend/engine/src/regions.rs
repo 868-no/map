@@ -80,10 +80,11 @@ pub fn regions<'a>(regions: &Regions, nodes: impl Iterator<Item = &'a Node>, row
         let r = &mut out[at(name)];
         r.nodes += 1;
         r.members.push(x.id.clone());
-        match x.identity.as_ref().map_or("", |id| id.role.as_str()) {
-            "ROUTER" | "ROUTER_LATE" => r.routers += 1,
-            "CLIENT_BASE" => r.bases += 1,
-            _ => {}
+        let role = x.identity.as_ref().map_or("", |id| id.role.as_str());
+        if crate::roles::is_router(role) {
+            r.routers += 1;
+        } else if crate::roles::is_base(role) {
+            r.bases += 1;
         }
         if x.is_gateway {
             r.gateways += 1;

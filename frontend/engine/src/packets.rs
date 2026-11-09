@@ -3,7 +3,7 @@
 
 use serde::Serialize;
 
-use crate::graph::{last_byte, zero_cost_role, RelayContext};
+use crate::graph::{last_byte, RelayContext};
 use crate::row::{HeardFrom, Interner, Row};
 use crate::util::{iso, key_hex, map, node_id, set, FxMap, FxSet, BROADCAST};
 use crate::views::{dest, first_per_packet, newer};
@@ -202,7 +202,7 @@ pub fn packet_log(rows: &[&Row], invalid: &[&Row], num: u32, ctx: &RelayContext,
                     hops,
                     gateways: others.iter().filter_map(|r| r.gw).collect::<FxSet<u32>>().len(),
                     by_itself: rs.iter().any(|r| r.gw == Some(num)),
-                    downlinked: others.iter().any(|r| RelayContext::downlinked(r)),
+                    downlinked: others.iter().any(|r| matches!(r.heard_from(), HeardFrom::Downlinked(_))),
                     signature: best.to_string(),
                     replies: first.pid.map_or(vec![], |p| replies.replies(p, num, rows, i)),
                     answers: replies.answer(first, &more, i),
@@ -451,17 +451,18 @@ pub fn packet_route(rows: &[&Row], ctx: &RelayContext, roles: &FxMap<u32, String
             add_chain(traceroute_chain(r, t, gw, over_radio, ctx), leg(t));
             continue;
         }
-        let byte = match r.heard_from() {
+        let (byte, downlinked) = match r.heard_from() {
             HeardFrom::NotRadio => continue, // not heard over radio
             HeardFrom::Direct => {
                 add_seg.push((origin, gw, false, "direct"));
                 continue;
             }
-            HeardFrom::Relayed(b) | HeardFrom::Downlinked(b) => b,
-            HeardFrom::Unknown => None,
+            HeardFrom::Relayed(b) => (b, false),
+            HeardFrom::Downlinked(b) => (b, true),
+            HeardFrom::Unknown => (None, false),
         };
         match byte.and_then(|b| ctx.resolve(b, origin, gw, r.rssi.map(f64::from))) {
-            Some(Ok(relay)) if RelayContext::downlinked(r) => {
+            Some(Ok(relay)) if downlinked => {
                 // Taken from MQTT and transmitted with no hops left (D-087).
                 add_seg.push((relay, gw, false, "relay"));
                 add_seg.push((origin, relay, true, "internet"));
@@ -469,10 +470,10 @@ pub fn packet_route(rows: &[&Row], ctx: &RelayContext, roles: &FxMap<u32, String
             Some(Ok(relay)) => {
                 add_seg.push((relay, gw, false, "relay"));
                 // One hop spent, by a relay that cannot receive at zero cost: it heard the sender itself.
-                let direct = r.hops() == Some(1) && roles.get(&relay).is_some_and(|ro| !ro.is_empty() && !zero_cost_role(ro));
+                let direct = r.hops() == Some(1) && roles.get(&relay).is_some_and(|ro| !ro.is_empty() && !crate::roles::is_zero_cost(ro));
                 add_seg.push((origin, relay, !direct, if direct { "relay" } else { "gap" }));
             }
-            _ if RelayContext::downlinked(r) => add_seg.push((origin, gw, true, "internet")),
+            _ if downlinked => add_seg.push((origin, gw, true, "internet")),
             _ => add_seg.push((origin, gw, true, "unknown_relay")),
         }
     }
@@ -746,7 +747,7 @@ pub fn transmissions(r: &Row, ctx: &RelayContext, roles: &FxMap<u32, String>) ->
         return vec![first(None, None), gap(gw, if downlinked { "internet" } else { "unknown_relay" })];
     };
     // A downlinked copy (D-088) carries no hop count: the relay got it from MQTT.
-    let heard_origin = !downlinked && r.hops() == Some(1) && roles.get(&relay).is_some_and(|ro| !ro.is_empty() && !zero_cost_role(ro));
+    let heard_origin = !downlinked && r.hops() == Some(1) && roles.get(&relay).is_some_and(|ro| !ro.is_empty() && !crate::roles::is_zero_cost(ro));
     let mut out = vec![first(heard_origin.then_some(relay), None)];
     if !heard_origin {
         out.push(gap(relay, if downlinked { "internet" } else { "gap" }));
@@ -958,11 +959,11 @@ mod tests {
         let ro = roles(&[(C, "CLIENT")]);
         // A relayed copy with no hops left is ordinary radio: C heard A itself.
         let plain = relayed(row(A, GW), 0xcc, 1);
-        assert!(!RelayContext::downlinked(&plain));
+        assert!(!matches!(plain.heard_from(), HeardFrom::Downlinked(_)));
         assert_eq!(pairs(&transmissions(&plain, &c, &ro)), vec![(id(A), Some(id(C))), (id(C), Some(id(GW)))]);
         // Flagged via_mqtt: C took it from MQTT, so only its own transmission is radio.
         let flagged = Row { rr: crate::row::ty::VIA_MQTT, ..relayed(row(A, GW), 0xcc, 0) };
-        assert!(RelayContext::downlinked(&flagged));
+        assert!(matches!(flagged.heard_from(), HeardFrom::Downlinked(_)));
         assert_eq!(pairs(&transmissions(&flagged, &c, &ro)), vec![(id(A), None), (id(C), Some(id(GW)))]);
         assert_eq!(gaps(&transmissions(&flagged, &c, &ro)), vec![(id(A), id(C), "internet")]);
         assert_eq!(gaps(&transmissions(&plain, &c, &ro)), vec![]);

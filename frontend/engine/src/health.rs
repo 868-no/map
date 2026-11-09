@@ -9,6 +9,7 @@ use serde::Serialize;
 
 use crate::channels::PresetIndex;
 use crate::copies::Copies;
+use crate::roles;
 use crate::row::{ty, Interner, Row};
 use crate::util::{map, node_id, FxMap, FxSet};
 use crate::views::link::{LinkReadings, RouterLink};
@@ -74,8 +75,6 @@ pub const SILENT_GAP_FACTOR: i64 = 4;
 pub const SILENT_MIN_EVENTS: usize = 4;
 /// Battery (%) that, last reported before a silence, suggests it ran flat.
 pub const SILENT_BATTERY_LOW: f64 = 20.0;
-/// Roles that keep the mesh together: their silence is worth a warning.
-pub const INFRA_ROLES: [&str; 4] = ["ROUTER", "ROUTER_LATE", "ROUTER_CLIENT", "REPEATER"];
 /// Router role review (D-189). Overlap: a router with at least
 /// OVERLAP_MIN_NEIGHBOURS radio neighbours, at least OVERLAP_SHARE of them
 /// also neighbours of another router it hears. Little reach: a router with
@@ -89,8 +88,6 @@ pub const FEW_LINKS: usize = 1;
 pub const FEW_LINKS_MIN_PACKETS: usize = 20;
 pub const SITE_M: f64 = 100.0;
 pub const SITE_MIN_BITS: u32 = 18;
-/// Roles whose job is to relay for others.
-pub const ROUTER_ROLES: [&str; 2] = ["ROUTER", "ROUTER_LATE"];
 /// Router link drop (D-197): a sudden, lasting fall in the SNR of a
 /// router's radio links to other routers, each link direction compared
 /// with itself. The change point is searched every LINK_DROP_STEP_MS, at
@@ -698,7 +695,7 @@ pub fn health(rows: &[&Row], window: &[&Row], nodes: &[Node], edges: &[crate::gr
     // from all its valid rows: filters choose what to look at, not whether
     // a node is alive. A node on the move (a car, a hike) comes and goes by
     // design.
-    let is_infra = |x: &Node| INFRA_ROLES.contains(&role_of(x));
+    let is_infra = |x: &Node| roles::is_infra(role_of(x));
     let kept: FxSet<u32> = nodes.iter().filter(|x| (is_infra(x) || x.is_gateway) && x.moved_at.is_none()).map(|x| x.num).collect();
     let heard = heard_times(&live, |n| kept.contains(&n));
     let newest = live.iter().map(|r| r.t).max().unwrap_or(i64::MIN);
@@ -758,7 +755,7 @@ pub fn health(rows: &[&Row], window: &[&Row], nodes: &[Node], edges: &[crate::gr
     }
     let empty = FxSet::default();
     let near = |n: u32| neighbours.get(&n).unwrap_or(&empty);
-    let routers: Vec<&Node> = nodes.iter().filter(|x| ROUTER_ROLES.contains(&role_of(x)) && x.moved_at.is_none()).collect();
+    let routers: Vec<&Node> = nodes.iter().filter(|x| roles::is_router(role_of(x)) && x.moved_at.is_none()).collect();
     for r in &routers {
         let mine = near(r.num);
         if mine.len() >= OVERLAP_MIN_NEIGHBOURS {
@@ -785,7 +782,7 @@ pub fn health(rows: &[&Row], window: &[&Row], nodes: &[Node], edges: &[crate::gr
     // Router link drop (D-197): a router's links to other routers falling
     // at one time and staying down, each link against itself, so a change
     // in which partners happen to be heard cannot fake it.
-    let router_nums: FxSet<u32> = nodes.iter().filter(|x| ROUTER_ROLES.contains(&role_of(x))).map(|x| x.num).collect();
+    let router_nums: FxSet<u32> = nodes.iter().filter(|x| roles::is_router(role_of(x))).map(|x| x.num).collect();
     let by_router = crate::views::link::router_links(readings, &router_nums);
     for r in &routers {
         let Some(d) = by_router.get(&r.num).and_then(|links| find_link_drop(links, newest)) else { continue };
@@ -807,7 +804,7 @@ pub fn health(rows: &[&Row], window: &[&Row], nodes: &[Node], edges: &[crate::gr
     // the same packets from the same place; all but one could be CLIENT_MUTE.
     let placed: Vec<(&Node, crate::graph::LatLon)> = nodes
         .iter()
-        .filter(|x| x.moved_at.is_none() && !crate::views::is_silent_role(role_of(x)) && x.status == "observed")
+        .filter(|x| x.moved_at.is_none() && !roles::is_silent(role_of(x)) && x.status == "observed")
         .filter_map(|x| x.position.as_ref().filter(|p| p.precision_known && p.precision_bits >= SITE_MIN_BITS).map(|p| (x, crate::graph::LatLon { lat: p.lat, lon: p.lon })))
         .collect();
     // Pairs within SITE_M, from a sweep north to south: only nodes less than
@@ -832,7 +829,7 @@ pub fn health(rows: &[&Row], window: &[&Row], nodes: &[Node], edges: &[crate::gr
     // radio neighbours): each takes the nearest free nodes within SITE_M of
     // every member so far, so a site's members are all within SITE_M of each
     // other and a chain of relays does not become one long site.
-    let keep_first = |x: &Node| (!ROUTER_ROLES.contains(&role_of(x)), std::cmp::Reverse(near(x.num).len()), x.num);
+    let keep_first = |x: &Node| (!roles::is_router(role_of(x)), std::cmp::Reverse(near(x.num).len()), x.num);
     let mut by_keep: Vec<usize> = (0..placed.len()).collect();
     by_keep.sort_by_key(|&k| keep_first(placed[k].0));
     let mut taken = vec![false; placed.len()];

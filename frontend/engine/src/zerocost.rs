@@ -20,7 +20,6 @@ use serde::Serialize;
 
 use crate::copies::{Copies, Heard};
 use crate::row::Row;
-use crate::graph::zero_cost_role;
 use crate::util::{map, FxMap, FxSet};
 
 /// Evidence for one directed link U -> R (R relays what it heard from U).
@@ -43,7 +42,7 @@ pub const MIN_SHARE: f64 = 0.8;
 /// radio; roles: announced roles (unknown roles are allowed).
 pub fn detect(packets: &Copies, rows: &[&Row], hears: &FxSet<(u32, u32)>, roles: &FxMap<u32, String>) -> FxMap<(u32, u32), ZeroCost> {
     // Nodes whose announced role rules the 0-cost rule out.
-    let cannot: FxSet<u32> = roles.iter().filter(|(_, r)| !r.is_empty() && !zero_cost_role(r)).map(|(&n, _)| n).collect();
+    let cannot: FxSet<u32> = roles.iter().filter(|(_, r)| !r.is_empty() && !crate::roles::is_zero_cost(r)).map(|(&n, _)| n).collect();
     let can = |n: u32| !cannot.contains(&n);
     let mut out: FxMap<(u32, u32), ZeroCost> = map();
     // Per-packet scratch, reused: a packet has few transmitters, so lists beat maps.

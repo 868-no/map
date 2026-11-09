@@ -273,7 +273,10 @@ pub enum HeardFrom {
     /// A rebroadcast, with the last-hop byte when the copy carries one.
     Relayed(Option<u8>),
     /// Transmitted by a downlinker that took it from MQTT, with its
-    /// last-hop byte when known (D-088).
+    /// last-hop byte when known: firmware flags such packets `via_mqtt` (and
+    /// sends them with no hops left), so it crossed the internet before its
+    /// last radio hop, from the relay to the gateway. Gateways normally never
+    /// uplink flagged packets, so such copies are rare (D-088).
     Downlinked(Option<u8>),
     /// Not over the air: no gateway, its own packet, or a non-radio transport.
     NotRadio,

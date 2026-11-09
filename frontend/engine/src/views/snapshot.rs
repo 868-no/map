@@ -7,6 +7,7 @@ use serde::Serialize;
 use super::estimate::estimate;
 use super::{brokers, build_edges, downlinks, first_per_packet, identity_of, identity_of_report, is_device_telemetry, is_identity, is_named_report, latest_by, origins, position_of, fresh_position_rows, referenced, sig_counts, telemetry_of, traceroute_hops, Contradiction, Node, RejectedPosition};
 use crate::geo;
+use crate::roles;
 use crate::graph::{Edge, LatLon, RelayContext};
 use crate::row::{Interner, Row};
 use crate::util::{iso, map, set, FxMap, FxSet};
@@ -80,23 +81,18 @@ pub struct Built {
     pub floors: OnceCell<super::noise::NoiseFloors>,
 }
 
-/// Roles that never rebroadcast: a relay byte can never mean them.
-pub fn is_silent_role(role: &str) -> bool {
-    role == "CLIENT_MUTE"
-}
-
 /// Nodes that never rebroadcast in the window: their role now is one that
 /// never does, and so was every role they reported in it. A node that
 /// changed role (a router turned CLIENT_MUTE) relayed while it was a
 /// router, and stays a relay candidate for the whole window (D-177).
 fn silent_nodes(roles: &FxMap<u32, String>, nodeinfo: &[&Row], mapreport: &[&Row], i: &Interner) -> FxSet<u32> {
-    let mut out: FxSet<u32> = roles.iter().filter(|(_, r)| is_silent_role(r)).map(|(&n, _)| n).collect();
+    let mut out: FxSet<u32> = roles.iter().filter(|(_, r)| roles::is_silent(r)).map(|(&n, _)| n).collect();
     if out.is_empty() {
         return out;
     }
     let reported = nodeinfo.iter().filter(|r| is_identity(r)).filter_map(|r| r.nodeinfo().map(|n| (r.src, n.role)));
     for (n, role) in reported.chain(mapreport.iter().filter_map(|r| r.map_report().map(|m| (r.src, m.role)))) {
-        if role != 0 && !is_silent_role(i.s(role)) {
+        if role != 0 && !roles::is_silent(i.s(role)) {
             out.remove(&n);
         }
     }
@@ -195,7 +191,7 @@ pub fn build_snapshot(rows: &[&Row], i: &Interner, g: &GeoOptions, rules: Rules)
     // Positions reported more than a day (a week for fixed nodes) before the
     // window's latest observation are stale: no anchor, and the node is
     // estimated (D-094, D-138).
-    let fixed: FxSet<u32> = nodes.iter().filter(|(_, x)| x.identity.as_ref().is_some_and(|id| super::node::fixed_role(&id.role))).map(|(&n, _)| n).collect();
+    let fixed: FxSet<u32> = nodes.iter().filter(|(_, x)| x.identity.as_ref().is_some_and(|id| roles::is_fixed(&id.role))).map(|(&n, _)| n).collect();
     let (fresh, stale) = fresh_position_rows(&by.positioned, now, |n| fixed.contains(&n));
     for (n, r) in fresh {
         let x = nodes.entry(n).or_insert_with(|| Node::new(n));

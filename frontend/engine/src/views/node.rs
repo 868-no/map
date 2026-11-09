@@ -405,11 +405,6 @@ pub const STALE_FIXED_POSITION_MS: i64 = 7 * 24 * 3600 * 1000;
 /// Two position reports this far apart that agree make a node fixed, whatever its role.
 const FIXED_SPAN_MS: i64 = 6 * 3600 * 1000;
 
-/// Roles that sit in one place: routers and base stations.
-pub(super) fn fixed_role(role: &str) -> bool {
-    matches!(role, "ROUTER" | "ROUTER_LATE" | "CLIENT_BASE")
-}
-
 /// Whether two position reports put a node in the same place: closer than a
 /// move (D-073), so GPS noise is no move, and a fixed node's unstable GPS
 /// none either (D-139).

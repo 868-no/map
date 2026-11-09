@@ -183,8 +183,8 @@ pub fn build_node_detail(rows: &[&Row], num: u32, b: &Built, i: &Interner, start
     d.node_status = texts.into_iter().filter(|(_, s)| seen_text.insert(*s)).take(5).map(|(t, s)| StatusText { status: i.s(s).to_string(), at: iso(t) }).collect();
     d.heard_by = hearings(&mine, |r| r.src == num && r.gw.is_some_and(|g| g != r.src), |r| r.gw.unwrap());
     // Routers: their links to other routers over time (D-197).
-    if b.roles.get(&num).is_some_and(|r| crate::health::ROUTER_ROLES.contains(&r.as_str())) {
-        let routers: FxSet<u32> = b.roles.iter().filter(|(_, r)| crate::health::ROUTER_ROLES.contains(&r.as_str())).map(|(&n, _)| n).collect();
+    if b.roles.get(&num).is_some_and(|r| crate::roles::is_router(r)) {
+        let routers: FxSet<u32> = b.roles.iter().filter(|(_, r)| crate::roles::is_router(r)).map(|(&n, _)| n).collect();
         d.router_links = super::link::router_quality(&b.readings, num, &routers, floors.of(num), start, end);
     }
 

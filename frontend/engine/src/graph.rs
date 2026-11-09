@@ -343,11 +343,6 @@ pub fn last_byte(n: u32) -> u8 {
     }
 }
 
-/// Roles that may relay without spending a hop (Meshtastic's favourite-router "0-cost" rule).
-pub fn zero_cost_role(role: &str) -> bool {
-    matches!(role, "ROUTER" | "ROUTER_LATE" | "CLIENT_BASE")
-}
-
 /// What the window knows for narrowing a last-hop byte.
 #[derive(Default)]
 pub struct RelayContext {
@@ -416,15 +411,6 @@ impl RelayContext {
     /// wins. A byte equal to the gateway's own is the gateway itself.
     pub fn resolve(&self, hint: u8, origin: u32, gw: u32, rssi: Option<f64>) -> Option<Result<u32, ()>> {
         self.resolve_detail(hint, origin, gw, rssi).map(|r| r.map(|(n, _)| n))
-    }
-
-    /// A copy a downlinker transmitted after taking the packet from MQTT:
-    /// firmware flags such packets `via_mqtt` (and sends them with no hops
-    /// left), so it crossed the internet before its last radio hop, from the
-    /// relay to the gateway. Gateways normally never uplink flagged packets,
-    /// so such copies are rare (D-088).
-    pub fn downlinked(r: &crate::row::Row) -> bool {
-        r.rr == crate::row::ty::VIA_MQTT
     }
 
     /// RelayContext::resolve, also telling whether a tie between candidates was

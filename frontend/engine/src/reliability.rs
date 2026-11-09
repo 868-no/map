@@ -41,7 +41,7 @@ pub struct Relaying {
 /// packets: every packet's radio copies (`copies::Copies` of `rows`); gateways:
 /// every node that uplinked anything in the window.
 pub fn relaying(packets: &Copies, rows: &[&Row], gateways: &FxSet<u32>, edges: &[Edge], roles: &FxMap<u32, String>) -> FxMap<u32, Relaying> {
-    let routers: FxSet<u32> = roles.iter().filter(|(_, r)| matches!(r.as_str(), "ROUTER" | "ROUTER_LATE")).map(|(&n, _)| n).collect();
+    let routers: FxSet<u32> = roles.iter().filter(|(_, r)| crate::roles::is_router(r)).map(|(&n, _)| n).collect();
     // Who hears whom: (tx, rx).
     let mut witnesses: FxMap<u32, FxSet<u32>> = map(); // router -> gateways that hear it
     let mut strong: FxSet<(u32, u32)> = set(); // (tx, rx) high-confidence radio links
