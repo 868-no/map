@@ -1,3 +1,4 @@
+/*! 868.no Map. A rolling deploy once left a 404 cached for a year under this file's URL (web/Caddyfile); this line changed its hash. */
 /* Two themes: dark (default) and light, chosen by data-theme on <html>.
    public/theme-boot.js sets it before the first paint from the viewer's
    choice, or the browser's preference when they chose "system". */
