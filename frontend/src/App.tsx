@@ -84,8 +84,12 @@ export default function App() {
   // A link to a region's page opens the Regions panel on it (D-194).
   const [panel, setPanel] = useState<PanelId | null>(() => (useStore.getState().region ? 'regions' : null))
   // Leaving the Regions panel leaves its page: the URL stops naming it.
+  // A Regions layer the panel showed goes with it (D-201).
   useEffect(() => {
-    if (panel !== 'regions' && useStore.getState().region) useStore.getState().setRegion(null)
+    if (panel === 'regions') return
+    const s = useStore.getState()
+    if (s.region) s.setRegion(null)
+    if (s.regionsPeek) s.setRegionsPeek(false)
   }, [panel])
   const autoOpened = useRef(false)
   useEffect(() => {

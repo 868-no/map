@@ -69,6 +69,47 @@ test('a region link opens its page, also when it names a node too', async ({ pag
   await expect(page).not.toHaveURL(/node=/)
 })
 
+// D-201: Show on the map goes to the region's centre of mass and shows the
+// Regions layer for as long as the panel stays open, unless it was on already.
+test('Show on the map centres on the region and shows its layer while the panel is open', async ({ page }) => {
+  type M = { map: { project: (ll: [number, number]) => { x: number; y: number }; isMoving: () => boolean; getContainer: () => HTMLElement } }
+  // How far a point lies from the middle of the map left visible beside the
+  // header and the panel, where places are centred (map/camera.ts), in pixels.
+  const offMiddle = (ll: [number, number]) => page.evaluate((ll) => {
+    const m = (window as unknown as { __meshmap: M }).__meshmap.map
+    if (m.isMoving()) return null
+    const a = m.getContainer().getBoundingClientRect()
+    const top = document.getElementById('topbar')!.getBoundingClientRect().bottom - a.top
+    const right = document.querySelector('aside[aria-label="Regions"]')!.getBoundingClientRect().left - a.left
+    const p = m.project(ll)
+    return Math.hypot(p.x - right / 2, p.y - (top + a.height) / 2)
+  }, ll)
+  const shown = async () => (await layerIds(page)).includes('regions')
+  await mockObservations(page, rows())
+  await open(page, '?region=Tr%C3%B8ndelag')
+  const panel = page.getByRole('complementary', { name: 'Regions' })
+  await expect(panel.locator('.region-title')).toHaveText('Trøndelag', { timeout: 30_000 })
+  expect(await shown()).toBe(false)
+  await panel.getByRole('button', { name: 'Show on the map' }).click()
+  await expect.poll(shown).toBe(true)
+  // Trøndelag's centre of mass (11.35°E 63.72°N), not its name (12.3°E 64.5°N).
+  await expect.poll(async () => { const d = await offMiddle([11.35, 63.72]); return d !== null && d < 15 }, { timeout: 10_000 }).toBe(true)
+  expect(await offMiddle([12.3, 64.5])).toBeGreaterThan(40)
+  // Another panel: the layer goes with the Regions panel, and was never saved.
+  await page.getByRole('button', { name: 'Layers', exact: true }).click()
+  await expect.poll(shown).toBe(false)
+  await expect(page.getByRole('complementary', { name: 'Layers' }).getByLabel('Regions (landsdeler)')).not.toBeChecked()
+
+  // Already on: it stays on after the panel closes.
+  await page.getByRole('complementary', { name: 'Layers' }).getByLabel('Regions (landsdeler)').check()
+  await page.getByRole('button', { name: 'Regions', exact: true }).click()
+  await panel.getByRole('button', { name: /Trøndelag/ }).click()
+  await panel.getByRole('button', { name: 'Show on the map' }).click()
+  await page.getByRole('button', { name: 'Close regions' }).click()
+  await page.waitForTimeout(500)
+  expect(await shown()).toBe(true)
+})
+
 test("a region's page breaks its nodes down by hardware and firmware; the list leaves the whole mesh to Trends", async ({ page }) => {
   // A runs 2.8 or later as far as its key shows; the gateway states 2.7.15 in its map report.
   // A third node, heard but never placed, counts in no region.

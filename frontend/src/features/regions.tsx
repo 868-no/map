@@ -104,7 +104,7 @@ function ShareRegion({ name }: { name: string }) {
 const RegionPage = memo(function RegionPage({ r, issues, snapshot, swatch }: { r: RegionSummary; issues: Issue[]; snapshot: SnapshotView | undefined; swatch?: React.CSSProperties }) {
   const select = useStore((s) => s.select)
   const setRegion = useStore((s) => s.setRegion)
-  const setToggles = useStore((s) => s.setToggles)
+  const setRegionsPeek = useStore((s) => s.setRegionsPeek)
   const goToPlace = useStore((s) => s.goToPlace)
   const names = namesOf(snapshot?.nodes)
   const name = (id: string) => names.get(id) ?? id
@@ -127,8 +127,9 @@ const RegionPage = memo(function RegionPage({ r, issues, snapshot, swatch }: { r
   }, [t.data])
   const show = () => {
     const at = REGION_LABELS.find((x) => x.name === r.name)
-    setToggles({ regions: true })
-    if (at) goToPlace({ lon: at.pos[0], lat: at.pos[1], zoom: at.zoom, name: r.name, ring: false })
+    // Shown for as long as the panel stays open, unless the viewer had the layer on already.
+    if (!useStore.getState().toggles.regions) setRegionsPeek(true)
+    if (at) goToPlace({ lon: at.centre[0], lat: at.centre[1], zoom: at.zoom, name: r.name, ring: false })
   }
   return (
     <div className="panel region-page">

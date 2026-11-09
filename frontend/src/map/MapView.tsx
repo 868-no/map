@@ -404,7 +404,9 @@ export default memo(function MapView({ caps, snapshot, onPositions }: Props) {
     const q = typed.trim().toLowerCase()
     return q && placed.some((p) => matchesSearch(p.node, q)) ? typed : ''
   }, [typed, placed])
-  const regions = useRegions(toggles.regions)
+  const regionsPeek = useStore((s) => s.regionsPeek) // shown by the Regions panel (D-201)
+  const regionsOn = toggles.regions || regionsPeek
+  const regions = useRegions(regionsOn)
   const { uncertainty, trails, labels } = toggles
   const layerToggles = useMemo(() => ({ uncertainty, trails, labels }), [uncertainty, trails, labels])
   const baseLayers = useMemo(
@@ -585,7 +587,7 @@ export default memo(function MapView({ caps, snapshot, onPositions }: Props) {
       <div className="attribution">
         <a href="https://openmaptiles.org/" target="_blank" rel="noreferrer">© OpenMapTiles</a>{' '}
         <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">© OpenStreetMap contributors</a>
-        {toggles.regions && (
+        {regionsOn && (
           <>
             {' '}
             <a href="https://www.kartverket.no/" target="_blank" rel="noreferrer">© Kartverket</a>

@@ -83,6 +83,10 @@ interface Store {
   probe: [number, number] | null // [lon, lat] the link's cross section is hovered at, marked on the map (D-143)
   place: PlaceMark | null // a place picked from the search: the map goes there and marks it (D-193)
   region: string | null // the region whose page the Regions panel shows (D-194)
+  // The regions layer shown by the Regions panel's "Show on the map" while the
+  // viewer's own switch is off: kept in memory only, and gone once the panel
+  // closes or another opens, so it never outlasts the panel (D-201).
+  regionsPeek: boolean
   search: string
   detailTab: DetailTab // the node panel's tab, kept across selections
   setLive: (durationH?: number) => void
@@ -95,6 +99,7 @@ interface Store {
   setProbe: (p: [number, number] | null) => void
   goToPlace: (p: PlaceMark | null) => void
   setRegion: (r: string | null) => void
+  setRegionsPeek: (on: boolean) => void
   setSearch: (s: string) => void
   setDetailTab: (t: DetailTab) => void
 }
@@ -160,6 +165,7 @@ export const useStore = create<Store>((set) => ({
   probe: null,
   place: null,
   region: null,
+  regionsPeek: false,
   search: '',
   detailTab: 'overview',
   // The window already shown is kept as it is (the same object), so
@@ -176,7 +182,8 @@ export const useStore = create<Store>((set) => ({
     set((s) => {
       const toggles = { ...s.toggles, ...t, basemap: { ...s.toggles.basemap, ...(t.basemap ?? {}) } }
       saveToggles(toggles)
-      return { toggles }
+      // Switching the regions layer either way makes it the viewer's own choice.
+      return t.regions === undefined ? { toggles } : { toggles, regionsPeek: false }
     }),
   // A drawn packet route belongs to the selected node: any new selection clears it.
   select: (selection) => set({ selection, route: null, reach: null, probe: null }),
@@ -185,6 +192,7 @@ export const useStore = create<Store>((set) => ({
   setProbe: (probe) => set({ probe }),
   goToPlace: (place) => set({ place }),
   setRegion: (region) => set({ region }),
+  setRegionsPeek: (regionsPeek) => set({ regionsPeek }),
   // A place picked from the search is ringed until the search is cleared, wherever that happens (D-193).
   setSearch: (search) => set((s) => (!search.trim() && s.place && s.place.ring !== false ? { search, place: null } : { search })),
   setDetailTab: (detailTab) => set({ detailTab }),
