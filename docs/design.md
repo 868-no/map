@@ -30,7 +30,7 @@ It opens on a rolling three-day window and can slide back through six months.
 
 It is built for the Norwegian community broker (`mqtt.868.no`) but hard-codes no region or community beyond its Norwegian defaults (start view, regions layer, basemap area).
 
-The stack is Go (ingest and API), PostgreSQL (one table of mesh data, one of weather), Redis (ephemeral), a Rust engine compiled to WebAssembly running in a Web Worker in the browser, and a React + MapLibre GL + deck.gl frontend served by Caddy (D-001).
+The stack is Go (ingest and API), PostgreSQL (one table of mesh data, plus weather, terrain heights and place names, §3), Redis (ephemeral), a Rust engine compiled to WebAssembly running in a Web Worker in the browser, and a React + MapLibre GL + deck.gl frontend served by Caddy (D-001).
 
 ### 1.2 Invariants
 
@@ -39,7 +39,7 @@ These hold everywhere; a feature that would break one is not built.
 1. **Only MQTT feeds mesh data.** No device API, serial link, node polling, other mesh feed or third-party topology service is used.
 2. **One table of mesh data.** `packet_log` is the only table holding mesh data (its monthly partitions are not separate tables).
    No node, link, position, identity, snapshot, settings or migration table exists.
-   Two other application tables hold no mesh data: `weather_hour`, weather fetched from MET Norway, which nothing on the map is derived from (§6.18, D-133), `terrain_height`, terrain heights from Kartverket for line-of-sight cross sections (§6.19, D-143), and `place_name` with `place_key`, Kartverket's place-name register for the map's search (§3.9, D-193).
+   Four other application tables hold no mesh data: `weather_hour`, weather fetched from MET Norway, which nothing on the map is derived from (§6.18, D-133), `terrain_height`, terrain heights from Kartverket for line-of-sight cross sections (§6.19, D-143), and `place_name` with `place_key`, Kartverket's place-name register for the map's search (§3.9, D-193).
    Redis holds only ephemeral, rebuildable state.
 3. **Strict window isolation.** Every mesh-derived output is scoped to the selected half-open interval `[start, end)`.
    No name, position, role, link, counter or chart is taken from outside it (§3.5).
@@ -283,7 +283,7 @@ Operational metrics are process counters, not packet history.
 - Creating and dropping partitions takes ACCESS EXCLUSIVE on `packet_log`; queued behind a long read it would stall every insert queued behind it.
   That DDL therefore runs with `lock_timeout` 5 s and is tried three times, 2 s apart, before failing as before (a failed maintenance run is retried; D-166).
   The schema statements and index changes `init-schema` makes at every start run under the same timeout and retries; a start that still cannot get its locks fails and is restarted.
-- Backups are not automated; `pg_dump`/`pg_restore` are documented in operations.md (D-049).
+- The production stacks back the database up nightly (`backup`, §8, D-206); with `compose.yaml` backups are not automated, and `pg_dump`/`pg_restore` are documented in operations.md (D-049).
 
 ### 3.4 Event time
 
@@ -433,7 +433,7 @@ Size `DB_API_CONNS` as read slots plus a few, `DB_INGEST_CONNS` as about the wor
 ### 5.1 Structure
 
 Views are derived in the browser (D-031).
-A Web Worker (`frontend/src/derive/`) owns the window's rows and drives a Rust engine compiled to WebAssembly (`frontend/engine`; serde, serde_json, wasm-bindgen; about 1.1 MB, 322 kB gzipped) (D-040).
+A Web Worker (`frontend/src/derive/`) owns the window's rows and drives a Rust engine compiled to WebAssembly (`frontend/engine`; serde, serde_json, wasm-bindgen; about 1.2 MB, 430 kB gzipped) (D-040).
 The server-built views, their Go link-graph and estimator code and the Redis result cache were retired once the engine matched them field by field on recorded live data; that recording is the golden fixture (D-041).
 
 - **Rows never become JavaScript objects.** The worker stages each raw `/observations` page in the engine (staged batches can still be discarded by a fresh start), merges streamed rows as JSON text, and gets views back as UTF-8 bytes (`view_bytes`) that are transferred to the page and decoded once (D-083).
@@ -491,9 +491,11 @@ The server-built views, their Go link-graph and estimator code and the Redis res
 | `reach` | node id, `|internet` | Simulated reach by hop limit (§6.8). |
 | `health` | — | Known issues and the airtime estimate (§6.17). |
 | `link` | `a|b` node ids | One link's measured readings over time, per direction (D-105), and each end's noise floor when it sends local statistics (D-199). |
+| `watch` | node ids, comma-separated | The watchlist's nodes: last heard, quiet, battery, gateways (§7.2, D-192). |
+| `regions` | — | The window per landsdel with its nodes' breakdown (§7.8, D-194, D-196). |
 | transmissions | live rows | Ping attribution (§7.7). |
 
-Engine rules that changed behaviour after the server views were frozen are options (`silent_rule`, `mqtt_links`, `move_rule`, `signal_rule`), all on by default and switched off only to compare with the retired server views in the first golden test (D-055, D-073).
+Engine rules that changed behaviour after the server views were frozen are options (`silent_rule`, `mqtt_links`, `move_rule`, `signal_rule`, `range_rule`, `origin_rule`), all on by default and switched off only to compare with the retired server views in the first golden test (D-055, D-073, D-136, D-177, D-179).
 
 ### 5.3 Live rebuild cadence
 
@@ -935,7 +937,7 @@ UI chrome floats over the map, which runs edge to edge and never resizes (checke
   Its height is published as `--head-h`; MapLibre's zoom buttons, the fit control and banners sit below it, stacked above its shadow, and camera framing keeps content clear of it.
   Until the first snapshot arrives each counter shows a faint placeholder bar about as wide as a typical value (tabular figures), so the card keeps its size (D-082).
   Clicking the live indicator opens the Period panel; "Return to live" sits beside it while a fixed window is shown (D-067).
-- **Trends** (D-104): the Trends panel, in the rail after Health: Daily, Weekly or Monthly bars for nodes heard (new ones highlighted), gateways, packets and receptions, packets by type over the whole period, what the nodes run (D-198) and a table of every bucket, newest first, from `/api/v1/trends` (and `/api/v1/trends/fleet`) in the viewer's time zone.
+- **Trends** (D-104): the Trends panel, in the rail after Regions: Daily, Weekly or Monthly bars for nodes heard (new ones highlighted), gateways, packets and receptions, packets by type over the whole period, what the nodes run (D-198) and a table of every bucket, newest first, from `/api/v1/trends` (and `/api/v1/trends/fleet`) in the viewer's time zone.
   It ignores the window and filters.
 - **Node history (D-195):** the window shows a node over at most 14 days, while a maintainer asking whether a router got worse after a move, or whether a solar node's battery sags in winter, needs months.
   So the hourly summaries behind trends (D-112) also keep, per node heard in the hour and aligned with the hour's sorted node set, its distinct packets, their receptions by other gateways (both 16-bit, capped at 65 535 an hour) and the lowest battery level its device telemetry reported (one byte: none, 0–100, or 101 for external power, kept only when it reported nothing lower, as the engine reads it); hours as a gateway follow from the gateway set.
@@ -962,8 +964,9 @@ UI chrome floats over the map, which runs edge to edge and never resizes (checke
 ### 7.2 Basemap and layers
 
 - **Basemap:** OpenMapTiles-schema vector tiles from a self-hosted PMTiles archive by default (basemap.md), dark and light styles with the same layers.
-  MapLibre GL is pinned to 5.x: 6.x stops painting labels drawn after deck.gl's interleaved layers (D-017).
-  MapLibre's attribution control is disabled and the required credits are static React text, so the vulnerable `DOM.sanitize()` of GHSA-jrc7-96c5-q579 is never called; the CSP is a second layer (D-019).
+  MapLibre GL is on 6.x, with deck.gl's overlay from `@deck.gl/maplibre` (6.x dropped the `map.transform` that `@deck.gl/mapbox` reads); MapLibre's worker is bundled by Vite and named with `setWorkerUrl`.
+  It was held on 5.x while 6.x stopped painting labels drawn after deck.gl's interleaved layers (D-017), until 6.15 and the MapLibre overlay drew them again.
+  MapLibre's attribution control is disabled and the required credits are static React text; 6.4.1 and later fix GHSA-jrc7-96c5-q579, so this and the CSP are now defence in depth (D-019).
   Glyphs are Noto Sans Regular/Bold from the OpenMapTiles fonts release, one font per text stack (D-018).
 - **Mesh layers** are interleaved beneath the basemap's label layers (`beforeId: labels-start`), so enabled names stay readable over nodes and links (D-018).
   Pings are a separate, non-interleaved overlay above everything (§7.7).
@@ -1280,7 +1283,7 @@ Results are in [benchmarks.md](benchmarks.md).
   Measured (Chromium, cold cache, 9 Mbit/s shared link, 150 ms RTT, empty data): the worker script done at 0.63 s instead of 1.39 s, the engine at 1.42 s instead of 1.95 s, the 3-day window's rows (with D-170) at 1.78 s instead of 2.31 s; the main bundles finish about 0.25 s later on a link shared equally (the prefetch is lowest priority where the link honours priorities).
   `<link rel="preload" as="fetch">` for the engine works the same but draws Chrome's "preloaded but not used" warning (the document never uses it); `as="worker"` is not supported (D-171).
 - **Client:** no raw history in the JavaScript heap (< 250 MiB target; rows live in WebAssembly memory), no React re-render per packet, batched GPU layers with memoised data that only recolour on selection, search or theme changes, a cursor readout that bypasses React state (D-058), and level of detail for links (§7.4).
-  Pan and zoom target near 60 fps on a desktop GPU; pings are bounded (80, one per transmission) and run in their own canvas (D-083).
+  Pan and zoom target at least 30 fps on a desktop GPU (lowered from 60, D-208); pings are bounded (80, one per transmission) and run in their own canvas (D-083).
   Vendor code (MapLibre, deck.gl, React) is split into chunks that stay cached across app deploys (D-039).
 - **Engine:** a 72 h reference snapshot builds in ~0.2 s off the main thread; shared passes (traceroute hop samples, packet copies, position groups, radio groups, routing replies) run once per rebuild (D-060, D-083).
   One pass sorts out the rows of the packet types that single-type passes need (NodeInfo, map reports, positions, telemetry, NeighborInfo, traceroutes); what a view asks of an interned string (signature rank, decoded crypto, a channel name's preset) is worked out once when it is interned; per-packet work reuses scratch lists instead of allocating maps.
@@ -1301,8 +1304,8 @@ Results are in [benchmarks.md](benchmarks.md).
 - **End-to-end** (Playwright against a running stack built with the end-to-end hook, never in production builds): layout and overlays, selection, the period controls, labels via `queryRenderedFeatures`, attribution, pings through a mocked stream, privacy and Settings, reset, the start view, permanent links, PWA (offline reload, no tile in any worker cache) and a reference-density performance scene.
   Service workers are blocked by default and opted into for the PWA test (D-030).
   Documentation screenshots are taken only with `UPDATE_SCREENSHOTS=1`, into `docs/screenshots/` for review (D-017): they assert nothing, and a software-rendered full-page screenshot is slow.
-  CI runs them on every push against the demo stack (simulated mesh on a local broker plus two days of seeded history, `MESHMAP_NO_BASEMAP` set, one retry), split test by test (`fullyParallel`) across four parallel jobs (Playwright shards), one test at a time in each (two at once on a runner made the map take clicks for long presses), each building the stack's images with layers cached between runs; tests that need the self-hosted basemap skip themselves there and run against a full deployment (D-110).
-- **CI** (`.github/workflows/tests.yml`) on every pull request and push: Go vet, gofmt and unit tests; integration tests; engine tests including the goldens; frontend type check, lint, unit tests and production build; and a check that `src/api/schema.d.ts` regenerates unchanged from `docs/api-openapi.yaml` (D-083); then the end-to-end tests on the demo stack in four shards, as above.
+  CI runs them on pull requests and on pushes to `main` and version tags, against the demo stack (simulated mesh on a local broker plus two days of seeded history, `MESHMAP_NO_BASEMAP` set, one retry), split test by test (`fullyParallel`) across four parallel jobs (Playwright shards), one test at a time in each (two at once on a runner made the map take clicks for long presses); one job builds the stack's images once, with layers cached between runs, and hands them to the shards as an artifact; tests that need the self-hosted basemap skip themselves there and run against a full deployment (D-110).
+- **CI** (`.github/workflows/tests.yml`) on every pull request and on pushes to `main` and version tags (the full list of checks is in operations.md): Go vet, gofmt and unit tests; integration tests; engine tests including the goldens; frontend type check, lint, unit tests and production build; and a check that `src/api/schema.d.ts` regenerates unchanged from `docs/api-openapi.yaml` (D-083); then the end-to-end tests on the demo stack in four shards, as above.
   The images are built only after all of these pass, end-to-end included.
 
 ### 10.2 Acceptance tests
@@ -1331,7 +1334,7 @@ Time isolation:
 15. Switching windows can never show results of the previous window: there is no server result cache, and the worker answers each request by id.
 16. A rolling window drops expired evidence even when no packets arrive.
 17. A fixed window receives nothing beyond its end despite continuing ingestion.
-18. The API rejects a 7-days-plus-one-second window and a start before retention; it never returns extra history.
+18. The API rejects a 14-days-plus-one-second window and a start before retention; it never returns extra history.
 19. Rows deleted by retention cannot reappear from Redis or an open browser session.
 20. A full restart with empty Redis reconstructs the same in-window results from `packet_log`.
 
@@ -1374,7 +1377,6 @@ UI, performance and operations:
 - **Reach** assumes intermittent links are always there and knows nothing of unseen links (§6.8).
 - **Uplink opt-out** withholds names, not ids, traffic or positions (§2.5).
 - **Envelopes** keep text messages readable to anyone with the channel key; whether to keep them is open for the operator (D-051).
-- **Frame rates** have been measured only with software WebGL; the 60 fps desktop target is unverified on GPU hardware (benchmarks.md).
+- **Frame rates** have been measured only with software WebGL; the 30 fps desktop target is unverified on GPU hardware (benchmarks.md).
 - **Name clustering** de-clutters names but node markers themselves are not clustered at low zoom.
-- **MapLibre** stays on 5.x until deck.gl supports 6.x labels in interleaved mode; the GHSA-jrc7-96c5-q579 mitigation depends on the attribution control staying disabled (D-017, D-019).
 - **Firmware:** minimum 2.7; behaviour that depends on newer fields degrades conservatively.
