@@ -3,7 +3,8 @@ import type { Layer } from '@deck.gl/core'
 
 vi.mock('../src/map/style', () => ({ LABELS_BEFORE: 'labels' })) // keeps MapLibre (no WebGL here) out
 import { meshLayerBuilder, type MeshLayerInput } from '../src/map/meshLayers'
-import type { LinkGeom, PlacedNode } from '../src/map/model'
+import { ageColor, type LinkGeom, type PlacedNode } from '../src/map/model'
+import type { MarkerCluster } from '../src/map/markerClusters'
 import type { MeshNode } from '../src/derive/views'
 import { defaultToggles } from '../src/state/store'
 import { PALETTES } from '../src/map/palette'
@@ -103,5 +104,23 @@ describe('mesh layer builder', () => {
     const ls = byId(meshLayerBuilder()({ ...base, placed: [mover], toggles: { ...base.toggles, trails: true } }))
     expect((ls.trails.data as unknown[]).length).toBe(3)
   })
-})
 
+  it('draws marker clusters beneath the markers, with their count, dimmed when no member matches (D-204)', () => {
+    const m = (id: string, age: number): PlacedNode => ({ node: node(id), kind: 'reported', lon: 10, lat: 60, age })
+    const k: MarkerCluster = { marker: true, id: '!c1', rep: m('!c1', 0.9), members: [m('!c1', 0.9), m('!c2', 0.2)], freshest: 0.2 }
+    const ls = meshLayerBuilder()({ ...base, markerClusters: [k] })
+    const ids = ls.map((l) => l.id)
+    expect(ids.indexOf('node-clusters')).toBeGreaterThan(-1)
+    expect(ids.indexOf('node-clusters')).toBeLessThan(ids.indexOf('nodes'))
+    type Props = { getText: (k: MarkerCluster) => string; getFillColor: (k: MarkerCluster) => number[]; getDrawOrder: (k: MarkerCluster, o: { index: number }) => number }
+    const p = byId(ls) as unknown as Record<string, Props>
+    expect(p['node-cluster-counts'].getText(k)).toBe('2')
+    expect(p['node-clusters'].getFillColor(k).slice(0, 3)).toEqual(ageColor(0.2, PALETTES.dark.ageStops)) // the freshest member's colour
+    // Beneath every marker in the depth order (D-187), the first (most prominent) cluster on top.
+    expect(p['node-clusters'].getDrawOrder(k, { index: 0 })).toBeLessThan(0)
+    expect(p['node-clusters'].getDrawOrder(k, { index: 1 })).toBeLessThan(p['node-clusters'].getDrawOrder(k, { index: 0 }))
+    const dim = byId(meshLayerBuilder()({ ...base, markerClusters: [k], search: 'zzz' })) as unknown as Record<string, Props>
+    expect(dim['node-clusters'].getFillColor(k)).toEqual(PALETTES.dark.dimmed)
+    expect(byId(meshLayerBuilder()(base))['node-clusters']).toBeUndefined()
+  })
+})

@@ -16,10 +16,12 @@ import { mercY } from './pings'
 import type { RouteSegment } from '../derive/views'
 import type { MapPalette } from './palette'
 import { regionLayers, type RegionCollection } from './regions'
+import { clusterRadius, type MarkerCluster } from './markerClusters'
 import { GLYPH_PX, GLYPH_STROKE, GLYPH_UNITS, NODE_RADIUS, ROLE_GLYPHS, roleIcon, UPLINK_BADGE, type RoleIcon } from './roleIcons'
 
 export interface MeshLayerInput {
-  placed: PlacedNode[]
+  placed: PlacedNode[] // markers drawn on their own
+  markerClusters?: MarkerCluster[] // overlapping markers drawn as one disc, below zoom 10, most prominent first (D-204)
   links: LinkGeom[] // already filtered for level of detail / selection
   selection: Selection
   search: string
@@ -255,7 +257,7 @@ export function meshLayerBuilder(): (input: MeshLayerInput) => Layer[] {
   )
   const labelsOf = memoLast(labelData)
 
-  return ({ placed, links, selection: sel, search, toggles, zoom, clusters, exploded, route, routeGhosts, palette: c, regions, reach }) => {
+  return ({ placed, markerClusters = [], links, selection: sel, search, toggles, zoom, clusters, exploded, route, routeGhosts, palette: c, regions, reach }) => {
     const q = search.trim().toLowerCase()
     // Search and reach both dim the nodes they leave out.
     const matches = (p: PlacedNode) =>
@@ -442,6 +444,49 @@ export function meshLayerBuilder(): (input: MeshLayerInput) => Layer[] {
         }),
       )
     }
+    // Marker clusters (D-204): a disc like a node's, a little larger, with the
+    // member count where a node has its role glyph, at the representative's
+    // real position, filled by the most recently heard member, with an outer
+    // ring in the same colour that marks it as several nodes. When the
+    // representative's position is an estimate the disc is dark with a
+    // coloured ring, as estimates are hollow. In the depth order (D-187) the
+    // clusters lie beneath every marker drawn on its own, the most prominent
+    // cluster on top; their counts sit at the markers' base depth, above
+    // every cluster disc and beneath every marker.
+    if (markerClusters.length) {
+      const fresh = (k: MarkerCluster) => (k.members.some(matches) ? [...ageColor(k.freshest, c.ageStops), 255] : c.dimmed) as RGBA
+      const est = (k: MarkerCluster) => k.rep.kind === 'estimated'
+      const at = (k: MarkerCluster) => [k.rep.lon, k.rep.lat] as [number, number]
+      const depth = { extensions: [drawOrder], getDrawOrder: (_k: MarkerCluster, { index }: { index: number }) => -2 * (index + 1) }
+      layers.push(
+        new ScatterplotLayer<MarkerCluster, DrawOrderProps<MarkerCluster>>({
+          id: 'node-clusters-ring', ...UNDER_LABELS, ...depth, data: markerClusters, getPosition: at,
+          radiusUnits: 'pixels', getRadius: (k) => clusterRadius(k.members.length) + 3.5,
+          filled: false, stroked: true, lineWidthUnits: 'pixels', getLineWidth: 2,
+          getLineColor: (k) => { const f = fresh(k); return [f[0], f[1], f[2], Math.min(f[3], 170)] as RGBA },
+          pickable: false, updateTriggers: { getLineColor: [q, c, reach] },
+        }),
+        new ScatterplotLayer<MarkerCluster, DrawOrderProps<MarkerCluster>>({
+          id: 'node-clusters', ...UNDER_LABELS, ...depth, data: markerClusters, getPosition: at,
+          radiusUnits: 'pixels', getRadius: (k) => clusterRadius(k.members.length),
+          filled: true, stroked: true, lineWidthUnits: 'pixels',
+          getFillColor: (k) => (est(k) ? c.nodeOutline : fresh(k)),
+          getLineColor: (k) => (est(k) ? fresh(k) : c.nodeOutline),
+          getLineWidth: (k) => (est(k) ? 2.5 : 1.5),
+          pickable: true, autoHighlight: true, highlightColor: [...c.gateway, 160],
+          updateTriggers: { getFillColor: [q, c, reach], getLineColor: [q, c, reach] },
+        }),
+        new TextLayer<MarkerCluster>({
+          id: 'node-cluster-counts', ...UNDER_LABELS, data: markerClusters, getPosition: at,
+          getText: (k) => String(k.members.length), getSize: (k) => (k.members.length < 100 ? 13 : 12),
+          // The ink of a role glyph (D-085, D-186); on an estimate's dark disc, the ring's colour.
+          getColor: (k) => { const f = fresh(k); return (est(k) || f === c.dimmed ? f : [...glyphInk([f[0], f[1], f[2]]), 255]) as RGBA },
+          characterSet: '0123456789', fontFamily: 'system-ui, sans-serif', fontWeight: 700, pickable: false,
+          updateTriggers: { getColor: [q, c, reach] },
+        }),
+      )
+    }
+
     // One disc for every role (its glyph says the role), filled by last heard
     // (scaled to the window); estimated nodes are hollow rings in the same colour.
     const marker = {

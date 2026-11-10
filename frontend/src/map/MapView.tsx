@@ -16,6 +16,8 @@ import { buildPingLayers } from './pingLayers'
 import { OVER_MARKERS } from './drawOrder'
 import { useCamera } from './camera'
 import { clusterLabels, type Cluster, type LabelDatum } from './labels'
+import { clusterMarkers, clusterSummary, drawnPositions, type MarkerCluster } from './markerClusters'
+import { useWatch } from '../state/watch'
 import { usePacketRoute, useReach } from '../state/data'
 import { installTestHook } from './testHook'
 import { useTheme, type Theme } from '../theme'
@@ -293,26 +295,51 @@ export default memo(function MapView({ caps, snapshot, onPositions }: Props) {
     const nodes = snapshot?.nodes ?? []
     const { placed: all } = placeNodes(nodes, windowEnd, windowMs)
     const placed = all.filter((p) => passesNodeFilters(p.node, { positionedOnly, onlineOnly, roles: roleFilter }, windowEnd))
-    // Positions of the markers actually drawn: links, pings and the camera use only these.
+    // Where the shown nodes are (the camera frames these; links and pings use drawnPos below).
     const pos = new Map<string, [number, number]>()
     for (const p of placed) pos.set(p.node.id, [p.lon, p.lat])
     const roles = new Map(nodes.map((n) => [n.id, n.identity?.role]))
     const allPos = new Map<string, [number, number]>(all.map((p) => [p.node.id, [p.lon, p.lat]]))
     return { placed, pos, allPos, roles }
   }, [snapshot, positionedOnly, onlineOnly, roleFilter, windowEnd, windowMs])
-  const links = useMemo(() => {
-    // All link layers are off by default: nothing to build (a selected link is drawn apart).
-    if (!toggles.infraLinks && !toggles.otherLinks && !toggles.mqttLinks) return []
-    const edges = filterEdges(snapshot?.edges ?? [], filters, toggles)
-    return linkGeometry(edges, pos, roles).filter((g) => (g.mqtt ? toggles.mqttLinks : g.infra ? toggles.infraLinks : toggles.otherLinks))
-  }, [snapshot, pos, roles, filters.minConfidence, filters.evidence, toggles.infraLinks, toggles.otherLinks, toggles.mqttLinks, toggles.inferred]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => onPositions(pos), [pos, onPositions])
-
   const selectedNode = selection?.kind === 'node' ? selection.id : null
   // A packet's route replaces every link while it is drawn.
   const routeLp = useStore((s) => s.route)
   const routeQ = usePacketRoute(routeLp)
+
+  // The search dims the nodes it leaves out, but only when it matches one:
+  // a place name being typed (D-193) leaves the map as it is.
+  const dimBy = useMemo(() => {
+    const q = typed.trim().toLowerCase()
+    return q && placed.some((p) => matchesSearch(p.node, q)) ? typed : ''
+  }, [typed, placed])
+  // Marker clusters below zoom 10 (D-204): overlapping markers become one
+  // disc at their most prominent member. The selected node, the selected
+  // link's ends, watched nodes (D-192), search results and a drawn route's
+  // nodes are always drawn on their own. Recomputed when the zoom settles
+  // (zoom is set on moveend), not while panning.
+  const watched = useWatch((s) => s.ids)
+  const exempt = useMemo(() => {
+    const ids = new Set<string>(watched)
+    if (selection?.kind === 'node') ids.add(selection.id)
+    else if (selection?.kind === 'edge') [selection.src, selection.dst].forEach((id) => ids.add(id))
+    if (routeLp) for (const g of routeQ.data?.segments ?? []) [g.a, g.b].forEach((id) => ids.add(id))
+    const q = dimBy.trim().toLowerCase()
+    if (q) for (const p of placed) if (matchesSearch(p.node, q)) ids.add(p.node.id)
+    return ids
+  }, [watched, selection, routeLp, routeQ.data, dimBy, placed])
+  const markers = useMemo(() => clusterMarkers(placed, zoom, exempt), [placed, zoom, exempt])
+  // Positions of the markers actually drawn, a clustered node at its
+  // cluster's disc: links, pings and reach paths use only these (D-043).
+  const drawnPos = useMemo(() => drawnPositions(pos, markers.anchor), [pos, markers.anchor])
+  const links = useMemo(() => {
+    // All link layers are off by default: nothing to build (a selected link is drawn apart).
+    if (!toggles.infraLinks && !toggles.otherLinks && !toggles.mqttLinks) return []
+    const edges = filterEdges(snapshot?.edges ?? [], filters, toggles)
+    return linkGeometry(edges, drawnPos, roles).filter((g) => (g.mqtt ? toggles.mqttLinks : g.infra ? toggles.infraLinks : toggles.otherLinks))
+  }, [snapshot, drawnPos, roles, filters.minConfidence, filters.evidence, toggles.infraLinks, toggles.otherLinks, toggles.mqttLinks, toggles.inferred]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => onPositions(drawnPos), [drawnPos, onPositions])
   // Moved nodes are drawn where they were when the packet was heard, with a
   // ring there and a dashed line to where they are now (D-073).
   // Only while a route is drawn.
@@ -346,20 +373,21 @@ export default memo(function MapView({ caps, snapshot, onPositions }: Props) {
       // Each placed node from the nearest placed transmitter up its chain:
       // relays without a position are skipped, and the line is dashed there.
       segments: shown.flatMap((n) => {
-        const b = pos.get(n.id)
+        const b = drawnPos.get(n.id)
         if (!b) return []
         let via = n.via, gap = false
-        for (let i = 0; via !== selectedNode && !pos.has(via) && i < 8; i++) {
+        for (let i = 0; via !== selectedNode && !drawnPos.has(via) && i < 8; i++) {
           const up = byId.get(via)
           if (!up) break
           via = up.via
           gap = true
         }
-        const a = pos.get(via)
-        return a ? [{ from: a, to: b, need: n.need, free: !gap && !!n.free, gap }] : []
+        const a = drawnPos.get(via)
+        // Both ends in one cluster: nothing to draw between them.
+        return a && (a[0] !== b[0] || a[1] !== b[1]) ? [{ from: a, to: b, need: n.need, free: !gap && !!n.free, gap }] : []
       }),
     }
-  }, [reachOpt, selectedNode, reachQ.data, pos])
+  }, [reachOpt, selectedNode, reachQ.data, drawnPos])
   // The link open in Details is always drawn.
   const selectedEdge = selection?.kind === 'edge' ? selection : null
   // A pan or zoom that leaves the same links drawn keeps the same array: the
@@ -377,7 +405,7 @@ export default memo(function MapView({ caps, snapshot, onPositions }: Props) {
   // Only while names are drawn (from zoom 10, with the layer on): clustering
   // reruns on every zoom change and otherwise only feeds hover churn.
   const namesShown = toggles.labels && zoom >= 10
-  const clusters = useMemo(() => (namesShown ? clusterLabels(placed, zoom) : []), [namesShown, placed, zoom])
+  const clusters = useMemo(() => (namesShown ? clusterLabels(markers.shown, zoom) : []), [namesShown, markers.shown, zoom])
   const clusterOf = useRef(new Map<string, Cluster>())
   const nameOf = useRef<ReadonlyMap<string, string>>(new Map())
   // The snapshot for the link tooltip, which builds its lookups on first use.
@@ -398,20 +426,14 @@ export default memo(function MapView({ caps, snapshot, onPositions }: Props) {
   // Static layers, rebuilt on data/filter/selection change; pings animate on top.
   // The builder keeps each layer's data array while its inputs are unchanged.
   const [buildMeshLayers] = useState(meshLayerBuilder)
-  // The search dims the nodes it leaves out, but only when it matches one:
-  // a place name being typed (D-193) leaves the map as it is.
-  const dimBy = useMemo(() => {
-    const q = typed.trim().toLowerCase()
-    return q && placed.some((p) => matchesSearch(p.node, q)) ? typed : ''
-  }, [typed, placed])
   const regionsPeek = useStore((s) => s.regionsPeek) // shown by the Regions panel (D-201)
   const regionsOn = toggles.regions || regionsPeek
   const regions = useRegions(regionsOn)
   const { uncertainty, trails, labels } = toggles
   const layerToggles = useMemo(() => ({ uncertainty, trails, labels }), [uncertainty, trails, labels])
   const baseLayers = useMemo(
-    () => buildMeshLayers({ placed, links: shownLinks, selection, search: dimBy, toggles: layerToggles, zoom, clusters, exploded, route, routeGhosts, palette, regions, reach }),
-    [buildMeshLayers, placed, shownLinks, selection, dimBy, layerToggles, zoom, clusters, exploded, route, routeGhosts, palette, regions, reach],
+    () => buildMeshLayers({ placed: markers.shown, markerClusters: markers.clusters, links: shownLinks, selection, search: dimBy, toggles: layerToggles, zoom, clusters, exploded, route, routeGhosts, palette, regions, reach }),
+    [buildMeshLayers, markers, shownLinks, selection, dimBy, layerToggles, zoom, clusters, exploded, route, routeGhosts, palette, regions, reach],
   )
 
   // The mesh layers change only with data, filters and selection; the
@@ -481,14 +503,15 @@ export default memo(function MapView({ caps, snapshot, onPositions }: Props) {
     }
   }, [ready, toggles.animation, palette])
 
-  // Picking: hover tooltip + click selection.
+  // Picking: hover tooltip + click selection. Clicking a marker cluster zooms in to it.
+  const zoomTo = useRef<(points: [number, number][]) => void>(() => {})
   useEffect(() => {
     overlayRef.current?.setProps({
       getCursor: ({ isHovering }) => (isHovering ? 'pointer' : 'grab'),
       onHover: (info: PickingInfo) => {
-        const o = info.object as PlacedNode | LinkGeom | LabelDatum | RouteGeom | undefined
+        const o = info.object as PlacedNode | LinkGeom | LabelDatum | RouteGeom | MarkerCluster | undefined
         // Open the hovered node's or name's cluster; close it shortly after leaving.
-        const c = !o || 'seg' in o ? undefined : 'label' in o ? o.cluster : 'kind' in o ? clusterOf.current.get(o.node.id) : undefined
+        const c = !o || 'seg' in o || 'marker' in o ? undefined : 'label' in o ? o.cluster : 'kind' in o ? clusterOf.current.get(o.node.id) : undefined
         clearTimeout(collapseTimer.current)
         if (c && c.members.length > 1) setHoverCluster(c.id)
         else collapseTimer.current = setTimeout(() => setHoverCluster(null), 400)
@@ -500,6 +523,7 @@ export default memo(function MapView({ caps, snapshot, onPositions }: Props) {
           const leg = g.leg === 'forward' ? 'Traceroute, the way there (request)\n' : g.leg === 'back' ? 'Traceroute, the way back (reply)\n' : ''
           return setHover({ x: info.x, y: info.y, text: `${leg}${nm(g.a)} → ${nm(g.b)}: ${why}` })
         }
+        if ('marker' in o) return setHover({ x: info.x, y: info.y, text: clusterSummary(o, (id) => nameOf.current.get(id) ?? id) })
         if ('label' in o) {
           const n = o.node.node
           if (o.more) return setHover({ x: info.x, y: info.y, text: `${o.more.count} more nodes close together: click or zoom in to tell them apart` })
@@ -531,9 +555,10 @@ export default memo(function MapView({ caps, snapshot, onPositions }: Props) {
     if (!ready || !map) return
     const onClick = (e: maplibregl.MapMouseEvent) => {
       const info = overlayRef.current?.pickObject({ x: e.point.x, y: e.point.y, radius: PICK_RADIUS })
-      const o = info?.object as PlacedNode | LinkGeom | LabelDatum | RouteGeom | undefined
+      const o = info?.object as PlacedNode | LinkGeom | LabelDatum | RouteGeom | MarkerCluster | undefined
       if (!o) return select(null) // empty map: clear the selection
       if ('seg' in o) return
+      if ('marker' in o) return zoomTo.current(o.members.map((m) => [m.lon, m.lat])) // open it up
       if ('label' in o) {
         // A fan's "+N more" zooms in on the cluster, where it splits up.
         if (o.more) map.easeTo({ center: o.more.centre, zoom: Math.min(map.getZoom() + 2, map.getMaxZoom()) })
@@ -547,7 +572,9 @@ export default memo(function MapView({ caps, snapshot, onPositions }: Props) {
 
   const routeFrame = useMemo(() => (routeLp && route?.length ? { key: routeLp, points: route.flatMap((r) => [r.from, r.to]) } : null), [routeLp, route])
   const place = useStore((s) => s.place)
-  const { fit } = useCamera(mapRef, container, { pos, selection, route: routeFrame, place, ready })
+  const camera = useCamera(mapRef, container, { pos, selection, route: routeFrame, place, ready })
+  const { fit } = camera
+  zoomTo.current = camera.zoomTo
   // On page load, fit the map to the data once its markers are placed (D-074):
   // the Norway view only bridges the wait. A permanent link to a node flies
   // there instead, so it is left alone.

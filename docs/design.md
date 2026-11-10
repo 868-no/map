@@ -1017,6 +1017,19 @@ UI chrome floats over the map, which runs edge to edge and never resizes (checke
   Markers are one layer and their glyphs (role, badges) another, so each instance is moved towards the camera by its place in that order, a disc at 2k and its glyphs at 2k + 1, and the depth test draws a glyph above its own disc and below every marker drawn after it, in two layers at any zoom.
   The map is never pitched, so the shift moves nothing on screen; fully transparent fragments (a hollow marker's inside) write no depth, and the layers drawn above markers (opt-out rings, labels, the terrain probe) skip the depth test.
   Replaces stacking levels redrawn per overlap (`nodes-over-N`, D-072), which with a glyph on every marker grew to dozens of layers at country zoom (D-187).
+- **Clusters below zoom 10 (D-204):** markers that overlap on screen (centres closer than two marker radii plus 2 px of outline) are drawn as one cluster, so the country-wide start view is not a pile of overlapping discs.
+  Clustering is grid-bucketed and greedy in order of prominence (routers first, then reported before estimated positions, then the busiest): a marker that overlaps an existing cluster's disc joins it, and otherwise it takes in every unassigned marker overlapping its own, so clusters never chain across the map.
+  It is recomputed when the zoom settles, never per frame or pan.
+  From zoom 10, where names take over (§7.6), every marker is drawn on its own.
+- **A cluster invents no position (D-204):** it is drawn at its most prominent member's real position, as a disc like a marker's but larger (radius 13 px, 14 px from 10 members, 16 px from 100), with the member count where a marker has its role glyph and an outer ring in its colour that marks it as several nodes.
+  Its fill is the most recently heard member's colour on the last-heard ramp, and the count takes the role glyph's ink (D-085, D-186).
+  When the representative's position is an estimate the disc is dark with a coloured ring, as estimates are hollow.
+  It is dimmed when no member matches the search or the drawn reach.
+- **Clusters in the depth order (D-204):** cluster discs sit beneath every marker drawn on its own, by depth as in D-187 (the most prominent cluster on top), and their counts at the markers' base depth, above every cluster disc and beneath every marker.
+- **Never hidden in a cluster (D-204):** the selected node, both ends of the selected link, watched nodes (D-192), nodes matching the search and the nodes of a drawn packet route are always drawn on their own.
+  A place picked from the search (D-193) is a ring of its own and hides nothing.
+  Hovering a cluster lists its members, most prominent first, in at most eight lines; clicking it zooms to fit its members, to at least zoom 10, and selects nothing.
+  Counts and lists (the header counters, the Nodes panel) stay complete.
 
 ### 7.4 Links on the map
 
@@ -1045,6 +1058,8 @@ UI chrome floats over the map, which runs edge to edge and never resizes (checke
 - With "Position accuracy" on, every estimated node shows its uncertainty circle while nothing is selected.
   A selected node shows only its own circle, whether the layer is on or not: its estimate's uncertainty, its narrowed error (§6.10), or for a coarse reported position its precision-cell error in a neutral colour (D-026, D-079).
 - The map hands links, pings and the camera only the positions of markers actually drawn, so nothing points at a node that is not on screen (D-043).
+  A node inside a marker cluster is drawn at its cluster's disc: its links, reach paths and pings start and end there, and links between two members of one cluster are not drawn (D-204).
+  Accuracy circles, trails and opt-out rings are drawn only for markers drawn on their own (a selected node always is); the camera's fit to data uses the nodes' own positions.
 
 ### 7.6 Node names
 
@@ -1282,7 +1297,7 @@ Results are in [benchmarks.md](benchmarks.md).
   A build plugin adds `<link rel="modulepreload">` for the derivation worker's script and `<link rel="prefetch">` for the engine's WebAssembly (content-hashed names known only from the bundles), so both download beside the main bundles; the module worker and its `fetch()` take them from the HTTP cache, also while still in flight, with one download each.
   Measured (Chromium, cold cache, 9 Mbit/s shared link, 150 ms RTT, empty data): the worker script done at 0.63 s instead of 1.39 s, the engine at 1.42 s instead of 1.95 s, the 3-day window's rows (with D-170) at 1.78 s instead of 2.31 s; the main bundles finish about 0.25 s later on a link shared equally (the prefetch is lowest priority where the link honours priorities).
   `<link rel="preload" as="fetch">` for the engine works the same but draws Chrome's "preloaded but not used" warning (the document never uses it); `as="worker"` is not supported (D-171).
-- **Client:** no raw history in the JavaScript heap (< 250 MiB target; rows live in WebAssembly memory), no React re-render per packet, batched GPU layers with memoised data that only recolour on selection, search or theme changes, a cursor readout that bypasses React state (D-058), and level of detail for links (§7.4).
+- **Client:** no raw history in the JavaScript heap (< 250 MiB target; rows live in WebAssembly memory), no React re-render per packet, batched GPU layers with memoised data that only recolour on selection, search or theme changes, a cursor readout that bypasses React state (D-058), level of detail for links (§7.4), and marker clusters below zoom 10, recomputed only when the zoom settles (§7.3, D-204).
   Pan and zoom target at least 30 fps on a desktop GPU (lowered from 60, D-208); pings are bounded (80, one per transmission) and run in their own canvas (D-083).
   Vendor code (MapLibre, deck.gl, React) is split into chunks that stay cached across app deploys (D-039).
 - **Engine:** a 72 h reference snapshot builds in ~0.2 s off the main thread; shared passes (traceroute hop samples, packet copies, position groups, radio groups, routing replies) run once per rebuild (D-060, D-083).
@@ -1378,5 +1393,5 @@ UI, performance and operations:
 - **Uplink opt-out** withholds names, not ids, traffic or positions (§2.5).
 - **Envelopes** keep text messages readable to anyone with the channel key; whether to keep them is open for the operator (D-051).
 - **Frame rates** have been measured only with software WebGL; the 30 fps desktop target is unverified on GPU hardware (benchmarks.md).
-- **Name clustering** de-clutters names but node markers themselves are not clustered at low zoom.
+- **Marker clusters** follow one fixed screen-space rule; links between two clusters are drawn once per member pair, on top of each other, and a cluster's count does not say which members are linked (D-204).
 - **Firmware:** minimum 2.7; behaviour that depends on newer fields degrades conservatively.

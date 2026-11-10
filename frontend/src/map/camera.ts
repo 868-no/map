@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, type RefObject } from 'react'
 import * as maplibregl from 'maplibre-gl'
 import type { PlaceMark, Selection } from '../state/store'
+import { MARKER_CLUSTER_MAX_ZOOM } from './markerClusters'
 
 type LngLat = [number, number]
 
@@ -36,7 +37,7 @@ export function useCamera(
   // ready: the map has loaded. The effects below run again then, as the data
   // can arrive before the map exists (mapRef is not reactive).
   { pos, selection, route, place, ready }: { pos: Map<string, LngLat>; selection: Selection; route: { key: string; points: LngLat[] } | null; place: PlaceMark | null; ready: boolean },
-): { fit: (duration?: number) => void } {
+): { fit: (duration?: number) => void; zoomTo: (points: LngLat[]) => void } {
   const fit = useCallback(
     (duration = 600) => {
       const map = mapRef.current
@@ -47,6 +48,22 @@ export function useCamera(
       map.fitBounds(b, { padding: { top: 30 + c.top, left: 60, right: 60 + c.right, bottom: 60 + c.bottom }, maxZoom: 12, duration })
     },
     [mapRef, container, pos],
+  )
+
+  // Zoom in to a marker cluster's members (D-204): far enough that they
+  // come apart, at least to the zoom where markers stop clustering.
+  const zoomTo = useCallback(
+    (points: LngLat[]) => {
+      const map = mapRef.current
+      if (!map || points.length === 0) return
+      const b = new maplibregl.LngLatBounds()
+      points.forEach((p) => b.extend(p))
+      const c = covered(container.current)
+      const cam = map.cameraForBounds(b, { padding: { top: 40 + c.top, left: 60, right: 60 + c.right, bottom: 60 + c.bottom }, maxZoom: 13 })
+      if (!cam) return
+      map.easeTo({ center: cam.center, zoom: Math.max(cam.zoom ?? 0, MARKER_CLUSTER_MAX_ZOOM, map.getZoom()), duration: 600 })
+    },
+    [mapRef, container],
   )
 
   // Fly to a selected node once per selection, centred in the area the side
@@ -101,5 +118,5 @@ export function useCamera(
     map.fitBounds(b, { padding: { top: 40 + c.top, left: 80, right: 80 + c.right, bottom: 80 + c.bottom }, maxZoom: 13, duration: 600 })
   }, [route, mapRef, container, ready])
 
-  return { fit }
+  return { fit, zoomTo }
 }

@@ -741,8 +741,10 @@ test('only online nodes: offline ones leave the map, and Details says which a no
   // test checks what is drawn: with the filter on, only nodes heard in the last 3 h.
   const drawn = () => page.evaluate(() => {
     const mm = window as unknown as { __meshmap: Hook }
-    // 'nodes' holds every marker once.
-    const ps = (mm.__meshmap.layers().find((l) => l.id === 'nodes')?.data ?? []) as { node: { last_seen?: string } }[]
+    // 'nodes' holds every marker drawn on its own once; 'node-clusters' the rest, below zoom 10 (D-204).
+    type P = { node: { last_seen?: string } }
+    const ls = mm.__meshmap.layers()
+    const ps = [...((ls.find((l) => l.id === 'nodes')?.data ?? []) as P[]), ...((ls.find((l) => l.id === 'node-clusters')?.data ?? []) as { members: P[] }[]).flatMap((k) => k.members)]
     const offline = ps.filter((p) => !p.node.last_seen || Date.now() - Date.parse(p.node.last_seen) > 3 * 3_600_000).length
     return { all: ps.length, offline }
   })
@@ -842,18 +844,26 @@ test('a hollow (estimated) marker is clickable inside its ring, not only on it',
     map: { project: (p: [number, number]) => { x: number; y: number }; jumpTo: (o: object) => void }
     pick: (x: number, y: number) => { layer: string; node?: string } | null
   }
+  // Node names off: from zoom 10 they would cover part of the marker, and pick as its label.
+  await page.addInitScript(() => localStorage.setItem('meshmap:toggles:v6', JSON.stringify({ labels: false })))
   await ready(page)
-  await page.waitForFunction(() => ((window as unknown as { __meshmap: Hook }).__meshmap.layers().find((x) => x.id === 'nodes')?.data as Placed[] | undefined)?.some((p) => p.kind === 'estimated') ?? false, null, { timeout: 30_000 })
+  // Every placed node: drawn on its own, or below zoom 10 inside a marker cluster (D-204).
+  const placedNow = () => page.evaluate(() => {
+    const ls = (window as unknown as { __meshmap: Hook }).__meshmap.layers()
+    return [...((ls.find((l) => l.id === 'nodes')?.data ?? []) as Placed[]), ...((ls.find((l) => l.id === 'node-clusters')?.data ?? []) as { members: Placed[] }[]).flatMap((k) => k.members)]
+      .map((p) => ({ node: { id: p.node.id }, kind: p.kind, lon: p.lon, lat: p.lat }))
+  })
+  await expect.poll(async () => (await placedNow()).some((p) => p.kind === 'estimated'), { timeout: 30_000 }).toBe(true)
   await page.waitForTimeout(1500) // the fit on first load
   // The estimated node furthest from any other marker, so nothing else lies under the click.
-  const hit = await page.evaluate(() => {
-    const nodes = (window as unknown as { __meshmap: M }).__meshmap.layers().find((l) => l.id === 'nodes')!.data as Placed[]
+  const nodes = await placedNow()
+  const hit = (() => {
     const gap = (n: Placed) => Math.min(...nodes.filter((m) => m !== n).map((m) => Math.hypot(m.lon - n.lon, (m.lat - n.lat) * 2)), Infinity)
     const best = nodes.filter((n) => n.kind === 'estimated').reduce((a, b) => (gap(b) > gap(a) ? b : a))
     return { id: best.node.id, lon: best.lon, lat: best.lat }
-  })
-  // Zoom 9: node names (from zoom 10) would cover part of the marker, and pick as its label.
-  await page.evaluate(([lon, lat]) => (window as unknown as { __meshmap: M }).__meshmap.map.jumpTo({ center: [lon, lat], zoom: 9 }), [hit.lon, hit.lat])
+  })()
+  // Zoom 10: every marker on its own (no marker clusters, D-204).
+  await page.evaluate(([lon, lat]) => (window as unknown as { __meshmap: M }).__meshmap.map.jumpTo({ center: [lon, lat], zoom: 10 }), [hit.lon, hit.lat])
   await page.waitForTimeout(800)
   const pt = await page.evaluate(([lon, lat]) => (window as unknown as { __meshmap: M }).__meshmap.map.project([lon, lat]), [hit.lon, hit.lat])
   // The clear inside picks the marker at every pixel, the centre too (D-187 keeps it undrawn, not unpickable).
