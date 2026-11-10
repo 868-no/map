@@ -38,19 +38,25 @@ pub struct Sample {
 }
 
 #[derive(Serialize, Clone, Default, Debug, PartialEq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct Stats {
     pub n: usize,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub median: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub min: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub max: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub last: Option<f64>,
 }
 
 #[derive(Serialize, Clone, Copy, Default, Debug, PartialEq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct EvidenceCounts {
     pub neighbor: u32,
     pub traceroute: u32,
@@ -66,6 +72,7 @@ impl EvidenceCounts {
 
 /// Directed src -> dst: dst heard src.
 #[derive(Serialize, Clone, Debug, Default)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct Edge {
     pub src: String,
     pub dst: String,
@@ -75,6 +82,7 @@ pub struct Edge {
     pub dst_num: u32,
     pub evidence: EvidenceCounts,
     pub samples: u32,
+    #[cfg_attr(test, ts(type = "'high' | 'medium' | 'low'"))]
     pub confidence: &'static str,
     pub inferred: bool,
     pub reason: &'static str,
@@ -85,10 +93,12 @@ pub struct Edge {
     /// Carried over MQTT, not radio: built only from traceroute hops recorded
     /// at exactly 0 dB (D-055). Kept apart from radio links.
     #[serde(skip_serializing_if = "is_false")]
+    #[cfg_attr(test, ts(as = "Option<_>", optional))]
     pub mqtt: bool,
     /// Hop-limit evidence that dst relays what it hears from src without
     /// spending a hop (D-068); absent without any.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub zero_cost: Option<crate::zerocost::ZeroCost>,
     #[serde(skip)]
     pub first: i64,

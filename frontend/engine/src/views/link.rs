@@ -14,17 +14,22 @@ use crate::util::{map, node_id, FxMap, FxSet};
 pub const MAX_LINK_POINTS: usize = 2000;
 
 #[derive(Serialize, Debug, PartialEq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct LinkPoint {
     /// Observed, Unix ms.
     pub t: i64,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub snr: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub rssi: Option<f64>,
+    #[cfg_attr(test, ts(type = "'neighbor' | 'traceroute' | 'direct_rf' | 'relay_hint'"))]
     pub ev: &'static str,
 }
 
 #[derive(Serialize, Debug)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct LinkHistory {
     pub a: String,
     pub b: String,
@@ -34,8 +39,10 @@ pub struct LinkHistory {
     /// The noise floor each end measures, [Unix ms, dBm], oldest first, the
     /// newest MAX_LINK_POINTS; empty for an end that sent none (D-199).
     #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(test, ts(as = "Option<_>", optional))]
     pub floor_a: Vec<(i64, i32)>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(test, ts(as = "Option<_>", optional))]
     pub floor_b: Vec<(i64, i32)>,
 }
 
@@ -170,6 +177,7 @@ pub fn quality_bin(span: i64) -> i64 {
 /// median SNR of its radio links to other routers and the readings it
 /// rests on, in both directions.
 #[derive(Serialize, Debug, PartialEq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct RouterQuality {
     /// Bin width, ms; bins start at the window's start.
     pub bin_ms: i64,
@@ -181,6 +189,7 @@ pub struct RouterQuality {
     /// The noise floor it measures (D-199): [bin middle, median dBm,
     /// readings], bins with readings only; empty when it sends none.
     #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(test, ts(as = "Option<_>", optional))]
     pub floor: Vec<(i64, f64, usize)>,
 }
 

@@ -11,35 +11,46 @@ const MAX_SAMPLES: usize = 500;
 const MAX_GATEWAYED: usize = 200;
 
 #[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct TelemetrySample {
     pub at: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub battery: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub voltage: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub ch_util: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub air_util: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub uptime: Option<u32>,
 }
 
 /// One environment report (D-099).
 #[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct EnvironmentSample {
     pub at: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub temp: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub humidity: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub pressure: Option<f64>,
 }
 
 /// Its packets to one node that asked for an acknowledgement, and what came
 /// back (D-109). Lower bounds: only packets and ACKs a gateway reported count.
 #[derive(Serialize, Debug, PartialEq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct PairDelivery {
     pub to: String,
     pub asked: usize,
@@ -54,40 +65,49 @@ pub struct PairDelivery {
 
 /// A status text the node broadcast (NODE_STATUS_APP), and when (D-103).
 #[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct StatusText {
     pub status: String,
     pub at: String,
 }
 
 #[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct Hearing {
     pub node: String,
     pub receptions: usize,
     pub direct_rf: usize,
     /// Medians over the direct receptions: a relayed copy's measures the last relay.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub snr: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub rssi: Option<f64>,
 }
 
 #[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct NodeDetail {
     #[serde(flatten)]
     pub node: Node,
     pub telemetry_series: Vec<TelemetrySample>,
     /// Its packets that asked for an ACK, by recipient, most first (D-109).
     #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(test, ts(as = "Option<_>", optional))]
     pub delivery_by_recipient: Vec<PairDelivery>,
     /// Its status texts, newest first: each distinct text once, at its latest (D-103).
     #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(test, ts(as = "Option<_>", optional))]
     pub node_status: Vec<StatusText>,
     /// Environment reports in time order, one per packet (D-099).
     #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(test, ts(as = "Option<_>", optional))]
     pub environment_series: Vec<EnvironmentSample>,
     /// The noise floor it measures, [Unix ms, dBm], one per local statistics
     /// packet, in time order (D-199).
     #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(test, ts(as = "Option<_>", optional))]
     pub noise_floor_series: Vec<(i64, i32)>,
     pub heard_by: Vec<Hearing>,
     /// A series kept only its newest MAX_SAMPLES reports.
@@ -96,9 +116,11 @@ pub struct NodeDetail {
     pub radio: crate::radio::Radio,
     /// ACKs and errors it sent and received (D-092).
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub delivery: Option<crate::packets::Delivery>,
     /// A router's link quality to other routers over the window (D-197).
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub router_links: Option<super::link::RouterQuality>,
 }
 

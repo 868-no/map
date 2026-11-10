@@ -11,39 +11,48 @@ use crate::views::{dest, first_per_packet, newer};
 pub const MAX_LOG: usize = 200;
 
 #[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct OwnPacket {
     pub lp: String,
     pub at: String,
     #[serde(rename = "type")]
     pub ty: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub to: Option<String>,
     /// The fewest hops any other gateway's copy shows (hop start minus hop
     /// limit; 0-cost relays do not count). Its own uplink and copies taken
     /// from MQTT (downlinked) are left out: they say nothing about the path.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub hops: Option<i16>,
     /// Other gateways that uplinked it.
     pub gateways: usize,
     /// It uplinked it itself, as a gateway.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
+    #[cfg_attr(test, ts(as = "Option<_>", optional))]
     pub by_itself: bool,
     /// Some copy reached a gateway through an MQTT downlink (D-087).
     #[serde(skip_serializing_if = "std::ops::Not::not")]
+    #[cfg_attr(test, ts(as = "Option<_>", optional))]
     pub downlinked: bool,
     pub signature: String,
     /// ACKs and errors answering it, by who sent them (D-092).
     #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(test, ts(as = "Option<_>", optional))]
     pub replies: Vec<Reply>,
     /// For a routing packet: what it says and which packet it answers.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub answers: Option<Answer>,
     /// The node whose packet this answers (a traceroute reply, an ACK or
     /// error): the node did not send it of its own accord.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub in_response_to: Option<String>,
     /// Type invalid: why its content was not kept (D-093).
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub invalid: Option<String>,
 }
 
@@ -56,10 +65,12 @@ fn in_response_to(r: &Row) -> Option<u32> {
 
 /// Routing packets from one node answering a packet: ACKs or one error.
 #[derive(Serialize, Debug, PartialEq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct Reply {
     pub from: String,
     pub kind: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub error: Option<String>,
     /// Distinct routing packets (a sender that retries gets each copy answered).
     pub count: usize,
@@ -67,18 +78,22 @@ pub struct Reply {
 
 /// What a routing packet says: ack or error, for the packet with this id.
 #[derive(Serialize, Debug, PartialEq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct Answer {
     pub kind: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub error: Option<String>,
     pub request_id: u32,
     /// The answered packet's key, when it is in the window.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub re: Option<String>,
 }
 
 /// A routing packet or encrypted direct message addressed to the node.
 #[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct InboundPacket {
     pub lp: String,
     pub at: String,
@@ -86,10 +101,12 @@ pub struct InboundPacket {
     #[serde(rename = "type")]
     pub ty: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub answers: Option<Answer>,
 }
 
 #[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct RelayedPacket {
     pub lp: String,
     pub at: String,
@@ -97,13 +114,16 @@ pub struct RelayedPacket {
     #[serde(rename = "type")]
     pub ty: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub to: Option<String>,
+    #[cfg_attr(test, ts(type = "Array<'relay_byte' | 'traceroute'>"))]
     pub evidence: Vec<&'static str>,
     /// How many gateways heard its rebroadcast.
     pub gateways: usize,
 }
 
 #[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct PacketLog {
     pub own: Vec<OwnPacket>,
     pub relayed: Vec<RelayedPacket>,
@@ -328,6 +348,7 @@ impl ReplyIndex {
 /// A node's routing traffic in the window: ACKs and errors it sent, and
 /// those addressed to it, errors by firmware reason (D-092).
 #[derive(Serialize, Default, Debug, PartialEq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct Delivery {
     pub acks_sent: usize,
     pub acks_received: usize,
@@ -372,24 +393,29 @@ pub fn delivery(rows: &[&Row], num: u32, i: &Interner) -> Option<Delivery> {
 }
 
 #[derive(Serialize, Clone, Debug, PartialEq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct RouteSegment {
     pub a: String,
     pub b: String,
     pub dashed: bool,
+    #[cfg_attr(test, ts(type = "'direct' | 'traceroute' | 'relay' | 'gap' | 'unknown_relay' | 'internet' | 'delivered'"))]
     pub why: &'static str,
     /// A traceroute's way there ("forward": the request, requester to
     /// target) or back ("back": the reply, target to requester).
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(type = "'forward' | 'back'", optional))]
     pub leg: Option<&'static str>,
 }
 
 #[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct PacketRoute {
     /// When it was first heard: where moved nodes were then (D-073).
     pub at: String,
     pub segments: Vec<RouteSegment>,
     /// Nodes whose ACK confirms they received it (D-096).
     #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(test, ts(as = "Option<_>", optional))]
     pub delivered: Vec<String>,
 }
 

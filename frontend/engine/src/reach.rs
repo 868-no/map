@@ -27,6 +27,7 @@ use crate::util::{map, node_id, FxMap, FxSet};
 pub const MAX_HOPS: u8 = 7;
 
 #[derive(Serialize, Debug, PartialEq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct Reached {
     pub id: String,
     /// The smallest hop limit at which this node receives the packet.
@@ -35,14 +36,17 @@ pub struct Reached {
     pub via: String,
     /// The hop into it is a 0-cost link (it relays onwards for free).
     #[serde(skip_serializing_if = "std::ops::Not::not")]
+    #[cfg_attr(test, ts(as = "Option<_>", optional))]
     pub free: bool,
 }
 
 #[derive(Serialize, Debug, PartialEq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct Reach {
     pub origin: String,
     /// The hop limit its own packets were sent with (most common in the window).
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub hop_start: Option<u8>,
     /// Internet (MQTT) links were followed too.
     pub internet: bool,

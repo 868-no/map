@@ -54,12 +54,15 @@ pub fn regions_of(topic: &str) -> Vec<String> {
 
 /// One way the node was heard: a topic root and channel name.
 #[derive(Serialize, Debug, PartialEq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct HeardAs {
     pub topic: String,
     pub regions: Vec<String>, // possible LoRa regions (empty: unknown)
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub channel: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub preset: Option<&'static str>, // None: unknown (custom channel name)
     pub receptions: usize,
     pub last_at: String,
@@ -67,37 +70,47 @@ pub struct HeardAs {
 
 /// The node's own map report (exact).
 #[derive(Serialize, Debug, PartialEq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct Reported {
     #[serde(skip_serializing_if = "String::is_empty")]
+    #[cfg_attr(test, ts(as = "Option<_>", optional))]
     pub region: String,
     #[serde(skip_serializing_if = "String::is_empty")]
+    #[cfg_attr(test, ts(as = "Option<_>", optional))]
     pub modem_preset: String,
     /// The preset is confirmed in use (has_default_channel). Without it the
     /// node may run a custom modem config: firmware still reports the stored
     /// preset, LONG_FAST unless changed.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
+    #[cfg_attr(test, ts(as = "Option<_>", optional))]
     pub preset_confirmed: bool,
     pub at: String,
 }
 
 #[derive(Serialize, Debug, PartialEq, Default)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct Radio {
     pub heard_as: Vec<HeardAs>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub reported: Option<Reported>,
     /// Channels it was seen on (D-064).
     #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(test, ts(as = "Option<_>", optional))]
     pub channels: Vec<crate::channels::ChannelUse>,
     /// Its modem preset as far as the window shows (D-064).
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub preset: Option<crate::channels::PresetGuess>,
     /// As a gateway: the MQTT topic roots it uplinked under (D-090).
     #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(test, ts(as = "Option<_>", optional))]
     pub uplink_topics: Vec<TopicUse>,
 }
 
 /// A topic root a gateway uplinked under: distinct receptions and the last one.
 #[derive(Serialize, Debug, PartialEq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct TopicUse {
     pub topic: String,
     pub regions: Vec<String>,

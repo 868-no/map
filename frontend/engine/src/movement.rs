@@ -36,10 +36,12 @@ pub const AIRBORNE_M: i32 = 750;
 pub const TRIP_FACTOR: f64 = 5.0;
 
 #[derive(Serialize, Clone, Debug, PartialEq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct TrackPoint {
     pub lat: f64,
     pub lon: f64,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub alt: Option<i32>,
     pub at: String,
 }
@@ -71,6 +73,7 @@ pub fn move_threshold(fixed: bool, a: (f64, u32), b: (f64, u32)) -> f64 {
 /// around a fixed spot, or reports of different precision. The agreeing
 /// reports pick its place, never finer than it shared itself (design §6.10).
 #[derive(Serialize, Clone, Debug, PartialEq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct Anchor {
     pub lat: f64,
     pub lon: f64,

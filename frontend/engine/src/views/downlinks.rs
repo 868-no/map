@@ -12,6 +12,7 @@ use crate::util::{map, set, FxMap, FxSet};
 /// at exactly 0 dB. Genuine readings round to 0 dB too, on 1-11% of a node's
 /// traceroutes in the 2026-11 data; downlinking gateways sat at 52-79% (D-054).
 #[derive(Serialize, Clone, Debug, PartialEq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct Downlink {
     pub zero_snr: usize,    // traceroutes that reached the node at exactly 0 dB
     pub traceroutes: usize, // traceroutes recording an SNR at the node

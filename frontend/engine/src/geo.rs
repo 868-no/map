@@ -60,11 +60,14 @@ impl Default for Params {
 }
 
 #[derive(Serialize, Clone, Debug)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct Estimate {
     pub lat: f64,
     pub lon: f64,
     pub uncertainty_radius_m: f64,
+    #[cfg_attr(test, ts(type = "'weighted_centroid' | 'ranged_centroid' | 'log_distance_wls'"))]
     pub method: &'static str,
+    #[cfg_attr(test, ts(type = "'very_low' | 'low'"))]
     pub quality: &'static str,
     pub anchor_count: usize,
     pub sample_count: u32,

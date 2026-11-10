@@ -3,10 +3,11 @@ import { describe, expect, it } from 'vitest'
 import golden from '../engine/tests/fixtures/mesh-12h/engine.json'
 import type { HealthView, LinkHistory, NodeView, PacketLog, PacketRoute, ReachView, RegionsView, SnapshotView, TrafficView, WatchView } from '../src/derive/views'
 
-// derive/views.ts mirrors the engine's Rust view structs by hand. This file
-// is type-checked (npm run typecheck): every view kind in the golden fixture must
-// fit the TypeScript types, so a field the engine renamed, dropped or
-// retyped fails the build. JSON imports type strings as plain strings, so
+// derive/views.ts builds the views' types on derive/views.gen.ts, which
+// ts-rs generates from the engine's Rust view structs (D-202). This file is
+// type-checked (npm run typecheck): every view kind in the golden fixture must
+// fit them, so a field serde writes otherwise than its generated type says
+// (a ts attribute beside it missing or wrong) fails the build. JSON imports type strings as plain strings, so
 // string unions are widened to string for the check; the meta block is the
 // worker's own and absent from the engine's output.
 // Index signatures allow undefined: JSON arrays of objects infer missing keys as `?: undefined`.

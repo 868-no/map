@@ -9,65 +9,85 @@ use crate::row::{ty, HeardFrom, Interner, Position as RowPos, Row};
 use crate::util::{iso, map, node_id, set, FxMap, FxSet, BROADCAST};
 
 #[derive(Serialize, Clone, Debug, Default)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct Identity {
     #[serde(skip_serializing_if = "String::is_empty")]
+    #[cfg_attr(test, ts(as = "Option<_>", optional))]
     pub long_name: String,
     #[serde(skip_serializing_if = "String::is_empty")]
+    #[cfg_attr(test, ts(as = "Option<_>", optional))]
     pub short_name: String,
     #[serde(skip_serializing_if = "String::is_empty")]
+    #[cfg_attr(test, ts(as = "Option<_>", optional))]
     pub hw_model: String,
     #[serde(skip_serializing_if = "String::is_empty")]
+    #[cfg_attr(test, ts(as = "Option<_>", optional))]
     pub role: String,
     pub has_public_key: bool,
     /// Where its node id comes from (D-142): "key" (firmware 2.8 and later
     /// derive it from the public key) or "hardware" (2.7 and earlier); absent
     /// without an announced key.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(type = "'key' | 'hardware'", optional))]
     pub node_id_from: Option<&'static str>,
     /// The node id its key derives, when that is not its own (a 2.7 node: the
     /// id it takes on upgrading to 2.8 with its key kept).
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub key_id: Option<String>,
     /// The node id its key derives, its own included (shared-key check).
     #[serde(skip)]
     pub key_num: Option<u32>,
+    #[cfg_attr(test, ts(type = "'verified' | 'unsigned' | 'unverifiable' | 'not-applicable'"))]
     pub signature: String,
     pub observed_at: String,
     /// "mapreport" when the identity comes from the node's own map report
     /// (no NodeInfo in the window); empty for NodeInfo.
     #[serde(skip_serializing_if = "str::is_empty")]
+    #[cfg_attr(test, ts(type = "'mapreport'", optional = nullable))]
     pub source: &'static str,
 }
 
 #[derive(Serialize, Clone, Debug)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct Position {
     pub lat: f64,
     pub lon: f64,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub alt: Option<i32>,
     pub precision_bits: u32,
     pub precision_known: bool,
+    #[cfg_attr(test, ts(type = "'verified' | 'unsigned' | 'unverifiable' | 'not-applicable'"))]
     pub signature: String,
     pub observed_at: String,
+    #[cfg_attr(test, ts(type = "'position' | 'mapreport'"))]
     pub source: String,
 }
 
 #[derive(Serialize, Clone, Debug)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct Telemetry {
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub battery: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub voltage: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub ch_util: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub air_util: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub uptime: Option<u32>,
     pub observed_at: String,
 }
 
 #[derive(Serialize, Clone, Copy, Default, Debug)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct Signatures {
     pub verified: usize,
     pub unsigned: usize,
@@ -87,6 +107,7 @@ fn is_false(b: &bool) -> bool {
 /// packet carrying it directly, at a signal too strong for the distance
 /// between them.
 #[derive(Serialize, Clone, Debug)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct RejectedPosition {
     #[serde(flatten)]
     pub position: Position,
@@ -99,72 +120,94 @@ pub struct RejectedPosition {
 }
 
 #[derive(Serialize, Clone, Debug)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct Node {
     pub id: String,
     pub num: u32,
+    #[cfg_attr(test, ts(type = "'observed' | 'referenced'"))]
     pub status: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub identity: Option<Identity>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub position: Option<Position>,
     /// Its newest reported position, when that is older than STALE_POSITION_MS
     /// before the window's latest observation (D-094): it is then no anchor
     /// and the node is estimated; without an estimate it is left off the map,
     /// since links drawn to an old place would mislead.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub stale_position: Option<Position>,
     /// Its newest position report the radio contradicts (D-178): ignored,
     /// so the node is placed by its other reports or estimated.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub rejected_position: Option<RejectedPosition>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub telemetry: Option<Telemetry>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub first_seen: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub last_seen: Option<String>,
     /// For a node only named by others (status "referenced"): when it was last named.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub last_referenced: Option<String>,
     pub packets: usize,
     pub receptions: usize,
     /// Of `receptions`, those it uplinked itself as a gateway (its own map
     /// reports among them): not heard over the air by anyone else.
     #[serde(skip_serializing_if = "is_zero")]
+    #[cfg_attr(test, ts(as = "Option<_>", optional))]
     pub own_uplinks: usize,
     pub gateway_receptions: usize,
     pub is_gateway: bool,
     /// A gateway that uplinks every copy of a packet it hears, not only the
     /// first (a future firmware option, D-084).
     #[serde(skip_serializing_if = "is_false")]
+    #[cfg_attr(test, ts(as = "Option<_>", optional))]
     pub multi_uplink: bool,
     pub signatures: Signatures,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub brokers: Option<Vec<String>>,
     #[serde(skip_serializing_if = "is_false")]
+    #[cfg_attr(test, ts(as = "Option<_>", optional))]
     pub mqtt_opt_out: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub estimate: Option<Estimate>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub estimate_note: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub mqtt_downlink: Option<Downlink>,
     /// When it last moved more than a few hundred metres (D-073): links use
     /// only evidence from after that.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub moved_at: Option<String>,
     /// Its positions in time order, newest last, when it moved (D-073).
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub track: Option<Vec<crate::movement::TrackPoint>>,
     /// Moving and reporting more than 750 m above sea level (D-073).
     #[serde(skip_serializing_if = "is_false")]
+    #[cfg_attr(test, ts(as = "Option<_>", optional))]
     pub airborne: bool,
     /// Its position narrowed from reports jumping around one place (D-077);
     /// the map places it here rather than at the latest report.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub refined: Option<crate::movement::Anchor>,
     /// Routers: how often it is seen relaying what it should relay (D-078).
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub relaying: Option<crate::reliability::Relaying>,
     /// The median channel utilisation (%) of its device telemetry reports in
     /// the window, each report once, for the Regions panel (D-194); not sent
@@ -190,64 +233,88 @@ pub fn slim_nodes<S: serde::Serializer>(nodes: &[Node], s: S) -> Result<S::Ok, S
 }
 
 #[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(rename = "MapIdentity"))]
 struct SlimIdentity<'a> {
     #[serde(skip_serializing_if = "str::is_empty")]
+    #[cfg_attr(test, ts(as = "Option<_>", optional))]
     long_name: &'a str,
     #[serde(skip_serializing_if = "str::is_empty")]
+    #[cfg_attr(test, ts(as = "Option<_>", optional))]
     short_name: &'a str,
     #[serde(skip_serializing_if = "str::is_empty")]
+    #[cfg_attr(test, ts(as = "Option<_>", optional))]
     role: &'a str,
 }
 
 #[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(rename = "MapPosition"))]
 struct SlimPosition<'a> {
     lat: f64,
     lon: f64,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     alt: Option<i32>,
     precision_bits: u32,
     precision_known: bool,
+    #[cfg_attr(test, ts(type = "'position' | 'mapreport'"))]
     source: &'a str,
 }
 
 #[derive(Serialize)]
-struct SlimNode<'a> {
+#[cfg_attr(test, derive(ts_rs::TS), ts(rename = "MeshNode"))]
+pub(super) struct SlimNode<'a> {
     id: &'a str,
     num: u32,
+    #[cfg_attr(test, ts(type = "'observed' | 'referenced'"))]
     status: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     identity: Option<SlimIdentity<'a>>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     position: Option<SlimPosition<'a>>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     last_seen: Option<&'a str>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     last_referenced: Option<&'a str>,
     packets: usize,
     receptions: usize,
     #[serde(skip_serializing_if = "is_zero")]
+    #[cfg_attr(test, ts(as = "Option<_>", optional))]
     own_uplinks: usize,
     gateway_receptions: usize,
     is_gateway: bool,
     #[serde(skip_serializing_if = "is_false")]
+    #[cfg_attr(test, ts(as = "Option<_>", optional))]
     multi_uplink: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     brokers: Option<&'a [String]>,
     #[serde(skip_serializing_if = "is_false")]
+    #[cfg_attr(test, ts(as = "Option<_>", optional))]
     mqtt_opt_out: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     estimate: Option<&'a Estimate>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     mqtt_downlink: Option<&'a Downlink>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     moved_at: Option<&'a str>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     track: Option<&'a [crate::movement::TrackPoint]>,
     #[serde(skip_serializing_if = "is_false")]
+    #[cfg_attr(test, ts(as = "Option<_>", optional))]
     airborne: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     refined: Option<&'a crate::movement::Anchor>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     relaying: Option<&'a crate::reliability::Relaying>,
 }
 

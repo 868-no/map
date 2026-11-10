@@ -20,6 +20,8 @@ pub mod roles;
 pub mod row;
 pub mod store;
 pub mod util;
+#[cfg(test)]
+mod view_types;
 pub mod views;
 pub mod watch;
 pub mod zerocost;

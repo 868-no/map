@@ -85,6 +85,10 @@ jobs:
           name: engine
           hash: ${{ hashFiles('frontend/engine/Cargo.lock', 'scripts/wasm.sh', 'versions.env') }}
       - run: scripts/wasm.sh test
+      # The views' TypeScript types are generated from the engine's structs
+      # by its tests (D-202): they must be current.
+      - name: generated view types are current
+        run: git diff --exit-code frontend/src/derive/views.gen.ts
       - run: scripts/wasm.sh clippy
       # Advisories (RustSec), yanked versions and sources: blocks the deploy too.
       - run: scripts/wasm.sh deny

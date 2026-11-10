@@ -18,31 +18,42 @@ pub const QUIET_MIN_MS: i64 = 3_600_000;
 pub const QUIET_MIN_EVENTS: usize = 4;
 
 #[derive(Serialize, Debug, PartialEq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct Watched {
     pub id: String,
     /// observed, referenced (only named by others) or absent (not in the window).
+    #[cfg_attr(test, ts(type = "'observed' | 'referenced' | 'absent'"))]
     pub status: &'static str,
     #[serde(skip_serializing_if = "String::is_empty")]
+    #[cfg_attr(test, ts(as = "Option<_>", optional))]
     pub long_name: String,
     #[serde(skip_serializing_if = "String::is_empty")]
+    #[cfg_attr(test, ts(as = "Option<_>", optional))]
     pub short_name: String,
     #[serde(skip_serializing_if = "String::is_empty")]
+    #[cfg_attr(test, ts(as = "Option<_>", optional))]
     pub role: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub last_seen: Option<String>,
     /// Time from it was last heard to the newest data in the window (ms).
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub quiet_ms: Option<i64>,
     /// Its median gap between transmissions or uplinks (ms), when known.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub usual_gap_ms: Option<i64>,
     /// Quiet for much longer than usual (see QUIET_MIN_MS).
     pub quiet: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub battery: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub voltage: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub telemetry_at: Option<String>,
     pub packets: usize,
     /// Distinct gateways that got its packets.

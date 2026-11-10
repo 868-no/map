@@ -2,7 +2,8 @@
 # Build the WebAssembly engine (frontend/engine) into frontend/src/engine/pkg
 # inside the pinned Rust image, so the host needs only Docker.
 #   scripts/wasm.sh            release build + wasm-bindgen
-#   scripts/wasm.sh test       cargo test (native)
+#   scripts/wasm.sh test       cargo test (native); also writes the views' TypeScript
+#                              types, frontend/src/derive/views.gen.ts (D-202)
 #   scripts/wasm.sh clippy     cargo clippy, warnings as errors (lints: Cargo.toml)
 #   scripts/wasm.sh deny       cargo-deny: dependency advisories, bans, sources (deny.toml)
 #   UPDATE_GOLDEN=1 scripts/wasm.sh test   re-record tests/fixtures/mesh-12h/engine.json

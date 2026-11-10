@@ -16,6 +16,7 @@ use crate::util::{iso, map, set, FxMap, FxSet};
 pub const MAX_NODES: usize = 5000;
 
 #[derive(Serialize, Clone, Debug, Default)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct Counts {
     pub packets: usize,
     pub receptions: usize,
@@ -28,8 +29,10 @@ pub struct Counts {
 }
 
 #[derive(Serialize, Clone, Debug, Default)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct Snapshot {
     #[serde(serialize_with = "super::node::slim_nodes")]
+    #[cfg_attr(test, ts(as = "Vec<super::node::SlimNode<'static>>"))]
     pub nodes: Vec<Node>,
     pub edges: Vec<Edge>,
     pub edges_truncated: bool,

@@ -24,6 +24,7 @@ use crate::util::{map, FxMap, FxSet};
 
 /// Evidence for one directed link U -> R (R relays what it heard from U).
 #[derive(Serialize, Clone, Copy, Debug, PartialEq, Default)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct ZeroCost {
     /// Packets R rebroadcast with U's hop limit (no hop spent).
     pub free: u32,

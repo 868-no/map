@@ -25,6 +25,7 @@ use crate::row::Row;
 use crate::util::{map, set, FxMap, FxSet};
 
 #[derive(Serialize, Clone, Debug, PartialEq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct Relaying {
     /// Packets it received with hops left, where a witness gateway uplinked them.
     pub expected: usize,

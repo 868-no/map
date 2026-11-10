@@ -16,6 +16,7 @@ use crate::util::{map, FxMap, FxSet};
 use crate::views::Node;
 
 #[derive(Serialize, Debug, Default, PartialEq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct RegionSummary {
     pub name: &'static str,
     /// Nodes placed in it (a reported position or an estimate), and their ids.
@@ -29,16 +30,19 @@ pub struct RegionSummary {
     pub topic_gateways: usize,
     /// The median of its nodes' median channel utilisation, and how many reported one.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub ch_util: Option<f64>,
     pub ch_util_nodes: usize,
     /// The node reporting the busiest channel, and its median.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub busiest: Option<(String, f64)>,
     /// Its nodes heard in the window by role, hardware, preset and firmware (D-196).
     pub fleet: Fleet,
 }
 
 #[derive(Serialize, Debug, Default)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct RegionsView {
     /// The outlines are in: false until the worker has handed them over.
     pub loaded: bool,

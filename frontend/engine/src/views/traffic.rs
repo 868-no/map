@@ -24,6 +24,7 @@ fn duration_string(ms: i64) -> String {
 }
 
 #[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct Bucket {
     pub start: String,
     pub packets: usize,
@@ -31,6 +32,7 @@ pub struct Bucket {
 }
 
 #[derive(Serialize)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct Traffic {
     pub bucket: String,
     pub buckets: Vec<Bucket>,

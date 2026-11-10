@@ -25,6 +25,7 @@ use crate::views::Node;
 
 /// One value and how many nodes have it.
 #[derive(Serialize, Debug, Clone, PartialEq)]
+#[cfg_attr(test, derive(ts_rs::TS), ts(rename = "FleetCount"))]
 pub struct Count {
     pub name: String,
     pub nodes: usize,
@@ -32,17 +33,21 @@ pub struct Count {
 
 /// Nodes on one firmware line, or of one inferred generation.
 #[derive(Serialize, Debug, Clone, PartialEq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct FirmwareCount {
     /// "reported": the major.minor of the version its map report states;
     /// inferred, never a version: "key" (2.8 or later), "hardware" (2.7 or
     /// earlier), "no_hop_start" (before 2.3); "unknown".
+    #[cfg_attr(test, ts(type = "'reported' | 'key' | 'hardware' | 'no_hop_start' | 'unknown'"))]
     pub basis: &'static str,
     /// The major.minor, e.g. "2.7" (reported only).
     #[serde(skip_serializing_if = "String::is_empty")]
+    #[cfg_attr(test, ts(as = "Option<_>", optional))]
     pub version: String,
     pub nodes: usize,
     /// The exact versions within it, newest first (reported only).
     #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(test, ts(as = "Option<_>", optional))]
     pub versions: Vec<Count>,
 }
 
@@ -50,6 +55,7 @@ pub struct FirmwareCount {
 /// name, "unknown" last; firmware: reported lines newest first, then the
 /// inferred generations newest first, then "unknown".
 #[derive(Serialize, Debug, Default, Clone, PartialEq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct Fleet {
     /// Nodes counted: those heard in the window (not only named by others).
     pub nodes: usize,

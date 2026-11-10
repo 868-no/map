@@ -24,6 +24,7 @@ use crate::row::{ty, Interner, Row};
 use crate::util::{map, node_id, set, FxMap, FxSet};
 
 #[derive(Serialize, Debug, PartialEq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct ChannelUse {
     pub name: String,
     /// Its own packets uplinked on this channel (distinct packets).
@@ -32,6 +33,7 @@ pub struct ChannelUse {
     pub uplinked: usize,
     /// Its primary channel, from its own map report.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
+    #[cfg_attr(test, ts(as = "Option<_>", optional))]
     pub primary: bool,
 }
 
@@ -74,17 +76,21 @@ pub fn channel_use(num: u32, rows: &[&Row], i: &Interner) -> Vec<ChannelUse> {
 }
 
 #[derive(Serialize, Debug, PartialEq)]
+#[cfg_attr(test, derive(ts_rs::TS))]
 pub struct PresetGuess {
     /// The preset, when the evidence agrees; None on conflict.
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
     pub preset: Option<String>,
     /// "map_report": its own confirmed map report; "radio_contact": confirmed
     /// map reports of nodes it shares radio settings with; "channel_name" /
     /// "radio_contact_channel_name": default channel names (a hint);
     /// "conflict": its radio group's confirmed reports disagree.
+    #[cfg_attr(test, ts(type = "'map_report' | 'radio_contact' | 'channel_name' | 'radio_contact_channel_name' | 'conflict'"))]
     pub basis: &'static str,
     /// Up to five nodes whose evidence it rests on (radio contact bases).
     #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(test, ts(as = "Option<_>", optional))]
     pub via: Vec<String>,
     /// Other nodes in its radio group (sharing modem settings): everyone
     /// reachable through chains of radio contact, not only its own contacts.
@@ -93,6 +99,7 @@ pub struct PresetGuess {
     pub direct: usize,
     /// Presets and how many group members each, when they disagree.
     #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[cfg_attr(test, ts(as = "Option<_>", optional))]
     pub conflict: Vec<(String, usize)>,
 }
 
