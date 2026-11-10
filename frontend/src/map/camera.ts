@@ -94,6 +94,37 @@ export function useCamera(
     requestAnimationFrame(go)
   }, [selection, pos, mapRef, container, ready])
 
+  // Follow the selected node when it moves (D-210): pan by its move on
+  // screen, so it stays where it was in view, wherever the user put it. Not
+  // while the view is moving (a drag, the first flight): then on its end.
+  const followed = useRef<{ id: string; p: LngLat } | null>(null)
+  useEffect(() => {
+    const map = mapRef.current
+    const id = selection?.kind === 'node' ? selection.id : null
+    const p = id ? pos.get(id) : undefined
+    if (!map || !id || !p) {
+      if (followed.current?.id !== id) followed.current = null
+      return
+    }
+    const was = followed.current
+    if (was?.id !== id) {
+      followed.current = { id, p } // the flight above frames it
+      return
+    }
+    if (was.p[0] === p[0] && was.p[1] === p[1]) return
+    const from = was.p
+    const follow = () => {
+      if (followed.current !== was || was.p !== from) return // moved on meanwhile
+      const a = map.project(from)
+      const b = map.project(p)
+      was.p = p
+      map.panBy([b.x - a.x, b.y - a.y], { duration: 600 })
+    }
+    if (!map.isMoving()) return follow()
+    map.once('moveend', follow)
+    return () => void map.off('moveend', follow)
+  }, [selection, pos, mapRef, ready])
+
   // Go to a place picked from the search (D-193), in the area the panel leaves free.
   useEffect(() => {
     const map = mapRef.current

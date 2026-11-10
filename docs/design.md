@@ -1219,6 +1219,7 @@ The box's centre lies over Sweden (Finnmark reaches 31°E), so the view keeps th
 The `DEFAULT_MAP_*` settings no longer set the start view.
 "Fit to data" fits the drawn markers again on demand (D-074).
 Fitting, flying to a node and framing a route keep content clear of the header and the open panel (D-082).
+While a node stays selected, the view follows it when its position changes (a new reported position, a refined estimate): it pans by the node's move, so the node stays where it was on screen, wherever the viewer had panned it; a move that lands while the view is moving (a drag, the first flight) is followed when the movement ends (D-210).
 
 ### 7.11 URL state and permanent links
 
