@@ -13,14 +13,16 @@
 //! gateways, topic roots, D-161), downlinks (probable MQTT downlinks),
 //! positions (stale or contradicted), busy_channel (channel and transmit
 //! utilisation), batteries (low, falling, D-099), chatty (frequent
-//! broadcasts), restarts (D-099), identities (shared keys, D-142, and
-//! duplicate names), impersonation (D-108), silent (silent infrastructure,
-//! D-188), router_roles (router role review, D-189), link_drop (router link
-//! drop, D-197) and airtime (the estimate, and who causes much of it).
+//! broadcasts), burst (many packets in a short time, D-209), restarts
+//! (D-099), identities (shared keys, D-142, and duplicate names),
+//! impersonation (D-108), silent (silent infrastructure, D-188),
+//! router_roles (router role review, D-189), link_drop (router link drop,
+//! D-197) and airtime (the estimate, and who causes much of it).
 
 mod admin;
 mod airtime;
 mod batteries;
+mod burst;
 mod busy_channel;
 mod chatty;
 mod downlinks;
@@ -41,6 +43,7 @@ pub use admin::ADMIN_REFUSALS_MIN;
 pub use airtime::{airtime, Airtime, NodeAirtime, StoreForwardNode, StoreForwardStats, AIRTIME_WARN_SHARE, STORE_FORWARD_SHARE};
 pub use batteries::{BATTERY_FALL_PER_DAY, BATTERY_LOW, BATTERY_TREND_MIN_REPORTS, BATTERY_WARN_AT};
 pub use busy_channel::{AIR_UTIL_WARN, CH_UTIL_PROBLEM, CH_UTIL_WARN};
+pub use burst::{BURST_MIN, BURST_MS};
 pub use chatty::{NODEINFO_PER_H, POSITION_PER_H, TELEMETRY_PER_H};
 pub use hop_limit::{HOP_FLAG_FROM, HOP_MIN_PACKETS, HOP_SPARE};
 pub use identities::{SHARED_KEY_MIN_SWITCHES, SHARED_KEY_OVERLAP_MS};
@@ -204,6 +207,7 @@ pub fn health<'a>(rows: &'a [&'a Row], window: &[&'a Row], nodes: &'a [Node], ed
     busy_channel::check(&cx, &mut out);
     batteries::check(&cx, &mut out);
     chatty::check(&cx, &mut out);
+    burst::check(&cx, &mut out);
     restarts::check(&cx, &mut out);
     identities::check(&cx, &mut out);
     impersonation::check(&cx, &mut out);

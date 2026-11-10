@@ -36,6 +36,7 @@ export const KIND: Record<string, string> = {
   co_located: 'Several relays at one site',
   admin_refused: 'Remote admin refused',
   plaintext_uplink: 'Unencrypted MQTT uplink',
+  burst: 'Bursts of packets',
   chatty_position: 'Frequent positions',
   chatty_nodeinfo: 'Frequent NodeInfo',
   chatty_telemetry: 'Frequent telemetry',
