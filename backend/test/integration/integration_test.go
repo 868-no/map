@@ -520,6 +520,63 @@ func TestMQTTClientRobustness(t *testing.T) {
 	}
 }
 
+// design §2.1 (D-205): with session_expiry the broker holds what arrives while
+// the client is down, as across a restart or deploy, and delivers it on
+// reconnect under the same client id.
+func TestMQTTPersistentSession(t *testing.T) {
+	host := env(t, "MESHMAP_IT_MQTT_HOST")
+	for _, proto := range []string{"v5", "v311"} {
+		t.Run(proto, func(t *testing.T) {
+			b := config.Broker{ID: "it", Host: host, Port: 1883, Protocol: proto, ClientID: "meshmap-it-session-" + proto,
+				SessionExpiry: time.Minute, Topics: []config.Subscription{{Filter: "msh/session/#", QoS: 1}}}
+			var mu sync.Mutex
+			var got []ingest.RawMessage
+			run := func() (mqtt.Client, context.CancelFunc, chan struct{}) {
+				cl, err := mqtt.New(b, func(m ingest.RawMessage) { mu.Lock(); got = append(got, m); mu.Unlock() }, observability.NewMetrics(), quiet)
+				if err != nil {
+					t.Fatal(err)
+				}
+				ctx, cancel := context.WithCancel(context.Background())
+				done := make(chan struct{})
+				go func() { _ = cl.Run(ctx); close(done) }()
+				deadline := time.Now().Add(10 * time.Second)
+				for cl.State() != mqtt.StateUp && time.Now().Before(deadline) {
+					time.Sleep(50 * time.Millisecond)
+				}
+				if cl.State() != mqtt.StateUp {
+					t.Fatal("client did not connect")
+				}
+				return cl, cancel, done
+			}
+			_, stop, done := run()
+			time.Sleep(300 * time.Millisecond) // subscription
+			stop()
+			<-done
+			pub := publisher(t, host)
+			for i := range 3 {
+				if _, err := pub.Publish(context.Background(), &paho.Publish{Topic: "msh/session/" + proto, QoS: 1, Payload: []byte{byte(i)}}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			_, stop, done = run()
+			defer func() { stop(); <-done }()
+			deadline := time.Now().Add(5 * time.Second)
+			for time.Now().Before(deadline) {
+				mu.Lock()
+				n := len(got)
+				mu.Unlock()
+				if n >= 3 {
+					return
+				}
+				time.Sleep(50 * time.Millisecond)
+			}
+			mu.Lock()
+			defer mu.Unlock()
+			t.Fatalf("delivered %d of the 3 messages published while down", len(got))
+		})
+	}
+}
+
 type noIDs struct{}
 
 func (noIDs) Lookup(uint32) (security.Identity, bool) { return security.Identity{}, false }

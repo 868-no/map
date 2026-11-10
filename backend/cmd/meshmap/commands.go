@@ -266,6 +266,18 @@ func (s *supervisor) Brokers() map[string]string {
 	return out
 }
 
+func (s *supervisor) LastMessages() map[string]time.Time {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := map[string]time.Time{}
+	for _, c := range s.clients {
+		if t := c.LastMessage(); !t.IsZero() {
+			out[c.ID()] = t
+		}
+	}
+	return out
+}
+
 type storeSink struct{ pool *pgxpool.Pool }
 
 func (s storeSink) InsertBatch(ctx context.Context, obs []*ingest.Observation) ([]int64, error) {

@@ -16,7 +16,7 @@ The map is at `http://127.0.0.1:${WEB_PORT:-8080}` on the host, for the reverse 
 
 ### Everything in one Compose file
 
-[`deploy/compose.production.yaml`](../deploy/compose.production.yaml) runs the published images with all configuration in the Compose file: no `.env`, no `./secrets`. Broker and channel configuration go in the `MQTT_BROKERS` and `CHANNEL_KEYS` environment variables, as the same YAML as the files (when set, they replace `MQTT_BROKERS_CONFIG` and `CHANNEL_KEYS_CONFIG`). Secrets are written as `${POSTGRES_PASSWORD}`, `${MQTT_USERNAME}` and `${MQTT_PASSWORD}` and filled in from the stack's environment. Check it with:
+[`deploy/compose.production.yaml`](../deploy/compose.production.yaml) runs the published images with all configuration in the Compose file: no `.env`, no `./secrets`. Broker and channel configuration go in the `MQTT_BROKERS` and `CHANNEL_KEYS` environment variables, as the same YAML as the files (when set, they replace `MQTT_BROKERS_CONFIG` and `CHANNEL_KEYS_CONFIG`). Secrets are written as `${POSTGRES_PASSWORD}`, `${MQTT_USERNAME}` and `${MQTT_PASSWORD}` and filled in from the stack's environment. `MQTT_USERNAME` and `MQTT_PASSWORD` are the `mqtt-buffer` service's credentials for the real broker (`MQTT_UPSTREAM`, default `mqtt.868.no:1883`; the password must not contain spaces); the backend connects to the buffer on the stack's network without credentials (see [Data loss windows](#data-loss-windows)). Check it with:
 
 ```sh
 docker compose -f deploy/compose.production.yaml run --rm backend check-config
@@ -153,7 +153,11 @@ Public by default. For basic auth, create `deploy/caddy-auth/basic.caddy` (see t
 ## Health and metrics
 
 - `GET /health/live`: process up. The container health checks probe this (`meshmap healthcheck --live`), not readiness; see "Data loss windows" (D-163).
-- `GET /health/ready`: database, schema version, Redis (degraded when unreachable; dedupe falls back to a database lookup and leaves Redis alone for 30 s after an error, D-166), ingest writer and queue, broker connection states, and the last retention run (time, deleted rows, table size).
+- `GET /health/ready`: database, schema version, Redis (degraded when unreachable; dedupe falls back to a database lookup and leaves Redis alone for 30 s after an error, D-166), ingest writer and queue, broker connection states, seconds since each broker last delivered a message (`last_message_s`), the last retention run (time, deleted rows, table size) and the backup service's last status (`backup`, D-206).
+
+### Production monitor
+
+`.github/workflows/monitor.yml` (D-207) runs `scripts/check-production.py` every 15 minutes against the repository variable `PRODUCTION_URL` (default `https://beta-map.868.no`; `none` turns it off). It reports a status other than ready, a broker that is not up or has delivered nothing for 15 minutes (`STALE_MESSAGE_S`, once the backend has run 5 minutes), retention not run for 30 hours (`MAINT_MAX_AGE_H`), and no good backup for 30 hours or a failed last attempt (`BACKUP_MAX_AGE_H`; 0 skips it). A problem must still be there on a second check 2 minutes later. It then opens an issue labelled `production-alert` and fails that run, which GitHub notifies the repository's watchers about; while the problem lasts, the issue's body is kept current; the first clean check comments and closes it. Run it by hand with `scripts/check-production.py [site]`. GitHub runs schedules late at busy times and pauses them in a repository with no activity for 60 days.
 - Prometheus metrics at `backend:9100/metrics` (compose network only). `PUBLIC_METRICS_ENABLED=true` also serves them on the backend's HTTP port (`backend:8000/metrics`); the `web` service does not proxy that path, so publishing them needs your own reverse-proxy route (protect it). Key series:
   - `meshmap_mqtt_received_total`, `meshmap_mqtt_connected`
   - `meshmap_ingest_accepted_total{packet_type,signature_status}`, `meshmap_ingest_rejected_total{category}` (duplicates, unparseable envelopes and topics, `oversize`, `map_report_invalid` and `db_refused_row`, rows the database refused as data errors (SQLSTATE class 22/23) while taking others, dropped instead of stalling the writer, and `unencodable_row`, rows that could not be encoded for storage; packets that fail keys, decoding or verification are accepted as `encrypted`/`invalid` header-only rows)
@@ -164,7 +168,7 @@ Public by default. For basic auth, create `deploy/caddy-auth/basic.caddy` (see t
 
 ## Data loss windows
 
-MQTT delivers Meshtastic traffic at QoS 0, so senders cannot be slowed. If PostgreSQL is unavailable, the writer retries with backoff while the bounded queue (`INGEST_QUEUE_SIZE`, default 20 000 messages, several minutes at 100 msg/s) absorbs input. Beyond that, messages are dropped and counted (`reason="queue_full"`). The queue lives in the process, so the backend's container health check probes `/health/live`, not `/health/ready` (which answers 503 while the database is unreachable): Swarm replaces a task that turns unhealthy, and a readiness check would kill `ingest` and its queue about a minute into an outage, its replacement then waiting for the database without ingesting. The API replicas use the same liveness check, since replacing them during an outage only churns and Swarm does not route by health (D-163). Broker disconnections lose whatever the broker does not retain. The map shows what this service observed, not complete history.
+MQTT delivers Meshtastic traffic at QoS 0, so senders cannot be slowed. If PostgreSQL is unavailable, the writer retries with backoff while the bounded queue (`INGEST_QUEUE_SIZE`, default 20 000 messages, several minutes at 100 msg/s) absorbs input. Beyond that, messages are dropped and counted (`reason="queue_full"`). The queue lives in the process, so the backend's container health check probes `/health/live`, not `/health/ready` (which answers 503 while the database is unreachable): Swarm replaces a task that turns unhealthy, and a readiness check would kill `ingest` and its queue about a minute into an outage, its replacement then waiting for the database without ingesting. The API replicas use the same liveness check, since replacing them during an outage only churns and Swarm does not route by health (D-163). Broker disconnections lose whatever the broker does not retain. The production stacks therefore run `mqtt-buffer`, a pinned Mosquitto bridged to the real broker, and connect the backend to it with a persistent session (`session_expiry: 1h`, QoS 1, D-205): a deploy recreates the backend but not the buffer, which queues what arrives meanwhile (up to 100 000 messages) and delivers it when the backend reconnects, a few seconds late. The real broker does not queue QoS 0 messages for an offline session, so connecting to it with `session_expiry` alone would not help. What the buffer cannot cover is its own restart (a change to its definition or image, or a host reboot) and a lost link to the real broker; the backend then counts its broker as connected while nothing arrives, which the ingest alert below catches. The map shows what this service observed, not complete history.
 
 ## Upgrading to schema 2 (monthly partitions)
 
@@ -208,12 +212,24 @@ sqlite3 -readonly -csv meshstellar.db \
 
 ## Backup and restore
 
-Not automated: schedule the dump below (e.g. with cron) if the history matters to you. Without backups, losing the database volume loses the history; the map refills from live traffic.
+The production stacks (`deploy/compose.production.yaml`, `deploy/stack.swarm.yaml`) run a `backup` service (D-206): a full `pg_dump -Fc` into the `backups` volume every night at `BACKUP_HOUR_UTC` (default 2, before retention at 03:00 UTC) and at start when the newest dump is a day old or missing, as `meshmap-YYYYMMDDTHHMMSSZ.dump`. Each dump is read back with `pg_restore --list` before it counts; dumps older than `BACKUP_KEEP_DAYS` (default 7) are deleted after a good one, and a run is skipped (and reported failed) when the volume has less than twice the last dump's size free. `/health/ready` shows the last status under `backup`, and the production monitor alerts when there has been no good backup for 30 hours. The volume is on the same host as the database by default: bind-mount it to another disk, or a network share, so a lost disk does not take the backups with it, and copy dumps off the machine now and then. In Swarm it is an NFS export (`NFS_BACKUP_SERVER`, default `NFS_SERVER`, and `NFS_BACKUP_PATH`), best on a different server from `pgdata`.
+
+With `compose.yaml` backups are not automated: schedule the dump below (e.g. with cron) if the history matters to you. Without backups, losing the database volume loses the history; the map refills from live traffic.
 
 ```sh
 docker compose exec -T postgres pg_dump -U meshmap -Fc meshmap > meshmap-$(date +%F).dump
 docker compose exec -T postgres pg_restore -U meshmap -d meshmap --clean --if-exists < meshmap-YYYY-MM-DD.dump
 ```
+
+To restore one of the production stack's dumps, stop the writers first so nothing lands between the restore's tables, then start them again:
+
+```sh
+docker compose -f deploy/compose.production.yaml stop backend maintenance
+docker compose -f deploy/compose.production.yaml exec -T backup sh -c 'PGPASSWORD="$POSTGRES_PASSWORD" pg_restore -h postgres -U meshmap -d meshmap --clean --if-exists /backups/meshmap-YYYYMMDDTHHMMSSZ.dump'
+docker compose -f deploy/compose.production.yaml start backend maintenance
+```
+
+To test a dump without touching the live data, restore it into a scratch database and compare the newest rows: `createdb -h postgres -U meshmap restore_test`, the `pg_restore` above with `-d restore_test`, `psql -h postgres -U meshmap -d restore_test -c 'SELECT count(*), max(observed_at) FROM packet_log'`, then `dropdb -h postgres -U meshmap restore_test` (all in a shell in the `backup` container, after `export PGPASSWORD="$POSTGRES_PASSWORD"`; it needs free space for a second copy).
 
 Only `packet_log` matters; Redis is ephemeral and rebuilds itself. After a restore, restart `backend` so the identity index rebuilds; it also rebuilds any missing or outdated stored row encodings in the background (D-046).
 
@@ -236,4 +252,5 @@ Only `packet_log` matters; Redis is ephemeral and rebuilds itself. After a resto
 - [ ] Brokers use TLS where available; `accept_retained: false`.
 - [ ] `SIGNATURE_POLICY=strict` if signed packets from unknown keys should be kept header-only as `invalid` (`iv=strict_unverifiable`) instead of `unverifiable`.
 - [ ] `GEOLOCATION_EXCLUDE_NODE_IDS` lists nodes whose owners opted out of location estimates.
-- [ ] Backups scheduled; restore tested.
+- [ ] Backups scheduled (the `backup` service, or cron with `compose.yaml`), on another disk than the database; restore tested.
+- [ ] The production monitor watches the site (`PRODUCTION_URL`), and someone gets GitHub's notifications for `production-alert` issues.

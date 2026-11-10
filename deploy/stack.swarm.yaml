@@ -47,17 +47,19 @@ x-backend-env: &backend-env
   # Brokers and channel keys: the same YAML as config/examples/*.yaml.
   MQTT_BROKERS: |
     brokers:
+      # mqtt-buffer, below: it stays subscribed to the real broker while this
+      # process restarts, and holds what arrives meanwhile for this client's
+      # persistent session (design §2.1, D-205). The id is the real broker's,
+      # so provenance and deduplication are unchanged.
       - id: no868
-        host: mqtt.868.no
+        host: mqtt-buffer
         port: 1883
         protocol: v5
         tls: { enabled: false }
-        # Quoted, so a # or a leading * & { @ survives YAML (double any ' in them).
-        username: '${MQTT_USERNAME:?set MQTT_USERNAME}'
-        password: '${MQTT_PASSWORD:?set MQTT_PASSWORD}'
         client_id: meshmap-ingest-1
+        session_expiry: 1h
         topics:
-          - { filter: "msh/#", qos: 0 }
+          - { filter: "msh/#", qos: 1 }
         accept_retained: false
   CHANNEL_KEYS: |
     channels:
@@ -118,6 +120,46 @@ services:
       <<: *restart
       replicas: 1
 
+  # MQTT buffer (D-205): a local Mosquitto bridged to the real broker. Its
+  # image is pinned and its definition rarely changes, so an app deploy
+  # leaves it running: it keeps receiving while the backend restarts and
+  # queues what arrives for the backend's persistent session (session_expiry
+  # above), which gets it on reconnect, observed a few seconds late. Without
+  # it every deploy lost the traffic of the restart: the real broker does not
+  # queue QoS 0 messages for an offline session. Reachable on the stack's
+  # network only. The upstream password must not contain spaces.
+  mqtt-buffer:
+    image: eclipse-mosquitto:2.1.2-alpine
+    environment:
+      MQTT_UPSTREAM: ${MQTT_UPSTREAM:-mqtt.868.no:1883}
+      MQTT_USERNAME: ${MQTT_USERNAME:?set MQTT_USERNAME}
+      MQTT_PASSWORD: ${MQTT_PASSWORD:?set MQTT_PASSWORD}
+    command:
+      - sh
+      - -ec
+      - |
+        umask 077
+        {
+          printf '%s\n' 'listener 1883' 'allow_anonymous true' 'persistence false' \
+            'queue_qos0_messages true' 'max_queued_messages 100000' 'max_inflight_messages 100' \
+            'persistent_client_expiration 1d' 'connection_messages false' 'log_type error' 'log_type warning' 'log_type notice' \
+            'connection upstream'
+          printf 'address %s\n' "$$MQTT_UPSTREAM"
+          printf '%s\n' 'remote_clientid meshmap-buffer-1' 'cleansession true' 'try_private false' \
+            'restart_timeout 5 60' 'topic msh/# in 0'
+          printf 'remote_username %s\nremote_password %s\n' "$$MQTT_USERNAME" "$$MQTT_PASSWORD"
+        } > /tmp/buffer.conf
+        exec mosquitto -c /tmp/buffer.conf
+    healthcheck:
+      test: ["CMD", "mosquitto_sub", "-t", "$$SYS/broker/uptime", "-C", "1", "-W", "3"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    deploy:
+      <<: *restart
+      replicas: 1
+      update_config: { order: stop-first }
+
   # MQTT ingest + weather/terrain fetching + /health. Exactly one.
   ingest:
     image: ghcr.io/868-no/map-backend:${MESHMAP_TAG:-latest}
@@ -152,6 +194,78 @@ services:
     image: ghcr.io/868-no/map-backend:${MESHMAP_TAG:-latest}
     command: ["maintenance"]
     environment: *backend-env
+    deploy:
+      <<: *restart
+      replicas: 1
+
+  # Nightly backup (D-206): pg_dump of the whole database at BACKUP_HOUR_UTC
+  # (default 02:00, before retention at 03:00), and at start when the newest
+  # dump is a day old or missing. Each dump is checked with pg_restore --list
+  # before it replaces the .partial file; dumps older than BACKUP_KEEP_DAYS
+  # (default 7) are deleted after a good one, and a run is skipped when the
+  # disk has less than twice the last dump's size free. The status goes to
+  # Redis hourly for /health/ready ("backup"), which the production monitor
+  # watches. The backups volume is on this host: an NFS export, like pgdata,
+  # so put it on a different server or disk from pgdata.
+  backup:
+    image: postgres:16.15-alpine
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
+      BACKUP_KEEP_DAYS: ${BACKUP_KEEP_DAYS:-7}
+      BACKUP_HOUR_UTC: ${BACKUP_HOUR_UTC:-2}
+    volumes:
+      - backups:/backups
+    command:
+      - sh
+      - -c
+      - |
+        set -eu
+        dir=/backups keep=$${BACKUP_KEEP_DAYS:-7} hour=$${BACKUP_HOUR_UTC:-2}
+        export PGHOST=postgres PGUSER=meshmap PGDATABASE=meshmap PGPASSWORD="$$POSTGRES_PASSWORD"
+        ok=null try=null file= bytes=0 ms=0 failed=false
+        iso() { date -u -d "@$$1" +%Y-%m-%dT%H:%M:%SZ; }
+        newest() { ls -1 "$$dir"/meshmap-*.dump 2>/dev/null | sort | tail -n 1; }
+        publish() {
+          k=meshmap:backup:status
+          v=$$(printf '{"last_success":%s,"last_attempt":%s,"file":"%s","bytes":%s,"duration_ms":%s,"failed":%s,"keep_days":%s}' \
+            "$$ok" "$$try" "$$file" "$$bytes" "$$ms" "$$failed" "$$keep")
+          printf '*3\r\n$$3\r\nSET\r\n$$%s\r\n%s\r\n$$%s\r\n%s\r\n' "$${#k}" "$$k" "$${#v}" "$$v" |
+            nc -w 3 redis 6379 >/dev/null 2>&1 || echo "backup: status not stored in Redis" >&2
+        }
+        run() {
+          t0=$$(date -u +%s) try="\"$$(iso "$$t0")\""
+          f="$$dir/meshmap-$$(date -u -d "@$$t0" +%Y%m%dT%H%M%SZ).dump"
+          need=$$(( (bytes > 0 ? bytes * 2 : 1073741824) / 1024 ))
+          avail=$$(df -Pk "$$dir" | awk 'NR==2 {print $$4}')
+          if [ "$$avail" -lt "$$need" ]; then
+            failed=true; echo "backup skipped: $${avail} KiB free in $$dir, want $${need} KiB" >&2
+          elif pg_dump -Fc -f "$$f.partial" && pg_restore --list "$$f.partial" >/dev/null; then
+            mv "$$f.partial" "$$f"
+            ok=$$try file=$$(basename "$$f") bytes=$$(stat -c %s "$$f") failed=false
+            find "$$dir" -name 'meshmap-*.dump' -mmin +$$((keep * 1440)) -exec rm -f {} +
+            echo "backup: $$file, $$bytes bytes"
+          else
+            rm -f "$$f.partial"; failed=true; echo "backup failed" >&2
+          fi
+          ms=$$(( ($$(date -u +%s) - t0) * 1000 ))
+          publish
+        }
+        mkdir -p "$$dir"; rm -f "$$dir"/*.partial
+        n=$$(newest)
+        if [ -n "$$n" ]; then
+          ok="\"$$(iso "$$(stat -c %Y "$$n")")\"" file=$$(basename "$$n") bytes=$$(stat -c %s "$$n")
+        fi
+        publish
+        if [ -z "$$n" ] || [ $$(( $$(date -u +%s) - $$(stat -c %Y "$$n") )) -ge 86400 ]; then run; fi
+        while :; do
+          now=$$(date -u +%s); next=$$(( now - now % 86400 + hour * 3600 ))
+          [ "$$next" -gt "$$now" ] || next=$$((next + 86400))
+          while :; do
+            left=$$(( next - $$(date -u +%s) )); [ "$$left" -gt 0 ] || break
+            sleep $$(( left < 3600 ? left : 3600 )); publish
+          done
+          run
+        done
     deploy:
       <<: *restart
       replicas: 1
@@ -225,3 +339,9 @@ volumes:
       type: nfs
       o: addr=${NFS_SERVER:?set NFS_SERVER},nfsvers=4.1,rw,hard
       device: ":${NFS_BASEMAP_PATH:-/export/meshmap/basemap}"
+  backups:
+    driver: local
+    driver_opts:
+      type: nfs
+      o: addr=${NFS_BACKUP_SERVER:-${NFS_SERVER:?set NFS_SERVER}},nfsvers=4.1,rw,hard
+      device: ":${NFS_BACKUP_PATH:-/export/meshmap/backups}"

@@ -26,8 +26,8 @@ func (c *v5Client) Run(ctx context.Context) error {
 		ServerUrls:                    []*url.URL{brokerURL(c.cfg)},
 		TlsCfg:                        tlsCfg,
 		KeepAlive:                     30,
-		CleanStartOnInitialConnection: true,
-		SessionExpiryInterval:         0,
+		CleanStartOnInitialConnection: c.cfg.SessionExpiry == 0,
+		SessionExpiryInterval:         uint32(c.cfg.SessionExpiry / time.Second),
 		ConnectTimeout:                15 * time.Second,
 		ReconnectBackoff:              Backoff,
 		ConnectUsername:               c.cfg.Username,
@@ -101,7 +101,7 @@ func (c *v3Client) Run(ctx context.Context) error {
 		SetClientID(c.cfg.ClientID).
 		SetUsername(c.cfg.Username).
 		SetPassword(c.cfg.Password).
-		SetCleanSession(true).
+		SetCleanSession(c.cfg.SessionExpiry == 0).
 		SetKeepAlive(30 * time.Second).
 		SetAutoReconnect(true).
 		SetConnectRetry(true).
@@ -111,6 +111,11 @@ func (c *v3Client) Run(ctx context.Context) error {
 	if tlsCfg != nil {
 		o.SetTLSConfig(tlsCfg)
 	}
+	// A resumed session (SessionExpiry) can deliver what the broker held
+	// before the subscription's own handler is registered again.
+	o.SetDefaultPublishHandler(func(_ pahov3.Client, m pahov3.Message) {
+		c.deliver(m.Topic(), m.Payload(), m.Retained())
+	})
 	filters := map[string]byte{}
 	for _, t := range c.cfg.Topics {
 		filters[t.Filter] = t.QoS

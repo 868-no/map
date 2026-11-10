@@ -107,6 +107,11 @@ Ingest is a singleton: several processes subscribed to the same brokers would on
 - **Packet size:** MQTT 5 clients send Maximum Packet Size 8 KiB in CONNECT, so the broker discards larger publishes instead of making the client buffer them (a full 4 096-byte payload, a 512-character topic and headers fit with ~3.5 KiB to spare for properties).
   MQTT 3.1.1 has no such limit: the whole packet is read before the payload limit drops it (D-165).
 - **Event time:** `observed_at` is stamped in the MQTT callback, before queuing (§3.4).
+- **Persistent sessions (D-205):** a broker with `session_expiry` (whole seconds, at most 24 h) is joined without a clean start and with that session expiry (MQTT 3.1.1: clean session off, the broker's own expiry), so a broker that queues for offline sessions hands over on reconnect what arrived while the backend was down; QoS 1 redeliveries are byte-identical and deduplicated (§2.6), and a message held this way is stamped when it finally arrives, seconds late.
+  Without it (the default), every connection starts clean.
+  The production stacks run `mqtt-buffer`, a pinned Mosquitto bridged to the real broker (clean session upstream, `topic msh/# in 0`) with `queue_qos0_messages` and up to 100 000 queued messages, and point the backend at it with `session_expiry: 1h` and QoS 1.
+  An app deploy recreates the backend but leaves the buffer running, since neither its image nor its definition changed, so a deploy no longer loses the traffic of the restart: mqtt.868.no itself keeps nothing for an offline QoS 0 subscriber (tested 2026-11-10: no backlog after 30 s away, where the buffer delivered 40 s of traffic at once).
+  The buffer's own restart, or its link to the real broker going down, still loses traffic, and the backend then counts its broker as up while nothing arrives (§8 alerts on that).
 
 ### 2.2 Decoding and input limits
 
@@ -220,7 +225,7 @@ Ingest is a singleton: several processes subscribed to the same brokers would on
   Errors on the data itself (SQLSTATE class 22 or 23, except a missing partition) cannot be told by their code from a database out of step with every row (a schema mismatch during a deploy), so a refused row is dropped only once the database has taken another row after refusing it: the batch is halved until the refused rows stand alone, and if any other row is stored they are dropped and counted as `meshmap_ingest_rejected_total{category="db_refused_row"}`, so one bad row cannot stall ingest.
   When every row is refused (at live rates most batches hold one row) they are kept and retried with backoff like an outage, the writer reports degraded, and rows arriving meanwhile are tried on their own as they come (at most every 250 ms): once one is stored, the held rows' refusal is their own and they are dropped; without new rows the held ones are halved again once a minute.
   A row that cannot be encoded at all is dropped before any insert (`unencodable_row`) (D-165).
-  Broker disconnections lose whatever the broker does not retain.
+  Broker disconnections lose whatever the broker does not retain, which with a persistent session (§2.1) is what arrives after the session expired or past the broker's queue limit.
 - There is no per-message processing timeout: work is bounded by the key-attempt budget.
 - **Bounded shutdown:** MQTT input stops first, then open live streams close, then the writer retries for at most 10 s before recording the remaining rows as a `shutdown_db_unavailable` gap and counting them as dropped (D-059).
   Rows the drain commits are still published to Redis for API-only processes: the publisher stops only after the drain, sending what waits for at most 3 s more.
@@ -286,6 +291,7 @@ Operational metrics are process counters, not packet history.
 `rx_time` and payload timestamps are kept as auxiliary, untrusted fields.
 Forged, drifting or missing radio clocks therefore cannot move a packet across a window boundary.
 The consequence is that the map shows what the service observed: nothing from before it started or while it was disconnected.
+Messages a persistent session held while the backend restarted (§2.1) are stamped on arrival, as late as the restart took.
 Each gateway's reception of one packet has its own `observed_at`.
 
 ### 3.5 Window semantics
@@ -1236,6 +1242,7 @@ Loading, empty, offline and error states are explicit.
 Detail is in [operations.md](operations.md); this is the outline.
 
 - **Compose services:** `postgres`, `redis`, `backend` (`meshmap serve`), `maintenance`, `web` (Caddy: frontend, API proxy with SSE flushing, tiles, fonts, styles; the only published port, on the host's loopback unless `WEB_BIND` says otherwise; Caddy runs unprivileged) and `basemap` (Planetiler; builds `basemap.pmtiles` when missing and every 30 days, separate because a build needs Java and ~8 GB heap) (D-049).
+  The production stacks (`deploy/compose.production.yaml`, `deploy/stack.swarm.yaml`) also run `mqtt-buffer`, a Mosquitto bridged to the real broker that holds traffic for the backend across deploys (§2.1, D-205), and `backup` (§8, D-206).
   The optional `demo` profile adds a compose-only Mosquitto and a simulator with real encryption and signatures and deliberately bad input, which refuses non-private hosts.
 - **Images:** `ghcr.io/868-no/map-backend`, `map-web`, `map-basemap` for `linux/amd64` and `linux/arm64`, built per pull request and published from `main` and version tags: each build pushes its `sha-<commit>` tag, and the shared tags (`latest`, `main`, versions) move to all three together once every build has succeeded.
   After a push to `main` publishes them, the `deploy` job calls the production Portainer stack's webhook (its URL in the `DEPLOY_WEBHOOK_URL` repository secret), which pulls the new images and recreates the stack, and then waits until the site serves the new commit (`/version.txt`) and `/health/ready` answers 200; deploys run one at a time, in push order.
@@ -1247,6 +1254,15 @@ Detail is in [operations.md](operations.md); this is the outline.
   `check-config` validates and prints a redacted summary; invalid production configuration fails readably.
 - **Security:** CSP `default-src 'self'; script-src 'self' 'wasm-unsafe-eval'` (WebAssembly compilation only, no JavaScript eval) with `connect-src 'self'` (plus `CSP_CONNECT_EXTRA`, empty by default, for an online basemap's host; D-167) and no inline scripts; no runtime CDN; HTTPS terminated by a proxy in front of `web`.
 - **Health and metrics:** §4.1; key series are listed in operations.md.
+  `/health/ready` also gives the seconds since each broker last delivered a message (`last_message_s`) and the backup service's last status (`backup`), both for the monitor (D-206, D-207).
+- **Backups (D-206):** the production stacks' `backup` service (the pinned Postgres image and a short shell loop) dumps the whole database with `pg_dump -Fc` at 02:00 UTC, before retention at 03:00, and at start when the newest dump is a day old or missing.
+  A dump replaces its `.partial` file only after `pg_restore --list` reads it; dumps older than `BACKUP_KEEP_DAYS` (default 7) are deleted after a good one, and a run is skipped as failed when the disk has less than twice the last dump's size free, so backups never fill the database's disk.
+  The status (last success and attempt, file, size, whether the last attempt failed) goes to Redis after every run and hourly, so a Redis restart forgets it for at most an hour.
+  It runs beside the backend rather than in it because the backend image is distroless, without `pg_dump`.
+  The `backups` volume is on the host (Compose) or an NFS export (Swarm); keeping it on another disk or machine is the operator's choice.
+- **Monitoring (D-207):** `.github/workflows/monitor.yml` runs `scripts/check-production.py` against `PRODUCTION_URL` every 15 minutes: a status other than ready, a broker not up, a broker silent for 15 minutes (after the backend's first 5), retention not run for 30 hours, or no good backup for 30 hours, each seen twice 2 minutes apart so a deploy does not count.
+  A problem opens a GitHub issue labelled `production-alert` and fails that run, so GitHub notifies; while it lasts the issue's body is kept current without failing again, and the first clean check comments and closes it.
+  Silence is the only sign of a stalled bridge (§2.1), since the backend's own broker connection stays up.
 - **Licence:** GPL-3.0-only, because the backend's generated protocol code comes from Meshtastic's GPL-3.0 protobufs.
   Every dependency was checked for compatibility (Paho used under EDL); fonts, map data and images are listed in THIRD_PARTY_NOTICES.md.
   Visitors receive the compiled frontend, so the credits link to the source at the built commit (`SOURCE_REVISION`, or `SOURCE_URL` for a modified build) (D-050).
@@ -1358,7 +1374,7 @@ UI, performance and operations:
 - **Reach** assumes intermittent links are always there and knows nothing of unseen links (§6.8).
 - **Uplink opt-out** withholds names, not ids, traffic or positions (§2.5).
 - **Envelopes** keep text messages readable to anyone with the channel key; whether to keep them is open for the operator (D-051).
-- **MapLibre** stays on 5.x until deck.gl supports 6.x labels in interleaved mode; the GHSA-jrc7-96c5-q579 mitigation depends on the attribution control staying disabled (D-017, D-019).
 - **Frame rates** have been measured only with software WebGL; the 60 fps desktop target is unverified on GPU hardware (benchmarks.md).
 - **Name clustering** de-clutters names but node markers themselves are not clustered at low zoom.
+- **MapLibre** stays on 5.x until deck.gl supports 6.x labels in interleaved mode; the GHSA-jrc7-96c5-q579 mitigation depends on the attribution control staying disabled (D-017, D-019).
 - **Firmware:** minimum 2.7; behaviour that depends on newer fields degrades conservatively.

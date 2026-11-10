@@ -54,6 +54,8 @@ type Client interface {
 	ID() string
 	Run(ctx context.Context) error
 	State() ConnState
+	// LastMessage is when the client last received a message (zero if never).
+	LastMessage() time.Time
 }
 
 type base struct {
@@ -63,10 +65,18 @@ type base struct {
 	log    *slog.Logger
 	state  atomic.Int32
 	conns  atomic.Int64 // connections made: a subscribe loop of an older one stops
+	last   atomic.Int64 // UnixNano of the last message received; 0 if none
 }
 
 func (b *base) ID() string       { return b.cfg.ID }
 func (b *base) State() ConnState { return ConnState(b.state.Load()) }
+
+func (b *base) LastMessage() time.Time {
+	if n := b.last.Load(); n != 0 {
+		return time.Unix(0, n).UTC()
+	}
+	return time.Time{}
+}
 func (b *base) setState(s ConnState) {
 	b.state.Store(int32(s))
 	v := 0.0
@@ -132,6 +142,7 @@ func (b *base) subscribe(ctx context.Context, try func(context.Context) (codes [
 // stamped here, before queuing (design §3.4).
 func (b *base) deliver(topic string, payload []byte, retained bool) {
 	now := time.Now().UTC()
+	b.last.Store(now.UnixNano())
 	b.m.Received.WithLabelValues(b.cfg.ID).Inc()
 	if len(payload) > MaxPayload {
 		b.m.Rejected.WithLabelValues("oversize").Inc()

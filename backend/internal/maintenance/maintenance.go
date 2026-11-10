@@ -160,6 +160,36 @@ func (r *Runner) publish(ctx context.Context, st Status) {
 	}
 }
 
+// BackupStatus is what the production stacks' backup service last reported
+// (D-206): its script writes it to Redis after each run and hourly.
+type BackupStatus struct {
+	LastSuccess *time.Time `json:"last_success"`
+	LastAttempt *time.Time `json:"last_attempt"`
+	File        string     `json:"file"`
+	Bytes       int64      `json:"bytes"`
+	DurationMS  int64      `json:"duration_ms"`
+	Failed      bool       `json:"failed"`
+	KeepDays    int        `json:"keep_days"`
+}
+
+// LastBackup reads the backup service's status (nil if none was reported).
+func LastBackup(ctx context.Context, c *cache.Client) (*BackupStatus, error) {
+	if c == nil {
+		return nil, nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
+	b, err := c.GetBlob(ctx, cache.BackupStatusKey)
+	if err != nil || b == nil {
+		return nil, err
+	}
+	var st BackupStatus
+	if err := json.Unmarshal(b, &st); err != nil {
+		return nil, err
+	}
+	return &st, nil
+}
+
 // LastStatus reads the shared status (nil if unknown).
 func LastStatus(ctx context.Context, c *cache.Client) (*Status, error) {
 	if c == nil {

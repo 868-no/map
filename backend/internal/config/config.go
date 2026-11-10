@@ -110,6 +110,18 @@ type Subscription struct {
 	QoS    byte   `yaml:"qos"`
 }
 
+func sessionSummary(d time.Duration) string {
+	if d == 0 {
+		return "clean"
+	}
+	return "persistent " + d.String()
+}
+
+// MaxSessionExpiry bounds a broker's session_expiry: long enough to cover a
+// restart or a deploy, short enough that a retired client id does not leave
+// the broker queueing for it for days.
+const MaxSessionExpiry = 24 * time.Hour
+
 // Broker is one MQTT source.
 type Broker struct {
 	ID             string         `yaml:"id"`
@@ -123,6 +135,10 @@ type Broker struct {
 	ClientID       string         `yaml:"client_id"`
 	Topics         []Subscription `yaml:"topics"`
 	AcceptRetained bool           `yaml:"accept_retained"`
+	// SessionExpiry > 0 keeps a persistent session: the broker holds what it
+	// receives for this client while the backend restarts, for up to this
+	// long, and delivers it on reconnect (design §2.1, D-205).
+	SessionExpiry time.Duration `yaml:"session_expiry"`
 }
 
 // Channel is one channel definition with current and historical PSKs.
@@ -390,6 +406,9 @@ func (c *Config) validate() error {
 		if b.ClientID == "" {
 			b.ClientID = "meshmap-" + b.ID
 		}
+		if b.SessionExpiry < 0 || b.SessionExpiry > MaxSessionExpiry || b.SessionExpiry%time.Second != 0 {
+			add("%s (%s): session_expiry must be whole seconds from 0 to %s", where, b.ID, MaxSessionExpiry)
+		}
 	}
 
 	for i, ch := range c.Channels {
@@ -467,7 +486,7 @@ func (c *Config) Summary() string {
 		if br.Username != "" {
 			user = br.Username + " / password " + redacted(br.Password)
 		}
-		fmt.Fprintf(&b, "  - %s %s:%d %s tls=%v user=%s retained=%v topics=%d\n", br.ID, br.Host, br.Port, br.Protocol, br.TLS.Enabled, user, br.AcceptRetained, len(br.Topics))
+		fmt.Fprintf(&b, "  - %s %s:%d %s tls=%v user=%s retained=%v topics=%d session=%s\n", br.ID, br.Host, br.Port, br.Protocol, br.TLS.Enabled, user, br.AcceptRetained, len(br.Topics), sessionSummary(br.SessionExpiry))
 	}
 	fmt.Fprintf(&b, "channels (%d):\n", len(c.Channels))
 	for _, ch := range c.Channels {

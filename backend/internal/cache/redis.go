@@ -18,6 +18,9 @@ const (
 	obsPrefix      = "meshmap:obs:"
 	opTimeout      = 250 * time.Millisecond
 	MaintStatusKey = "meshmap:maint:status"
+	// BackupStatusKey holds the backup service's last status, written by its
+	// script in the production stacks (D-206).
+	BackupStatusKey = "meshmap:backup:status"
 )
 
 // Client is a thin Redis wrapper with short per-operation timeouts.

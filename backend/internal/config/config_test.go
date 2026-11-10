@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func write(t *testing.T, dir, name, body string) string {
@@ -82,6 +83,23 @@ func TestLoadInvalidIsReadableAndRedacted(t *testing.T) {
 	}
 	if strings.Contains(msg, "hunter2") || strings.Contains(msg, "c2hvcnQ") {
 		t.Fatalf("error leaks secrets:\n%s", msg)
+	}
+}
+
+func TestSessionExpiry(t *testing.T) {
+	setup(t, goodBrokers+"    session_expiry: 15m\n", goodChannels)
+	c, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Brokers[0].SessionExpiry != 15*time.Minute || !strings.Contains(c.Summary(), "session=persistent 15m0s") {
+		t.Fatalf("session_expiry not applied: %v", c.Brokers[0].SessionExpiry)
+	}
+	for _, bad := range []string{"-1s", "25h", "1500ms"} {
+		setup(t, goodBrokers+"    session_expiry: "+bad+"\n", goodChannels)
+		if _, err := Load(); err == nil || !strings.Contains(err.Error(), "session_expiry must be") {
+			t.Errorf("session_expiry %s: got %v", bad, err)
+		}
 	}
 }
 

@@ -1,0 +1,64 @@
+name: monitor
+
+# Production monitor (design §8, D-207): every 15 minutes, scripts/check-production.py
+# reads /health/ready: not ready, a broker down or silent for 15 minutes,
+# retention or the nightly backup overdue. A problem opens an issue labelled
+# production-alert (and fails this run once, so GitHub notifies); while it
+# lasts the issue body is kept current; recovery comments and closes it.
+# The site is the repository variable PRODUCTION_URL, as for deploys; `none`
+# turns the monitor off. Thresholds are the script's environment.
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: monitor-production
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: scripts/check-production.py
+          sparse-checkout-cone-mode: false
+      - name: check production and open, update or close the alert issue
+        env:
+          SITE: ${{ vars.PRODUCTION_URL || 'https://beta-map.868.no' }}
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          LABEL: production-alert
+        run: |
+          if [ "$SITE" = none ]; then echo "PRODUCTION_URL is none: not monitored"; exit 0; fi
+          set +e
+          problems=$(python3 -I scripts/check-production.py "$SITE")
+          failing=$?
+          set -e
+          open=$(gh issue list --label "$LABEL" --state open --json number --jq '.[0].number // empty')
+          now=$(date -u +'%Y-%m-%d %H:%M UTC')
+          if [ "$failing" -eq 0 ]; then
+            echo "$SITE: no problems"
+            if [ -n "$open" ]; then
+              gh issue close "$open" --comment "Recovered: no problems found at $now."
+            fi
+            exit 0
+          fi
+          printf '%s\n' "$problems"
+          body=$(printf 'Problems found at %s by the [monitor](%s/%s/actions/runs/%s) on %s/health/ready:\n\n%s\n\nThis issue closes itself when a check finds none (design §8, D-207).\n' \
+            "$now" "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID" "$SITE" "$(printf '%s\n' "$problems" | sed 's/^/- /')")
+          if [ -n "$open" ]; then
+            gh issue edit "$open" --body "$body"
+            exit 0
+          fi
+          gh label create "$LABEL" --color B60205 --description "Opened and closed by the production monitor" --force
+          gh issue create --title "Production: $(printf '%s\n' "$problems" | head -n 1)" --label "$LABEL" --body "$body"
+          echo "::error::$SITE: $(printf '%s; ' "$problems")"
+          exit 1

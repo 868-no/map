@@ -8,6 +8,10 @@ brokers:
     username: example-user
     password: example-password   # or password_file: /run/secrets/no868-password
     client_id: meshmap-ingest-1
+    # Optional persistent session: the broker holds what arrives while the
+    # backend restarts, for up to this long (max 24h), if it queues for
+    # offline sessions at all (design §2.1, D-205). Omit for a clean session.
+    # session_expiry: 1h
     topics:
       - { filter: "msh/EU_868/#", qos: 0 }
     accept_retained: false

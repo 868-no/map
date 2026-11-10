@@ -22,6 +22,9 @@ import (
 type IngestStatus interface {
 	Healthy() (bool, string)
 	Brokers() map[string]string
+	// LastMessages is when each broker last delivered a message; brokers
+	// that never did are absent.
+	LastMessages() map[string]time.Time
 }
 
 // ReadyTTL is how long /health/ready reuses its database and Redis checks.
@@ -36,13 +39,19 @@ type Health struct {
 	Ingest  IngestStatus
 	Started time.Time
 
-	// probe checks the backends and reads the last maintenance status; nil
-	// means the database and Redis (tests replace it).
-	probe    func(context.Context) ([]probe, *maintenance.Status)
+	// probe checks the backends and reads the shared statuses; nil means
+	// the database and Redis (tests replace it).
+	probe    func(context.Context) ([]probe, statuses)
 	mu       sync.Mutex
 	probedAt time.Time
 	probed   []probe
-	maint    *maintenance.Status
+	st       statuses
+}
+
+// statuses are what other processes report through Redis.
+type statuses struct {
+	maint  *maintenance.Status
+	backup *maintenance.BackupStatus
 }
 
 // probe is one backend check's outcome; a failed fatal check makes the
@@ -59,11 +68,15 @@ type check struct {
 }
 
 type readyBody struct {
-	Status      string              `json:"status"` // ready, degraded, unavailable
-	Checks      map[string]check    `json:"checks"`
-	Brokers     map[string]string   `json:"brokers,omitempty"`
-	Maintenance *maintenance.Status `json:"maintenance,omitempty"`
-	UptimeSec   int64               `json:"uptime_s"`
+	Status  string            `json:"status"` // ready, degraded, unavailable
+	Checks  map[string]check  `json:"checks"`
+	Brokers map[string]string `json:"brokers,omitempty"`
+	// LastMessageSec is the seconds since each broker last delivered a
+	// message, for the production monitor's stalled-ingest alert (D-207).
+	LastMessageSec map[string]int64          `json:"last_message_s,omitempty"`
+	Maintenance    *maintenance.Status       `json:"maintenance,omitempty"`
+	Backup         *maintenance.BackupStatus `json:"backup,omitempty"`
+	UptimeSec      int64                     `json:"uptime_s"`
 }
 
 func (h *Health) live(w http.ResponseWriter, _ *http.Request) {
@@ -72,8 +85,8 @@ func (h *Health) live(w http.ResponseWriter, _ *http.Request) {
 }
 
 // backends checks the database, schema and Redis, and reads the last
-// maintenance status.
-func (h *Health) backends(ctx context.Context) (out []probe, maint *maintenance.Status) {
+// maintenance and backup statuses.
+func (h *Health) backends(ctx context.Context) (out []probe, st statuses) {
 	if err := h.Pool.Ping(ctx); err != nil {
 		out = append(out, probe{"database", check{Detail: "unreachable"}, true})
 	} else if err := storage.CheckSchema(ctx, h.Pool); err != nil {
@@ -87,18 +100,21 @@ func (h *Health) backends(ctx context.Context) (out []probe, maint *maintenance.
 		out = append(out, probe{"cache", check{Detail: "unreachable; dedupe falls back to the database"}, false})
 	} else {
 		out = append(out, probe{"cache", check{OK: true}, false})
-		if st, err := maintenance.LastStatus(ctx, h.Cache); err == nil {
-			maint = st
+		if m, err := maintenance.LastStatus(ctx, h.Cache); err == nil {
+			st.maint = m
+		}
+		if b, err := maintenance.LastBackup(ctx, h.Cache); err == nil {
+			st.backup = b
 		}
 	}
-	return out, maint
+	return out, st
 }
 
 // cachedProbes returns the backend checks, at most ReadyTTL old. Concurrent
 // callers wait for one check instead of each running their own. The check
 // does not use the request's context, so a probe that hangs up early cannot
 // cache a failure.
-func (h *Health) cachedProbes() ([]probe, *maintenance.Status) {
+func (h *Health) cachedProbes() ([]probe, statuses) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	if h.probed == nil || time.Since(h.probedAt) >= ReadyTTL {
@@ -108,10 +124,10 @@ func (h *Health) cachedProbes() ([]probe, *maintenance.Status) {
 		if run == nil {
 			run = h.backends
 		}
-		h.probed, h.maint = run(ctx)
+		h.probed, h.st = run(ctx)
 		h.probedAt = time.Now()
 	}
-	return h.probed, h.maint
+	return h.probed, h.st
 }
 
 func (h *Health) ready(w http.ResponseWriter, _ *http.Request) {
@@ -124,7 +140,7 @@ func (h *Health) ready(w http.ResponseWriter, _ *http.Request) {
 			b.Status = "degraded"
 		}
 	}
-	probes, maint := h.cachedProbes()
+	probes, st := h.cachedProbes()
 	for _, p := range probes {
 		if p.c.OK {
 			b.Checks[p.name] = p.c
@@ -132,7 +148,7 @@ func (h *Health) ready(w http.ResponseWriter, _ *http.Request) {
 			fail(p.name, p.c.Detail, p.fatal)
 		}
 	}
-	b.Maintenance = maint
+	b.Maintenance, b.Backup = st.maint, st.backup
 	// Ingest state is in memory: always current.
 	if h.Ingest != nil {
 		if ok, why := h.Ingest.Healthy(); !ok {
@@ -141,6 +157,13 @@ func (h *Health) ready(w http.ResponseWriter, _ *http.Request) {
 			b.Checks["ingest"] = check{OK: true}
 		}
 		b.Brokers = h.Ingest.Brokers()
+		now := time.Now()
+		for id, t := range h.Ingest.LastMessages() {
+			if b.LastMessageSec == nil {
+				b.LastMessageSec = map[string]int64{}
+			}
+			b.LastMessageSec[id] = int64(now.Sub(t).Seconds())
+		}
 	}
 	w.Header().Set("Content-Type", "application/json")
 	if b.Status == "unavailable" {

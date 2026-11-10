@@ -46,8 +46,8 @@ expect web/Dockerfile '^FROM caddy:.*' "FROM $CADDY_IMAGE"
 for file in compose.yaml deploy/compose.production.yaml deploy/stack.swarm.yaml; do
   expect "$file" 'image: postgres:.*' "image: $POSTGRES_IMAGE"
   expect "$file" 'image: redis:.*' "image: $REDIS_IMAGE"
+  expect "$file" 'image: eclipse-mosquitto:.*' "image: $MOSQUITTO_IMAGE"
 done
-expect compose.yaml 'image: eclipse-mosquitto:.*' "image: $MOSQUITTO_IMAGE"
 
 if [ "$fail" -ne 0 ]; then
   echo "Copies differ from versions.env: change them to match (or versions.env, if it is the stale one)."
