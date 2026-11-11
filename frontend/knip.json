@@ -3,7 +3,10 @@
   "entry": [
     "sw/sw.js",
     "public/*.js",
-    "bench/*.mjs"
+    "bench/*.mjs",
+    "promo/playwright.config.ts",
+    "promo/vite.config.ts",
+    "promo/takes/*.spec.ts"
   ],
   "ignoreExportsUsedInFile": {
     "interface": true,

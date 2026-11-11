@@ -5,7 +5,7 @@ import reactHooks from 'eslint-plugin-react-hooks'
 import tseslint from 'typescript-eslint'
 
 export default tseslint.config(
-  { ignores: ['src/engine/pkg/**', 'dist', 'e2e/.results', 'src/api/schema.d.ts'] },
+  { ignores: ['src/engine/pkg/**', 'dist', 'e2e/.results', 'src/api/schema.d.ts', 'promo/.dist', 'promo/.results', 'promo/.frames', 'promo/out'] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
