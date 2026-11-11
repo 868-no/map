@@ -827,7 +827,7 @@ Thresholds are constants in each rule's module, re-exported from `health/mod.rs`
   Gateways are only part of the mesh, so this is a notice with a suggested limit.
 - **Possible impersonation (D-108):** 3 or more packets claiming to come from a node that failed signature or key checks (`invalid` rows with a verification reason; decoding failures do not count), a warning naming the reasons and how many gateways reported them.
   When all of them announce a different key than the trusted one, the explanation says the node was most likely reset and has a new key.
-- **Battery falling (D-099):** a least-squares trend over at least 8 device reports spanning at least a day, falling 5 % a day or faster; a warning at 50 % or below or when empty within a week at that rate, else a notice.
+- **Battery falling (D-099):** for routers and base stations only (ROUTER, ROUTER_LATE, CLIENT_BASE; a handheld drains and is charged as it is used), a least-squares trend over at least 8 device reports spanning at least a day, falling 5 % a day or faster; a warning at 50 % or below or when empty within a week at that rate, else a notice.
   The daily swing of a healthy solar node stays well under that.
 - **Shared public key (D-142):** ids whose identities announce the same key (the same `key_id`) with their own packets overlapping by at least 30 minutes: devices set up from one backup or a copied key, which can read each other's direct messages and on 2.8 take the same id.
   Anyone can announce any key in an unsigned NodeInfo, so a node whose NodeInfo verified (it proved holding the key) is never flagged; an id announcing its key is, a warning, also when it overlaps only another such id while the holder is silent.

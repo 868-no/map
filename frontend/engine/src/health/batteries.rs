@@ -1,7 +1,9 @@
-//! Batteries: a low battery in the last device telemetry, and a battery
-//! falling fast over the window's reports (D-099).
+//! Batteries: a low battery in the last device telemetry, and a fixed
+//! node's battery falling fast over the window's reports (D-099).
 
-use super::{device_telemetry, Ctx, Issues};
+use super::{device_telemetry, role_of, Ctx, Issues};
+use crate::roles;
+use crate::util::FxSet;
 
 /// Battery (%) that counts as low (101 is external power).
 pub const BATTERY_LOW: f64 = 15.0;
@@ -18,7 +20,13 @@ pub(super) fn check(cx: &Ctx, out: &mut Issues) {
             out.add(x.num, "battery_low", "notice", format!("Battery {b:.0} %"), "Its last device telemetry reports a low battery.".into());
         }
     }
+    // Only for routers and base stations: a handheld or tracker drains and
+    // is charged as it is used.
+    let fixed: FxSet<u32> = cx.nodes.iter().filter(|x| roles::is_fixed(role_of(x))).map(|x| x.num).collect();
     for (&n, pk) in &cx.own {
+        if !fixed.contains(&n) {
+            continue;
+        }
         let tel = device_telemetry(pk);
         let batt: Vec<(f64, f64)> = tel.iter().filter_map(|(t, x)| x.battery.filter(|&b| b <= 100.0).map(|b| (*t as f64 / 86_400_000.0, b))).collect();
         if batt.len() < BATTERY_TREND_MIN_REPORTS || batt[batt.len() - 1].0 - batt[0].0 < 1.0 {
@@ -39,19 +47,38 @@ pub(super) fn check(cx: &Ctx, out: &mut Issues) {
 
 #[cfg(test)]
 mod tests {
-    use crate::health::tests::{issues, telemetry};
+    use crate::health::tests::{node_issues, telemetry};
     use crate::row::{Interner, Row};
 
+    /// The telemetry helper's sender (node 5) with `role`.
+    fn node(role: &str) -> crate::views::Node {
+        let mut x = crate::views::Node::new(5);
+        x.identity = Some(crate::views::Identity { role: role.into(), ..Default::default() });
+        x
+    }
+
     #[test]
-    fn a_battery_falling_fast_is_flagged_and_a_steady_one_is_not() {
+    fn a_fixed_nodes_battery_falling_fast_is_flagged_and_a_steady_one_is_not() {
         let mut i = Interner::default();
         // 12 reports over 33 h, 80 % down to 36 %: 32 % a day.
         let falling: Vec<Row> = (0..12).map(|k| telemetry(&mut i, k, 80.0 - 4.0 * k as f64, 1000 + k as u32 * 10_800)).collect();
-        let got = issues(&falling, &i);
-        let b = got.iter().find(|x| x.kind == "battery_falling").expect("flagged");
-        assert_eq!(b.severity, "warning");
+        for role in ["ROUTER", "ROUTER_LATE", "CLIENT_BASE"] {
+            let got = node_issues(&falling, &[node(role)], &i);
+            let b = got.iter().find(|x| x.kind == "battery_falling").unwrap_or_else(|| panic!("{role} flagged"));
+            assert_eq!(b.severity, "warning");
+        }
         // Swinging around a level, as a solar node does, is not.
         let steady: Vec<Row> = (0..12).map(|k| telemetry(&mut i, k, if k % 2 == 0 { 90.0 } else { 70.0 }, 1000 + k as u32 * 10_800)).collect();
-        assert!(issues(&steady, &i).iter().all(|x| x.kind != "battery_falling"));
+        assert!(node_issues(&steady, &[node("ROUTER")], &i).iter().all(|x| x.kind != "battery_falling"));
+    }
+
+    #[test]
+    fn other_roles_and_unknown_nodes_are_not_flagged_for_a_falling_battery() {
+        let mut i = Interner::default();
+        let falling: Vec<Row> = (0..12).map(|k| telemetry(&mut i, k, 80.0 - 4.0 * k as f64, 1000 + k as u32 * 10_800)).collect();
+        for role in ["CLIENT", "CLIENT_MUTE", "TRACKER", "ROUTER_CLIENT", "REPEATER", ""] {
+            assert!(node_issues(&falling, &[node(role)], &i).iter().all(|x| x.kind != "battery_falling"), "{role:?}");
+        }
+        assert!(node_issues(&falling, &[], &i).iter().all(|x| x.kind != "battery_falling"), "no node");
     }
 }
