@@ -400,6 +400,38 @@ func LatestAnnouncedKey(ctx context.Context, pool *pgxpool.Pool, node uint32) (A
 	return k, err
 }
 
+// Contact is a node's newest NodeInfo fit to hand out as a contact (D-213).
+type Contact struct {
+	NodeInfo  []byte // decoded_metadata->'nodeinfo', a ports.NodeInfo
+	At        time.Time
+	Signature string
+}
+
+// LatestContact returns the node's newest retained NodeInfo that a client
+// app could import as a contact, or ErrNotFound: verified or unsigned, with a
+// key and a name, never one that claims another node's identity or carries a
+// key other than its trusted one, and never from a node that did not allow
+// MQTT (its names are not stored, D-032). Like LatestAnnouncedKey it spans the
+// whole retained log.
+func LatestContact(ctx context.Context, pool *pgxpool.Pool, node uint32) (Contact, error) {
+	var c Contact
+	err := pool.QueryRow(ctx, `SELECT decoded_metadata->'nodeinfo', observed_at, signature_status
+	      FROM packet_log
+	      WHERE packet_type = 'nodeinfo' AND source_node_id = $1
+	        AND signature_status IN ('verified', 'unsigned')
+	        AND decoded_metadata->'nodeinfo' ? 'public_key'
+	        AND coalesce(decoded_metadata->'nodeinfo'->>'long_name', '') <> ''
+	        AND NOT coalesce((decoded_metadata->'nodeinfo'->>'identity_untrusted')::boolean, false)
+	        AND NOT coalesce((decoded_metadata->'nodeinfo'->>'key_conflict')::boolean, false)
+	        AND NOT coalesce((decoded_metadata->>'not_ok_to_mqtt')::boolean, false)
+	        AND coalesce(decoded_metadata->>'invalid', '') = ''
+	      ORDER BY observed_at DESC, id DESC LIMIT 1`, int64(node)).Scan(&c.NodeInfo, &c.At, &c.Signature)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return c, ErrNotFound
+	}
+	return c, err
+}
+
 // MaxRowID is the highest row id stored (0 when empty): an index probe per partition.
 func MaxRowID(ctx context.Context, pool *pgxpool.Pool) (int64, error) {
 	var id int64

@@ -117,6 +117,7 @@
       <p>
         <strong>Who can see it.</strong> The map and its API are public. Everything above, except stored packets, can be viewed by anyone visiting the site, for any time window within the retention period, along with daily, weekly and monthly totals (nodes, gateways, packets) over the whole retention period, for the whole mesh and for each node (hours heard, packets, how many gateways heard them, hours as a gateway, lowest battery level).
         Other services can also ask the API for a list of the nodes that broadcast their position in a time window, with their latest reported position, name, hardware model and role. Nodes that did not allow MQTT uplink are never in that list.
+        A node's page can also show its name, hardware model, role and public key as a contact link and QR code for the Meshtastic apps, so a visitor can add it to their own radio; this is the same information the node broadcasts and the page already shows. It is never offered for nodes that did not allow MQTT uplink.
       </p>
       <p>
         <strong>How long it is kept.</strong> Packets older than <span data-fill="retention-short">the retention period (six months by default)</span> are deleted automatically every day. Where the operator runs the nightly database backups of the published production setup, a deleted packet stays in those backups for up to a week (seven days by default) until they are deleted in turn; the same goes for data deleted on request.

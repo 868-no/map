@@ -13,6 +13,7 @@ import { TelemetryTab } from './Telemetry'
 import { LinksTab } from './Links'
 import { RadioTab } from './Radio'
 import { PacketsTab } from './Packets'
+import { ImportNode } from './Contact'
 
 export function NodePanel({ id, snapshot }: { id: string; snapshot: SnapshotView | undefined }) {
   const { data, isLoading, error } = useNodeDetail(id)
@@ -30,6 +31,7 @@ export function NodePanel({ id, snapshot }: { id: string; snapshot: SnapshotView
         <h2>{d.identity?.long_name || d.id}</h2>
         <WatchButton id={d.id} />
         <ShareNode id={d.id} name={d.identity?.long_name || d.id} />
+        {d.identity?.has_public_key && !d.mqtt_opt_out && <ImportNode id={d.id} name={d.identity.long_name || d.id} />}
       </div>
       <p className="muted node-id">{d.id} · #{d.num}</p>
       <p className="node-tags">

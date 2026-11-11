@@ -143,6 +143,44 @@ components:
           description: Who runs this deployment
           type: string
       type: object
+    ContactBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/api/schemas/ContactBody.json
+          format: uri
+          readOnly: true
+          type: string
+        long_name:
+          type: string
+        node:
+          examples:
+            - "!98644b01"
+          type: string
+        observed_at:
+          description: When this service received the NodeInfo it is made from
+          format: date-time
+          type: string
+        short_name:
+          type: string
+        signature:
+          description: Signature status of that NodeInfo
+          enum:
+            - verified
+            - unsigned
+          type: string
+        url:
+          description: "A Meshtastic shared-contact link: https://meshtastic.org/v/# and a SharedContact protobuf (admin.proto), base64url without padding"
+          type: string
+      required:
+        - node
+        - url
+        - long_name
+        - observed_at
+        - signature
+      type: object
     ErrorDetail:
       additionalProperties: false
       properties:
@@ -1710,6 +1748,58 @@ paths:
                 $ref: "#/components/schemas/ErrorModel"
           description: Service Unavailable
       summary: Nodes that reported their own position in a window, with their newest position, name and role (D-212)
+      tags:
+        - mesh
+  /api/v1/nodes/{id}/contact:
+    get:
+      description: From the node's newest retained NodeInfo that carries a name and a public key, is verified or unsigned, and neither claims another node's identity nor came from a node that did not allow MQTT. The link opens in the Meshtastic Android and Apple apps, from a QR code or a tap, and adds the node to the radio's contacts. 404 without such a NodeInfo.
+      operationId: node-contact
+      parameters:
+        - description: Node id, !xxxxxxxx or decimal
+          in: path
+          name: id
+          required: true
+          schema:
+            description: Node id, !xxxxxxxx or decimal
+            examples:
+              - "!98644b01"
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContactBody"
+          description: OK
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+        "400":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Bad Request
+        "404":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Not Found
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+      summary: A node as a contact link for the Meshtastic apps (D-213)
       tags:
         - mesh
   /api/v1/nodes/{id}/public-key:

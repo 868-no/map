@@ -7,6 +7,7 @@ package integration
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
@@ -244,6 +245,21 @@ func TestPipelineDemoStream(t *testing.T) {
 		if err != nil || k.PublicKey != id.PublicKey || k.At.Before(id.Since) {
 			t.Fatalf("node %08x: announced %+v (%v), trusted %s", id.Node, k, err, id.PublicKey)
 		}
+		// Its contact (D-213) carries that key and a name.
+		c, err := storage.LatestContact(context.Background(), pool, id.Node)
+		var ni struct {
+			LongName  string `json:"long_name"`
+			PublicKey string `json:"public_key"`
+		}
+		if err == nil {
+			err = json.Unmarshal(c.NodeInfo, &ni)
+		}
+		if err != nil || ni.PublicKey != id.PublicKey || ni.LongName == "" || (c.Signature != "verified" && c.Signature != "unsigned") {
+			t.Fatalf("node %08x: contact %+v %+v (%v)", id.Node, c, ni, err)
+		}
+	}
+	if _, err := storage.LatestContact(context.Background(), pool, 0x7fff_fff1); !errors.Is(err, storage.ErrNotFound) {
+		t.Fatalf("unknown node's contact: %v", err)
 	}
 	if _, err := storage.LatestAnnouncedKey(context.Background(), pool, 0x7fff_fff1); !errors.Is(err, storage.ErrNotFound) {
 		t.Fatalf("unknown node: %v", err)

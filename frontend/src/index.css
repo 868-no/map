@@ -229,7 +229,19 @@ button.banner { color: var(--text); text-align: left; border-color: var(--line);
 .detail-tabs button:focus-visible { outline: 2px solid var(--accent); outline-offset: -3px; }
 .node-title { display: flex; align-items: baseline; gap: 0.625rem; }
 .node-title h2 { flex: 1; min-width: 0; overflow-wrap: anywhere; padding-right: 0; }
-.node-title .share-link { flex: none; font-size: 0.8125rem; }
+.node-title .share-link, .node-title .import-link { flex: none; font-size: 0.8125rem; }
+
+/* A node as a Meshtastic contact (D-213): a QR code and its link. */
+.contact-dialog { width: min(22rem, calc(100vw - 2rem)); padding: 0; border: 1px solid var(--line); border-radius: 0.75rem; background: var(--panel); color: var(--text); box-shadow: 0 0.5rem 2rem var(--shadow); }
+.contact-dialog::backdrop { background: var(--shadow); }
+.contact-body { padding: 0.875rem 1rem 1rem; display: flex; flex-direction: column; gap: 0.5rem; }
+.contact-body h2 { font-size: 1rem; margin: 0; overflow-wrap: anywhere; }
+.contact-body p { margin: 0; }
+.contact-body .small { font-size: 0.8125rem; }
+.contact-qr { display: block; width: min(16rem, 100%); aspect-ratio: 1; margin: 0.25rem auto; border-radius: 0.375rem; background: #fff; }
+.contact-actions { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: center; gap: 0.5rem 1rem; }
+.contact-open { padding: 0.375rem 0.75rem; border-radius: 0.375rem; background: var(--accent); color: var(--bg); font-weight: 600; text-decoration: none; }
+.contact-close { align-self: flex-end; }
 .node-id { margin: 0 0 0.375rem; }
 .node-tags { display: flex; flex-wrap: wrap; gap: 0.25rem 0.375rem; margin: 0 0 0.25rem; }
 .node-tags:empty { display: none; }

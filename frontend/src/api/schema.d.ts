@@ -41,6 +41,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/nodes/{id}/contact": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A node as a contact link for the Meshtastic apps (D-213)
+         * @description From the node's newest retained NodeInfo that carries a name and a public key, is verified or unsigned, and neither claims another node's identity nor came from a node that did not allow MQTT. The link opens in the Meshtastic Android and Apple apps, from a QR code or a tap, and adds the node to the radio's contacts. 404 without such a NodeInfo.
+         */
+        get: operations["node-contact"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/nodes/{id}/public-key": {
         parameters: {
             query?: never;
@@ -328,6 +348,30 @@ export interface components {
             contact?: string;
             /** @description Who runs this deployment */
             name?: string;
+        };
+        ContactBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/api/schemas/ContactBody.json
+             */
+            readonly $schema?: string;
+            long_name: string;
+            /** @example !98644b01 */
+            node: string;
+            /**
+             * Format: date-time
+             * @description When this service received the NodeInfo it is made from
+             */
+            observed_at: string;
+            short_name?: string;
+            /**
+             * @description Signature status of that NodeInfo
+             * @enum {string}
+             */
+            signature: "verified" | "unsigned";
+            /** @description A Meshtastic shared-contact link: https://meshtastic.org/v/# and a SharedContact protobuf (admin.proto), base64url without padding */
+            url: string;
         };
         ErrorDetail: {
             /** @description Where the error occurred, e.g. 'body.items[3].tags' or 'path.thing-id' */
@@ -1251,6 +1295,66 @@ export interface operations {
             };
             /** @description Service Unavailable */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    "node-contact": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Node id, !xxxxxxxx or decimal */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    "Cache-Control"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContactBody"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
                 headers: {
                     [name: string]: unknown;
                 };

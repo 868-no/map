@@ -278,6 +278,12 @@ func (s *Server) register(api huma.API) {
 			"application/geo+json": {Schema: api.OpenAPI().Components.Schemas.Schema(reflect.TypeOf(NodesGeoJSON{}), true, "NodesGeoJSON")}}}}}, s.nodes)
 	huma.Register(api, huma.Operation{OperationID: "node-public-key", Method: http.MethodGet, Path: "/api/v1/nodes/{id}/public-key",
 		Summary: "A node's announced and trusted public keys from the retained log", Tags: []string{"mesh"}, Errors: []int{400, 404}}, s.nodeKey)
+	huma.Register(api, huma.Operation{OperationID: "node-contact", Method: http.MethodGet, Path: "/api/v1/nodes/{id}/contact",
+		Summary: "A node as a contact link for the Meshtastic apps (D-213)",
+		Description: "From the node's newest retained NodeInfo that carries a name and a public key, is verified or unsigned, and neither " +
+			"claims another node's identity nor came from a node that did not allow MQTT. The link opens in the Meshtastic Android and " +
+			"Apple apps, from a QR code or a tap, and adds the node to the radio's contacts. 404 without such a NodeInfo.",
+		Tags: []string{"mesh"}, Errors: []int{400, 404}}, s.contact)
 	huma.Register(api, huma.Operation{OperationID: "trends", Method: http.MethodGet, Path: "/api/v1/trends",
 		Summary: "Daily, weekly or monthly summaries over the whole retained log", Tags: []string{"mesh"}, Errors: []int{400, 503}}, s.trends)
 	huma.Register(api, huma.Operation{OperationID: "fleet-trends", Method: http.MethodGet, Path: "/api/v1/trends/fleet",
