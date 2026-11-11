@@ -64,7 +64,7 @@ use crate::copies::Copies;
 use crate::graph::Edge;
 use crate::landsdel::Regions;
 use crate::row::{ty, Interner, Row, Telemetry};
-use crate::util::{map, node_id, FxMap};
+use crate::util::{map, node_id, FxMap, FxSet};
 use crate::views::link::LinkReadings;
 use crate::views::{first_per_packet, Node};
 
@@ -126,6 +126,13 @@ struct Ctx<'a> {
 }
 
 impl Ctx<'_> {
+    /// Routers and base stations (roles::is_fixed): the nodes whose battery
+    /// trend and restarts matter to the mesh (D-099). A handheld or tracker
+    /// drains, charges and is switched off and on as it is used.
+    fn fixed(&self) -> FxSet<u32> {
+        self.nodes.iter().filter(|x| crate::roles::is_fixed(role_of(x))).map(|x| x.num).collect()
+    }
+
     /// Node `n`'s own packets of type `t` that `keep` accepts.
     fn count(&self, n: u32, t: u32, keep: impl Fn(&Row) -> bool) -> usize {
         self.own.get(&n).map_or(0, |m| m.values().filter(|r| r.ty == t && keep(r)).count())
@@ -244,6 +251,13 @@ mod tests {
     pub(super) fn issues(rows: &[Row], i: &Interner) -> Vec<Issue> {
         let refs: Vec<&Row> = rows.iter().collect();
         health(&refs, &[], &[], &[], &LinkReadings::default(), &Copies::default(), &PresetIndex::default(), i, 48.0, &crate::landsdel::Regions::default()).issues
+    }
+
+    /// Node `n` with `role` (empty: none reported).
+    pub(super) fn role_node(n: u32, role: &str) -> crate::views::Node {
+        let mut x = crate::views::Node::new(n);
+        x.identity = Some(crate::views::Identity { role: role.into(), ..Default::default() });
+        x
     }
 
     /// A node `n` with `role` sending one packet at each of `times` (ms).

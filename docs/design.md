@@ -860,7 +860,7 @@ Thresholds are constants in each rule's module, re-exported from `health/mod.rs`
   The summary gives the densest run's count; the explanation its packets by type, average gap and times, and what to check (position, telemetry and NodeInfo intervals, the smart broadcast minimum interval, a restart loop).
   Prompted by !04414588, a phone sending a position about every 30 s while driving, which the hourly rates missed: 0.4 positions an hour over two weeks, and moving nodes are exempt from that rule.
   On production rows from 27 Oct to 10 Nov 2026 (210 000 rows) it flags 9 nodes: that phone (29), two nodes sending encrypted packets on private channels every 30 s (25, 24), a boot loop (NodeInfo and telemetry every minute and a half, uptime resetting; 20), manual traceroute runs (15–18) and bursts of NodeInfo; counting conversation as well, people chatting topped the list with up to 65.
-- **Restarts (D-099):** uptime going backwards between reports, beyond what the time between them explains; a notice, a warning from 3 restarts.
+- **Restarts (D-099):** for routers and base stations only (ROUTER, ROUTER_LATE, CLIENT_BASE; a handheld is switched off and on as it is used), uptime going backwards between reports, beyond what the time between them explains; a notice, a warning from 3 restarts.
   Constant zero uptime is not a restart.
 - **Notices:** no other gateway reports it (≥ 10 packets, only its own uplinks); remote-admin requests refused by ≥ 2 nodes; uplinks arriving unencrypted; positions > 4/h (not when moving), NodeInfo > 1/h or device telemetry > 4/h; a stale position (§6.10); battery ≤ 15 %; a short name shared with another node (not between ids announcing the same key, which are one device, §6.17 shared public key).
 
