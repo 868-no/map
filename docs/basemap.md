@@ -39,6 +39,10 @@ The browser fetches the TileJSON and the tiles itself, which the default CSP (`c
 
 Privacy: visitors' browsers then contact the tile host directly, which receives their IP addresses and the map areas they view. The privacy policy page says so when the tile source is remote.
 
+## Meshtastic UI tiles
+
+`scripts/mui_tiles.sh` turns the same basemap into map tiles for Meshtastic UI (MUI 2.8.1 or later). MUI reads PMTiles only when they hold PNG raster tiles, so the script renders the vector archive with the web map's style (tileserver-gl), using the layers the web map shows by default and the fonts the `web` image serves. It reduces each tile to an 8-bit palette, as MUI's maps README recommends, and packs the result as `maps/<name>/<name>.pmtiles`: uncompressed PNG tiles with gzip directories, which is what MUI accepts. Coverage is the whole world to z5, the web map's Norway bounds to z7, then Norway's regions plus one tile of margin down to `--maxzoom` (default 12: about 35,000 tiles and 260 MB). `--bbox` renders an area such as home deeper (`--bbox-maxzoom`, default 15). `--style dark` uses the dark theme, and `--show`/`--hide` take layer group ids from `frontend/src/map/layers.ts`. Copy the output's `maps` folder to the SD card's root and pick the style in MUI by long-pressing the Map button. Image versions are in `versions.env` (`MUI_*`); see `scripts/mui_tiles.sh --help`.
+
 ## Glyphs
 
 Noto Sans Regular and Bold glyph ranges from the OpenMapTiles fonts release v2.0 (SIL Open Font License), downloaded and checksum-verified when the `web` image is built. Each text layer uses a single font: the static glyph server cannot combine font stacks.
