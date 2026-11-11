@@ -116,9 +116,18 @@ describe('mesh layer builder', () => {
     const p = byId(ls) as unknown as Record<string, Props>
     expect(p['node-cluster-counts'].getText(k)).toBe('2')
     expect(p['node-clusters'].getFillColor(k).slice(0, 3)).toEqual(ageColor(0.2, PALETTES.dark.ageStops)) // the freshest member's colour
-    // Beneath every marker in the depth order (D-187), the first (most prominent) cluster on top.
-    expect(p['node-clusters'].getDrawOrder(k, { index: 0 })).toBeLessThan(0)
-    expect(p['node-clusters'].getDrawOrder(k, { index: 1 })).toBeLessThan(p['node-clusters'].getDrawOrder(k, { index: 0 }))
+    // Beneath every marker in the depth order (D-187), the first (most prominent) cluster on top,
+    // its count above every disc; all above the map's own depth, where links and accuracy circles
+    // drawn before would otherwise hide the disc and leave only the count.
+    const two = byId(meshLayerBuilder()({ ...base, placed: [m('!n', 0.5)], markerClusters: [k, { ...k, id: '!c3' }] }))
+    const at = (id: string, index: number) => {
+      const f = (two[id] as unknown as { getDrawOrder: number | ((d: unknown, o: { index: number }) => number) }).getDrawOrder
+      return typeof f === 'number' ? f : f(undefined, { index })
+    }
+    expect(at('node-clusters', 1)).toBeGreaterThanOrEqual(0)
+    expect(at('node-clusters', 1)).toBeLessThan(at('node-clusters', 0))
+    expect(at('node-clusters', 0)).toBeLessThan(at('node-cluster-counts', 0))
+    expect(at('node-cluster-counts', 0)).toBeLessThan(at('nodes', 0))
     const dim = byId(meshLayerBuilder()({ ...base, markerClusters: [k], search: 'zzz' })) as unknown as Record<string, Props>
     expect(dim['node-clusters'].getFillColor(k)).toEqual(PALETTES.dark.dimmed)
     expect(byId(meshLayerBuilder()(base))['node-clusters']).toBeUndefined()

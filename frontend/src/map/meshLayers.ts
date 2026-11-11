@@ -451,13 +451,16 @@ export function meshLayerBuilder(): (input: MeshLayerInput) => Layer[] {
     // representative's position is an estimate the disc is dark with a
     // coloured ring, as estimates are hollow. In the depth order (D-187) the
     // clusters lie beneath every marker drawn on its own, the most prominent
-    // cluster on top; their counts sit at the markers' base depth, above
-    // every cluster disc and beneath every marker.
+    // cluster on top; their counts lie above every cluster disc and beneath
+    // every marker. All of it is lifted off the map's own depth: layers drawn
+    // before (links, accuracy circles, halos) write depth there, and would
+    // hide a cluster's disc where they cross it, leaving only its count.
+    const lift = 2 * markerClusters.length
     if (markerClusters.length) {
       const fresh = (k: MarkerCluster) => (k.members.some(matches) ? [...ageColor(k.freshest, c.ageStops), 255] : c.dimmed) as RGBA
       const est = (k: MarkerCluster) => k.rep.kind === 'estimated'
       const at = (k: MarkerCluster) => [k.rep.lon, k.rep.lat] as [number, number]
-      const depth = { extensions: [drawOrder], getDrawOrder: (_k: MarkerCluster, { index }: { index: number }) => -2 * (index + 1) }
+      const depth = { extensions: [drawOrder], getDrawOrder: (_k: MarkerCluster, { index }: { index: number }) => lift - 2 * (index + 1) }
       layers.push(
         new ScatterplotLayer<MarkerCluster, DrawOrderProps<MarkerCluster>>({
           id: 'node-clusters-ring', ...UNDER_LABELS, ...depth, data: markerClusters, getPosition: at,
@@ -476,8 +479,9 @@ export function meshLayerBuilder(): (input: MeshLayerInput) => Layer[] {
           pickable: true, autoHighlight: true, highlightColor: [...c.gateway, 160],
           updateTriggers: { getFillColor: [q, c, reach], getLineColor: [q, c, reach] },
         }),
-        new TextLayer<MarkerCluster>({
+        new TextLayer<MarkerCluster, DrawOrderProps<MarkerCluster>>({
           id: 'node-cluster-counts', ...UNDER_LABELS, data: markerClusters, getPosition: at,
+          extensions: [drawOrder], getDrawOrder: lift - 1,
           getText: (k) => String(k.members.length), getSize: (k) => (k.members.length < 100 ? 13 : 12),
           // The ink of a role glyph (D-085, D-186); on an estimate's dark disc, the ring's colour.
           getColor: (k) => { const f = fresh(k); return (est(k) || f === c.dimmed ? f : [...glyphInk([f[0], f[1], f[2]]), 255]) as RGBA },
@@ -492,7 +496,7 @@ export function meshLayerBuilder(): (input: MeshLayerInput) => Layer[] {
     const marker = {
       ...UNDER_LABELS, getPosition: (p: PlacedNode) => [p.lon, p.lat] as [number, number],
       // The node's place in the draw order: index in `ordered`, kept with its glyphs.
-      extensions: [drawOrder], getDrawOrder: (_p: PlacedNode, { index }: { index: number }) => index * 2,
+      extensions: [drawOrder], getDrawOrder: (_p: PlacedNode, { index }: { index: number }) => lift + index * 2,
       radiusUnits: 'pixels' as const, getRadius: NODE_RADIUS,
       filled: true, stroked: true, lineWidthUnits: 'pixels' as const,
       getFillColor: (p: PlacedNode) => (p.kind === 'estimated' ? [0, 0, 0, 0] : matches(p) ? [...ageColor(p.age, c.ageStops), 255] : c.dimmed) as RGBA,
@@ -501,14 +505,14 @@ export function meshLayerBuilder(): (input: MeshLayerInput) => Layer[] {
           : p.kind === 'estimated' ? (matches(p) ? [...ageColor(p.age, c.ageStops), 255] : c.dimmed)
           : p.node.is_gateway ? [...c.gateway, 255] : c.nodeOutline) as RGBA,
       getLineWidth: (p: PlacedNode) => (p.node.id === selId ? 3 : p.kind === 'estimated' || p.node.is_gateway ? 2 : 1),
-      updateTriggers: { getFillColor: [q, c, reach], getLineColor: [selId, q, c, reach], getLineWidth: [selId] },
+      updateTriggers: { getDrawOrder: [lift], getFillColor: [q, c, reach], getLineColor: [selId, q, c, reach], getLineWidth: [selId] },
     }
     // Glyphs: the role inside the marker (D-186); a gateway's uplink badge on
     // the rim, ↑ uplinks or a double chevron uplinks every copy; beside it ↓
     // probably downlinks (traceroutes reach it at exactly 0 dB). D-054, D-084.
     const glyph = {
       ...UNDER_LABELS, getPosition: ({ p }: Glyph) => [p.lon, p.lat] as [number, number],
-      extensions: [drawOrder], getDrawOrder: ({ k }: Glyph) => k * 2 + 1,
+      extensions: [drawOrder], getDrawOrder: ({ k }: Glyph) => lift + k * 2 + 1,
       getIcon: ({ icon }: Glyph) => icon, sizeUnits: 'pixels' as const,
       getSize: ({ part }: Glyph) => GLYPH_SIZE[part],
       getPixelOffset: ({ part }: Glyph) => GLYPH_OFFSET[part],
@@ -527,7 +531,7 @@ export function meshLayerBuilder(): (input: MeshLayerInput) => Layer[] {
         }
       },
       pickable: false,
-      updateTriggers: { getColor: [q, c, reach] },
+      updateTriggers: { getDrawOrder: [lift], getColor: [q, c, reach] },
     }
     // Every marker, pickable, in one layer, then every glyph in another; the
     // depth of each says what it is drawn above (D-187).
