@@ -6,7 +6,7 @@ import { mockObservations, nodeRows } from './mock'
 const KEYED = 0x34000001, KEYLESS = 0x34000002
 const URL = 'https://meshtastic.org/v/#CIGAgKADEiQKCSEzNDAwMDAwMRIKS0VZRUQgbG9uZxoFS0VZRUQ'
 
-test('Import shows a QR code and the contact link', async ({ page }) => {
+test('Import shows a QR code and the contact link to copy', async ({ page }) => {
   await mockObservations(page, [
     ...nodeRows(KEYED, 'KEYED', { lat: 59.91, lon: 10.75, keyId: KEYED }),
     ...nodeRows(KEYLESS, 'NOKEY', { lat: 59.95, lon: 11.05 }),
@@ -21,7 +21,9 @@ test('Import shows a QR code and the contact link', async ({ page }) => {
   const dialog = page.getByRole('dialog', { name: 'Import KEYED long' })
   await expect(dialog).toBeVisible()
   await expect(dialog.getByRole('img', { name: /QR code/ })).toBeVisible()
-  await expect(dialog.getByRole('link', { name: 'Open in Meshtastic' })).toHaveAttribute('href', URL)
+  // On a desktop there is no app to open: the code and the link to copy.
+  await expect(dialog.getByRole('button', { name: 'Copy link' })).toBeVisible()
+  await expect(dialog.getByRole('link', { name: 'Open in Meshtastic' })).toHaveCount(0)
   await page.keyboard.press('Escape')
   await expect(dialog).toBeHidden()
 
@@ -30,4 +32,18 @@ test('Import shows a QR code and the contact link', async ({ page }) => {
   await expect(page.locator('.node-panel h2')).toHaveText('NOKEY long', { timeout: 30_000 })
   await expect(page.getByRole('button', { name: 'Share' })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Import' })).toHaveCount(0)
+})
+
+test.describe('on an Android phone', () => {
+  test.use({ userAgent: 'Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Mobile Safari/537.36' })
+  test('Open in Meshtastic names the app', async ({ page }) => {
+    await mockObservations(page, nodeRows(KEYED, 'KEYED', { lat: 59.91, lon: 10.75, keyId: KEYED }))
+    await page.route('**/api/v1/nodes/*/contact', (r) => r.fulfill({
+      json: { node: '!34000001', url: URL, long_name: 'KEYED long', short_name: 'KEYED', observed_at: new Date().toISOString(), signature: 'verified' },
+    }))
+    await page.goto('/?node=!34000001')
+    await page.getByRole('button', { name: 'Import' }).click({ timeout: 30_000 })
+    await expect(page.getByRole('dialog').getByRole('link', { name: 'Open in Meshtastic' }))
+      .toHaveAttribute('href', `intent://meshtastic.org/v/#${URL.split('#')[1]}#Intent;scheme=https;package=com.geeksville.mesh;end`)
+  })
 })

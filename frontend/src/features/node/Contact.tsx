@@ -58,7 +58,26 @@ function ContactDialog({ id, name, onClose }: { id: string; name: string; onClos
   )
 }
 
+/**
+ * The contact link as the app on this device opens it from inside a
+ * browser, or null without one (D-213). Both apps claim the https link, but
+ * only when the system handles the tap: embedded browsers and installed web
+ * apps load meshtastic.org/v/ themselves, a blank page. So Android gets an
+ * intent: URL naming the app (Android splits it at the last #, so the
+ * link's own fragment survives) and iOS the app's meshtastic: scheme, whose
+ * parser takes meshtastic:///v#payload.
+ */
+export function appLink(url: string, ua: string): string | null {
+  const i = url.indexOf('#')
+  if (i < 0) return null
+  const payload = url.slice(i + 1)
+  if (/Android/i.test(ua)) return `intent://meshtastic.org/v/#${payload}#Intent;scheme=https;package=com.geeksville.mesh;end`
+  if (/iPhone|iPad|iPod/i.test(ua) || (/Macintosh/i.test(ua) && navigator.maxTouchPoints > 1)) return `meshtastic:///v#${payload}`
+  return null
+}
+
 function ContactLink({ c }: { c: NodeContact }) {
+  const open = appLink(c.url, navigator.userAgent)
   const [copied, flash] = useFlash<'idle' | 'copied' | 'failed'>('idle')
   const copy = async () => {
     try {
@@ -70,10 +89,10 @@ function ContactLink({ c }: { c: NodeContact }) {
   }
   return (
     <>
-      <p className="small">Scan the code with the Meshtastic app (Android or iPhone), or open the link on a phone that has it. The app adds the node to your radio&apos;s contacts with its public key, so you can send it direct messages.</p>
+      <p className="small">Scan the code with the Meshtastic app (Android or iPhone){open ? ', or open it in the app on this device' : ''}. The app adds the node to your radio&apos;s contacts with its public key, so you can send it direct messages.</p>
       <QrCode text={c.url} label={`QR code: ${c.long_name} as a Meshtastic contact`} />
       <p className="contact-actions">
-        <a className="contact-open" href={c.url}>Open in Meshtastic</a>
+        {open && <a className="contact-open" href={open}>Open in Meshtastic</a>}
         <button className="linkish" onClick={() => void copy()}>{copied === 'copied' ? 'Copied' : copied === 'failed' ? 'Could not copy' : 'Copy link'}</button>
       </p>
       <p className="muted small">
