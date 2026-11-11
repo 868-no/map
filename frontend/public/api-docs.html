@@ -52,7 +52,7 @@
 
       <div class="summary">
         <ul>
-          <li>Base address: <code data-fill="base">/api/v1</code>. No keys or accounts; every endpoint is a plain HTTP <code>GET</code> but one <code>POST</code>, answered in JSON (the live stream as server-sent events carrying JSON).</li>
+          <li>Base address: <code data-fill="base">/api/v1</code>. No keys or accounts; every endpoint is a plain HTTP <code>GET</code> but one <code>POST</code>, answered in JSON (GeoJSON where asked for; the live stream as server-sent events carrying JSON).</li>
           <li>Times are RFC 3339 in UTC. A time window is half-open, <code>[start, end)</code>, given as <code>start</code> and <code>end</code>, or as a rolling <code>duration</code> ending now.</li>
           <li>Errors are <a href="https://www.rfc-editor.org/rfc/rfc9457" rel="noreferrer">problem details</a> (<code>application/problem+json</code>) with a status and a short reason. 429 means slow down; 503 means the server is busy, so ask again shortly.</li>
           <li>Requests are rate limited per client (an IPv4 address or an IPv6 /64), by default to 20 a second with bursts of 60.</li>

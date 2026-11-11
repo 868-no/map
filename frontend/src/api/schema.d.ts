@@ -21,6 +21,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/nodes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Nodes that reported their own position in a window, with their newest position, name and role (D-212)
+         * @description For other services. Each node's newest Position packet or map report in [start, end) (the newer of the two), and its newest NodeInfo (or else a map report naming it). Only verified or unsigned packets and map reports; never a NodeInfo that claims another node's identity, nor anything its node did not allow onto MQTT. Positions are as reported: unlike the map, no estimates, staleness or plausibility checks. format=geojson answers a FeatureCollection of points.
+         */
+        get: operations["nodes"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/nodes/{id}/public-key": {
         parameters: {
             query?: never;
@@ -503,6 +523,53 @@ export interface components {
             live: boolean;
             reason?: string;
         };
+        NodeEntry: {
+            /** @example !98644b01 */
+            id: string;
+            /** @description Absent when the window holds no usable NodeInfo or named map report from it */
+            identity?: components["schemas"]["NodeIdentity"];
+            /**
+             * Format: int32
+             * @description The node number, as id in decimal
+             */
+            num: number;
+            position: components["schemas"]["NodePosition"];
+        };
+        NodeFeature: {
+            geometry: components["schemas"]["NodePoint"];
+            id: string;
+            properties: components["schemas"]["NodeFeatureProps"];
+            /** @enum {string} */
+            type: "Feature";
+        };
+        NodeFeatureProps: {
+            id: string;
+            identity?: components["schemas"]["NodeIdentity"];
+            /** Format: int32 */
+            num: number;
+            position: components["schemas"]["NodePosition"];
+        };
+        NodeIdentity: {
+            hw_model?: string;
+            long_name?: string;
+            /**
+             * Format: date-time
+             * @description When this service received it
+             */
+            observed_at: string;
+            role?: string;
+            short_name?: string;
+            /**
+             * @description Signature status of that packet
+             * @enum {string}
+             */
+            signature: "verified" | "unsigned" | "not-applicable";
+            /**
+             * @description A NodeInfo packet, or the node's map report when the window holds no NodeInfo from it
+             * @enum {string}
+             */
+            source: "nodeinfo" | "mapreport";
+        };
         NodeKeyBody: {
             /**
              * Format: uri
@@ -522,6 +589,45 @@ export interface components {
             trusted_key?: string;
             /** Format: date-time */
             trusted_since?: string;
+        };
+        NodePoint: {
+            /** @description [longitude, latitude] (WGS 84) */
+            coordinates: number[] | null;
+            /** @enum {string} */
+            type: "Point";
+        };
+        NodePosition: {
+            /**
+             * Format: int32
+             * @description Altitude above sea level, metres, as reported
+             */
+            alt?: number;
+            /** Format: double */
+            lat: number;
+            /** Format: double */
+            lon: number;
+            /**
+             * Format: date-time
+             * @description When this service received it
+             */
+            observed_at: string;
+            /**
+             * Format: int32
+             * @description Bits of latitude and longitude the node shared: fewer is coarser (32: full precision)
+             */
+            precision_bits: number;
+            /** @description The node stated its precision; false: precision_bits is assumed */
+            precision_known: boolean;
+            /**
+             * @description Signature status of that packet (map reports are never signed)
+             * @enum {string}
+             */
+            signature: "verified" | "unsigned" | "not-applicable";
+            /**
+             * @description A Position packet over the mesh, or the node's own map report over MQTT
+             * @enum {string}
+             */
+            source: "position" | "mapreport";
         };
         NodeTrendBucket: {
             /**
@@ -582,6 +688,30 @@ export interface components {
              * @description Oldest retained observation: nothing older is known
              */
             since?: string;
+        };
+        NodesBody: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/api/schemas/NodesBody.json
+             */
+            readonly $schema?: string;
+            /** @description By id */
+            nodes: components["schemas"]["NodeEntry"][] | null;
+            window: components["schemas"]["WindowEcho"];
+        };
+        NodesGeoJSON: {
+            /**
+             * Format: uri
+             * @description A URL to the JSON Schema for this object.
+             * @example https://example.com/api/schemas/NodesGeoJSON.json
+             */
+            readonly $schema?: string;
+            features: components["schemas"]["NodeFeature"][] | null;
+            /** @enum {string} */
+            type: "FeatureCollection";
+            /** @description Foreign member: the window the nodes were read from */
+            window: components["schemas"]["WindowEcho"];
         };
         ObsHop: {
             /** Format: int32 */
@@ -1053,6 +1183,74 @@ export interface operations {
             };
             /** @description Error */
             default: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+        };
+    };
+    nodes: {
+        parameters: {
+            query?: {
+                /** @description Inclusive start, RFC 3339 (UTC recommended). Omit start and end for the rolling live window. */
+                start?: string;
+                /** @description Exclusive end, RFC 3339. */
+                end?: string;
+                /** @description Rolling window length (1h to 336h); default 72h. */
+                duration?: string;
+                /** @description json: a list of nodes; geojson: a FeatureCollection of points (application/geo+json) */
+                format?: "json" | "geojson";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    "Cache-Control"?: string;
+                    "Content-Type"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/geo+json": components["schemas"]["NodesGeoJSON"];
+                    "application/json": components["schemas"]["NodesBody"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Unprocessable Entity */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ErrorModel"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };

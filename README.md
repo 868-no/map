@@ -100,7 +100,7 @@ Dependencies are pinned and upgraded by hand. `scripts/outdated.sh` lists newer 
 
 The two Go tools install once into the cached GOBIN: `scripts/go.sh go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0` and `scripts/go.sh go install golang.org/x/vuln/cmd/govulncheck@v1.9.0`. Formatters beyond `gofmt` (rustfmt, Prettier) are not used: the code keeps its own layout, which they would rewrite.
 
-Every view is built in the browser, by a WebAssembly engine (`frontend/engine`, Rust) in a Web Worker, from the decoded rows of `/api/v1/observations` and the live stream (D-031, D-040, D-041).
+Every view is built in the browser, by a WebAssembly engine (`frontend/engine`, Rust) in a Web Worker, from the decoded rows of `/api/v1/observations` and the live stream (D-031, D-040, D-041). For other services, `/api/v1/nodes` lists the nodes that reported their own position in a window, with their newest position, name and role, as JSON or GeoJSON, read straight from the stored rows without the map's rules (D-212).
 
 ## Operations
 

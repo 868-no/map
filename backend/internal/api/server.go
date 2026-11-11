@@ -266,6 +266,16 @@ func (s *Server) register(api huma.API) {
 			"200": {Description: "OK", Content: map[string]*huma.MediaType{
 				"application/json": {Schema: api.OpenAPI().Components.Schemas.Schema(reflect.TypeOf(ObservationsBody{}), true, "ObservationsBody")}}},
 			"304": {Description: "Not modified: the copy named by If-None-Match is still the day's rows"}}}, s.observationsDay)
+	huma.Register(api, huma.Operation{OperationID: "nodes", Method: http.MethodGet, Path: nodesPath,
+		Summary: "Nodes that reported their own position in a window, with their newest position, name and role (D-212)",
+		Description: "For other services. Each node's newest Position packet or map report in [start, end) (the newer of the two), and its " +
+			"newest NodeInfo (or else a map report naming it). Only verified or unsigned packets and map reports; never a NodeInfo " +
+			"that claims another node's identity, nor anything its node did not allow onto MQTT. Positions are as reported: " +
+			"unlike the map, no estimates, staleness or plausibility checks. format=geojson answers a FeatureCollection of points.",
+		Tags: []string{"mesh"}, Errors: []int{400, 503},
+		Responses: map[string]*huma.Response{"200": {Description: "OK", Content: map[string]*huma.MediaType{
+			"application/json":     {Schema: api.OpenAPI().Components.Schemas.Schema(reflect.TypeOf(NodesBody{}), true, "NodesBody")},
+			"application/geo+json": {Schema: api.OpenAPI().Components.Schemas.Schema(reflect.TypeOf(NodesGeoJSON{}), true, "NodesGeoJSON")}}}}}, s.nodes)
 	huma.Register(api, huma.Operation{OperationID: "node-public-key", Method: http.MethodGet, Path: "/api/v1/nodes/{id}/public-key",
 		Summary: "A node's announced and trusted public keys from the retained log", Tags: []string{"mesh"}, Errors: []int{400, 404}}, s.nodeKey)
 	huma.Register(api, huma.Operation{OperationID: "trends", Method: http.MethodGet, Path: "/api/v1/trends",

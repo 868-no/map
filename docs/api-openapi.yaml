@@ -476,6 +476,98 @@ components:
       required:
         - live
       type: object
+    NodeEntry:
+      additionalProperties: false
+      properties:
+        id:
+          examples:
+            - "!98644b01"
+          type: string
+        identity:
+          $ref: "#/components/schemas/NodeIdentity"
+          description: Absent when the window holds no usable NodeInfo or named map report from it
+        num:
+          description: The node number, as id in decimal
+          format: int32
+          minimum: 0
+          type: integer
+        position:
+          $ref: "#/components/schemas/NodePosition"
+      required:
+        - id
+        - num
+        - position
+      type: object
+    NodeFeature:
+      additionalProperties: false
+      properties:
+        geometry:
+          $ref: "#/components/schemas/NodePoint"
+        id:
+          type: string
+        properties:
+          $ref: "#/components/schemas/NodeFeatureProps"
+        type:
+          enum:
+            - Feature
+          type: string
+      required:
+        - type
+        - id
+        - geometry
+        - properties
+      type: object
+    NodeFeatureProps:
+      additionalProperties: false
+      properties:
+        id:
+          type: string
+        identity:
+          $ref: "#/components/schemas/NodeIdentity"
+        num:
+          format: int32
+          minimum: 0
+          type: integer
+        position:
+          $ref: "#/components/schemas/NodePosition"
+      required:
+        - id
+        - num
+        - position
+      type: object
+    NodeIdentity:
+      additionalProperties: false
+      properties:
+        hw_model:
+          type: string
+        long_name:
+          type: string
+        observed_at:
+          description: When this service received it
+          format: date-time
+          type: string
+        role:
+          type: string
+        short_name:
+          type: string
+        signature:
+          description: Signature status of that packet
+          enum:
+            - verified
+            - unsigned
+            - not-applicable
+          type: string
+        source:
+          description: A NodeInfo packet, or the node's map report when the window holds no NodeInfo from it
+          enum:
+            - nodeinfo
+            - mapreport
+          type: string
+      required:
+        - source
+        - signature
+        - observed_at
+      type: object
     NodeKeyBody:
       additionalProperties: false
       properties:
@@ -507,6 +599,74 @@ components:
           type: string
       required:
         - node
+      type: object
+    NodePoint:
+      additionalProperties: false
+      properties:
+        coordinates:
+          description: "[longitude, latitude] (WGS 84)"
+          items:
+            format: double
+            type: number
+          maxItems: 2
+          minItems: 2
+          type:
+            - array
+            - "null"
+        type:
+          enum:
+            - Point
+          type: string
+      required:
+        - type
+        - coordinates
+      type: object
+    NodePosition:
+      additionalProperties: false
+      properties:
+        alt:
+          description: Altitude above sea level, metres, as reported
+          format: int32
+          type: integer
+        lat:
+          format: double
+          type: number
+        lon:
+          format: double
+          type: number
+        observed_at:
+          description: When this service received it
+          format: date-time
+          type: string
+        precision_bits:
+          description: "Bits of latitude and longitude the node shared: fewer is coarser (32: full precision)"
+          format: int32
+          minimum: 0
+          type: integer
+        precision_known:
+          description: "The node stated its precision; false: precision_bits is assumed"
+          type: boolean
+        signature:
+          description: Signature status of that packet (map reports are never signed)
+          enum:
+            - verified
+            - unsigned
+            - not-applicable
+          type: string
+        source:
+          description: A Position packet over the mesh, or the node's own map report over MQTT
+          enum:
+            - position
+            - mapreport
+          type: string
+      required:
+        - lat
+        - lon
+        - precision_bits
+        - precision_known
+        - source
+        - signature
+        - observed_at
       type: object
     NodeTrendBucket:
       additionalProperties: false
@@ -582,6 +742,57 @@ components:
         - node
         - bucket
         - buckets
+      type: object
+    NodesBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/api/schemas/NodesBody.json
+          format: uri
+          readOnly: true
+          type: string
+        nodes:
+          description: By id
+          items:
+            $ref: "#/components/schemas/NodeEntry"
+          type:
+            - array
+            - "null"
+        window:
+          $ref: "#/components/schemas/WindowEcho"
+      required:
+        - window
+        - nodes
+      type: object
+    NodesGeoJSON:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - https://example.com/api/schemas/NodesGeoJSON.json
+          format: uri
+          readOnly: true
+          type: string
+        features:
+          items:
+            $ref: "#/components/schemas/NodeFeature"
+          type:
+            - array
+            - "null"
+        type:
+          enum:
+            - FeatureCollection
+          type: string
+        window:
+          $ref: "#/components/schemas/WindowEcho"
+          description: "Foreign member: the window the nodes were read from"
+      required:
+        - type
+        - window
+        - features
       type: object
     ObsHop:
       additionalProperties: false
@@ -1414,6 +1625,93 @@ paths:
       summary: Supported windows, presets, feature flags and map defaults (no secrets)
       tags:
         - meta
+  /api/v1/nodes:
+    get:
+      description: "For other services. Each node's newest Position packet or map report in [start, end) (the newer of the two), and its newest NodeInfo (or else a map report naming it). Only verified or unsigned packets and map reports; never a NodeInfo that claims another node's identity, nor anything its node did not allow onto MQTT. Positions are as reported: unlike the map, no estimates, staleness or plausibility checks. format=geojson answers a FeatureCollection of points."
+      operationId: nodes
+      parameters:
+        - description: Inclusive start, RFC 3339 (UTC recommended). Omit start and end for the rolling live window.
+          explode: false
+          in: query
+          name: start
+          schema:
+            description: Inclusive start, RFC 3339 (UTC recommended). Omit start and end for the rolling live window.
+            examples:
+              - "2026-10-28T00:00:00Z"
+            type: string
+        - description: Exclusive end, RFC 3339.
+          explode: false
+          in: query
+          name: end
+          schema:
+            description: Exclusive end, RFC 3339.
+            examples:
+              - "2026-10-31T00:00:00Z"
+            type: string
+        - description: Rolling window length (1h to 336h); default 72h.
+          explode: false
+          in: query
+          name: duration
+          schema:
+            description: Rolling window length (1h to 336h); default 72h.
+            examples:
+              - 72h
+            type: string
+        - description: "json: a list of nodes; geojson: a FeatureCollection of points (application/geo+json)"
+          explode: false
+          in: query
+          name: format
+          schema:
+            default: json
+            description: "json: a list of nodes; geojson: a FeatureCollection of points (application/geo+json)"
+            enum:
+              - json
+              - geojson
+            type: string
+      responses:
+        "200":
+          content:
+            application/geo+json:
+              schema:
+                $ref: "#/components/schemas/NodesGeoJSON"
+            application/json:
+              schema:
+                $ref: "#/components/schemas/NodesBody"
+          description: OK
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+            Content-Type:
+              schema:
+                type: string
+        "400":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Bad Request
+        "422":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Unprocessable Entity
+        "500":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Internal Server Error
+        "503":
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ErrorModel"
+          description: Service Unavailable
+      summary: Nodes that reported their own position in a window, with their newest position, name and role (D-212)
+      tags:
+        - mesh
   /api/v1/nodes/{id}/public-key:
     get:
       operationId: node-public-key

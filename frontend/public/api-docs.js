@@ -160,6 +160,8 @@
       types.forEach(function (t) {
         var s = content[t].schema
         if (!s || t === 'application/problem+json') return // problem details, described above
+        // Several forms of one answer (JSON or GeoJSON): say which each is.
+        if (types.length > 1) box.appendChild(el('p', { class: 'muted' }, [el('code', { text: t }), ':']))
         if (t === 'text/event-stream') box.appendChild(events(s))
         else if (hasFields(s)) box.appendChild(fields(s, s.$ref ? [s.$ref] : []))
         else box.appendChild(el('p', { class: 'muted', text: typeOf(s) }))
