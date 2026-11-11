@@ -97,6 +97,8 @@ services:
     environment:
       # Extra hosts the page may fetch from, e.g. an online basemap (docs/basemap.md).
       CSP_CONNECT_EXTRA: ${CSP_CONNECT_EXTRA:-}
+      # The site's own address, e.g. https://map.example.org: other hosts redirect there (empty: none do).
+      APP_URL: ${APP_URL:-}
     # On this host's loopback only: a port Docker publishes bypasses ufw and
     # similar host firewalls, and web must be reached through the TLS proxy
     # (docs/operations.md). WEB_BIND=0.0.0.0 to reach it from other machines.

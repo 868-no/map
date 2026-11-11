@@ -223,6 +223,9 @@ services:
     environment:
       # Extra hosts the page may fetch from, e.g. an online basemap (docs/basemap.md).
       CSP_CONNECT_EXTRA: ${CSP_CONNECT_EXTRA:-}
+      # The site's own address, e.g. https://map.868.no: requests for any other
+      # host (an old domain) are redirected there (empty: none are; D-211).
+      APP_URL: ${APP_URL:-}
     # The reverse proxy's upstream, on this host's loopback only: a port
     # Docker publishes bypasses ufw and similar host firewalls, and web must
     # be reached only through the proxy (docs/operations.md). A proxy on

@@ -32,7 +32,7 @@ jobs:
           sparse-checkout-cone-mode: false
       - name: check production and open, update or close the alert issue
         env:
-          SITE: ${{ vars.PRODUCTION_URL || 'https://beta-map.868.no' }}
+          SITE: ${{ vars.PRODUCTION_URL || 'https://map.868.no' }}
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           LABEL: production-alert

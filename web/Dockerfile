@@ -68,6 +68,8 @@ FROM caddy:2.10.2-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac523
 # No RUN in this stage: every image builds without emulating its platform.
 COPY --from=fonts /dirs/ /
 COPY web/Caddyfile /etc/caddy/Caddyfile
+# Checks APP_URL (the canonical address, optional) before Caddy starts.
+COPY --chmod=0755 web/entrypoint.sh /usr/local/bin/web-entrypoint
 COPY --from=app /src/frontend/dist /srv/app
 COPY --from=app /src/version /srv/version
 COPY --from=fonts /out /srv/fonts
@@ -81,3 +83,6 @@ COPY web/styles /srv/styles
 # (/srv/tiles, /etc/caddy/auth) must be readable by this user.
 USER 65532:65532
 EXPOSE 80
+ENTRYPOINT ["web-entrypoint"]
+# The base image's command (an ENTRYPOINT resets an inherited CMD).
+CMD ["caddy", "run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]

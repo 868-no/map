@@ -24,6 +24,19 @@
 		-Server
 	}
 
+	# The canonical address (D-211): with APP_URL set (checked and given
+	# APP_HOST by web/entrypoint.sh), a request for any other host, such as
+	# an old or alternative domain, is redirected there with its path and
+	# query, 308 so a POST stays a POST. Health and the version stay
+	# answered on any host: the deploy job, the monitor and probes ask by
+	# other names and do not follow redirects. The TLS proxy in front must
+	# pass the visitor's Host header, or every request would be redirected.
+	@elsewhere {
+		expression `"{$APP_HOST:}" != "" && {http.request.hostport} != "{$APP_HOST:}"`
+		not path /health/* /version.txt
+	}
+	redir @elsewhere {$APP_URL:}{uri} 308
+
 	# Optional access control: mount files at /etc/caddy/auth/*.caddy
 	# (see docs/operations.md). Nothing is imported when none exist.
 	import /etc/caddy/auth/*.caddy

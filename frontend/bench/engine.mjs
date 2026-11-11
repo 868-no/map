@@ -2,7 +2,7 @@
 // WebAssembly engine as the worker does (20 000-row pages) and time each
 // view. Needs a built engine (scripts/wasm.sh build) and row files:
 // scripts/bench.sh saves synthetic ones to .bench/rows-<h>h.json, and
-//   node bench/engine.mjs --fetch https://beta-map.868.no 168 .bench/rows-prod-168h.json
+//   node bench/engine.mjs --fetch https://map.868.no 168 .bench/rows-prod-168h.json
 // saves a real mesh's last 168 h. Then:
 //   node bench/engine.mjs .bench/rows-72h.json .bench/rows-168h.json
 import { readFileSync, writeFileSync } from 'node:fs'

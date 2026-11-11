@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Check a deployment's /health/ready for the production monitor (design §8, D-207).
 
-    scripts/check-production.py [https://beta-map.868.no]
+    scripts/check-production.py [https://map.868.no]
 
 Prints one line per problem and exits 1 if there are any, 0 if none. A problem
 must be seen twice, RECHECK_S apart (default 120), so a deploy's restart does
@@ -86,7 +86,7 @@ def problems(site):
 
 
 def main():
-    site = (sys.argv[1] if len(sys.argv) > 1 else os.environ.get("SITE") or "https://beta-map.868.no").rstrip("/")
+    site = (sys.argv[1] if len(sys.argv) > 1 else os.environ.get("SITE") or "https://map.868.no").rstrip("/")
     first = problems(site)
     if first:
         time.sleep(env_int("RECHECK_S", 120))

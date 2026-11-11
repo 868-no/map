@@ -252,7 +252,7 @@ jobs:
       # the repository variable PRODUCTION_URL; `none` skips this check.
       - name: wait for production to serve this commit
         env:
-          SITE: ${{ vars.PRODUCTION_URL || 'https://beta-map.868.no' }}
+          SITE: ${{ vars.PRODUCTION_URL || 'https://map.868.no' }}
           SHA: ${{ github.sha }}
         run: |
           if [ "$SITE" = none ]; then echo "PRODUCTION_URL is none: not checked"; exit 0; fi

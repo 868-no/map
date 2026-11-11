@@ -276,6 +276,7 @@ services:
       API_UPSTREAM: backend:8000
       FETCH_UPSTREAM: ingest:8000
       CSP_CONNECT_EXTRA: ${CSP_CONNECT_EXTRA:-} # e.g. an online basemap's host (docs/basemap.md)
+      APP_URL: ${APP_URL:-} # the site's own address: other hosts redirect there (empty: none do; D-211)
     # The reverse proxy's upstream (Swarm ingress: any node). An ingress port
     # cannot be bound to loopback and bypasses ufw and similar host
     # firewalls: firewall it in DOCKER-USER, or better use the overlay
