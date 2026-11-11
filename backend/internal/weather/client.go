@@ -18,7 +18,8 @@ import (
 )
 
 // DefaultBaseURL is MET Norway's OPeNDAP root, holding the MET Nordic
-// analysis archive (metpparchive) and MEPS runs (meps25epsarchive).
+// analysis archive (metpparchive) with its last three days (metpplatest),
+// and MEPS runs (meps25epsarchive).
 const DefaultBaseURL = "https://thredds.met.no/thredds/dodsC"
 
 // Attribution is what MET Norway's licence (CC BY 4.0) asks for.
@@ -52,6 +53,10 @@ const (
 	defaultInterval = 100 * time.Millisecond
 	maxRuns         = 50_000 // cached MEPS runs (gusts per cell)
 	defaultBackoff  = 30 * time.Second
+	// metpplatest keeps the last 72 analysis hours; hours younger than this
+	// are looked for there when the archive lacks them (it is sometimes down
+	// for days while metpplatest stays up).
+	latestFor = 66 * time.Hour
 )
 
 // SettledAfter is how long after an hour the hour may still change: past
@@ -387,8 +392,9 @@ func round2(v float64) *float64 {
 	return &v
 }
 
-// fetch reads one hour at one analysis cell, and its gust from MEPS; missing
-// is true when the analysis has no file for that hour, gustFailed when the
+// fetch reads one hour at one analysis cell, from the archive or, for a
+// recent hour it lacks, metpplatest, and its gust from MEPS; missing is true
+// when neither has a file for that hour, gustFailed when the
 // gust request failed (rather than no run having the hour).
 func (c *Client) fetch(ctx context.Context, cell Cell, t time.Time) (h Hour, missing, gustFailed bool, wait time.Duration, err error) {
 	at := index(0, cell.Y, cell.X)
@@ -398,8 +404,18 @@ func (c *Client) fetch(ctx context.Context, cell Cell, t time.Time) (h Hour, mis
 	for i, v := range vars {
 		q[i] = v + at
 	}
-	vals, missing, wait, err := c.get(ctx, fmt.Sprintf("%s/metpparchive/%s/met_analysis_1_0km_nordic_%s.nc.ascii?%s",
-		c.BaseURL, t.Format("2006/01/02"), t.Format("20060102T15Z"), strings.Join(q, ",")))
+	url := func(dir string) string {
+		return fmt.Sprintf("%s/%s/met_analysis_1_0km_nordic_%s.nc.ascii?%s", c.BaseURL, dir, t.Format("20060102T15Z"), strings.Join(q, ","))
+	}
+	vals, missing, wait, err := c.get(ctx, url("metpparchive/"+t.Format("2006/01/02")))
+	if err == nil && missing && c.now().Sub(t) < latestFor {
+		select {
+		case <-time.After(c.Interval):
+		case <-ctx.Done():
+			return Hour{T: t}, false, false, 0, ctx.Err()
+		}
+		vals, missing, wait, err = c.get(ctx, url("metpplatest"))
+	}
 	if err != nil || missing {
 		return Hour{T: t}, missing, false, wait, err
 	}

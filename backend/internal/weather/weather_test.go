@@ -351,6 +351,45 @@ func TestVisitorsTakeTurns(t *testing.T) {
 }
 
 // A failed gust request keeps the analysis hour, without its gust.
+// While the archive is down (404 for every file), recent hours come from
+// metpplatest; older ones, which it no longer has, are not asked there.
+func TestLatestWhenArchiveLacksHour(t *testing.T) {
+	var latest sync.Map // paths asked of metpplatest
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasPrefix(r.URL.Path, "/metpplatest/met_analysis_1_0km_nordic_"):
+			latest.Store(r.URL.Path, true)
+			fmt.Fprint(w, sample)
+		default: // the archive and MEPS: down
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	now := time.Date(2026, 11, 11, 12, 30, 0, 0, time.UTC)
+	c := New(srv.URL, "test")
+	c.Now, c.Interval = func() time.Time { return now }, time.Millisecond
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go c.Run(ctx)
+	cell := Cell{662, 1159}
+	hs := fill(t, c, cell, now.Add(-6*time.Hour), now.Add(-4*time.Hour))
+	if len(hs) != 2 || hs[0].TempC == nil || *hs[0].TempC != 4.25 {
+		t.Fatalf("recent hours: %+v", hs)
+	}
+	if _, ok := latest.Load("/metpplatest/met_analysis_1_0km_nordic_20261111T07Z.nc.ascii"); !ok {
+		t.Fatal("07Z not asked of metpplatest")
+	}
+	if hs := fill(t, c, cell, now.Add(-80*time.Hour), now.Add(-78*time.Hour)); len(hs) != 0 {
+		t.Fatalf("old hours: %+v", hs)
+	}
+	latest.Range(func(k, _ any) bool {
+		if !strings.Contains(k.(string), "20261111T") {
+			t.Errorf("old hour asked of metpplatest: %s", k)
+		}
+		return true
+	})
+}
+
 func TestGustFailureKeepsHour(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(r.URL.Path, "/meps25epsarchive/") {
