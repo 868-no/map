@@ -31,7 +31,7 @@
     <main>
       <p><a href="/">← Back to the map</a></p>
       <h1>Privacy policy</h1>
-      <p class="muted">868.no Map · last updated 8 November 2026</p>
+      <p class="muted">868.no Map · last updated 11 November 2026</p>
 
       <p>
         <span data-show="operator" hidden>This site is run by <span data-fill="operator"></span>, who is responsible for the processing described here.</span>
@@ -59,7 +59,7 @@
         <strong>On your device.</strong> The map stores, in your browser only:
       </p>
       <ul>
-        <li>your display settings (map layers, theme and interface size), where you left the map (its centre and zoom), the width of the side panel and of the packet log's columns, and the nodes you watch (and whether you asked to be notified about them), in local storage;</li>
+        <li>your display settings (map layers, theme, interface size, whether north stays up and how many nodes to show), where you left the map (its centre and zoom), the width of the side panel and of the packet log's columns, and the nodes you watch (and whether you asked to be notified about them), in local storage;</li>
         <li>a copy of the mesh data it has downloaded, in IndexedDB, so it loads faster and works offline;</li>
         <li>the app's own files, in the service worker cache.</li>
       </ul>
@@ -118,7 +118,7 @@
         <strong>Who can see it.</strong> The map and its API are public. Everything above, except stored packets, can be viewed by anyone visiting the site, for any time window within the retention period, along with daily, weekly and monthly totals (nodes, gateways, packets) over the whole retention period, for the whole mesh and for each node (hours heard, packets, how many gateways heard them, hours as a gateway, lowest battery level).
       </p>
       <p>
-        <strong>How long it is kept.</strong> Packets older than <span data-fill="retention-short">the retention period (six months by default)</span> are deleted automatically every day.
+        <strong>How long it is kept.</strong> Packets older than <span data-fill="retention-short">the retention period (six months by default)</span> are deleted automatically every day. Where the operator runs the nightly database backups of the published production setup, a deleted packet stays in those backups for up to a week (seven days by default) until they are deleted in turn; the same goes for data deleted on request.
       </p>
 
       <h2>Legal basis and your rights</h2>

@@ -52,11 +52,12 @@
 
       <div class="summary">
         <ul>
-          <li>Base address: <code data-fill="base">/api/v1</code>. No keys or accounts; every endpoint is a plain HTTP <code>GET</code> but one <code>POST</code>, answered in JSON.</li>
+          <li>Base address: <code data-fill="base">/api/v1</code>. No keys or accounts; every endpoint is a plain HTTP <code>GET</code> but one <code>POST</code>, answered in JSON (the live stream as server-sent events carrying JSON).</li>
           <li>Times are RFC 3339 in UTC. A time window is half-open, <code>[start, end)</code>, given as <code>start</code> and <code>end</code>, or as a rolling <code>duration</code> ending now.</li>
           <li>Errors are <a href="https://www.rfc-editor.org/rfc/rfc9457" rel="noreferrer">problem details</a> (<code>application/problem+json</code>) with a status and a short reason. 429 means slow down; 503 means the server is busy, so ask again shortly.</li>
           <li>Requests are rate limited per client (an IPv4 address or an IPv6 /64), by default to 20 a second with bursts of 60.</li>
-          <li>The data is what Meshtastic radios broadcast publicly and what reached the MQTT brokers this site listens to. Message contents are never stored or served.</li>
+          <li>Where a site has a main address, requests to its other addresses (an old domain) are redirected there with <code>308 Permanent Redirect</code>, method kept: follow redirects, or use the main address.</li>
+          <li>The data is what Meshtastic radios broadcast publicly and what reached the MQTT brokers this site listens to. Message contents are never decoded for display or served (see the <a href="/privacy.html">privacy policy</a>).</li>
           <li>Machine-readable description: <a href="/api/openapi.json">OpenAPI 3.1, JSON</a> or <a href="/api/openapi.yaml">YAML</a>. This page is built from it, so it always matches the running server.</li>
         </ul>
       </div>

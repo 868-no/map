@@ -25,7 +25,8 @@ An interactive map, in light and dark themes, for observing Meshtastic mesh netw
 - **Crypto:** AES-CTR and firmware 2.8.1+ AES-CCM channels, firmware-compatible XEdDSA verification with trust-on-first-use, and per-packet status (`verified`, `unsigned`, `unverifiable`, `not-applicable`). Verified against real firmware 2.8 traffic.
 - **Tool rail and themes:** every control sits on a floating, resizable tool rail panel (Nodes, Details, Health, Regions, Trends, Period, Filters, Layers, Legend, Settings) beside a header island with the live indicator and counters (D-066, D-082, D-097). The map remembers where you left it. The theme follows the browser by default (Auto); viewers can pick Light or Dark under Settings, and scale the header, rail and panels from 85 % to 150 % (the map keeps its size).
 - **Privacy:** no accounts, cookies, analytics or third-party requests (unless an online basemap is configured); a [privacy policy](frontend/public/privacy.html) at `/privacy.html` fills in the deployment's operator, contact and retention from the API.
-- **Installable and offline-capable:** add it to a phone's home screen; without a connection it opens with the last data it received (map tiles are not stored offline).
+- **Marker clusters:** below zoom 10, markers that overlap become one disc with their count, drawn at the most prominent member's real position; the selected node, watched nodes and search results always stand alone, and a click zooms in (D-204).
+- **Installable and offline-capable:** install it from Settings (where the browser offers it) or add it to a phone's home screen; without a connection it opens with the last data it received (map tiles are not stored offline).
 - **Self-hosted:** Docker Compose, a self-hosted PMTiles basemap with switchable layers (roads, borders and city and country names on by default; local place names, peaks, road names and water names off) and an optional regions layer that splits Norway into Nord-Norge, Trøndelag, Vestlandet, Østlandet and Sørlandet. The only outside services it uses at runtime are the basemap service's OpenStreetMap downloads when it builds and, unless turned off, MET Norway's weather archive (`thredds.met.no`, `WEATHER_ENABLED`) and Kartverket's terrain heights (Geonorge, `TERRAIN_ENABLED`), which the backend queries, and Kartverket's place-name register (`PLACES_ENABLED`), which the maintenance service downloads from Geonorge monthly so searches stay on the server.
 
 ## Quick start (demo)
@@ -103,7 +104,7 @@ Every view is built in the browser, by a WebAssembly engine (`frontend/engine`, 
 
 ## Operations
 
-Health at `/health/ready`, metrics at `backend:9100/metrics`. Retention runs daily (6 calendar months by default). The production stacks dump the database nightly (a `backup` service) and a scheduled workflow alerts through GitHub issues when production is unwell; with plain `compose.yaml`, schedule `pg_dump` yourself. Redis is disposable. See [docs/operations.md](docs/operations.md) for deployment behind HTTPS, access control, data-loss windows, importing history from Meshstellar, troubleshooting and the production security checklist.
+Health at `/health/ready`, metrics at `backend:9100/metrics`. Retention runs daily (6 calendar months by default). The production stacks hold MQTT traffic across backend restarts in a Mosquitto buffer (`mqtt-buffer`), dump the database nightly (a `backup` service), and a scheduled workflow alerts through GitHub issues when production is unwell; with plain `compose.yaml`, schedule `pg_dump` yourself. `APP_URL` on the `web` service redirects every other host (an old domain) to the site's own address. Redis is disposable. See [docs/operations.md](docs/operations.md) for deployment behind HTTPS, access control, data-loss windows, importing history from Meshstellar, troubleshooting and the production security checklist.
 
 ## Documentation
 
@@ -116,11 +117,12 @@ Health at `/health/ready`, metrics at `backend:9100/metrics`. Retention runs dai
 | [docs/basemap.md](docs/basemap.md) | Basemap build, style, glyphs, licences |
 | [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) | Licenses of dependencies, fonts and map data |
 | [docs/benchmarks.md](docs/benchmarks.md) | Reference-workload results |
-| [docs/api-openapi.yaml](docs/api-openapi.yaml) | OpenAPI 3.1, generated from the serving code (also at `/api/openapi.yaml`) |
+| [docs/api-openapi.yaml](docs/api-openapi.yaml) | OpenAPI 3.1, generated from the serving code (also at `/api/openapi.yaml`, and readable at `/api-docs.html`) |
+| [frontend/promo/README.md](frontend/promo/README.md) | The promo video's recorder: how it drives the app and how to record again |
 
 ## Limitations
 
-- The map shows what this service received over MQTT while it was running. It is not a complete history; gaps occur while brokers or the service are down.
+- The map shows what this service received over MQTT while it was running. It is not a complete history; gaps occur while brokers or the service are down (the production stacks' MQTT buffer covers the backend's restarts, but not the buffer's own).
 - Timestamps are receive times (`observed_at`), not RF transmission times.
 - Trust in node keys is trust-on-first-use; it lapses when a key's announcement ages out of retention.
 - AES-CTR decryption proves nothing about integrity. Unsigned and unverifiable packets are labelled, not authenticated.

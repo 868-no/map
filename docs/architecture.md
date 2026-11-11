@@ -28,7 +28,7 @@ This page shows the components and where the code lives. The rules the system fo
                 │                               │
         PostgreSQL 16                     Redis 7 (ephemeral)
         packet_log (mesh data,            dedupe keys, live pub/sub,
-        monthly partitions)               maintenance status,
+        monthly partitions)               maintenance and backup status,
         weather_hour (weather, D-133)     cached days (D-158)
         terrain_height (terrain, D-143)
         place_name, place_key (D-193)
@@ -47,10 +47,13 @@ This page shows the components and where the code lives. The rules the system fo
 │    split upstreams in a scaled stack, D-157)  │
 │  /tiles       self-hosted PMTiles (ranges)    │
 │  /fonts, /styles  glyphs, dark + light styles │
+│  other hosts → APP_URL (308, optional, D-211) │
 └───────────────────────────────────────────────┘
 ```
 
 Compose network: only `web` publishes a port, on the host's loopback by default (`WEB_BIND`). `backend:9100` serves Prometheus metrics inside the network. The `basemap` service builds `basemap.pmtiles` into the volume `web` serves `/tiles` from ([basemap.md](basemap.md)). The `demo` profile adds `mosquitto` (compose network only) and `demo-publisher`.
+
+The production stacks (`deploy/compose.production.yaml`, `deploy/stack.swarm.yaml`) add two services. `mqtt-buffer` is a Mosquitto bridged to the real broker: the backend subscribes to it with a persistent session, so traffic that arrives while the backend restarts for a deploy is held and delivered when it reconnects (D-205). `backup` dumps the database nightly into the `backups` volume and reports its status through Redis to `/health/ready` (D-206). `.github/workflows/monitor.yml` checks `/health/ready` every 15 minutes and opens an issue when production is unwell (D-207).
 
 Scaled out (`deploy/stack.swarm.yaml`, D-157), the one process above becomes two services: `ingest` (`meshmap serve`, exactly one: MQTT ingest, the weather and terrain fetching and warming, broker health) and `backend` (`meshmap serve --no-ingest`, several replicas: the API, weather and terrain off, live rows over Redis pub/sub). `web` sends `/api/v1/weather`, `/api/v1/terrain*`, `/api/v1/capabilities` and `/health/*` to `FETCH_UPSTREAM` and the rest of `/api/*` to `API_UPSTREAM`; both default to `backend:8000`. See [operations.md](operations.md#scaling-horizontally-swarm).
 
@@ -111,24 +114,31 @@ backend/
   internal/testutil       fixture builders shared by tests and the demo simulator (keys, independent of the code under test)
   test/integration        Postgres/Redis/Mosquitto integration tests
   test/fixtures           real MQTT captures (public RF traffic) replayed by unit tests
-frontend/                 React + MapLibre GL 5 + deck.gl 9 (Vite); e2e/ Playwright
+frontend/                 React + MapLibre GL 6 + deck.gl 9 (Vite); e2e/ Playwright
   engine/                 Rust → WebAssembly: row store, links, location estimates, traffic,
                           node details, packet logs and routes, ping attribution (D-040), region summaries
-                          with the nodes by role, hardware, preset and firmware (D-194, D-196)
+                          with the nodes by role, hardware, preset and firmware (D-194, D-196);
+                          health rules, one module each (health/); the TypeScript view types
+                          generated from its structs (view_types.rs, D-202)
   src/derive/             Web Worker: sync and coverage, IndexedDB chunks and deltas, drives the engine;
-                          view types (views.ts)
+                          view types (views.gen.ts, generated from the engine; views.ts builds on it)
   src/state/              store, window queries, live stream (live.ts), watchlist, weather and terrain fetches
-  src/map/                MapLibre map, deck.gl mesh and ping layers, basemap styles, regions layer, camera
+  src/map/                MapLibre map, deck.gl mesh and ping layers, marker clusters (D-204), basemap styles,
+                          regions layer, camera
   src/features/           tool rail panels: nodes, node details (node/), links, health, regions, trends, menu
   src/components/         shared charts (time, bar, cross section), node icons, column resizing
   src/timeline/           the period: live indicator and Period panel
   src/api/                API client and types generated from docs/api-openapi.yaml (schema.d.ts)
   src/lib/                small helpers: polling, server clock, sun position, time formatting
   sw/                     service worker (offline app shell and last-known data)
-web/                      Caddyfile, dark and light OpenMapTiles styles, image build (fonts)
+  promo/                  the promo video's recorder: Playwright takes against production (README.md)
+web/                      Caddyfile, dark and light OpenMapTiles styles, image build (fonts),
+                          entrypoint (checks APP_URL, the address other hosts redirect to)
 basemap/                  basemap service image: Planetiler + run.sh (builds and refreshes basemap.pmtiles)
-deploy/                   compose.production.yaml, stack.swarm.yaml (split for Swarm), Mosquitto config for the demo, caddy-auth snippets,
+deploy/                   compose.production.yaml, stack.swarm.yaml (split for Swarm; both with mqtt-buffer and backup),
+                          Mosquitto config for the demo, caddy-auth snippets,
                           runners/ (self-hosted CI runners)
 scripts/                  go.sh, node.sh, wasm.sh, integration.sh, bench.sh, basemap_import.sh, regions.sh/regions.js,
-                          outdated.sh (lists newer dependency releases)
+                          outdated.sh (lists newer dependency releases), check-versions.sh (pinned versions agree),
+                          check-production.py (the production monitor's checks)
 ```
