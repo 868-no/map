@@ -14,6 +14,7 @@ import { TrendsPanel } from './features/trends'
 import { RegionsPanel } from './features/regions'
 import { useCapabilities, useHealth, useRetention, useSnapshot, useWatched } from './state/data'
 import { useWatch, useWatchAlerts } from './state/watch'
+import { useKonami } from './state/beta'
 import { useTerrainClasses } from './state/terrain'
 import type { Counts } from './derive/views'
 import { useLiveStream } from './state/live'
@@ -34,6 +35,8 @@ export default function App() {
   const region = useStore((s) => s.region)
   const { online, servedOffline, canInstall, install } = usePwa()
   const [notice, setNotice] = useState<string | null>(null)
+  // Beta mode (D-215): the Konami code turns early features on or off.
+  useKonami(useCallback((on: boolean) => setNotice(on ? 'Beta mode on: early features are shown. Enter the code again to turn it off.' : 'Beta mode off.'), []))
   const geo = useRef<Map<string, [number, number]>>(new Map())
   const theme = useTheme()
   useEffect(() => applyTheme(theme), [theme])

@@ -229,7 +229,7 @@ button.banner { color: var(--text); text-align: left; border-color: var(--line);
 .detail-tabs button:focus-visible { outline: 2px solid var(--accent); outline-offset: -3px; }
 .node-title { display: flex; align-items: baseline; gap: 0.625rem; }
 .node-title h2 { flex: 1; min-width: 0; overflow-wrap: anywhere; padding-right: 0; }
-.node-title .share-link, .node-title .import-link { flex: none; font-size: 0.8125rem; }
+.node-title .share-link, .node-title .import-link, .node-title .coverage-link { flex: none; font-size: 0.8125rem; }
 
 /* A node as a Meshtastic contact (D-213): a QR code and its link. */
 .contact-dialog { width: min(22rem, calc(100vw - 2rem)); padding: 0; border: 1px solid var(--line); border-radius: 0.75rem; background: var(--panel); color: var(--text); box-shadow: 0 0.5rem 2rem var(--shadow); }

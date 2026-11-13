@@ -47,3 +47,21 @@ test.describe('on an Android phone', () => {
       .toHaveAttribute('href', `intent://meshtastic.org/v/#${URL.split('#')[1]}#Intent;scheme=https;package=com.geeksville.mesh;end`)
   })
 })
+
+// In beta mode, a node with a precise enough position links to a LinkSim coverage simulation (D-214, D-215).
+test('Coverage opens LinkSim at the node', async ({ page }) => {
+  await mockObservations(page, nodeRows(KEYED, 'KEYED', { lat: 59.91, lon: 10.75, keyId: KEYED }))
+  await page.goto('/?node=!34000001')
+  await expect(page.locator('.node-panel h2')).toHaveText('KEYED long', { timeout: 30_000 })
+  // Hidden until beta mode is on (D-215): the Konami code, typed on the page.
+  const link = page.getByRole('link', { name: /Coverage/ })
+  await expect(link).toHaveCount(0)
+  for (const k of ['ArrowUp', 'ArrowUp', 'ArrowDown', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ArrowLeft', 'ArrowRight', 'b', 'a']) await page.keyboard.press(k)
+  await expect(page.getByRole('button', { name: /Beta mode on/ })).toBeVisible()
+  await expect(link).toHaveAttribute('target', '_blank')
+  const u = new URL((await link.getAttribute('href'))!)
+  expect(u.hostname).toMatch(/linksim\.link$/)
+  expect(u.searchParams.get('site')).toBe('1')
+  expect(u.searchParams.get('lat')).toBe('59.91000')
+  expect(u.searchParams.get('name')).toBe('KEYED long')
+})

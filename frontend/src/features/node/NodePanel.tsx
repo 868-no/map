@@ -14,6 +14,7 @@ import { LinksTab } from './Links'
 import { RadioTab } from './Radio'
 import { PacketsTab } from './Packets'
 import { ImportNode } from './Contact'
+import { CoverageLink } from './Coverage'
 
 export function NodePanel({ id, snapshot }: { id: string; snapshot: SnapshotView | undefined }) {
   const { data, isLoading, error } = useNodeDetail(id)
@@ -32,6 +33,7 @@ export function NodePanel({ id, snapshot }: { id: string; snapshot: SnapshotView
         <WatchButton id={d.id} />
         <ShareNode id={d.id} name={d.identity?.long_name || d.id} />
         {d.identity?.has_public_key && !d.mqtt_opt_out && <ImportNode id={d.id} name={d.identity.long_name || d.id} />}
+        <CoverageLink d={d} />
       </div>
       <p className="muted node-id">{d.id} · #{d.num}</p>
       <p className="node-tags">
