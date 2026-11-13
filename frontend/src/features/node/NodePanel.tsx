@@ -28,13 +28,14 @@ export function NodePanel({ id, snapshot }: { id: string; snapshot: SnapshotView
   const d = data
   return (
     <div className="panel node-panel">
-      <div className="node-title">
-        <h2>{d.identity?.long_name || d.id}</h2>
+      {/* Stacked down the right, beside the name, id and tags (floated: they wrap around it). */}
+      <div className="node-actions">
         <WatchButton id={d.id} />
         <ShareNode id={d.id} name={d.identity?.long_name || d.id} />
         {d.identity?.has_public_key && !d.mqtt_opt_out && <ImportNode id={d.id} name={d.identity.long_name || d.id} />}
         <CoverageLink d={d} />
       </div>
+      <h2 className="node-name">{d.identity?.long_name || d.id}</h2>
       <p className="muted node-id">{d.id} · #{d.num}</p>
       <p className="node-tags">
         {isOnline(d, now)
