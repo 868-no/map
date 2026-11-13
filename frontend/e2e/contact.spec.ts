@@ -59,7 +59,7 @@ test('Coverage opens LinkSim at the node', async ({ page }) => {
   for (const k of ['ArrowUp', 'ArrowUp', 'ArrowDown', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ArrowLeft', 'ArrowRight', 'b', 'a']) await page.keyboard.press(k)
   await expect(page.getByRole('button', { name: /Beta mode on/ })).toBeVisible()
   await expect(link).toHaveAttribute('target', '_blank')
-  const u = new URL((await link.getAttribute('href'))!)
+  const u = new globalThis.URL((await link.getAttribute('href'))!) // URL above is the contact link
   expect(u.hostname).toMatch(/linksim\.link$/)
   expect(u.searchParams.get('site')).toBe('1')
   expect(u.searchParams.get('lat')).toBe('59.91000')
