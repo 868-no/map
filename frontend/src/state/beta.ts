@@ -20,7 +20,8 @@ interface Beta {
   toggle: () => boolean
 }
 
-export const useBeta = create<Beta>((set, get) => ({
+// Export it again for the next beta feature to read `on` (D-215).
+const useBeta = create<Beta>((set, get) => ({
   on: load(),
   toggle: () => {
     const on = !get().on

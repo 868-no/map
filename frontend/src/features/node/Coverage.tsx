@@ -1,13 +1,12 @@
 import type { NodeView } from '../../derive/views'
 import { precisionErrorM } from '../../map/model'
 import { nodeLink } from '../../state/store'
-import { useBeta } from '../../state/beta'
 
 /**
  * LinkSim's site-URL contract (D-214): docs/site-url.md in
- * github.com/wilhel1812/LinkSim. Staging until it reaches production.
+ * github.com/wilhel1812/LinkSim.
  */
-export const LINKSIM = 'https://staging.linksim.link/'
+export const LINKSIM = 'https://linksim.link/'
 
 /**
  * Coarser positions put the simulated site too far from the node to be
@@ -39,10 +38,8 @@ export function coverageLink(d: NodeView, origin = window.location.origin): stri
   return `${LINKSIM}?${q}`
 }
 
-/** Only in beta mode (D-215). */
 export function CoverageLink({ d }: { d: NodeView }) {
-  const beta = useBeta((s) => s.on)
-  const href = beta ? coverageLink(d) : undefined
+  const href = coverageLink(d)
   if (!href) return null
   return (
     <a className="coverage-link" href={href} target="_blank" rel="noopener noreferrer"

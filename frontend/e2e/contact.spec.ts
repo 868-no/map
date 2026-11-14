@@ -48,20 +48,28 @@ test.describe('on an Android phone', () => {
   })
 })
 
-// In beta mode, a node with a precise enough position links to a LinkSim coverage simulation (D-214, D-215).
+// A node with a precise enough position links to a LinkSim coverage simulation (D-214).
 test('Coverage opens LinkSim at the node', async ({ page }) => {
   await mockObservations(page, nodeRows(KEYED, 'KEYED', { lat: 59.91, lon: 10.75, keyId: KEYED }))
   await page.goto('/?node=!34000001')
   await expect(page.locator('.node-panel h2')).toHaveText('KEYED long', { timeout: 30_000 })
-  // Hidden until beta mode is on (D-215): the Konami code, typed on the page.
   const link = page.getByRole('link', { name: /Coverage/ })
-  await expect(link).toHaveCount(0)
-  for (const k of ['ArrowUp', 'ArrowUp', 'ArrowDown', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ArrowLeft', 'ArrowRight', 'b', 'a']) await page.keyboard.press(k)
-  await expect(page.getByRole('button', { name: /Beta mode on/ })).toBeVisible()
   await expect(link).toHaveAttribute('target', '_blank')
   const u = new globalThis.URL((await link.getAttribute('href'))!) // URL above is the contact link
-  expect(u.hostname).toMatch(/linksim\.link$/)
+  expect(u.origin).toBe('https://linksim.link')
   expect(u.searchParams.get('site')).toBe('1')
   expect(u.searchParams.get('lat')).toBe('59.91000')
   expect(u.searchParams.get('name')).toBe('KEYED long')
+})
+
+// The Konami code turns beta mode on and off (D-215), with a notice each way.
+test('the Konami code toggles beta mode', async ({ page }) => {
+  await mockObservations(page, nodeRows(KEYED, 'KEYED', { lat: 59.91, lon: 10.75, keyId: KEYED }))
+  await page.goto('/?node=!34000001')
+  await expect(page.locator('.node-panel h2')).toHaveText('KEYED long', { timeout: 30_000 })
+  const code = ['ArrowUp', 'ArrowUp', 'ArrowDown', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ArrowLeft', 'ArrowRight', 'b', 'a']
+  for (const k of code) await page.keyboard.press(k)
+  await expect(page.getByRole('button', { name: /Beta mode on/ })).toBeVisible()
+  for (const k of code) await page.keyboard.press(k)
+  await expect(page.getByRole('button', { name: /Beta mode off/ })).toBeVisible()
 })
