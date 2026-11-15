@@ -470,15 +470,26 @@ pub fn packet_route(rows: &[&Row], ctx: &RelayContext, roles: &FxMap<u32, String
     };
     let leg = |t: &crate::row::Traceroute| if t.is_reply { "back" } else { "forward" };
     let mut add_seg: Vec<(u32, u32, bool, &'static str)> = vec![];
-    for r in rows {
-        let Some(gw) = r.gw.filter(|&g| g != origin) else { continue };
-        let over_radio = r.over_radio();
+    // Only a gateway's first radio copy of a packet reaches it; its later
+    // copies still show their relay and the way to it (D-220).
+    let mut heard: FxSet<(u64, u32)> = set();
+    let mut later = |r: &Row, gw: u32| !matches!(r.heard_from(), HeardFrom::NotRadio) && !heard.insert((r.lp, gw));
+    let mut rows = rows.to_vec();
+    rows.sort_by_key(|r| (r.t, r.id));
+    let mut replies = replies.to_vec();
+    replies.sort_by_key(|r| (r.t, r.id));
+    for r in &rows {
+        // Its own packets count only when echoed back to it (D-217).
+        let Some(gw) = r.gw.filter(|&g| g != origin || !matches!(r.heard_from(), HeardFrom::NotRadio)) else { continue };
+        let later = later(r, gw);
+        let over_radio = r.over_radio() && !later;
         if let Some(t) = r.traceroute().filter(|t| t.valid) {
             add_chain(traceroute_chain(r, t, gw, over_radio, ctx), leg(t));
             continue;
         }
         let (byte, downlinked) = match r.heard_from() {
             HeardFrom::NotRadio => continue, // not heard over radio
+            _ if later && matches!(r.heard_from(), HeardFrom::Direct | HeardFrom::Unknown) => continue,
             HeardFrom::Direct => {
                 add_seg.push((origin, gw, false, "direct"));
                 continue;
@@ -490,15 +501,20 @@ pub fn packet_route(rows: &[&Row], ctx: &RelayContext, roles: &FxMap<u32, String
         match byte.and_then(|b| ctx.resolve(b, origin, gw, r.rssi.map(f64::from))) {
             Some(Ok(relay)) if downlinked => {
                 // Taken from MQTT and transmitted with no hops left (D-087).
-                add_seg.push((relay, gw, false, "relay"));
+                if !later {
+                    add_seg.push((relay, gw, false, "relay"));
+                }
                 add_seg.push((origin, relay, true, "internet"));
             }
             Some(Ok(relay)) => {
-                add_seg.push((relay, gw, false, "relay"));
+                if !later {
+                    add_seg.push((relay, gw, false, "relay"));
+                }
                 // One hop spent, by a relay that cannot receive at zero cost: it heard the sender itself.
                 let direct = r.hops() == Some(1) && roles.get(&relay).is_some_and(|ro| !ro.is_empty() && !crate::roles::is_zero_cost(ro));
                 add_seg.push((origin, relay, !direct, if direct { "relay" } else { "gap" }));
             }
+            _ if later => {}
             _ if downlinked => add_seg.push((origin, gw, true, "internet")),
             _ => add_seg.push((origin, gw, true, "unknown_relay")),
         }
@@ -509,11 +525,11 @@ pub fn packet_route(rows: &[&Row], ctx: &RelayContext, roles: &FxMap<u32, String
     }
     // A request: the way there as its replies recorded it, and the way back
     // as their copies show it.
-    for reply in replies {
+    for reply in &replies {
         let Some(chain) = recorded_request(reply, ctx).filter(|(requester, _)| *requester == origin).map(|(_, c)| c) else { continue };
         add_chain(chain, "forward");
-        if let (Some(gw), Some(t)) = (reply.gw.filter(|&g| g != reply.src), reply.traceroute().filter(|t| t.valid)) {
-            let over_radio = reply.over_radio();
+        if let (Some(gw), Some(t)) = (reply.gw.filter(|&g| g != reply.src || !matches!(reply.heard_from(), HeardFrom::NotRadio)), reply.traceroute().filter(|t| t.valid)) {
+            let over_radio = reply.over_radio() && !later(reply, gw);
             add_chain(traceroute_chain(reply, t, gw, over_radio, ctx), "back");
         }
     }
@@ -914,6 +930,27 @@ mod tests {
         unheard_by(&mut t, GW);
         assert_eq!(pairs(&t), vec![(id(A), None)]);
         assert_eq!(gaps(&t), vec![]);
+    }
+
+    #[test]
+    fn a_route_draws_only_a_gateways_first_copy_into_it() {
+        // D-220: GW hears A, then C's rebroadcast: A -> GW and A -> C, not C -> GW.
+        let c = ctx(&[A, C, GW], &[]);
+        let r = roles(&[(C, "CLIENT")]);
+        let segs = |rows: &[&Row]| packet_route(rows, &c, &r, &[], &[]).segments.iter().map(|s| (s.a.clone(), s.b.clone(), s.dashed)).collect::<Vec<_>>();
+        let direct = Row { id: 1, t: 10, snr: Some(5.0), ..hops(row(A, GW), 0) };
+        let later = Row { id: 2, t: 20, snr: Some(1.0), ..relayed(row(A, GW), 0xcc, 1) };
+        assert_eq!(segs(&[&later, &direct]), vec![(id(A), id(GW), false), (id(A), id(C), false)]);
+        // A later copy with an unknown relay adds nothing.
+        let unknown = Row { id: 3, t: 30, snr: Some(1.0), ..relayed(row(A, GW), 0xee, 2) };
+        assert_eq!(segs(&[&direct, &unknown]), vec![(id(A), id(GW), false)]);
+        // A traceroute's later copy keeps its recorded route, not the hop into GW.
+        let t1 = Row { id: 1, t: 10, ..traceroute(hops(row(A, GW), 0), &[]) };
+        let t2 = Row { id: 2, t: 20, ..traceroute(relayed(row(A, GW), 0xcc, 1), &[Some(C)]) };
+        assert_eq!(segs(&[&t1, &t2]), vec![(id(A), id(GW), false), (id(A), id(C), false)]);
+        // Its own packet echoed back: C heard A and its rebroadcast reached A.
+        let echo = Row { snr: Some(3.0), ..relayed(row(A, A), 0xcc, 1) };
+        assert_eq!(segs(&[&row(A, A), &echo]), vec![(id(C), id(A), false), (id(A), id(C), false)]);
     }
 
     #[test]
