@@ -46,6 +46,8 @@
   --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70; --series-4: #c98500;
   --series-5: #d55181; --series-6: #008300; --series-7: #9085e9; --series-8: #e66767;
   --series-others: #6e7681; --series-unknown: #3d444d;
+  /* Precipitation's likely form on a link's SNR chart (D-216). */
+  --precip-rain: #b09cff; --precip-sleet: #3fb9a0; --precip-snow: #e6edf3;
   font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
   /* The UI scale (Settings): every size in this file is in rem, so this one
      value scales the header, rail, panels and banners, not the map. Hairline
@@ -93,6 +95,7 @@
   --series-1: #2a78d6; --series-2: #eb6834; --series-3: #1baf7a; --series-4: #eda100;
   --series-5: #e87ba4; --series-6: #008300; --series-7: #6250d6; --series-8: #e34948;
   --series-others: #8c959f; --series-unknown: #c6cdd5;
+  --precip-rain: #6e4fd8; --precip-sleet: #1a8a72; --precip-snow: #6e7781;
 }
 * { box-sizing: border-box; }
 html, body, #root { height: 100%; margin: 0; background: var(--bg); color: var(--text); }

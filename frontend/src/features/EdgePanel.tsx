@@ -5,7 +5,7 @@ import { useStore } from '../state/store'
 import { formatLocal } from '../lib/time'
 import { ChartGroup, TimeChart, type Band } from '../components/TimeChart'
 import { linkFloorSeries } from './noiseFloor'
-import { meanPoints, useWeather, weatherPoints, weatherSite } from '../state/weather'
+import { meanPoints, precipClasses, useWeather, weatherPoints, weatherSite } from '../state/weather'
 import { namesOf, shortNamesOf } from '../map/model'
 import { terrainEnd, useTerrainEnabled, useTerrainProfile } from '../state/terrain'
 import { CrossSection, LOS_LABEL, LOS_TITLE } from '../components/CrossSection'
@@ -118,7 +118,8 @@ function LinkHistoryCharts({ a, b, name, snapshot, start, end }: { a: string; b:
   const rain = useMemo((): (Band | undefined)[] => {
     const loaded = [w0, w1].filter((w) => w != null)
     return [loaded.length
-      ? { label: 'Precipitation', unit: 'mm', color: 'var(--purple)', kind: 'amount', decimals: 1, points: meanPoints(loaded.map((w) => weatherPoints(w.hours, 'precip_mm'))), note: rainNote }
+      ? { label: 'Precipitation', unit: 'mm', color: 'var(--series-others)', kind: 'amount', decimals: 1, points: meanPoints(loaded.map((w) => weatherPoints(w.hours, 'precip_mm'))), note: rainNote,
+          classes: precipClasses(meanPoints(loaded.map((w) => weatherPoints(w.hours, 'temp_c')))) }
       : undefined]
   }, [w0, w1, rainNote])
   const rainLoading = ends.length > 0 && !rain[0]?.points.length && weather.some((w) => w.isLoading || w.data?.incomplete)

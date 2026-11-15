@@ -7,6 +7,7 @@ import type { MeshNode } from '../derive/views'
 import { isInfraRole } from '../map/model'
 import { useCapabilities } from './data'
 import { pollIncomplete } from '../lib/poll'
+import type { BandClass } from '../components/TimeChart'
 
 const HOUR = 3_600_000
 
@@ -62,4 +63,18 @@ export function meanPoints(series: [number, number][][]): [number, number][] {
     sum.set(t, [a[0] + v, a[1] + 1])
   }
   return [...sum].sort((a, b) => a[0] - b[0]).map(([t, [v, n]]) => [t, v / n])
+}
+
+/**
+ * Precipitation's likely form from the air temperature in the same hour
+ * (D-216): the analysis gives the amount only. Bars of hours without a
+ * temperature keep the band's grey.
+ */
+export function precipClasses(temps: [number, number][]): BandClass[] {
+  const of = (keep: (c: number) => boolean) => new Set(temps.filter(([, c]) => keep(c)).map(([t]) => t))
+  return [
+    { label: 'Rain', hint: '> 2 °C', color: 'var(--precip-rain)', times: of((c) => c > 2) },
+    { label: 'Sleet', hint: '0–2 °C', color: 'var(--precip-sleet)', times: of((c) => c > 0 && c <= 2) },
+    { label: 'Snow', hint: '≤ 0 °C', color: 'var(--precip-snow)', times: of((c) => c <= 0) },
+  ]
 }

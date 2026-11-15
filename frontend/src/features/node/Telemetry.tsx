@@ -2,7 +2,7 @@ import { useMemo } from 'react'
 import type { NodeView, SnapshotView } from '../../derive/views'
 import { formatLocal } from '../../lib/time'
 import { ChartGroup, TimeChart, type Band, type Series } from '../../components/TimeChart'
-import { useWeather, weatherPoints, weatherSite } from '../../state/weather'
+import { precipClasses, useWeather, weatherPoints, weatherSite } from '../../state/weather'
 import { nights as nightsAt } from '../../lib/sun'
 import { NR, fmt } from './shared'
 
@@ -43,7 +43,9 @@ export function TelemetryTab({ d, snapshot, now }: { d: NodeView; snapshot: Snap
     const at = (s: { at: string }) => Date.parse(s.at)
     return {
       temp: [band({ label: 'Weather', unit: '°C', color: 'var(--orange)', kind: 'level' }, 'temp_c', 'Air temperature')],
-      humidity: [band({ label: 'Weather', unit: '%', color: 'var(--orange)', kind: 'level', decimals: 0 }, 'humidity_pct', 'Relative humidity')],
+      // Precipitation as bars by its likely form (D-216), as on a link's SNR chart.
+      humidity: [band({ label: 'Weather', unit: '%', color: 'var(--orange)', kind: 'level', decimals: 0 }, 'humidity_pct', 'Relative humidity and precipitation per hour'),
+        band({ label: 'Precipitation', unit: 'mm', color: 'var(--series-others)', kind: 'amount', decimals: 1, classes: precipClasses(weatherPoints(w?.hours, 'temp_c')) }, 'precip_mm')],
       sky: [band({ label: 'Cloud cover', unit: '%', color: 'var(--muted)', kind: 'share', domain: [0, 100], decimals: 0 }, 'cloud_pct'), sunBand],
       nights: here && Number.isFinite(winStart) ? nightsAt(here.lat, here.lon, winStart, winEnd) : undefined,
       wind,

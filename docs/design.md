@@ -901,7 +901,8 @@ Weather explains readings that radio evidence cannot: a router's enclosure warmi
   Until every hour is in, the answer says `incomplete` and the browser asks again, every 4 s at first, backing off to once a minute and giving up after 25 tries; until the first hours arrive, the charts say the weather is loading.
 - **Shown:** on a router's Telemetry tab, the weather at its site behind its own readings: air temperature behind its temperature and relative humidity behind its humidity, each as a shaded area on the same axis, and, behind its voltage (solar nodes), cloud cover as a grey area on a 0–100 % scale of its own and sunlight as a yellow area on a scale of its own (drawn mid-hour), with night shaded over them: when the sun is below the horizon at the node's position (sunset to sunrise, worked out in the browser from the sun's position, for any node with a position); a chart whose readings the node does not report shows the weather alone.
   A Wind chart shows wind speed and gusts as two lines.
-  On a link's SNR chart, precipitation per hour as bars on their own scale (maximum labelled), the mean of the ends that qualify.
+  On a link's SNR chart, precipitation per hour as bars on their own scale (maximum labelled), the mean of the ends that qualify; on a router's Humidity chart, the same bars for its own site, behind the humidity.
+  Each bar is coloured by the likely form of the precipitation, judged from the air temperature in that hour at the same site (on a link, the mean of the same ends), since the analysis gives the amount only (D-216): rain above 2 °C, sleet from 0 to 2 °C, snow at or below 0 °C, in three flat colours rather than a gradient, each named in the legend; an hour without a temperature stays grey. Hovering adds the form to the reading.
   Hovering reads off the weather for that hour beside the reading.
   Each chart with weather credits MET Norway.
 

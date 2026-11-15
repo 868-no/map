@@ -40,6 +40,16 @@ export interface Band {
   domain?: [number, number] // shares: the scale
   decimals?: number
   note?: string // shown under the chart, e.g. its source
+  /** Amounts: bars at these times are drawn in the class's colour instead of the band's, each class in the legend (D-216). */
+  classes?: BandClass[]
+}
+
+/** A set of a band's hours drawn in a colour of its own, e.g. precipitation that likely fell as snow. */
+export interface BandClass {
+  label: string // legend and readout, e.g. "Snow"
+  hint?: string // after the label in the legend, e.g. "≤ 0 °C"
+  color: string // CSS colour
+  times: ReadonlySet<number> // the band's point times (ms) in this class
 }
 
 export interface TimeChartProps {
@@ -162,11 +172,19 @@ function prepare({ label, unit, points, series, start, end, decimals = 1, domain
   // The latest reading shown is the chart's own; the right-hand lines are read on hover.
   const last = own.reduce((a, b) => (b.p[0] > a.p[0] ? b : a))
   const read = [...own, ...allR]
+  // An amount's bars, one path per colour: each class's own, the rest in the band's.
+  const classOf = (b: B, t: number) => b.classes?.find((c) => c.times.has(t))
+  const barPaths = (b: B) => {
+    const w = (HOUR / span) * W
+    const bar = (p: [number, number]) => `M${(sx(p[0]) - w).toFixed(1)},${H}V${by(b, p[1]).toFixed(1)}h${w.toFixed(2)}V${H}Z`
+    const wet = b.pts.filter((p) => p[1] > 0)
+    const groups = [...(b.classes ?? []).map((c) => ({ key: c.label, color: c.color, pts: wet.filter((p) => classOf(b, p[0]) === c) })),
+      { key: '', color: b.color, pts: wet.filter((p) => !classOf(b, p[0])) }]
+    return groups.filter((g) => g.pts.length > 0).map((g) => ({ ...g, d: g.pts.map(bar).join('') }))
+  }
+  // The classes with a bar in view, for the legend.
+  const shownClasses = (b: B) => b.kind === 'amount' && b.classes ? barPaths(b).flatMap((g) => b.classes!.filter((c) => c.label === g.key)) : []
   const bandPath = (b: B) => {
-    if (b.kind === 'amount') {
-      const w = (HOUR / span) * W
-      return b.pts.filter((p) => p[1] > 0).map((p) => `M${(sx(p[0]) - w).toFixed(1)},${H}V${by(b, p[1]).toFixed(1)}h${w.toFixed(2)}V${H}Z`).join('')
-    }
     return segments(b.pts).filter((seg) => seg.length > 0).map((seg) =>
       `M${sx(seg[0][0]).toFixed(1)},${H}` + seg.map((p) => `L${sx(p[0]).toFixed(1)},${by(b, p[1]).toFixed(1)}`).join('') + `L${sx(seg[seg.length - 1][0]).toFixed(1)},${H}Z`).join('')
   }
@@ -178,14 +196,16 @@ function prepare({ label, unit, points, series, start, end, decimals = 1, domain
   const plot = (
     <>
       {[0.25, 0.5, 0.75].map((f) => <line key={f} className="tchart-grid" x1={0} x2={W} y1={H * f} y2={H * f} />)}
-      {bands.map((b) => <path key={b.label} d={bandPath(b)} className={`tchart-band ${b.kind}`} style={{ fill: b.color }} />)}
+      {bands.map((b) => b.kind === 'amount'
+        ? barPaths(b).map((g) => <path key={`${b.label}-${g.key}`} d={g.d} className="tchart-band amount" style={{ fill: g.color }} />)
+        : <path key={b.label} d={bandPath(b)} className={`tchart-band ${b.kind}`} style={{ fill: b.color }} />)}
       {/* Night dims the bands beneath it, not the lines above. */}
       {(nights ?? []).map(([a, b]) => <rect key={a} className="tchart-night" x={sx(Math.max(a, start))} y={0} width={Math.max(0, sx(Math.min(b, end)) - sx(Math.max(a, start)))} height={H} />)}
       {[...lines0, ...linesR].map((l, j) => path(l.pts, l.right ? sr : sy).map((d, k) => <path key={`${j}-${k}`} d={d} className={l.dashed ? 'tchart-line dashed' : 'tchart-line'} style={{ stroke: l.color }} vectorEffect="non-scaling-stroke" />))}
       {[...lines0, ...linesR].map((l, j) => l.pts.length <= 40 && l.pts.map((p) => <circle key={`${j}-${p[0]}`} cx={sx(p[0])} cy={(l.right ? sr : sy)(p[1])} r={1.6} className="tchart-dot" style={{ fill: l.color }} vectorEffect="non-scaling-stroke" />))}
     </>
   )
-  return { lines0, linesR, bands, main, y0, y1, r0, r1, span, sx, fmt, fmtR, fmtB, scale, bandAt, read, last, offAxis, notes, ariaLabel, plot }
+  return { lines0, linesR, bands, main, y0, y1, r0, r1, span, sx, fmt, fmtR, fmtB, scale, bandAt, classOf, shownClasses, read, last, offAxis, notes, ariaLabel, plot }
 }
 
 export function TimeChart(props: TimeChartProps) {
@@ -199,7 +219,7 @@ export function TimeChart(props: TimeChartProps) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const g: Prepared | null = useMemo(() => prepare(props), [props.label, props.unit, props.points, props.series, props.start, props.end, props.decimals, props.domain, props.bands, props.nights, props.right])
   if (!g) return empty ? <p className="muted small">{label}: {empty}</p> : null
-  const { lines0, linesR, bands, main, y0, y1, r0, r1, span, sx, fmt, fmtR, fmtB, scale, bandAt, read, last, offAxis, notes } = g
+  const { lines0, linesR, bands, main, y0, y1, r0, r1, span, sx, fmt, fmtR, fmtB, scale, bandAt, classOf, shownClasses, read, last, offAxis, notes } = g
   const onMove = (e: PointerEvent<HTMLDivElement>) => {
     const r = box.current!.getBoundingClientRect()
     setT(start + (Math.min(Math.max(e.clientX - r.left, 0), r.width) / r.width) * span)
@@ -221,7 +241,8 @@ export function TimeChart(props: TimeChartProps) {
           {shownX.n !== undefined && <small className="muted"> · {shownX.n} reading{shownX.n === 1 ? '' : 's'}</small>}
           {bands.filter((b) => b !== main).map((b) => {
             const v = bandAt(b, shown[0])
-            return v && <small key={b.label} className="muted"> · {b.label} {fmtB(b, v[1])}</small>
+            const c = v && v[1] > 0 ? classOf(b, v[0]) : undefined
+            return v && <small key={b.label} className="muted"> · {b.label} {fmtB(b, v[1])}{c && `, ${c.label.toLowerCase()}`}</small>
           })}{' '}
           <small className="muted tchart-at">{hover ? formatLocal(new Date(shown[0]).toISOString()) : 'latest'}</small>
         </span>
@@ -242,7 +263,12 @@ export function TimeChart(props: TimeChartProps) {
       {((series && series.length > 1) || linesR.length > 0 || bands.length > 0 || !!nights?.length) && (
         <div className="tchart-legend">
           {[...(series && series.length > 1 ? lines0 : []), ...linesR].map((l) => <span key={l.label}><i className={l.dashed ? 'dashed' : undefined} style={{ color: l.color, background: l.dashed ? undefined : l.color }} />{l.label}{l.right && <small className="muted"> ({props.right?.unit}, right)</small>} <small className="muted">({l.counts ? `${[...l.counts.values()].reduce((a, b) => a + b, 0)} readings` : l.pts.length})</small></span>)}
-          {bands.map((b) => <span key={b.label}><i className="band" style={{ background: b.color }} />{b.label}</span>)}
+          {bands.map((b) => {
+            const cs = shownClasses(b)
+            return cs.length
+              ? cs.map((c) => <span key={`${b.label}-${c.label}`}><i className="band" style={{ background: c.color }} />{c.label}{c.hint && <small className="muted"> {c.hint}</small>}</span>)
+              : <span key={b.label}><i className="band" style={{ background: b.color }} />{b.label}</span>
+          })}
           {!!nights?.length && <span><i className="band night" />Night</span>}
           {notes.map((n) => <small key={n} className="muted">{n}</small>)}
         </div>
