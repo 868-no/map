@@ -769,7 +769,10 @@ pub fn transmissions(r: &Row, ctx: &RelayContext, roles: &FxMap<u32, String>) ->
     };
     let Some(Ok(relay)) = byte.and_then(|b| ctx.resolve(b, r.src, gw, r.rssi.map(f64::from))) else {
         // Heard, but not from whom: the sender's way to the gateway, as the
-        // routing graph draws it.
+        // routing graph draws it; none for its own packet come back (D-217).
+        if gw == r.src {
+            return vec![first(None, None)];
+        }
         return vec![first(None, None), gap(gw, if downlinked { "internet" } else { "unknown_relay" })];
     };
     // A downlinked copy (D-088) carries no hop count: the relay got it from MQTT.
@@ -780,6 +783,18 @@ pub fn transmissions(r: &Row, ctx: &RelayContext, roles: &FxMap<u32, String>) ->
     }
     out.push(Transmission { key: key(relay), tx: node_id(relay), rx: Some(node_id(gw)), rebroadcast: true, strength, packet: r.pid.map(|p| packet_ref(r.src, p)), ..Default::default() });
     out
+}
+
+/// A copy's transmissions without its gateway hearing them (D-220): each
+/// transmitter still transmits and the way to it stays, but nothing is drawn
+/// into the gateway, not even the unknown way there.
+pub fn unheard_by(t: &mut Vec<Transmission>, gw: u32) {
+    let gw = Some(node_id(gw));
+    t.retain(|x| x.gap.is_none() || x.rx != gw);
+    for x in t.iter_mut().filter(|x| x.rx == gw) {
+        x.rx = None;
+        x.strength = None;
+    }
 }
 
 /// One step of a recorded way (`k`: the transmitter's place in it).
@@ -881,6 +896,37 @@ mod tests {
         assert_eq!(gaps(&t), vec![(id(A), id(C), "gap")]);
         assert_eq!(t.iter().map(|x| x.gap.is_some()).collect::<Vec<_>>(), vec![false, true, false]);
         assert_eq!(t[1].key, format!("{:016x}|{}>{}", 0xabc, id(A), id(C)));
+    }
+
+    #[test]
+    fn a_later_copy_shows_its_relay_but_not_the_gateway_hearing_it() {
+        // D-220: C still rebroadcasts and A's way to it stays; nothing is drawn into GW.
+        let c = ctx(&[A, C, GW], &[]);
+        let mut t = transmissions(&Row { snr: Some(5.0), ..relayed(row(A, GW), 0xcc, 1) }, &c, &roles(&[(C, "CLIENT")]));
+        unheard_by(&mut t, GW);
+        assert_eq!(pairs(&t), vec![(id(A), Some(id(C))), (id(C), None)]);
+        assert_eq!(t[1].strength, None);
+        // The unknown way to the gateway goes too; the unknown way to a relay stays.
+        let mut t = transmissions(&relayed(row(A, GW), 0xcc, 2), &c, &map());
+        unheard_by(&mut t, GW);
+        assert_eq!(gaps(&t), vec![(id(A), id(C), "gap")]);
+        let mut t = transmissions(&relayed(row(A, GW), 0xdd, 2), &c, &map());
+        unheard_by(&mut t, GW);
+        assert_eq!(pairs(&t), vec![(id(A), None)]);
+        assert_eq!(gaps(&t), vec![]);
+    }
+
+    #[test]
+    fn an_echo_is_a_relay_heard_by_the_sender_itself() {
+        // GW's own packet rebroadcast by C and uplinked by GW (D-217).
+        let echo = Row { snr: Some(5.0), ..relayed(row(GW, GW), 0xcc, 2) };
+        let t = transmissions(&echo, &ctx(&[C, GW], &[]), &map());
+        assert_eq!(pairs(&t), vec![(id(GW), None), (id(C), Some(id(GW)))]);
+        assert_eq!(gaps(&t), vec![(id(GW), id(C), "gap")]);
+        // An unresolved byte draws no way from the gateway to itself.
+        let t = transmissions(&Row { snr: Some(5.0), ..relayed(row(GW, GW), 0xdd, 2) }, &ctx(&[C, GW], &[]), &map());
+        assert_eq!(pairs(&t), vec![(id(GW), None)]);
+        assert_eq!(gaps(&t), vec![]);
     }
 
     #[test]

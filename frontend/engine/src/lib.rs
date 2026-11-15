@@ -128,6 +128,9 @@ pub struct Engine {
 const COMPACT_MIN: usize = 4096;
 /// How far back an ACK looks for the copies of the packet it answers (D-172).
 const ACK_LOOKBACK_MS: i64 = 15 * 60 * 1000;
+/// How far back a live copy looks for an earlier copy of its packet at the
+/// same gateway (D-220): a packet's rebroadcasts arrive within seconds.
+const COPY_LOOKBACK_MS: i64 = 60 * 1000;
 
 impl Default for Engine {
     fn default() -> Self {
@@ -450,16 +453,35 @@ impl Engine {
         let invalid = self.i.get("invalid");
         // Invalid rows prove nothing, not even a transmission (D-093).
         let ack = self.i.get("ack");
+        // A copy its gateway heard over the air (not its own uplink).
+        let radio = |o: &row::Row| o.gw.is_some() && Some(o.ty) != invalid && !matches!(o.heard_from(), row::HeardFrom::NotRadio);
+        // Packets each gateway already reported a radio copy of in this batch.
+        let mut got: std::collections::HashSet<(u64, u32)> = std::collections::HashSet::new();
         let out: Vec<Vec<packets::Transmission>> = rows
             .iter()
             .map(|r| {
                 if Some(r.ty) == invalid {
                     return vec![];
                 }
+                // A gateway that uplinks every copy (D-084) reports each
+                // rebroadcast it hears. Only its first radio copy of a packet
+                // is drawn into it; later copies still show their relay
+                // transmitting and the way to it, not the gateway hearing
+                // that too (D-220).
+                let dup = radio(r) && {
+                    let gw = r.gw.unwrap();
+                    let earlier = self.store.slice(r.t - COPY_LOOKBACK_MS, r.t + 1).iter()
+                        .any(|o| o.lp == r.lp && o.gw == r.gw && o.ok != r.ok && (o.t, o.id) < (r.t, r.id) && radio(o));
+                    !got.insert((r.lp, gw)) || earlier
+                };
                 // A reply's record of its request's way comes first, so the
                 // reply's own pings can wait for it to reach the target.
                 let mut t = packets::forward_route(r, &b.ctx);
-                t.extend(packets::transmissions(r, &b.ctx, &b.roles));
+                let mut own = packets::transmissions(r, &b.ctx, &b.roles);
+                if dup {
+                    packets::unheard_by(&mut own, r.gw.unwrap());
+                }
+                t.extend(own);
                 // The answered packet's copies from the last quarter of an
                 // hour: its routing graph gives the way it took there, the
                 // ACK's the way back (D-172).
@@ -488,6 +510,26 @@ impl Engine {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_a_gateways_first_radio_copy_of_a_packet_is_drawn_into_it() {
+        // D-220: relayed copies whose relay byte resolves to no node, so each
+        // is drawn as the unknown way from A (5) to its gateway.
+        let copy = |id: i64, t: i64, gw: u32, ok: &str| format!(r#"{{"i":{id},"t":{t},"b":"x","g":{gw},"s":5,"y":"text","l":"00000000000000aa","o":"{ok}","sg":"unsigned","rr":"relayed","hs":3,"hl":2,"r":238,"sn":1}}"#);
+        let into = |out: &str| -> Vec<Vec<String>> {
+            let v: Vec<Vec<serde_json::Value>> = serde_json::from_str(out).unwrap();
+            v.iter().map(|ts| ts.iter().filter_map(|x| x["rx"].as_str().map(str::to_string)).collect()).collect()
+        };
+        let gw = util::node_id(7);
+        let mut e = Engine::new();
+        // In one batch: the second copy at gateway 7 draws nothing into it; gateway 8's first copy does.
+        let out = e.transmissions(&format!("[{},{},{}]", copy(1, 1000, 7, "01"), copy(2, 1500, 7, "02"), copy(3, 1600, 8, "03"))).unwrap();
+        assert_eq!(into(&out), vec![vec![gw.clone()], vec![], vec![util::node_id(8)]]);
+        // A copy already in the store counts as earlier; another packet does not.
+        e.add_rows(&format!("[{}]", copy(1, 1000, 7, "01")), f64::NEG_INFINITY).unwrap();
+        assert_eq!(into(&e.transmissions(&format!("[{}]", copy(2, 1500, 7, "02"))).unwrap()), vec![Vec::<String>::new()]);
+        assert_eq!(into(&e.transmissions(&format!("[{}]", copy(4, 1600, 7, "04").replace("00aa", "00bb"))).unwrap()), vec![vec![gw]]);
+    }
 
     #[test]
     fn strings_only_dropped_rows_held_are_compacted_away() {
