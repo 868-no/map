@@ -566,7 +566,12 @@ So does the gate in front of it: one classifier (`Row::heard_from`) reads the re
    Relay-hint evidence never counts, so inferences cannot reinforce themselves.
 5. Otherwise unresolved: no link, counted as ambiguous or unmatched.
 
-A last-hop byte equal to the uplinking gateway's own low byte is the gateway itself and is ignored everywhere (D-036).
+A gateway uplinks what it transmits as it transmits it, with its own low byte as the last hop and no radio metrics: such a copy is its own transmission and not radio (`Row::heard_from`).
+A copy carrying the gateway's byte with an SNR or RSSI was heard, so it came from another node with that byte, never the gateway: a radio does not hear its own transmissions, and the gateway is never a candidate (step 1), so with no other node sharing the byte the copy stays unmatched (D-221).
+  It used to be read as the gateway itself and ignored (D-036). Once Bringebærpai uplinked every copy (§6.6), 31 of its 720 relayed copies in 2.4 h carried its byte 0x41, read at −86 to −101 dBm and SNR about 8, which matches a nearby node ending in 0x41 that it hears directly at −90 dBm. No other gateway reported its own byte on a relayed copy in 12 h, and Bringebærpai's own uploads with its byte were only its own packets, without metrics; of the 200 packets it got with hops left, none had a copy that looked like its own rebroadcast (its byte, one hop less than a copy it received, or that copy's metrics).
+  Over 14 days of 81 gateways (1–15 November), no gateway uploaded another node's packet with its own byte and no metrics, and none of Bringebærpai's 257 such copies with metrics repeated another copy's; they followed that node day by day, gone while it was silent (11–14 November).
+  The 1 234 own packets uploaded with hops used (hop limit 0) and no metrics all carry the gateway's byte, and stay not radio.
+  In the recorded 12-hour fixture this adds one inferred link (that node into Bringebærpai), one transmission and two routers' relaying.
 A node whose number ends in 0x00 goes by byte 0xFF, as firmware writes it (0 means "no relay") (D-164).
 A byte resolved only because one candidate already had a link to the gateway adds nothing to that same link: no circular corroboration (D-087).
 Against traceroute ground truth (378 copies, 72 h), narrowing raised correct resolutions from 87 to 355 with none wrong.

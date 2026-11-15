@@ -424,7 +424,7 @@ impl RelayContext {
     /// other than origin and gateway, minus those positioned beyond radio
     /// range of the gateway and those whose role never rebroadcasts; if
     /// several remain, the single one with confirmed evidence to the gateway
-    /// wins. A byte equal to the gateway's own is the gateway itself.
+    /// wins.
     pub fn resolve(&self, hint: u8, origin: u32, gw: u32, rssi: Option<f64>) -> Option<Result<u32, ()>> {
         self.resolve_detail(hint, origin, gw, rssi).map(|r| r.map(|(n, _)| n))
     }
@@ -436,7 +436,10 @@ impl RelayContext {
     /// `rssi`: the gateway's reading of the copy, which the relay transmitted:
     /// a strong one rules out relays too far away to give it (D-136).
     pub fn resolve_detail(&self, hint: u8, origin: u32, gw: u32, rssi: Option<f64>) -> Option<Result<(u32, bool), ()>> {
-        if hint == 0 || hint == last_byte(gw) {
+        // A byte equal to the gateway's own on a copy it heard (with radio
+        // metrics, Row::heard_from) is another node with that byte: a radio
+        // never hears its own transmissions (D-221).
+        if hint == 0 {
             return None; // unmatched
         }
         let gp = self.pos.get(&gw);
@@ -531,7 +534,7 @@ mod tests {
         let c = ctx(&[0x1111_1142, 0x2222_2242, 0x0000_aa01], &[(0x2222_2242, 0x0000_aa01)]);
         assert_eq!(c.resolve(0x42, 5, 0x0000_aa01, None), Some(Ok(0x2222_2242)), "confirmed link breaks the tie");
         let c = ctx(&[0x0000_aa42, 0x1111_1142], &[]);
-        assert_eq!(c.resolve(0x42, 1, 0x0000_aa42, None), None, "gateway byte is the gateway");
+        assert_eq!(c.resolve(0x42, 1, 0x0000_aa42, None), Some(Ok(0x1111_1142)), "a gateway never hears itself: its byte is the other node with it (D-221)");
     }
 
     #[test]

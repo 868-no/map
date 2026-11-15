@@ -351,6 +351,12 @@ impl Row {
             let echo = self.hops().is_some_and(|h| h > 0) && (self.snr.is_some() || self.rssi.is_some());
             return if echo { HeardFrom::Relayed(byte) } else { HeardFrom::NotRadio };
         }
+        // A gateway uplinks what it transmits as it transmits it: a copy with
+        // its own byte and no radio metrics is its own transmission, not
+        // heard. With metrics, another node sharing the byte relayed it (D-221).
+        if byte.is_some() && byte == self.gw.map(crate::graph::last_byte) && self.snr.is_none() && self.rssi.is_none() {
+            return HeardFrom::NotRadio;
+        }
         match self.rr {
             ty::VIA_MQTT => HeardFrom::Downlinked(byte),
             ty::NON_RF => HeardFrom::NotRadio,
@@ -854,6 +860,11 @@ mod tests {
             // Rows without a reason fall back on the hop fields.
             (r#","hs":3,"hl":2,"r":204"#, Relayed(Some(204))),
             (r#","hs":3,"hl":3"#, Direct),
+            // The gateway's own byte: its own transmission as uplinked, unless
+            // heard with metrics, from another node with that byte (D-221).
+            (r#","rr":"relayed","hs":3,"hl":2,"r":7"#, NotRadio),
+            (r#","rr":"via_mqtt","r":7"#, NotRadio),
+            (r#","rr":"relayed","hs":3,"hl":2,"r":7,"sn":8.0,"rs":-90"#, Relayed(Some(7))),
         ] {
             assert_eq!(row(extra, &mut i).heard_from(), want, "{extra}");
         }

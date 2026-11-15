@@ -1056,10 +1056,13 @@ mod tests {
     }
 
     #[test]
-    fn a_byte_equal_to_the_gateway_is_the_gateway() {
+    fn a_byte_equal_to_the_gateway_is_another_node_with_that_byte() {
+        // D-221: a gateway never hears itself, so the other node with its byte relayed.
         let c = ctx(&[0xaaaa_0011, 0xbbbb_0011, 0xcccc_0022], &[]);
-        assert_eq!(c.resolve(0x11, 0xcccc_0022, 0xaaaa_0011, None), None);
+        assert_eq!(c.resolve(0x11, 0xcccc_0022, 0xaaaa_0011, None), Some(Ok(0xbbbb_0011)));
         assert_eq!(c.resolve(0x11, 0xcccc_0022, 0xdddd_0033, None), Some(Err(())));
+        // No other node with it: unmatched.
+        assert_eq!(ctx(&[0xaaaa_0011, 0xcccc_0022], &[]).resolve(0x11, 0xcccc_0022, 0xaaaa_0011, None), None);
     }
 
     #[test]
