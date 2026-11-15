@@ -138,7 +138,7 @@ export function OverviewTab({ d, now, names }: { d: NodeView; now: number; names
         <dd>
           <span title="Distinct packets it sent that reached the broker">{d.packets} unique packets</span> ·{' '}
           <span title="Receptions of its packets by other gateways, over the air (one per gateway and copy)">{d.receptions - (d.own_uplinks ?? 0)} receptions by other gateways</span>
-          {(d.own_uplinks ?? 0) > 0 && <span title="Its own packets it uplinked itself as a gateway, its map reports among them: not radio receptions"> · {d.own_uplinks} uplinked itself</span>}
+          {(d.own_uplinks ?? 0) > 0 && <span title="Its own packets it uplinked itself as a gateway, its map reports among them, and copies neighbours rebroadcast back to it when it uplinks every copy"> · {d.own_uplinks} uplinked itself</span>}
           {d.is_gateway && <span title="Other nodes' packets it uplinked as a gateway"> · uplinked {d.gateway_receptions - (d.own_uplinks ?? 0)} of others'</span>}
         </dd>
       </dl>

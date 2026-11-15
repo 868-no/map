@@ -278,7 +278,8 @@ pub enum HeardFrom {
     /// last radio hop, from the relay to the gateway. Gateways normally never
     /// uplink flagged packets, so such copies are rare (D-088).
     Downlinked(Option<u8>),
-    /// Not over the air: no gateway, its own packet, or a non-radio transport.
+    /// Not over the air: no gateway, its own packet as it sent it, or a
+    /// non-radio transport.
     NotRadio,
     /// Over the air, but neither a hop count nor the reason says from whom
     /// (no hop start: firmware before 2.3).
@@ -339,8 +340,16 @@ impl Row {
     /// reason decides; rows without one fall back on the hop fields.
     pub fn heard_from(&self) -> HeardFrom {
         let byte = self.relay.map(|b| (b & 0xff) as u8);
-        if self.gw.is_none_or(|g| g == self.src) {
+        if self.gw.is_none() {
             return HeardFrom::NotRadio;
+        }
+        // A gateway's own packet: its own uplink carries no hops used and
+        // no radio metrics, but one that uplinks every copy (D-084) also
+        // reports its packet as neighbours rebroadcast it back, with both.
+        // Ingest calls either one `own_packet`, so the fields decide (D-217).
+        if self.gw == Some(self.src) {
+            let echo = self.hops().is_some_and(|h| h > 0) && (self.snr.is_some() || self.rssi.is_some());
+            return if echo { HeardFrom::Relayed(byte) } else { HeardFrom::NotRadio };
         }
         match self.rr {
             ty::VIA_MQTT => HeardFrom::Downlinked(byte),
@@ -848,8 +857,14 @@ mod tests {
         ] {
             assert_eq!(row(extra, &mut i).heard_from(), want, "{extra}");
         }
-        let own = Row { gw: Some(5), ..row(r#","rr":"own_packet""#, &mut i) };
-        assert_eq!(own.heard_from(), NotRadio);
+        // A gateway's own packet: its own uplink is not radio, but a copy a
+        // neighbour rebroadcast back to it is (D-217).
+        let own = |extra: &str, i: &mut Interner| Row { gw: Some(5), ..row(&format!(r#","rr":"own_packet"{extra}"#), i) };
+        assert_eq!(own("", &mut i).heard_from(), NotRadio);
+        assert_eq!(own(r#","hs":3,"hl":3,"r":65"#, &mut i).heard_from(), NotRadio);
+        assert_eq!(own(r#","hs":3,"hl":2,"r":115"#, &mut i).heard_from(), NotRadio, "no radio metrics");
+        assert_eq!(own(r#","hs":3,"hl":2,"r":115,"sn":11.5,"rs":-68"#, &mut i).heard_from(), Relayed(Some(115)));
+        assert_eq!(own(r#","hs":3,"hl":3,"r":65,"sn":11.5"#, &mut i).heard_from(), NotRadio, "no hops used");
     }
 
     #[test]

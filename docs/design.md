@@ -520,7 +520,7 @@ The link graph is directed and weighted; it is never stored.
   Without either, the node shows the last four hex digits of its id.
   NodeInfo rows marked with a key conflict are skipped.
 - **Gateway** (`is_gateway`): the node uplinked a reception in the window.
-- **Counts per node:** distinct packets it sent; receptions of them by other gateways and its own uplinks, kept apart (map reports count as own uplinks); signatures counted once per packet by its best copy's status (D-087).
+- **Counts per node:** distinct packets it sent; receptions of them by other gateways and its own uplinks, kept apart (map reports, and copies of its own packets rebroadcast back to it (§6.6), count as own uplinks); signatures counted once per packet by its best copy's status (D-087).
 
 ### 6.2 Link evidence
 
@@ -609,6 +609,7 @@ Today's firmware uplinks only the first copy a gateway hears; a future option up
 Storage already keeps such copies apart (§2.6).
 A gateway that reported more than one copy of the same packet for at least 3 packets in the window (`MULTI_UPLINK_MIN_PACKETS`), leaving out its own packets, map reports and copies via MQTT or non-RF, is flagged `multi_uplink`; an odd retry does not flag it.
 Every extra copy is already a radio sample for links, a hop for routes and a receiver for pings, and makes router reliability (§6.9) closer to the true rate (D-084).
+Such a gateway also reports its own packets as its neighbours rebroadcast them back to it. Ingest gives these the reason `own_packet`, as it does the gateway's own uplink, so the browser tells them apart by the fields: a copy of its own packet with hops used and an SNR or RSSI was heard over the radio from the relay its last-hop byte names, and counts like any other relayed copy; its own uplink (no hops used, no radio metrics) stays not radio (D-217).
 
 ### 6.7 0-cost links
 
