@@ -74,15 +74,18 @@ function UiScale() {
   )
 }
 
-/** Whether the map may turn at all (D-200): north up, by default. */
-function NorthUp() {
+/** Whether the map may turn at all (D-200), north up by default; and whether overlapping markers group (D-218). */
+function MapSettings() {
   const on = useStore((s) => s.toggles.northUp)
+  const clusters = useStore((s) => s.toggles.markerClusters)
   const setT = useStore((s) => s.setToggles)
   return (
     <>
       <h3>Map</h3>
       <label><input type="checkbox" checked={on} onChange={(e) => setT({ northUp: e.target.checked })} /> Keep north up</label>
       <p className="muted small">The map never turns. Switch off to let a two-finger twist or Shift+arrow keys rotate it.</p>
+      <label><input type="checkbox" checked={clusters} onChange={(e) => setT({ markerClusters: e.target.checked })} /> Group overlapping markers</label>
+      <p className="muted small">Below zoom 10, markers that overlap are one disc with their count. Switch off to draw every marker on its own at any zoom.</p>
     </>
   )
 }
@@ -103,7 +106,7 @@ export function SettingsPanel({ canInstall, install }: { canInstall: boolean; in
         ))}
       </div>
       <UiScale />
-      <NorthUp />
+      <MapSettings />
       <MaxNodes />
       {canInstall && (
         <>

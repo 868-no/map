@@ -1036,6 +1036,7 @@ UI chrome floats over the map, which runs edge to edge and never resizes (checke
   It is dimmed when no member matches the search or the drawn reach.
 - **Clusters in the depth order (D-204):** cluster discs sit beneath every marker drawn on its own, by depth as in D-187 (the most prominent cluster on top), and their counts at the markers' base depth, above every cluster disc and beneath every marker.
 - **Never hidden in a cluster (D-204):** the selected node, both ends of the selected link, watched nodes (D-192), nodes matching the search and the nodes of a drawn packet route are always drawn on their own.
+- **Clustering can be switched off (D-218):** Settings → Map → "Group overlapping markers", on by default and kept with the layer choices, draws every marker on its own at any zoom, as from zoom 10; name clusters (§7.6) are unaffected.
   A place picked from the search (D-193) is a ring of its own and hides nothing.
   Hovering a cluster lists its members, most prominent first, in at most eight lines; clicking it zooms to fit its members, to at least zoom 10, and selects nothing.
   Counts and lists (the header counters, the Nodes panel) stay complete.

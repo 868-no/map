@@ -16,7 +16,7 @@ import { buildPingLayers } from './pingLayers'
 import { OVER_MARKERS } from './drawOrder'
 import { useCamera } from './camera'
 import { clusterLabels, type Cluster, type LabelDatum } from './labels'
-import { clusterMarkers, clusterSummary, drawnPositions, type MarkerCluster } from './markerClusters'
+import { clusterMarkers, clusterSummary, drawnPositions, MARKER_CLUSTER_MAX_ZOOM, type MarkerCluster } from './markerClusters'
 import { useWatch } from '../state/watch'
 import { usePacketRoute, useReach } from '../state/data'
 import { installTestHook } from './testHook'
@@ -317,7 +317,8 @@ export default memo(function MapView({ caps, snapshot, onPositions }: Props) {
   // disc at their most prominent member. The selected node, the selected
   // link's ends, watched nodes (D-192), search results and a drawn route's
   // nodes are always drawn on their own. Recomputed when the zoom settles
-  // (zoom is set on moveend), not while panning.
+  // (zoom is set on moveend), not while panning. Settings can switch
+  // clustering off (D-218): every marker is then drawn as from zoom 10.
   const watched = useWatch((s) => s.ids)
   const exempt = useMemo(() => {
     const ids = new Set<string>(watched)
@@ -328,7 +329,8 @@ export default memo(function MapView({ caps, snapshot, onPositions }: Props) {
     if (q) for (const p of placed) if (matchesSearch(p.node, q)) ids.add(p.node.id)
     return ids
   }, [watched, selection, routeLp, routeQ.data, dimBy, placed])
-  const markers = useMemo(() => clusterMarkers(placed, zoom, exempt), [placed, zoom, exempt])
+  const grouping = toggles.markerClusters
+  const markers = useMemo(() => clusterMarkers(placed, grouping ? zoom : MARKER_CLUSTER_MAX_ZOOM, exempt), [placed, grouping, zoom, exempt])
   // Positions of the markers actually drawn, a clustered node at its
   // cluster's disc: links, pings and reach paths use only these (D-043).
   const drawnPos = useMemo(() => drawnPositions(pos, markers.anchor), [pos, markers.anchor])
