@@ -57,7 +57,7 @@ export function LayersPanel() {
       {check('Position trails', t.trails, (v) => setT({ trails: v }),
         'Which way moving nodes are going: a short line through their last few reported positions, fading towards the oldest, with chevrons pointing the way they went. With a node selected, only its trail. A node counts as moving once two positions lie further apart than 300 m (2 km for routers and base stations, whose GPS may wander) plus what their precision explains; its links then use only evidence from after its latest move.')}
       {check('Traffic', t.animation, (v) => setT({ animation: v }),
-        'Live radar pings: each ring is one radio transmission, growing until it encloses the nodes known to have heard it directly, while a bright line travels to each of those nodes, arriving with the ring. Blue: first broadcast by the originating node; amber: rebroadcast by a relay. The ring fades outward, matching the signal strength measured at each receiver. Live window only; off by default when the system asks for reduced motion.')}
+        'Live radar pings: each ring is one radio transmission, growing until it encloses the nodes known to have heard it directly, while a bright line travels to each of those nodes, arriving with the ring. Blue: first broadcast by the originating node; amber: rebroadcast by a relay. The ring grows fainter as it passes nodes that heard it weakly, by the signal measured at each. Live window only; off by default when the system asks for reduced motion.')}
       <h3>Map</h3>
       {BASEMAP_GROUPS.map((g) => check(g.label, t.basemap[g.id], (v) => setT({ basemap: { [g.id]: v } }), g.info))}
       {check('Regions (landsdeler)', t.regions, (v) => setT({ regions: v }),

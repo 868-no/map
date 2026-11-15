@@ -1106,7 +1106,8 @@ On a rolling window, each RF transmission attributable to a placed node is one e
   Without upstream information it starts at once.
   A waiting ping starts no later than its own collection timeout, so after a pause it keeps its timing and mostly expires (D-028, D-048).
 - **Drawing:** rings are sized in screen pixels, never smaller than 22 px, so co-located receivers stay visible.
-  Rings have no outline; the fill (18 % at most) is a radial gradient in 16 bands: full at the transmitter, at each receiver's distance the opacity of its measured signal (gateway SNR −20…+10 dB, else RSSI −130…−70 dBm; 0.5 when unmeasured), transparent at the edge, never increasing outward (D-027).
+  A ring is a thin outline (1.5 px, 60 % at most) and transparent inside: with a gateway uplinking every copy, the earlier filled rings piled up over the map (D-219).
+  The outline's opacity follows the signal where its edge is: full at the transmitter, at each receiver's distance its measured signal (gateway SNR −20…+10 dB, else RSSI −130…−70 dBm; 0.5 when unmeasured), linear between, held beyond the farthest receiver and never rising outward, down to 15 % of full for the weakest, so a ring fades as it passes receivers that heard it weakly.
   The line's head rides the ring's edge, so ring and line reach a receiver on the same frame; travelling it glows brightly, then settles thinner and fades with the ring (D-042).
 - **Following the map:** each frame a ping looks up its transmitter and receivers among the markers drawn now; a moved receiver is followed, a vanished one dropped, and a ping whose transmitter is gone ends (D-043).
 - **Only fresh traffic while painted:** pings are created only for rows handled while the page is visible and the packet is at most 10 s old by the server clock (offset from heartbeats and the retention call).

@@ -2,12 +2,16 @@
 import { LineLayer, PathLayer, ScatterplotLayer } from '@deck.gl/layers'
 import type { PathStyleExtensionProps } from '@deck.gl/extensions'
 import type { Layer } from '@deck.gl/core'
-import { activePings, RING_BANDS, type Blip, type DeliveryLine, type DeliveryStyle, type Flash, type GapLine, type Ring, type Trail } from './pings'
+import { activePings, type Blip, type DeliveryLine, type DeliveryStyle, type Flash, type GapLine, type Ring, type Trail } from './pings'
 import { dashExt, type RGBA } from './deckShared'
 import type { MapPalette } from './palette'
-// Rings have no outline: a soft fill whose opacity follows the signal at each
-// receiver shows the reach, and the animated links' heads mark its edge.
-const FILL_ALPHA = 0.18
+// Rings are a thin outline with nothing inside (D-219): with much traffic,
+// filled rings piled up over the map. The outline fades with the signal
+// measured where its edge is, never quite away (RING_MIN of full). The
+// animated links' heads ride the edge.
+const RING_ALPHA = 0.6
+const RING_MIN = 0.15
+const RING_WIDTH = 1.5 // px
 // A delivery's hops not known to be direct, dashed as in a packet's routing
 // graph: a gap across missing nodes, the unknown way to an acknowledging
 // node, a hop over the internet (D-172).
@@ -64,14 +68,12 @@ export function buildPingLayers(now: number, zoom: number, palette: MapPalette):
       filled: true, stroked: false, getFillColor: (g) => [...(g.internet ? palette.linkMqtt : bright(g)), g.alpha] as RGBA,
       updateTriggers: { getPosition: now, getFillColor: now },
     }),
-    // The ring itself: concentric bands whose opacity follows the signal
-    // measured at each receiver, fading to transparent at the edge.
-    new ScatterplotLayer<{ r: Ring; i: number }>({
-      id: 'ping-fill', data: rings.flatMap((r) => r.profile.map((_, i) => ({ r, i }))),
-      getPosition: (b) => b.r.center, getRadius: (b) => ((b.i + 0.5) / RING_BANDS) * b.r.radiusPx, radiusUnits: 'pixels',
-      filled: false, stroked: true, lineWidthUnits: 'pixels', getLineWidth: (b) => b.r.radiusPx / RING_BANDS,
-      getLineColor: (b) => [...rgb(b.r), Math.round(b.r.alpha * FILL_ALPHA * b.r.profile[b.i])] as RGBA,
-      updateTriggers: { getRadius: now, getLineWidth: now, getLineColor: now },
+    // The ring itself: its outline, transparent inside, fainter where the signal was weaker.
+    new ScatterplotLayer<Ring>({
+      id: 'ping-rings', data: rings, getPosition: (r) => r.center, getRadius: (r) => r.radiusPx, radiusUnits: 'pixels',
+      filled: false, stroked: true, lineWidthUnits: 'pixels', getLineWidth: RING_WIDTH,
+      getLineColor: (r) => [...rgb(r), Math.round(r.alpha * RING_ALPHA * (RING_MIN + (1 - RING_MIN) * r.strength))] as RGBA,
+      updateTriggers: { getRadius: now, getLineColor: now },
     }),
     // No placeable direct receiver: a brief soft glow, deliberately unlike a ring.
     new ScatterplotLayer<Blip>({

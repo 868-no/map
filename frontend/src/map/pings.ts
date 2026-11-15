@@ -360,32 +360,25 @@ export function addTransmission(t: Transmission, pos: Map<string, LngLat>, now =
   }
 }
 
-export interface Ring { center: LngLat; radiusPx: number; alpha: number; rebroadcast: boolean; profile: number[] }
+export interface Ring { center: LngLat; radiusPx: number; alpha: number; rebroadcast: boolean; strength: number }
 
-/** Bands in each ring's radial fill gradient. */
-export const RING_BANDS = 16
+/** A receiver's signal when it was not measured (only the reporting gateway measures it). */
 const UNKNOWN_STRENGTH = 0.5
 
 /**
- * Radial opacity profile (centre to edge, RING_BANDS values in 0..1): full at
- * the transmitter, the measured signal strength at each receiver's distance,
- * transparent at the edge, never increasing outward.
+ * The signal (0..1) where a ring's edge is now (D-219): full at the
+ * transmitter, each receiver's measured strength at its distance, linear
+ * between them, held beyond the farthest, and never rising outward, so the
+ * outline grows fainter as it passes receivers that heard it weakly.
  */
-export function ringProfile(radiusPx: number, receivers: { px: number; strength?: number }[]): number[] {
-  const pts: [number, number][] = [[0, 1], ...receivers.filter((r) => r.px < radiusPx).map((r) => [r.px, r.strength ?? UNKNOWN_STRENGTH] as [number, number]), [radiusPx, 0]]
-  pts.sort((a, b) => a[0] - b[0])
-  const out: number[] = []
-  let floor = 1
-  for (let i = 0; i < RING_BANDS; i++) {
-    const r = ((i + 0.5) / RING_BANDS) * radiusPx
-    let k = 0
-    while (k < pts.length - 2 && pts[k + 1][0] < r) k++
-    const [r0, a0] = pts[k], [r1, a1] = pts[k + 1]
-    const v = r1 > r0 ? a0 + ((a1 - a0) * (r - r0)) / (r1 - r0) : a1
-    floor = Math.min(floor, v)
-    out.push(floor)
+export function edgeStrength(radiusPx: number, receivers: { px: number; strength?: number }[]): number {
+  const pts = receivers.map((r): [number, number] => [r.px, r.strength ?? UNKNOWN_STRENGTH]).sort((a, b) => a[0] - b[0])
+  let [r0, floor] = [0, 1]
+  for (const [r1, a1] of pts) {
+    if (radiusPx < r1) return Math.min(floor, floor + ((a1 - floor) * (radiusPx - r0)) / (r1 - r0))
+    ;[r0, floor] = [r1, Math.min(floor, a1)]
   }
-  return out
+  return floor
 }
 export interface Blip { center: LngLat; scale: number; alpha: number; rebroadcast: boolean }
 /**
@@ -487,8 +480,8 @@ export function activePings(now: number, zoom: number): { rings: Ring[]; blips: 
       const mpp = metresPerPixel(p.center[1], zoom)
       const floor = MIN_RING_PX * ease(Math.min((now - p.heardAt) / PING_GROW, 1))
       const px = Math.max(radiusAt(p, now) / mpp, floor)
-      const profile = ringProfile(px, [...p.receivers.values()].map((r) => ({ px: r.dist / mpp, strength: r.strength })))
-      rings.push({ center: p.center, radiusPx: px, alpha, rebroadcast: p.rebroadcast, profile })
+      const strength = edgeStrength(px, [...p.receivers.values()].map((r) => ({ px: r.dist / mpp, strength: r.strength })))
+      rings.push({ center: p.center, radiusPx: px, alpha, rebroadcast: p.rebroadcast, strength })
       for (const rx of p.receivers.values()) {
         if (rx.reachedAt === undefined && px >= rx.dist / mpp) rx.reachedAt = now
         // The link grows with the ring: its head is on the ring's edge until the ring reaches the receiver.

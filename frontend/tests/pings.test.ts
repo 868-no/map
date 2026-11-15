@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { activePings as rawPings, addTransmission, BLIP_LIFE, RING_BANDS, ringProfile, clearPings, distanceM, metresPerPixel, MIN_RING_PX, PING_COLLECT, PING_FADE, PING_GROW, PING_LINGER, DELIVERY_TRAVEL, deliveryTravel, pingCount } from '../src/map/pings'
+import { activePings as rawPings, addTransmission, BLIP_LIFE, clearPings, edgeStrength, distanceM, metresPerPixel, MIN_RING_PX, PING_COLLECT, PING_FADE, PING_GROW, PING_LINGER, DELIVERY_TRAVEL, deliveryTravel, pingCount } from '../src/map/pings'
 
 // Attribution (which transmissions a reception proves) lives in the engine
 // and is tested there (frontend/engine/src/packets.rs); these are the animation's.
@@ -259,15 +259,17 @@ describe('ping animation', () => {
   })
 })
 
-describe('signal gradient', () => {
-  it('is opaque at the transmitter, follows receivers, fades out, and never rises outward', () => {
-    const p = ringProfile(120, [{ px: 40, strength: 0.3 }, { px: 80, strength: 0.9 }])
-    expect(p).toHaveLength(RING_BANDS)
-    expect(p[0]).toBeGreaterThan(0.8)
-    expect(p[RING_BANDS - 1]).toBeLessThan(0.15)
-    for (let i = 1; i < p.length; i++) expect(p[i]).toBeLessThanOrEqual(p[i - 1])
-    const strong = ringProfile(120, [{ px: 80, strength: 0.9 }]), weak = ringProfile(120, [{ px: 80, strength: 0.1 }])
-    expect(strong[6]).toBeGreaterThan(weak[6])
+describe('outline strength (D-219)', () => {
+  it('is full at the transmitter, follows the receivers it passes, holds beyond them, and never rises outward', () => {
+    const rx = [{ px: 80, strength: 0.9 }, { px: 40, strength: 0.3 }]
+    expect(edgeStrength(0, rx)).toBe(1)
+    expect(edgeStrength(20, rx)).toBeCloseTo(0.65)
+    expect(edgeStrength(40, rx)).toBeCloseTo(0.3)
+    expect(edgeStrength(60, rx)).toBeCloseTo(0.3) // a stronger receiver farther out does not brighten it
+    expect(edgeStrength(200, rx)).toBeCloseTo(0.3)
+    expect(edgeStrength(200, [{ px: 50 }])).toBeCloseTo(0.5) // unmeasured
+    expect(edgeStrength(200, [])).toBe(1)
+    expect(edgeStrength(100, [{ px: 80, strength: 0.9 }])).toBeGreaterThan(edgeStrength(100, [{ px: 80, strength: 0.1 }]))
   })
 })
 
