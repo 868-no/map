@@ -44,8 +44,9 @@ pub use airtime::{airtime, Airtime, NodeAirtime, StoreForwardNode, StoreForwardS
 pub use batteries::{BATTERY_FALL_PER_DAY, BATTERY_LOW, BATTERY_TREND_MIN_REPORTS, BATTERY_WARN_AT};
 pub use busy_channel::{AIR_UTIL_WARN, CH_UTIL_PROBLEM, CH_UTIL_WARN};
 pub use burst::{BURST_MIN, BURST_MS};
-pub use chatty::{NODEINFO_PER_H, POSITION_PER_H, TELEMETRY_PER_H};
-pub use hop_limit::{HOP_FLAG_FROM, HOP_MIN_PACKETS, HOP_SPARE};
+pub use chatty::{CHATTY_RECENT, NODEINFO_PER_H, POSITION_PER_H, TELEMETRY_PER_H};
+pub use gateways::PLAINTEXT_FIXED_MIN;
+pub use hop_limit::{HOP_FLAG_FROM, HOP_MIN_PACKETS, HOP_RECENT, HOP_SPARE};
 pub use identities::{SHARED_KEY_MIN_SWITCHES, SHARED_KEY_OVERLAP_MS};
 pub use impersonation::SPOOF_MIN;
 pub use isolated::ISOLATED_MIN_PACKETS;

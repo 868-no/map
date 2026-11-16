@@ -161,9 +161,9 @@ export function mqttUplink(n: MeshNode): 'up' | 'upAll' | undefined {
   return n.is_gateway ? (n.multi_uplink ? 'upAll' : 'up') : undefined
 }
 
-/** It probably downlinks: a down arrow beside the marker (see MqttFlow). */
+/** It probably downlinks, and has not stopped (D-226): a down arrow beside the marker (see MqttFlow). */
 export function mqttDownlink(n: MeshNode): boolean {
-  return !!n.mqtt_downlink
+  return !!n.mqtt_downlink && !n.mqtt_downlink.stopped
 }
 
 /** Ink for a glyph on a marker filled with rgb: dark on light fills, light on dark ones. */

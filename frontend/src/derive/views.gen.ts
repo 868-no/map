@@ -67,7 +67,12 @@ export type Delivery = { acks_sent: number, acks_received: number, errors_sent: 
  * at exactly 0 dB. Genuine readings round to 0 dB too, on 1-11% of a node's
  * traceroutes in the 2026-11 data; downlinking gateways sat at 52-79% (D-054).
  */
-export type Downlink = { zero_snr: number, traceroutes: number, };
+export type Downlink = { zero_snr: number, traceroutes: number,
+/**
+ * When it last looked downlinked, if the traceroutes since show it no
+ * longer does (D-226): downlink switched off within the window.
+ */
+stopped?: string, };
 
 /**
  * Directed src -> dst: dst heard src.

@@ -10,6 +10,8 @@ use crate::util::{map, FxMap};
 pub const HOP_MIN_PACKETS: usize = 20;
 pub const HOP_SPARE: i16 = 3;
 pub const HOP_FLAG_FROM: i16 = 6;
+/// How many of its newest packets tell the hop limit it uses now (D-226).
+pub const HOP_RECENT: usize = 10;
 
 pub(super) fn check(cx: &Ctx, out: &mut Issues) {
     let mut fewest: FxMap<u64, i16> = map();
@@ -23,17 +25,17 @@ pub(super) fn check(cx: &Ctx, out: &mut Issues) {
         }
     }
     for (&n, pk) in &cx.own {
+        // Its limit now: the most common among its newest packets, so a
+        // limit lowered within the window is judged as lowered (D-226).
+        let mut sent: Vec<(i64, i16)> = pk.values().filter_map(|r| r.hs.map(|h| (r.t, h))).collect();
+        sent.sort_unstable();
         let mut starts: FxMap<i16, usize> = map();
-        let mut needed: Vec<i16> = Vec::new();
-        for r in pk.values() {
-            if let Some(hs) = r.hs {
-                *starts.entry(hs).or_default() += 1;
-            }
-            if let Some(&f) = fewest.get(&r.lp) {
-                needed.push(f);
-            }
+        for &(_, h) in sent.iter().rev().take(HOP_RECENT) {
+            *starts.entry(h).or_default() += 1;
         }
         let Some((&hs, _)) = starts.iter().max_by_key(|&(h, c)| (*c, *h)) else { continue };
+        // What its packets sent with that limit needed.
+        let mut needed: Vec<i16> = pk.values().filter(|r| r.hs == Some(hs)).filter_map(|r| fewest.get(&r.lp).copied()).collect();
         if needed.len() < HOP_MIN_PACKETS || hs < HOP_FLAG_FROM {
             continue;
         }
@@ -43,5 +45,33 @@ pub(super) fn check(cx: &Ctx, out: &mut Issues) {
             let suggest = (p95 + 1).max(3);
             out.add(n, "hop_limit", "notice", format!("Hop limit {hs}, but its packets needed at most {p95}"), format!("Gateways heard 95 % of its {} packets within {p95} hops, yet it sends with a hop limit of {hs}: every spare hop is another round of rebroadcasts. A limit around {suggest} would likely reach the same gateways (nodes beyond them are not seen here; the reach simulator under Details shows what each limit reaches).", needed.len()));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::health::tests::{issues, H};
+    use crate::row::{Interner, JRow, Row};
+
+    /// Node 5's packet `k` sent with hop limit `hs`, heard by gateway 9 after one hop.
+    fn sent(i: &mut Interner, k: i64, hs: i16) -> Row {
+        let text = format!(r#"{{"i":{k},"t":{},"b":"x","g":9,"s":5,"y":"text","l":"{k:016x}","o":"{k:016x}","sg":"unsigned","hs":{hs},"hl":{}}}"#, k * H / 10, hs - 1);
+        serde_json::from_str::<JRow>(&text).unwrap().into_row(i)
+    }
+
+    #[test]
+    fn a_hop_limit_lowered_in_the_window_is_judged_as_lowered() {
+        let mut i = Interner::default();
+        let mut rows: Vec<Row> = (1..=30).map(|k| sent(&mut i, k, 7)).collect();
+        let got = issues(&rows, &i);
+        let h = got.iter().find(|x| x.kind == "hop_limit").expect("limit 7, one hop needed");
+        assert!(h.summary.starts_with("Hop limit 7, but its packets needed at most 1"), "{h:?}");
+        // Lowered to 3: its newest packets say so, and 3 is not flagged.
+        rows.extend((31..=40).map(|k| sent(&mut i, k, 3)));
+        assert!(issues(&rows, &i).iter().all(|x| x.kind != "hop_limit"));
+        // A reply now and then with another hop start does not change it.
+        rows.truncate(30);
+        rows.extend((31..=33).map(|k| sent(&mut i, k, 3)));
+        assert!(issues(&rows, &i).iter().any(|x| x.kind == "hop_limit"));
     }
 }

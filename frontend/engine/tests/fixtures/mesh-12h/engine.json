@@ -3834,30 +3834,9 @@
       {
         "detail": "More often than needed (the default is one every 3 hours); each one is flooded through the mesh.",
         "kind": "chatty_nodeinfo",
-        "node": "!3317a3bc",
-        "severity": "notice",
-        "summary": "Sends 1.0 NodeInfo announcements per hour"
-      },
-      {
-        "detail": "More often than needed (the default is one every 3 hours); each one is flooded through the mesh.",
-        "kind": "chatty_nodeinfo",
-        "node": "!4e95f741",
-        "severity": "notice",
-        "summary": "Sends 1.0 NodeInfo announcements per hour"
-      },
-      {
-        "detail": "More often than needed (the default is one every 3 hours); each one is flooded through the mesh.",
-        "kind": "chatty_nodeinfo",
         "node": "!a349702d",
         "severity": "notice",
         "summary": "Sends 1.3 NodeInfo announcements per hour"
-      },
-      {
-        "detail": "More often than needed (the default is one every 3 hours); each one is flooded through the mesh.",
-        "kind": "chatty_nodeinfo",
-        "node": "!bfa97d12",
-        "severity": "notice",
-        "summary": "Sends 1.0 NodeInfo announcements per hour"
       },
       {
         "detail": "More often than needed (the firmware default is one every 15 minutes at most, less when it is not moving); each one is flooded through the mesh.",
@@ -3923,21 +3902,14 @@
         "summary": "Short name \"SLMD\" is not unique"
       },
       {
-        "detail": "Gateways heard 95 % of its 21 packets within 3 hops, yet it sends with a hop limit of 7: every spare hop is another round of rebroadcasts. A limit around 4 would likely reach the same gateways (nodes beyond them are not seen here; the reach simulator under Details shows what each limit reaches).",
-        "kind": "hop_limit",
-        "node": "!552ad94c",
-        "severity": "notice",
-        "summary": "Hop limit 7, but its packets needed at most 3"
-      },
-      {
-        "detail": "Gateways heard 95 % of its 50 packets within 4 hops, yet it sends with a hop limit of 7: every spare hop is another round of rebroadcasts. A limit around 5 would likely reach the same gateways (nodes beyond them are not seen here; the reach simulator under Details shows what each limit reaches).",
+        "detail": "Gateways heard 95 % of its 49 packets within 4 hops, yet it sends with a hop limit of 7: every spare hop is another round of rebroadcasts. A limit around 5 would likely reach the same gateways (nodes beyond them are not seen here; the reach simulator under Details shows what each limit reaches).",
         "kind": "hop_limit",
         "node": "!5dca6801",
         "severity": "notice",
         "summary": "Hop limit 7, but its packets needed at most 4"
       },
       {
-        "detail": "Gateways heard 95 % of its 26 packets within 2 hops, yet it sends with a hop limit of 7: every spare hop is another round of rebroadcasts. A limit around 3 would likely reach the same gateways (nodes beyond them are not seen here; the reach simulator under Details shows what each limit reaches).",
+        "detail": "Gateways heard 95 % of its 21 packets within 2 hops, yet it sends with a hop limit of 7: every spare hop is another round of rebroadcasts. A limit around 3 would likely reach the same gateways (nodes beyond them are not seen here; the reach simulator under Details shows what each limit reaches).",
         "kind": "hop_limit",
         "node": "!64e26f73",
         "severity": "notice",

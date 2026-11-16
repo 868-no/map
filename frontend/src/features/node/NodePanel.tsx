@@ -5,7 +5,7 @@ import { NodeHealth } from '../health'
 import { ViewError, type SnapshotView } from '../../derive/views'
 import { useNodeDetail } from '../../state/data'
 import { nodeLink, useStore, type DetailTab } from '../../state/store'
-import { relativeAge } from '../../lib/time'
+import { formatShort, relativeAge } from '../../lib/time'
 import { isOnline, namesOf } from '../../map/model'
 import { linkNeighbours } from './sort'
 import { OverviewTab } from './Overview'
@@ -50,11 +50,16 @@ export function NodePanel({ id, snapshot }: { id: string; snapshot: SnapshotView
           ) : (
             <span className="tag gw" title="Uplinks the packets it hears to the MQTT broker (the first copy of each)">↑ MQTT gateway</span>
           ))}
-        {d.mqtt_downlink && (
-          <span className="tag gw" title={`Probably transmits packets it takes from the MQTT broker: ${d.mqtt_downlink.zero_snr} of ${d.mqtt_downlink.traceroutes} traceroutes reached it at exactly 0 dB, the reading a packet from MQTT gets`}>
-            ↓ MQTT downlink (probable)
-          </span>
-        )}
+        {d.mqtt_downlink &&
+          (d.mqtt_downlink.stopped ? (
+            <span className="tag" title={`Probably transmitted packets it took from the MQTT broker until about ${formatShort(d.mqtt_downlink.stopped)}: ${d.mqtt_downlink.zero_snr} of ${d.mqtt_downlink.traceroutes} traceroutes reached it at exactly 0 dB, the reading a packet from MQTT gets, and the traceroutes since read like radio`}>
+              ↓ MQTT downlink, stopped
+            </span>
+          ) : (
+            <span className="tag gw" title={`Probably transmits packets it takes from the MQTT broker: ${d.mqtt_downlink.zero_snr} of ${d.mqtt_downlink.traceroutes} traceroutes reached it at exactly 0 dB, the reading a packet from MQTT gets`}>
+              ↓ MQTT downlink (probable)
+            </span>
+          ))}
       </p>
       {d.mqtt_opt_out && (
         <p className="opt-out-note">This node did not allow MQTT uplink, but some of its packets reached us through another gateway. Its name and NodeInfo are not stored.</p>

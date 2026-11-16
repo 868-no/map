@@ -599,7 +599,10 @@ They are found indirectly:
   Genuine readings round to 0 dB too (1–11 % of a node's traceroutes in seven days of data), while the known downlinking gateways were at 52–79 %.
   A node is a probable downlinker when at least 3 distinct in-window traceroutes reached it at exactly 0 dB, making up at least 25 % of those recording an SNR at it (`DOWNLINK_MIN`, `DOWNLINK_SHARE`).
   Being a gateway is not required.
-  The node view reports the evidence as `mqtt_downlink {zero_snr, traceroutes}` (D-054).
+  The node view reports the evidence as `mqtt_downlink {zero_snr, traceroutes, stopped?}` (D-054).
+  *Stopped* (D-226): when, in time order, the traceroutes up to some point still make it a downlinker and the at least 10 after it reached it at 0 dB no more than 10 % of the time, it switched downlink off in the window; `stopped` is the time of the last 0 dB reading before that (the latest such point).
+  Its earlier 0 dB hops stay MQTT hops, but the marker loses its down arrow, the panel's tag says it stopped, and Health no longer warns.
+  Off and on again ends with it downlinking, so it is not stopped.
 - **Internet links:** a traceroute hop recorded at exactly 0 dB into a probable downlinker is an MQTT hop.
   Tying the rule to the downlinking node keeps stray genuine 0 dB readings radio and keeps the links consistent with the downlink arrows.
   These samples are split out before relay resolution; MQTT edges (`mqtt: true`) carry no SNR/RSSI statistics, say why in `reason`, and are excluded from estimates, relay resolution, the link count and the radio layers.
@@ -831,19 +834,27 @@ All links are hidden while a route is shown, and the map frames it once.
 Rules over the window's rows and snapshot flag known problems per node (`health` view, `engine/src/health/`, one module per rule or family of rules, D-095).
 Each issue has a severity (problem, warning, notice), a one-line summary and an explanation.
 Rates use the span the rows cover when shorter than the window.
-Thresholds are constants in each rule's module, re-exported from `health/mod.rs`:
+Thresholds are constants in each rule's module, re-exported from `health/mod.rs`.
+
+Rules about a setting judge the setting as it is now, not as it was earlier in the window: once newer data shows a fix, the issue goes, even when the window still holds the evidence for it (D-226).
+That covers a probable MQTT downlink that stopped, a topic root that was corrected, MQTT encryption switched back on, a hop limit that was lowered and broadcast rates that were brought down; each bullet says how.
+Readings already taken from the newest report (channel utilisation, low battery, a stale position, a node's role, name and key) need nothing more, and rules about things that happened (restarts, bursts, flooding, refused requests, impersonation, a link drop that has not recovered) stand for the window they happened in.
+On production data (1–7 and 9–16 Nov 2026) the change dismissed a downlink that stopped on 9 Nov, two corrected topic roots, one gateway uplinking encrypted again and the hop-limit notices of nodes that lowered their limit.
+
 
 - **Traceroute flooding:** ≥ 4 requests/h and ≥ 10 in the window (warning), ≥ 10/h (problem).
 - **Large airtime share:** its packets with their rebroadcasts cause ≥ 10 % of the estimated airtime (warning).
 - **Busy channel:** reported channel utilisation ≥ 25 % (warning), ≥ 40 % (problem); transmit airtime ≥ 10 %, the EU hourly duty cycle (warning).
-- **MQTT downlink:** a probable downlinker (§6.5) (warning).
+- **MQTT downlink:** a probable downlinker (§6.5) (warning), unless it stopped in the window.
 - **Moving gateway (D-161):** a gateway that moved in the window (`moved_at`, §6.11) (warning): gateways' receptions place nodes and draw links, so evidence from one on the move is weaker, and its topic root, set for one region, travels with it.
 - **Topic root and region (D-161):** a gateway with a current reported position in one of the regions (landsdeler, the Regions layer's outlines in `frontend/src/assets/regions.geojson`; the worker fetches that same content-hashed, precached file once and hands it to the engine, which skips this rule until it has; a point within 15 km outside every outline counts for the nearest, since the outlines are simplified and drop islets) that uplinked in the window under a root naming another region (warning), misspelling one (warning, naming the exact spelling) or naming none (notice).
   A root names a region only when one of its segments is exactly `Nord-Norge`, `Trøndelag`, `Vestlandet`, `Østlandet` or `Sørlandet`: case counts, and no substitute for æ, ø or å is accepted, so `Ostlandet`, `trøndelag` or `NordNorge` name no region and are reported as misspelt.
   Gateways abroad or without a reported position are not judged.
+  Only the roots in use since its newest root was first used count: a root it changed from is not reported, while roots used side by side (two brokers) all are (D-226).
 - **Different preset than the mesh:** the mesh's preset is the one most packets' default channel names imply (each packet once per name); a node the panel's preset inference (§6.13) puts on another, by its own or its radio group's confirmed map reports, or by a channel name when it has at least 3 packets and none was heard on a channel named for the mesh's preset (warning).
   Health and the panel share the one inference, so they never disagree.
 - **Hop limit higher than needed:** a hop limit of 6 or 7 at least 3 above the hops within which gateways heard 95 % of its packets (≥ 20 packets).
+  Its limit is the most common hop start among its 10 newest packets, so a limit lowered in the window is judged as lowered, and only its packets sent with that limit count: replies and some messages carry another hop start, which used to pull the hops needed down (D-226).
   Gateways are only part of the mesh, so this is a notice with a suggested limit.
 - **Possible impersonation (D-108):** 3 or more packets claiming to come from a node that failed signature or key checks (`invalid` rows with a verification reason; decoding failures do not count), a warning naming the reasons and how many gateways reported them.
   When all of them announce a different key than the trusted one, the explanation says the node was most likely reset and has a new key.
@@ -881,7 +892,7 @@ Thresholds are constants in each rule's module, re-exported from `health/mod.rs`
   On production rows from 27 Oct to 10 Nov 2026 (210 000 rows) it flags 9 nodes: that phone (29), two nodes sending encrypted packets on private channels every 30 s (25, 24), a boot loop (NodeInfo and telemetry every minute and a half, uptime resetting; 20), manual traceroute runs (15–18) and bursts of NodeInfo; counting conversation as well, people chatting topped the list with up to 65.
 - **Restarts (D-099):** for routers and base stations only (ROUTER, ROUTER_LATE, CLIENT_BASE; a handheld is switched off and on as it is used), uptime going backwards between reports, beyond what the time between them explains; a notice, a warning from 3 restarts.
   Constant zero uptime is not a restart.
-- **Notices:** no other gateway reports it (≥ 10 packets, only its own uplinks); remote-admin requests refused by ≥ 2 nodes; uplinks arriving unencrypted; positions > 4/h (not when moving), NodeInfo > 1/h or device telemetry > 4/h; a stale position (§6.10); battery ≤ 15 %; a short name shared with another node (not between ids announcing the same key, which are one device, §6.17 shared public key).
+- **Notices:** no other gateway reports it (≥ 10 packets, only its own uplinks); remote-admin requests refused by ≥ 2 nodes; uplinks arriving unencrypted, unless at least 3 uplinks on a channel it had uplinked unencrypted arrived encrypted after the last unencrypted one (a gateway with encryption off decrypts every channel it holds the key to; channels it cannot read arrive encrypted either way and prove nothing); positions > 4/h (not when moving), NodeInfo > 1/h or device telemetry > 4/h, over the window and now (the mean gap between its 10 newest of the kind, leaving out the longest, so one stretch gateways missed does not count as slowing down; D-226); a stale position (§6.10); battery ≤ 15 %; a short name shared with another node (not between ids announcing the same key, which are one device, §6.17 shared public key).
 
 **Airtime** is estimated per packet as one transmission by its sender plus one per distinct relay seen (resolved last hops, traceroute routes), each costing its estimated on-air size (16-byte header, payload, Data wrapper when decoded, 66 bytes when signed) plus about 20 bytes' worth of preamble.
 Only shares are reported: of the window's total by packet type, and per node the share its packets cause and the share it transmitted itself (its own packets and relays).
