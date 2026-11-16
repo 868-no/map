@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest'
-import { activePings as rawPings, addTransmission, BLIP_LIFE, clearPings, edgeStrength, distanceM, metresPerPixel, MIN_RING_PX, PING_COLLECT, PING_FADE, PING_GROW, PING_LINGER, DELIVERY_TRAVEL, deliveryTravel, pingCount } from '../src/map/pings'
+import { activePings as rawPings, addTransmission, BLIP_LIFE, clearPings, edgeStrength, distanceM, metresPerPixel, MIN_RING_PX, PING_COLLECT, PING_FADE, PING_GROW, PING_LINGER, REBROADCAST_HOLD, DELIVERY_TRAVEL, deliveryTravel, pingCount } from '../src/map/pings'
 
 // Attribution (which transmissions a reception proves) lives in the engine
 // and is tested there (frontend/engine/src/packets.rs); these are the animation's.
@@ -91,21 +91,24 @@ describe('ping animation', () => {
     expect(activePings(deliveryTravel(1) + 150).deliveries.filter((d) => d.leg === 'back').map((d) => d.to)).toEqual([pos.get(GW)])
   })
   it('a stretch whose hops are not known travels as a line, and the relay beyond it waits for it', () => {
-    // A sent it; how it reached B is not known; B relayed it to GW.
+    // A sent it; how it reached B is not known; B relayed it to GW. No copy
+    // shows A heard, so the line leaves once the hold is up (D-225).
+    const H = REBROADCAST_HOLD
     addTransmission({ key: `p|${A}`, tx: A, rebroadcast: false }, pos, 0)
     addTransmission({ key: `p|${A}>${B}`, tx: A, rx: B, rebroadcast: false, gap: 'gap' }, pos, 0)
     addTransmission({ key: `p|${B}`, tx: B, rx: GW, rebroadcast: true }, pos, 0)
-    const mid = activePings(PING_GROW / 2)
+    expect(activePings(H / 2).gaps).toHaveLength(0)
+    const mid = activePings(H + PING_GROW / 2)
     expect(mid.rings).toHaveLength(0) // B waits; the gap draws no ring
     expect(mid.gaps).toHaveLength(1)
     expect(mid.gaps[0]).toMatchObject({ from: pos.get(A), to: pos.get(B), internet: false })
     expect(mid.gaps[0].progress).toBeGreaterThan(0)
     expect(mid.gaps[0].progress).toBeLessThan(1)
-    const reached = activePings(PING_GROW)
+    const reached = activePings(H + PING_GROW)
     expect(reached.gaps[0].progress).toBe(1)
     expect(reached.flashes.map((f) => f.pos)).toEqual([pos.get(B)])
     // B's ring starts as the gap arrives.
-    const relayed = activePings(PING_GROW + PING_GROW / 2)
+    const relayed = activePings(H + PING_GROW + PING_GROW / 2)
     expect(relayed.rings.map((r) => r.center)).toEqual([pos.get(B)])
   })
   it('a gap over the internet is marked so, and one with an end not placed is not drawn', () => {
@@ -285,6 +288,35 @@ describe('rebroadcast ordering', () => {
     while (!ring(t, [10.2, 63]) && t < PING_GROW * 2) t += 20
     expect(ring(t, [10.0, 63])!.radiusPx * metresPerPixel(63, Z)).toBeGreaterThanOrEqual(distanceM([10, 63], [10.2, 63]) * 0.98)
     expect(ring(t, [10.2, 63])!.radiusPx).toBeLessThan(MIN_RING_PX) // just starting
+  })
+  it("a relay's copy arriving first waits for the copy that shows its originator heard (D-225)", () => {
+    // GW1 heard C's rebroadcast; how it reached C is not known. A second later
+    // GW's copy shows A heard directly: A's ring comes first, then the line to C, then C's ring.
+    addTransmission({ key: `p|${A}`, tx: A, rebroadcast: false }, pos, 0)
+    addTransmission({ key: `p|${A}>${C}`, tx: A, rx: C, rebroadcast: false, gap: 'gap' }, pos, 0)
+    addTransmission({ key: `p|${C}`, tx: C, rx: GW, rebroadcast: true }, pos, 0)
+    expect(rawPings(500, Z).gaps).toHaveLength(0)
+    expect(ring(500, [10.2, 63])).toBeUndefined()
+    addTransmission({ key: `p|${A}`, tx: A, rx: GW, rebroadcast: false }, pos, 1000)
+    const now = rawPings(1500, Z)
+    expect(now.rings.map((r) => r.center)).toEqual([[10, 63]])
+    expect(now.gaps).toHaveLength(1)
+    expect(now.gaps[0].progress).toBeLessThan(0.5) // left with A's ring, at 1000
+    let t = 1500
+    while (!ring(t, [10.2, 63]) && t < 10_000) t += 20
+    expect(rawPings(t, Z).gaps[0].progress).toBe(1) // as the line reaches C
+    expect(rawPings(t - 40, Z).gaps[0].progress).toBeLessThan(1)
+  })
+  it('without that copy, the relay plays once the hold is up', () => {
+    addTransmission({ key: `p|${A}`, tx: A, rebroadcast: false }, pos, 0)
+    addTransmission({ key: `p|${C}`, tx: C, rx: GW, rebroadcast: true }, pos, 0)
+    expect(ring(REBROADCAST_HOLD - 100, [10.2, 63])).toBeUndefined()
+    expect(ring(REBROADCAST_HOLD + 100, [10.2, 63])!.radiusPx).toBeLessThan(MIN_RING_PX) // just starting
+  })
+  it('a packet whose originator was heard first plays at once', () => {
+    addTransmission({ key: `p|${A}`, tx: A, rx: GW, rebroadcast: false }, pos, 0)
+    addTransmission({ key: `p|${C}`, tx: C, rx: GW, rebroadcast: true }, pos, 10)
+    expect(ring(100, [10.2, 63])).toBeDefined()
   })
   it('without upstream information the relay pings immediately', () => {
     addTransmission({ key: `p|${C}`, tx: C, rx: GW, rebroadcast: true }, pos, 0)

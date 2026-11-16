@@ -1122,6 +1122,10 @@ On a rolling window, each RF transmission attributable to a placed node is one e
 - **Waiting for upstream:** a transmission by X of packet P whose upstream ping (or gap) lists X as a receiver stays hidden until that ring (or line) reaches X, then grows from nothing.
   Without upstream information it starts at once.
   A waiting ping starts no later than its own collection timeout, so after a pause it keeps its timing and mostly expires (D-028, D-048).
+- **Holding rebroadcasts for the originator (D-225):** copies of a packet arrive over seconds, and the first is often a relay's: in 72 h of the community mesh, for 10 % of packets heard by two or more gateways over the radio, a copy with fewer hops came after the first, so the relay's amber ring started before the originator's blue one.
+  While the originator's transmission is on the map but no copy has shown anyone hearing it (a blip), a rebroadcast or an unknown stretch of the way (D-173) waits, unseen, for a copy that does, at most `REBROADCAST_HOLD` (3 s) after the originator's transmission appeared; then it starts, and the rings and lines beyond it wait for it as for any upstream ring.
+  When that copy comes, the held stretch leaves with the originator's ring; otherwise it leaves when the hold is up, from then, so after a pause without frames it keeps its timing.
+  A 3 s hold fixes 82 % of those cases (1 s: 41 %, 5 s: 94 %); a packet first heard directly from its originator, and the originator's own glow, play at once.
 - **Drawing:** rings are sized in screen pixels, never smaller than 22 px, so co-located receivers stay visible.
   A ring is a thin outline (1.5 px, 60 % at most) and transparent inside: with a gateway uplinking every copy, the earlier filled rings piled up over the map (D-219).
   The outline's opacity follows the signal where its edge is: full at the transmitter, at each receiver's distance its measured signal (gateway SNR −20…+10 dB, else RSSI −130…−70 dBm; 0.5 when unmeasured), linear between, held beyond the farthest receiver and never rising outward, down to 15 % of full for the weakest, so a ring fades as it passes receivers that heard it weakly.

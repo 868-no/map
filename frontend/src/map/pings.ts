@@ -33,6 +33,11 @@ interface Ping {
   // until that ring reaches this transmitter; so does a traceroute reply
   // leaving the target until its request's ring gets there.
   waitFor?: { key: string; rx: string; since: number }
+  // A rebroadcast, or an unknown stretch of the way, while the originator's
+  // transmission is on the map but no copy has shown anyone hearing it: it
+  // waits for one, until `until` at the latest, so the originator's ring
+  // comes first (D-225).
+  holdFor?: { key: string; until: number }
   // Not a radio transmission: the way to its one receiver, whose hops are
   // not known (D-173). It travels as a line, dashed (dotted over the
   // internet), at the pace of a ring, and draws no ring.
@@ -48,6 +53,10 @@ export const PING_FADE = 2500 // ms fade-out
 // stays open this long so a receiver arriving later still grows a ring.
 export const BLIP_LIFE = 1500 // ms
 export const PING_COLLECT = PING_GROW + PING_LINGER + PING_FADE
+// Copies of a packet arrive over seconds (median spread 2.6 s on the community
+// mesh): a relay's often before the one showing the originator heard. Its
+// rebroadcasts wait this long after the originator's transmission appeared.
+export const REBROADCAST_HOLD = 3000 // ms
 const OVERSHOOT = 1.08 // the farthest receiver sits just inside the ring
 // Rings never stay smaller than this on screen, so receivers close to (or at
 // the same reported position as) the transmitter are still visibly enclosed.
@@ -246,7 +255,7 @@ function wayLines(w: Way, elapsed: number, alpha: number, leg: DeliveryLine['leg
 
 /** Whether a packet's pings are still on their way: a ring growing, or a rebroadcast waiting for its upstream ring. */
 function travelling(packet: string, now: number): boolean {
-  for (const p of pings.values()) if (p.packet === packet && (p.waitFor || (p.heard && now < p.growStart + PING_GROW))) return true
+  for (const p of pings.values()) if (p.packet === packet && (p.waitFor || p.holdFor || (p.heard && now < p.growStart + PING_GROW))) return true
   return false
 }
 
@@ -335,6 +344,16 @@ export function addTransmission(t: Transmission, pos: Map<string, LngLat>, now =
       if ((packetOf(k) === lp || (t.packet && q.packet === t.packet) || (t.after && q.packet === t.after)) && q.receivers.has(t.tx)) {
         p.waitFor = { key: k, rx: t.tx, since: now }
         if (packetOf(k) === lp) break
+      }
+    }
+    // The originator's transmission on the map, not yet heard by anyone:
+    // wait for a copy that shows it heard, so its ring comes first (D-225).
+    if (t.rebroadcast || t.gap) {
+      for (const [k, q] of pings) {
+        if (packetOf(k) === lp && !q.rebroadcast && !q.gap && !q.heard && now - q.born < REBROADCAST_HOLD) {
+          p.holdFor = { key: k, until: q.born + REBROADCAST_HOLD }
+          break
+        }
       }
     }
     pings.set(t.key, p)
@@ -432,11 +451,25 @@ function along(a: LngLat, b: LngLat, f: number): LngLat {
 export function activePings(now: number, zoom: number): { rings: Ring[]; blips: Blip[]; flashes: Flash[]; trails: Trail[]; gaps: GapLine[]; deliveries: DeliveryLine[]; arrivals: Flash[] } {
   const rings: Ring[] = [], blips: Blip[] = [], flashes: Flash[] = [], trails: Trail[] = [], gaps: GapLine[] = []
   for (const [k, p] of pings) {
+    if (p.holdFor) {
+      // Until the originator is heard, or its hold is up: from then, so after
+      // a pause without frames it keeps its timing (D-225).
+      const o = pings.get(p.holdFor.key)
+      if (o && !o.heard && now < p.holdFor.until) continue
+      const start = Math.min(o?.heard ? o.heardAt : p.holdFor.until, now)
+      p.born = p.growStart = start
+      p.from = 0
+      if (p.heard) p.heardAt = start
+      p.settled = start + PING_GROW
+      if (p.waitFor) p.waitFor.since = start
+      p.holdFor = undefined
+    }
     if (p.waitFor) {
       const parent = pings.get(p.waitFor.key)
-      // While that ring itself still waits (a replayed route arrives whole),
-      // the time limit below counts from when it starts.
-      if (parent?.waitFor) {
+      // While that ring itself still waits (a replayed route arrives whole,
+      // or it is held for its originator), the time limit below counts from
+      // when it starts.
+      if (parent?.waitFor || parent?.holdFor) {
         p.waitFor.since = now
         continue
       }
