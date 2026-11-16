@@ -8,14 +8,19 @@ for (const [N, E] of [[0, 0], [2000, 20000]] as const) test(`rendering ${N} node
   test.setTimeout(180_000)
   // Synthetic observations the browser derives the mesh from: positions for
   // three in four nodes, and NeighborInfo reports of ten neighbours each
-  // (2 000 x 10 = 20 000 directed links).
+  // (2 000 x 10 = 20 000 directed links). The nodes sit on ten concentric
+  // rings of 200, each reporting the next ten on its ring, so no link is
+  // longer than radio reaches (under 100 km): longer ones would read as the
+  // node having moved (D-223).
   const num = (i: number) => 0x10000000 + i
+  const RING = 200
   const rows = Array.from({ length: N }, (_, i) => {
-    const lat = 58.5 + ((i * 7919) % 1000) / 1000 * 5.5, lon = 5.5 + ((i * 104729) % 1000) / 1000 * 6.5
+    const r = Math.floor(i / RING), p = i % RING, f = (r + 1) / (N / RING), a = (2 * Math.PI * p) / RING
+    const lat = 61.25 + 2.75 * f * Math.sin(a), lon = 8.75 + 3.25 * f * Math.cos(a)
     const positioned = i % 4 !== 0
     return [
       ...nodeRows(num(i), `N${i % 1000}`, positioned ? { lat, lon } : {}),
-      ...(N > 0 && E > 0 ? [neighborRow(num(i), Array.from({ length: E / N }, (_, k) => num((i + 1 + k) % N)))] : []),
+      ...(N > 0 && E > 0 ? [neighborRow(num(i), Array.from({ length: E / N }, (_, k) => num(r * RING + ((p + 1 + k) % RING))))] : []),
     ]
   }).flat()
   await mockObservations(page, rows)
