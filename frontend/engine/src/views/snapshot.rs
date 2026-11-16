@@ -294,6 +294,14 @@ pub fn build_snapshot(rows: &[&Row], i: &Interner, g: &GeoOptions, rules: Rules)
             (er, ctx) = edges_with(estimated);
         }
     }
+    // Nodes that links show were elsewhere moved like any other (D-223).
+    for (&n, &t) in &er.moved {
+        if let Some(x) = nodes.get_mut(&n)
+            && moved.get(&n).is_none_or(|&m| t > m)
+        {
+            x.moved_at = Some(iso(t));
+        }
+    }
     if rules.mqtt_links {
         ctx.downlinkers = downlinkers;
     }
