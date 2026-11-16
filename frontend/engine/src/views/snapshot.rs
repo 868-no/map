@@ -278,7 +278,22 @@ pub fn build_snapshot(rows: &[&Row], i: &Interner, g: &GeoOptions, rules: Rules)
     // Movers' latest positions say nothing of where they relayed or heard
     // a copy: the signal rule leaves them out (D-153).
     let mobile: FxSet<u32> = moves.keys().copied().collect();
-    let (mut er, mut ctx) = build_edges(rows, &by.neighborinfo, &hops, &known, pos, silent, rules.mqtt_links.then_some(&downlinkers), &moved, rules, mobile);
+    let edges_with = |estimated| build_edges(rows, &by.neighborinfo, &hops, &known, pos.clone(), silent.clone(), rules.mqtt_links.then_some(&downlinkers), &moved, rules, mobile.clone(), estimated);
+    let (mut er, mut ctx) = edges_with(map());
+    // Relay candidates without a reported position are ruled out by range at
+    // their estimate (D-222). Estimates rest on direct, NeighborInfo and
+    // traceroute links only, never on relay bytes, so the links once more
+    // with those of this pass; the final estimates below come from the result.
+    if g.enabled {
+        estimate(&mut nodes, &er.edges, g);
+        let estimated: FxMap<u32, (LatLon, f64)> = nodes.iter_mut().filter_map(|(&n, x)| {
+            x.estimate_note = None;
+            x.estimate.take().map(|e| (n, (LatLon { lat: e.lat, lon: e.lon }, e.uncertainty_radius_m)))
+        }).collect();
+        if !estimated.is_empty() {
+            (er, ctx) = edges_with(estimated);
+        }
+    }
     if rules.mqtt_links {
         ctx.downlinkers = downlinkers;
     }

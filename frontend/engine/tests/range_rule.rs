@@ -27,7 +27,7 @@ fn one_traceroute_uplinked_twice_is_one_sighting_for_the_relay_range() {
         pos.insert(a, LatLon { lat: 59.4, lon: 10.5 });
         pos.insert(b, LatLon { lat: 61.9, lon: 10.2 });
         let known = vec![g, f, a, b, x1, x2, o];
-        let (er, ctx) = build_edges(&refs, &[], &hops.samples, &known, pos, set(), None, &map(), Rules::default(), set());
+        let (er, ctx) = build_edges(&refs, &[], &hops.samples, &known, pos, set(), None, &map(), Rules::default(), set(), map());
         let ab = er.edges.iter().find(|e| e.src_num == a && e.dst_num == b).unwrap();
         (ab.evidence.traceroute, ctx.max_range_m.round(), er.edges.iter().any(|e| e.src_num == f))
     };

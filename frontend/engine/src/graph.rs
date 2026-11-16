@@ -378,6 +378,11 @@ pub struct RelayContext {
     /// about where they were when a copy was heard, so the signal rule
     /// treats them as unpositioned, as relay or as gateway (D-153).
     pub mobile: FxSet<u32>,
+    /// Location estimates of nodes without a reported position, with their
+    /// uncertainty radius in metres: a candidate placed by one is ruled out
+    /// like a positioned one, beyond range by more than that radius
+    /// (D-222). Never used for the range bound itself.
+    pub estimated: FxMap<u32, (LatLon, f64)>,
     /// Distances from gateways to relay candidates, (gateway, candidate) ->
     /// metres, as resolve_detail measures them: a gateway's relayed copies
     /// ask after the same few candidates again and again.
@@ -393,7 +398,7 @@ impl RelayContext {
     /// non-relay evidence pairs (src, dst), one per sample; silent: nodes
     /// that never rebroadcast; mobile: nodes that moved in the window.
     pub fn new(known: impl IntoIterator<Item = u32>, pos: FxMap<u32, LatLon>, confirmed: impl IntoIterator<Item = (u32, u32)>, silent: FxSet<u32>, mobile: FxSet<u32>) -> Self {
-        let mut c = RelayContext { by_byte: vec![Vec::new(); 256], pos, confirmed: set(), silent, max_range_m: MIN_RELAY_RANGE_M, loose_range_m: MIN_RELAY_RANGE_M, downlinkers: set(), signal_rule: true, origin_rule: true, mobile, dist: RefCell::default() };
+        let mut c = RelayContext { by_byte: vec![Vec::new(); 256], pos, confirmed: set(), silent, max_range_m: MIN_RELAY_RANGE_M, loose_range_m: MIN_RELAY_RANGE_M, downlinkers: set(), signal_rule: true, origin_rule: true, mobile, estimated: map(), dist: RefCell::default() };
         for k in known {
             c.by_byte[last_byte(k) as usize].push(k);
         }
@@ -459,8 +464,10 @@ impl RelayContext {
             if k == origin || k == gw || self.silent.contains(&k) {
                 continue;
             }
-            if let (Some(&p), Some(&g)) = (self.pos.get(&k), gp)
-                && *dist.entry((gw, k)).or_insert_with(|| distance_m(p, g)) > range(k)
+            // A reported position, or else an estimate less its uncertainty (D-222).
+            let place = self.pos.get(&k).map(|&p| (p, 0.0)).or_else(|| self.estimated.get(&k).copied());
+            if let (Some((p, slack)), Some(&g)) = (place, gp)
+                && *dist.entry((gw, k)).or_insert_with(|| distance_m(p, g)) - slack > range(k)
             {
                 continue;
             }
@@ -583,6 +590,26 @@ mod tests {
         pos.insert(0x2222_2242, LatLon { lat: 63.4, lon: 10.4 });
         let c = RelayContext::new([0x0000_aa01u32, 0x1111_1142, 0x2222_2242], pos, [], set(), set());
         assert_eq!(c.resolve(0x42, 5, 0x0000_aa01, None), Some(Ok(0x1111_1142)));
+    }
+
+    #[test]
+    fn an_estimated_candidate_is_ruled_out_beyond_range_by_more_than_its_uncertainty() {
+        // D-222: gateway G in Bergen hears byte 0x42 at -42 dBm (15 km at most).
+        // Unpositioned E is estimated near Trondheim, 445 km away; X has no place at all.
+        let (g, e, x) = (0x0000_aa01u32, 0x1111_1142u32, 0x2222_2242u32);
+        let mut pos = map();
+        pos.insert(g, LatLon { lat: 60.19, lon: 5.24 });
+        let mut c = RelayContext::new([g, e], pos.clone(), [], set(), set());
+        assert_eq!(c.resolve(0x42, 5, g, Some(-42.0)), Some(Ok(e)), "without its estimate E cannot be ruled out");
+        c.estimated.insert(e, (LatLon { lat: 63.37, lon: 10.39 }, 26_800.0));
+        assert_eq!(c.resolve(0x42, 5, g, Some(-42.0)), None, "estimated far beyond range");
+        let mut c = RelayContext::new([g, e, x], pos.clone(), [], set(), set());
+        c.estimated.insert(e, (LatLon { lat: 63.37, lon: 10.39 }, 26_800.0));
+        assert_eq!(c.resolve(0x42, 5, g, Some(-42.0)), Some(Ok(x)), "the one candidate left");
+        // Within range once its uncertainty is allowed for: 40 km off, ±30 km, at a 15 km bound.
+        let mut c = RelayContext::new([g, e], pos, [], set(), set());
+        c.estimated.insert(e, (LatLon { lat: 60.55, lon: 5.24 }, 30_000.0));
+        assert_eq!(c.resolve(0x42, 5, g, Some(-42.0)), Some(Ok(e)));
     }
 
     #[test]
