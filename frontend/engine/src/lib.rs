@@ -138,8 +138,29 @@ impl Default for Engine {
     }
 }
 
-fn err(e: impl std::fmt::Display) -> JsError {
-    JsError::new(&e.to_string())
+/// An engine error: its message. The page receives it as a thrown JavaScript
+/// Error (the conversion runs only in the WebAssembly glue); native callers
+/// (tests, the probe CLI) get a plain Rust error, as creating a JsError
+/// outside WebAssembly panics.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Error(pub String);
+
+impl std::fmt::Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for Error {}
+
+impl From<Error> for JsValue {
+    fn from(e: Error) -> JsValue {
+        JsError::new(&e.0).into()
+    }
+}
+
+fn err(e: impl std::fmt::Display) -> Error {
+    Error(e.to_string())
 }
 
 fn json<T: serde::Serialize>(v: &T) -> String {
@@ -152,7 +173,7 @@ impl Engine {
     /// health or link; arg is the node id (node, packetlog, reach), packet key
     /// (route), "a|b" node ids (link) or comma-separated ids (watch); regions takes none. "null"
     /// means the node is neither observed nor referenced in the window.
-    pub fn view(&mut self, kind: &str, start: f64, end: f64, filters: &str, arg: &str) -> Result<String, JsError> {
+    pub fn view(&mut self, kind: &str, start: f64, end: f64, filters: &str, arg: &str) -> Result<String, Error> {
         let (start, end) = (start as i64, end as i64);
         match kind {
             "snapshot" => Ok(json(&self.build(start, end, filters)?.snapshot)),
@@ -269,7 +290,7 @@ impl Engine {
 
     /// Selects the window's rows passing the filters (Engine::rows),
     /// memoised until the store or the request changes.
-    fn filter(&mut self, start: i64, end: i64, filters: &str) -> Result<(), JsError> {
+    fn filter(&mut self, start: i64, end: i64, filters: &str) -> Result<(), Error> {
         let version = self.store.version;
         if self.rows.as_ref().is_none_or(|s| !s.key.is(start, end, filters, version)) {
             let f: Filters = serde_json::from_str(filters).map_err(err)?;
@@ -320,7 +341,7 @@ impl Engine {
 
     /// The snapshot (and relay context) for a window and filters, memoised
     /// until the store or the request changes; their rows are selected too.
-    fn build(&mut self, start: i64, end: i64, filters: &str) -> Result<&Built, JsError> {
+    fn build(&mut self, start: i64, end: i64, filters: &str) -> Result<&Built, Error> {
         let version = self.store.version;
         self.filter(start, end, filters)?;
         if self.built.as_ref().is_none_or(|(k, _)| !k.is(start, end, filters, version)) {
@@ -339,7 +360,7 @@ impl Engine {
     }
 
     /// {geo?: capabilities.geolocation, silent_rule?, mqtt_links?, move_rule?, signal_rule?, range_rule?, origin_rule?: bool, max_nodes?: number}
-    pub fn set_options(&mut self, options: &str) -> Result<(), JsError> {
+    pub fn set_options(&mut self, options: &str) -> Result<(), Error> {
         let o: Options = serde_json::from_str(options).map_err(err)?;
         let geo_changed = o.geo.is_some();
         if let Some(g) = o.geo {
@@ -371,14 +392,14 @@ impl Engine {
 
     /// The regions' outlines (the map's Regions layer GeoJSON) for the
     /// health rule on gateways' topic roots (D-161). Replaces the last set.
-    pub fn set_regions(&mut self, geojson: &str) -> Result<(), JsError> {
+    pub fn set_regions(&mut self, geojson: &str) -> Result<(), Error> {
         self.regions = landsdel::Regions::parse(geojson).map_err(err)?;
         Ok(())
     }
 
     /// Line-of-sight classes of router links from the server's terrain cross
     /// sections (D-143): [{a: "!id", b: "!id", class}]. Replaces the last set.
-    pub fn set_terrain(&mut self, links: &str) -> Result<(), JsError> {
+    pub fn set_terrain(&mut self, links: &str) -> Result<(), Error> {
         #[derive(serde::Deserialize)]
         struct L {
             a: String,
@@ -401,7 +422,7 @@ impl Engine {
     }
 
     /// Stages one /observations page; returns its metadata as JSON.
-    pub fn stage(&mut self, page: &str, batch: u32) -> Result<String, JsError> {
+    pub fn stage(&mut self, page: &str, batch: u32) -> Result<String, Error> {
         self.store.stage(page, batch, &mut self.i).map(|m| json(&m)).map_err(err)
     }
     pub fn commit(&mut self, batch: u32) -> u32 {
@@ -411,7 +432,7 @@ impl Engine {
         self.store.discard(batch)
     }
     /// Merges a JSON array of rows at or after `lo` (live rows, restored chunks).
-    pub fn add_rows(&mut self, rows: &str, lo: f64) -> Result<u32, JsError> {
+    pub fn add_rows(&mut self, rows: &str, lo: f64) -> Result<u32, Error> {
         self.store.add_json(rows, lo as i64, &mut self.i).map(|n| n as u32).map_err(err)
     }
     pub fn reset(&mut self) {
@@ -440,13 +461,13 @@ impl Engine {
 
     /// Engine::view as UTF-8 bytes (a Uint8Array in JS): the page decodes
     /// them once, with no UTF-16 string in between.
-    pub fn view_bytes(&mut self, kind: &str, start: f64, end: f64, filters: &str, arg: &str) -> Result<Vec<u8>, JsError> {
+    pub fn view_bytes(&mut self, kind: &str, start: f64, end: f64, filters: &str, arg: &str) -> Result<Vec<u8>, Error> {
         self.view(kind, start, end, filters, arg).map(String::into_bytes)
     }
 
     /// Transmissions proven by live rows (JSON array), attributed with the
     /// latest snapshot's relay context; JSON array of arrays, one per row.
-    pub fn transmissions(&mut self, rows: &str) -> Result<String, JsError> {
+    pub fn transmissions(&mut self, rows: &str) -> Result<String, Error> {
         let rows = row::parse_rows(rows, &mut self.i, |_| true).map_err(err)?;
         let empty = Built::default();
         let b = self.built.as_ref().map_or(&empty, |(_, b)| b);
