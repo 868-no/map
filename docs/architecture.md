@@ -138,7 +138,11 @@ basemap/                  basemap service image: Planetiler + run.sh (builds and
 deploy/                   compose.production.yaml, stack.swarm.yaml (split for Swarm; both with mqtt-buffer and backup),
                           Mosquitto config for the demo, caddy-auth snippets,
                           runners/ (self-hosted CI runners)
+tools/probe/              probe CLI: the engine run natively on a deployment's rows (fetch, cache, terrain classes),
+                          views as tables or JSON; release binaries for Linux, macOS, Windows (.github/workflows/probe.yml, release.sh);
+                          its own README.md and THIRD_PARTY_NOTICES.md (notices.py)
 scripts/                  go.sh, node.sh, wasm.sh, integration.sh, bench.sh, basemap_import.sh, regions.sh/regions.js,
                           outdated.sh (lists newer dependency releases), check-versions.sh (pinned versions agree),
-                          check-production.py (the production monitor's checks)
+                          check-production.py (the production monitor's checks),
+                          probe.sh (builds and runs tools/probe)
 ```

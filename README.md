@@ -81,6 +81,8 @@ docker run --rm --network host --ipc=host -v "$PWD":/src -w /src/frontend \
 scripts/bench.sh                      # 2M-row reference benchmark
 ```
 
+To see what the map derives without a browser, the probe CLI runs the engine natively on a deployment's rows: `scripts/probe.sh node Gråkallen`. Released as self-contained binaries for Linux, macOS and Windows; see [tools/probe/README.md](tools/probe/README.md).
+
 Linters (CI runs them all; fix what they report before pushing):
 
 ```sh
