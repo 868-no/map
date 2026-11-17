@@ -7,6 +7,7 @@
 #   scripts/wasm.sh clippy     cargo clippy, warnings as errors (lints: Cargo.toml)
 #   scripts/wasm.sh deny       cargo-deny: dependency advisories, bans, sources (deny.toml)
 #   UPDATE_GOLDEN=1 scripts/wasm.sh test   re-record tests/fixtures/mesh-12h/engine.json
+#   scripts/wasm.sh test|clippy|deny probe   the same for the probe CLI (tools/probe)
 set -euo pipefail
 repo="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 . "$repo/versions.env"
@@ -27,12 +28,19 @@ else
   cache=meshmap-rust-cache
   binaryen_dir="${XDG_CACHE_HOME:-$HOME/.cache}/meshmap/binaryen-$binaryen"
 fi
+# The crate: the engine, or the probe CLI built on it (native only).
+case "${2:-engine}" in
+  engine) crate=frontend/engine; test_profile=test-fast ;;
+  probe) crate=tools/probe; test_profile=dev
+    [ "${1:-build}" = build ] && { echo "the probe is not built to WebAssembly: scripts/probe.sh runs it" >&2; exit 2; } ;;
+  *) echo "usage: $0 [build|test|clippy|deny] [engine|probe]" >&2; exit 2 ;;
+esac
 tty_flag=()
 [ -t 1 ] && tty_flag=(-t)
 run() {
   docker run --rm "${tty_flag[@]}" -u "$(id -u):$(id -g)" \
     -e CARGO_HOME=/cache/cargo -e CARGO_TARGET_DIR=/cache/target -e HOME=/tmp -e UPDATE_GOLDEN="${UPDATE_GOLDEN:-}" \
-    -v "$cache":/cache -v "$repo":/src -v "$binaryen_dir":/binaryen:ro -w /src/frontend/engine "$image" sh -c "$1"
+    -v "$cache":/cache -v "$repo":/src -v "$binaryen_dir":/binaryen:ro -w /src/$crate "$image" sh -c "$1"
 }
 if [ -n "${MESHMAP_CACHE:-}" ]; then
   mkdir -p "$cache/cargo" "$cache/target"
@@ -42,7 +50,7 @@ fi
 mkdir -p "$binaryen_dir" # before Docker would create the mount point as root
 case "${1:-build}" in
   # --locked: a Cargo.toml change without its lockfile fails here, not later in an image build.
-  test) run "cargo test --locked --profile test-fast" ;;
+  test) run "cargo test --locked --profile $test_profile" ;;
   clippy) run "rustup component add clippy >/dev/null &&
       cargo clippy --locked --release --all-targets -- -D warnings" ;;
   # The full image: cargo-deny clones the advisory database with git, which slim lacks.
@@ -71,5 +79,5 @@ case "${1:-build}" in
       /binaryen/wasm-opt -O3 --strip-debug --strip-producers \
         /src/frontend/src/engine/pkg/engine_bg.wasm -o /src/frontend/src/engine/pkg/engine_bg.wasm"
     ls -l "$repo/frontend/src/engine/pkg" ;;
-  *) echo "usage: $0 [build|test|clippy|deny]" >&2; exit 2 ;;
+  *) echo "usage: $0 [build|test|clippy|deny] [engine|probe]" >&2; exit 2 ;;
 esac

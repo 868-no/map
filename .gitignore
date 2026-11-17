@@ -13,6 +13,7 @@ frontend/e2e/.results/
 frontend/test-results/
 frontend/src/engine/pkg/
 frontend/engine/target/
+tools/probe/target/
 frontend/.bench/
 # compiled Go test binaries (go test -c)
 *.test
