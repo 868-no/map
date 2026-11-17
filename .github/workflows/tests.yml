@@ -3,6 +3,10 @@
 # When they all pass, the images workflow builds (and from main and version
 # tags, publishes) the container images: nothing untested reaches ghcr.io.
 # A push to main then redeploys production through a Portainer webhook.
+# The engine is tested and built to WebAssembly first; the frontend (with
+# that build) and the probe CLI built on it (probe.yml) then run side by
+# side, while the engine's lints run beside them. On main the probe's binaries become the pre-release probe-main once
+# the deploy is done, so its download carries the engine production runs.
 # End-to-end tests (frontend/e2e) run against the demo stack: the simulated
 # mesh on a local broker, plus two days of seeded history. The basemap is not
 # built here (it takes GBs and an hour), so tests that need real map labels
@@ -76,7 +80,7 @@ jobs:
       - run: scripts/integration.sh
 
   engine:
-    name: engine (Rust tests, golden fixture)
+    name: engine (Rust tests, golden fixture, WebAssembly build)
     runs-on: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.RUNNER_LABELS && fromJSON(vars.RUNNER_LABELS) || 'ubuntu-24.04' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -89,21 +93,55 @@ jobs:
       # by its tests (D-202): they must be current.
       - name: generated view types are current
         run: git diff --exit-code frontend/src/derive/views.gen.ts
+      # Built once here, for the frontend's job (frontend/src/engine/pkg).
+      - name: build the WebAssembly engine
+        run: scripts/wasm.sh
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: engine-pkg
+          path: frontend/src/engine/pkg
+          retention-days: 1
+          if-no-files-found: error
+
+  # The engine's lints, beside the jobs waiting for the engine's build: they
+  # hold up the images, not the frontend's job.
+  engine-lint:
+    name: engine lint (clippy, cargo-deny)
+    runs-on: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.RUNNER_LABELS && fromJSON(vars.RUNNER_LABELS) || 'ubuntu-24.04' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/toolchain-cache
+        with:
+          name: engine-lint
+          hash: ${{ hashFiles('frontend/engine/Cargo.lock', 'scripts/wasm.sh', 'versions.env') }}
       - run: scripts/wasm.sh clippy
       # Advisories (RustSec), yanked versions and sources: blocks the deploy too.
       - run: scripts/wasm.sh deny
 
+  # The probe CLI (tools/probe) on the engine just tested: its checks and its
+  # binaries for Linux, macOS and Windows, beside the frontend's job, when
+  # anything it is built from changed. Not needed by the images: a probe
+  # failure never holds up a deploy, it only keeps probe-main where it is.
+  probe:
+    name: probe
+    needs: engine
+    uses: ./.github/workflows/probe.yml
+
   frontend:
     name: frontend (types, lint, unit, build)
+    needs: engine
     runs-on: ${{ github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && vars.RUNNER_LABELS && fromJSON(vars.RUNNER_LABELS) || 'ubuntu-24.04' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/toolchain-cache
         with:
           name: frontend
-          hash: ${{ hashFiles('frontend/engine/Cargo.lock', 'scripts/wasm.sh', 'frontend/package-lock.json', 'scripts/node.sh', 'versions.env') }}
-      - name: build the WebAssembly engine
-        run: scripts/wasm.sh
+          hash: ${{ hashFiles('frontend/package-lock.json', 'scripts/node.sh', 'versions.env') }}
+      # The engine's job built it from this commit.
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: engine-pkg
+          path: frontend/src/engine/pkg
       - run: scripts/node.sh npm ci --no-audit --no-fund
       # Known vulnerabilities in any npm dependency, development tools included
       # (they build what ships): a finding fails the job, and so blocks the
@@ -220,7 +258,7 @@ jobs:
 
   images:
     name: images
-    needs: [backend, integration, engine, frontend, e2e]
+    needs: [backend, integration, engine, engine-lint, frontend, e2e]
     permissions:
       contents: read
       packages: write
@@ -273,3 +311,27 @@ jobs:
             fi
             sleep 15
           done
+
+  # The probe's binaries from this commit as the rolling pre-release
+  # probe-main, once production runs this commit (tools/probe/release.sh).
+  probe-main:
+    name: publish probe-main
+    needs: [probe, deploy]
+    if: needs.probe.outputs.publish == 'main'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write # replace the release and move its tag
+    # One at a time, in push order, as the deploys.
+    concurrency:
+      group: probe-main
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: probe-*
+          path: dist
+          merge-multiple: true
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: tools/probe/release.sh main "$GITHUB_SHA" dist

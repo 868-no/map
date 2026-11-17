@@ -1,0 +1,162 @@
+# The probe CLI (tools/probe): its checks, and one self-contained binary per
+# platform: static Linux (musl) for x86_64 and arm64, a universal macOS
+# binary (Apple silicon and Intel), and Windows x86_64 with the C runtime
+# linked in. Each binary is run against production before it counts, which
+# checks that HTTPS verifies with that platform's trust store.
+#
+# Called by tests.yml once the engine's job has passed, beside the frontend's
+# (pull requests, main): the binary contains the engine and the regions'
+# outlines, so it is checked and built when they change, not only when the
+# probe does (PATHS). On main, tests.yml then publishes the binaries as the
+# rolling pre-release probe-main once the deploy is done (output publish).
+# probe-release.yml calls it for a tag probe-vX.Y.Z and publishes that
+# release. Run by hand, it builds. It publishes nothing itself, so its
+# callers need grant it no more than read access.
+name: probe
+
+on:
+  workflow_call:
+    outputs:
+      publish:
+        description: "main when the binaries built are for probe-main, tag for a probe-v tag, else none"
+        value: ${{ jobs.plan.outputs.publish }}
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  # What the binary is built from: a change to any of them builds it.
+  PATHS: tools/probe frontend/engine/src frontend/engine/Cargo.toml frontend/engine/Cargo.lock frontend/src/assets/regions.geojson versions.env scripts/wasm.sh .github/workflows/probe.yml
+
+jobs:
+  # Whether anything the binary is built from changed, and what to publish.
+  plan:
+    runs-on: ubuntu-24.04
+    outputs:
+      build: ${{ steps.plan.outputs.build }}
+      publish: ${{ steps.plan.outputs.publish }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # to compare with the base, or with probe-main's commit
+          filter: blob:none # commits and trees are all git diff --quiet reads
+      - id: plan
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          out() { echo "$1=$2" | tee -a "$GITHUB_OUTPUT"; }
+          changed() { [ -z "$1" ] || ! git diff --quiet "$1" "$GITHUB_SHA" -- $PATHS; }
+          case "$EVENT/$GITHUB_REF" in
+            pull_request/*)
+              if changed "$BASE"; then out build true; else out build false; fi; out publish none ;;
+            push/refs/heads/main)
+              base="$(git rev-parse -q --verify 'refs/tags/probe-main^{commit}' || true)"
+              if changed "$base"; then out build true; out publish main
+              else echo "nothing the binary is built from changed since probe-main ($base)"; out build false; out publish none; fi ;;
+            push/refs/tags/probe-v*) out build true; out publish tag ;;
+            workflow_dispatch/*) out build true; out publish none ;;
+            *) out build false; out publish none ;; # the map's version tags
+          esac
+
+  # Tests, clippy and cargo-deny, in the pinned Rust image as the engine's.
+  # On GitHub's runners always: off the deploy's path, it leaves self-hosted
+  # runners (RUNNER_LABELS) to the jobs the deploy waits for.
+  checks:
+    name: probe checks (tests, clippy, deny)
+    needs: plan
+    if: needs.plan.outputs.build == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/toolchain-cache
+        with:
+          name: probe
+          hash: ${{ hashFiles('frontend/engine/Cargo.lock', 'tools/probe/Cargo.lock', 'scripts/wasm.sh', 'versions.env') }}
+      - run: scripts/wasm.sh test probe
+      - run: scripts/wasm.sh clippy probe
+      - run: scripts/wasm.sh deny probe
+
+  # The crates linked into the binaries change with either lockfile.
+  notices:
+    name: probe third-party notices are current
+    needs: plan
+    if: needs.plan.outputs.build == 'true'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: |
+          . ./versions.env
+          rustup toolchain install "$RUST_VERSION" --profile minimal && rustup default "$RUST_VERSION"
+          cargo fetch --locked --manifest-path tools/probe/Cargo.toml
+          tools/probe/notices.py --check
+
+  build:
+    name: ${{ matrix.asset }}
+    needs: plan
+    if: needs.plan.outputs.build == 'true'
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-24.04, targets: x86_64-unknown-linux-musl, asset: probe-linux-x86_64 }
+          - { os: ubuntu-24.04-arm, targets: aarch64-unknown-linux-musl, asset: probe-linux-arm64 }
+          - { os: macos-15, targets: aarch64-apple-darwin x86_64-apple-darwin, asset: probe-macos }
+          - { os: windows-2025, targets: x86_64-pc-windows-msvc, asset: probe-windows-x86_64.exe }
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: a tag names the crate's version
+        if: needs.plan.outputs.publish == 'tag'
+        run: |
+          version="$(sed -n 's/^version = "\(.*\)"$/\1/p' tools/probe/Cargo.toml | head -1)"
+          [ "probe-v$version" = "$GITHUB_REF_NAME" ] || { echo "tag $GITHUB_REF_NAME, crate $version" >&2; exit 1; }
+      - name: toolchain
+        run: |
+          . ./versions.env
+          rustup toolchain install "$RUST_VERSION" --profile minimal $(printf -- '--target %s ' ${{ matrix.targets }})
+          rustup default "$RUST_VERSION"
+          # ring compiles C: musl's gcc wrapper for the static Linux builds.
+          if [ "$RUNNER_OS" = Linux ]; then sudo apt-get update -qq && sudo apt-get install -y -qq musl-tools; fi
+      - name: build
+        env:
+          # No Visual C++ runtime to install on Windows.
+          RUSTFLAGS: ${{ runner.os == 'Windows' && '-C target-feature=+crt-static' || '' }}
+          # probe --version names it: which engine the binary carries.
+          PROBE_COMMIT: ${{ github.sha }}
+        run: |
+          for t in ${{ matrix.targets }}; do
+            cargo build --locked --release --target "$t" --manifest-path tools/probe/Cargo.toml
+          done
+      - name: package
+        run: |
+          mkdir dist
+          bin=tools/probe/target
+          case "$RUNNER_OS" in
+            macOS) lipo -create -output "dist/${{ matrix.asset }}" $bin/aarch64-apple-darwin/release/probe $bin/x86_64-apple-darwin/release/probe
+              lipo -info "dist/${{ matrix.asset }}" ;;
+            Windows) cp "$bin/${{ matrix.targets }}/release/probe.exe" "dist/${{ matrix.asset }}" ;;
+            *) cp "$bin/${{ matrix.targets }}/release/probe" "dist/${{ matrix.asset }}"
+              file "dist/${{ matrix.asset }}" | grep -q 'static' ;;
+          esac
+          ls -l dist
+      # A real window from production: the binary runs on a clean runner and
+      # its HTTPS verifies against the platform's trust store.
+      - name: smoke test
+        env:
+          PROBE_CACHE: ''
+        run: |
+          probe="dist/${{ matrix.asset }}"
+          "$probe" --version
+          "$probe" --hours 1 nodes > nodes.txt
+          head -3 nodes.txt
+          [ "$(wc -l < nodes.txt)" -gt 1 ]
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ${{ matrix.asset }}
+          path: dist/${{ matrix.asset }}
+          if-no-files-found: error

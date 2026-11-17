@@ -1,0 +1,33 @@
+# A versioned release of the probe CLI: a tag probe-vX.Y.Z (equal to
+# tools/probe/Cargo.toml's version) checks and builds the binaries
+# (probe.yml) and publishes them as that release (tools/probe/release.sh).
+# The rolling pre-release probe-main is published by tests.yml.
+name: probe release
+
+on:
+  push:
+    tags: ['probe-v*']
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    uses: ./.github/workflows/probe.yml
+
+  release:
+    name: release ${{ github.ref_name }}
+    needs: probe
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write # create the release
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: probe-*
+          path: dist
+          merge-multiple: true
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: tools/probe/release.sh "$GITHUB_REF_NAME" "$GITHUB_SHA" dist
