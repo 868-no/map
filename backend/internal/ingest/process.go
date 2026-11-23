@@ -19,12 +19,15 @@ import (
 )
 
 // DecodeVersion is bumped whenever decoded_metadata semantics change; rows of
-// an older version are decoded again from their envelopes (D-107). 5: local
+// an older version are decoded again from their envelopes (D-107). 6: a known
+// signer's unsigned NodeInfo announcing its own key names it, and Strict
+// accepts unverifiable packets on AES-CCM channels (D-228); signatures in
+// firmware 2.8.0's layout are told apart as sig_2_8_0 (D-229). 5: local
 // statistics telemetry (kind local: noise floor and radio counters). 4:
 // channel_name and topic_root cleaned of control and format characters. 3: node
 // status, store-and-forward, header-only rows instead of rejections.
 // 2: map reports stored (mapreport), not_ok_to_mqtt marking (D-032).
-const DecodeVersion = 5
+const DecodeVersion = 6
 
 // RawMessage is one MQTT delivery. ObservedAt is captured in the MQTT
 // callback before queuing and is the authoritative event time (design §3.4).
@@ -258,7 +261,7 @@ func Process(m RawMessage, o Options) (Observation, error) {
 	if !mapReport {
 		// Map reports carry no signature and are published unauthenticated,
 		// like the gateway id itself.
-		if verdict, err = security.Evaluate(security.HeaderOf(p), data, announced, o.Identities, o.Policy); err != nil {
+		if verdict, err = security.Evaluate(security.HeaderOf(p), data, announced, o.Identities, o.Policy, crypto == CryptoCCM); err != nil {
 			// Failed verification: its content cannot be trusted, and its
 			// sender may be forged. Header only, never used as evidence.
 			return headerOnly(m, topic, env, channelName, ports.TypeInvalid, crypto, err.Error()), nil

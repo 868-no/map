@@ -19,6 +19,7 @@ const SEVERITY: Record<Issue['severity'], { label: string; plural: string; icon:
 export const KIND: Record<string, string> = {
   silent: 'Silent routers and gateways',
   spoofed: 'Packets in its name failed verification',
+  signature_2_8_0: 'Signed as firmware 2.8.0',
   shared_key: 'Shared public key',
   traceroute_flood: 'Traceroute flooding',
   airtime: 'Large airtime share',

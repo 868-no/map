@@ -21,6 +21,7 @@ Regenerate bindings after bumping the submodule: `scripts/go.sh buf generate`, t
 | Channel hash | `Channels::hashFor`: `xor(name) ^ xor(key)`, `^ 0xAE` if `use_aead` | `security.ChannelHash` (LongFast/default = 8, tested) |
 | AEAD (CCM) | hostap-derived `aes_ccm_ae/ad`, fixed **L = 2** → first **13** nonce bytes; tag `AEAD_TAG_SIZE = 12`; AAD `LE32(from) ‖ LE32(to)`; output `ciphertext ‖ tag` | `security.DecryptCCM` via `pion/dtls/v3/pkg/crypto/ccm` (`NewCCM(block, 12, 13)`); library validated against RFC 3610 vector #1 |
 | Signing buffer | `buildSigningBuffer`: `0x01 ‖ LE32 from, id, to, portnum, request_id, reply_id, emoji, (has_bitfield ? bitfield : 0) ‖ flags(bit0 want_response, bit1 has_bitfield) ‖ payload` | `security.SigningBuffer` |
+| Signing buffer, 2.8.0 | `buildSigningBuffer` before #11422: `LE32 from ‖ LE32 id ‖ LE32 portnum ‖ payload` (native-endian `memcpy`; every target is little-endian) | `security.LegacySigningBuffer`: only recognised (`iv=sig_2_8_0`), never accepted, as 2.8.1+ cannot verify it (D-229) |
 | Key conversion | `curve_to_ed_pub`: RFC 7748 birational map, sign bit cleared | `security.ConvertX25519PublicKey` (`filippo.io/edwards25519/field`) |
 | Verification | `ed25519Verify(signature, ed_pubkey, buf)` | stdlib `crypto/ed25519.Verify` |
 | First contact | `verifyFirstContactNodeInfo`: `len(public_key)==32 && crc32(public_key)==from && verify` else **drop** | `security.Evaluate` |
@@ -39,7 +40,8 @@ The decoder, decryption and signature verification were replayed against a read-
 ## Policy differences from firmware (deliberate)
 
 - **Strict mode** (`SIGNATURE_POLICY=strict`) keeps signed packets whose key is unknown header-only as `invalid` rows (`iv=strict_unverifiable`) instead of `unverifiable`. Unlike firmware Strict it does **not** drop unsigned packets: the map's job is visibility, and unsigned traffic is labelled `unsigned`.
-- Firmware exempts AES-CCM channels from Strict because the tag authenticates channel membership; we do the same implicitly (CCM does not change signature status) and record `ccm_authenticated` as crypto provenance — it authenticates the channel, not the sender.
+- Firmware exempts AES-CCM channels from Strict because the tag authenticates channel membership; so do we: on a CCM channel an unverifiable packet stays `unverifiable` under `strict` too (D-228). We record `ccm_authenticated` as crypto provenance — it authenticates the channel, not the sender.
+- **Identity follows firmware's default policy, Compatible** (`SecurityConfig.packet_signature_policy` = 0, D-228). Since 2.8.2 (#12191) a Compatible node stops signing and accepts a known signer's unsigned NodeInfo, because firmware before 2.8 strips signatures when it relays: it decodes the packet, its `Data` has no field 10 (`xeddsa_signature`), and it re-encodes that for the rebroadcast (`sniffReceived` → `perhapsRebroadcast` → `Router::send` → `perhapsEncode`). In every policy firmware's `NodeDB::updateUser` drops a NodeInfo that announces no key or another key than the one it holds ("Public Key mismatch"). So an unsigned NodeInfo from a node with an authoritative key names it when it announces that same key, and is marked `identity_untrusted` (plus `key_conflict` for another key) otherwise. Firmware's Balanced and Strict, and 2.8.0–2.8.1 in every policy, refuse that unsigned identity outright (`refusesUnsignedIdentity`); the map does not, as most nodes run the default.
 
 ## Topics
 

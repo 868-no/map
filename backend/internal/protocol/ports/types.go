@@ -19,7 +19,8 @@ type NodeInfo struct {
 	PublicKey   string `json:"public_key,omitempty"` // base64, 32 bytes
 	KeyConflict bool   `json:"key_conflict,omitempty"`
 	// IdentityUntrusted: unsigned NodeInfo from a node with an authoritative
-	// key. Kept as traffic; never used for names, roles or keys.
+	// key that does not announce that key (D-228). Kept as traffic; never
+	// used for names, roles or keys.
 	IdentityUntrusted bool `json:"identity_untrusted,omitempty"`
 
 	publicKey []byte

@@ -17,7 +17,7 @@ const TYPE_TIP: Record<string, string> = {
 }
 const INVALID: Record<string, string> = {
   sig_invalid: 'its signature does not verify', sig_malformed: 'malformed signature', first_contact_invalid: 'its first NodeInfo failed verification',
-  nodeinfo_key_mismatch: 'NodeInfo with a different key than the trusted one', strict_unverifiable: 'signed with an unknown key (strict policy)',
+  nodeinfo_key_mismatch: 'NodeInfo with a different key than the trusted one', strict_unverifiable: 'signed with an unknown key (strict policy)', sig_2_8_0: 'signed as firmware 2.8.0, which newer firmware cannot verify',
   payload_invalid: 'its payload does not decode', decode_failed: 'decrypted to nothing readable', plaintext_unconfigured: 'unencrypted uplink from a broker not trusted for that',
 }
 

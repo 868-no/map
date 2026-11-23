@@ -82,6 +82,29 @@ func SigningBuffer(from, packetID, to uint32, d *pb.Data) []byte {
 	return buf
 }
 
+// LegacySigningBuffer is firmware 2.8.0's buildSigningBuffer, which 2.8.1
+// replaced (#11422): sender, packet id and port, each a native-endian uint32
+// (little-endian on every firmware target), then the Data payload. Only
+// recognised, never accepted: 2.8.1 and later cannot verify it (D-229).
+func LegacySigningBuffer(from, packetID uint32, d *pb.Data) []byte {
+	buf := make([]byte, 12+len(d.GetPayload()))
+	le := binary.LittleEndian
+	le.PutUint32(buf[0:], from)
+	le.PutUint32(buf[4:], packetID)
+	le.PutUint32(buf[8:], uint32(d.GetPortnum()))
+	copy(buf[12:], d.GetPayload())
+	return buf
+}
+
+// SignedBy280 reports whether sig is the node's signature over the packet in
+// firmware 2.8.0's layout (LegacySigningBuffer).
+func SignedBy280(edpk ed25519.PublicKey, from, packetID uint32, d *pb.Data, sig []byte) bool {
+	if len(sig) != SignatureSize || len(edpk) != ed25519.PublicKeySize {
+		return false
+	}
+	return ed25519.Verify(edpk, LegacySigningBuffer(from, packetID, d), sig)
+}
+
 // VerifyXEdDSA checks a packet signature against a node's X25519 public key.
 // XEdDSA verification is standard Ed25519 verification under the converted
 // key, which is exactly what the firmware does (curve_to_ed_pub +

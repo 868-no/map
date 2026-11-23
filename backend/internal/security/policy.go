@@ -49,6 +49,10 @@ var (
 	ErrFirstContactInvalid = errors.New("first_contact_invalid")
 	ErrNodeInfoKeyMismatch = errors.New("nodeinfo_key_mismatch")
 	ErrStrictUnverifiable  = errors.New("strict_unverifiable")
+	// ErrSig280: a signature that fails, but verifies in firmware 2.8.0's
+	// signing layout under the same key. Kept out as firmware 2.8.1 and
+	// later keep it out, under a reason of its own (D-229).
+	ErrSig280 = errors.New("sig_2_8_0")
 )
 
 // Identity is an authoritative node key binding.
@@ -88,9 +92,10 @@ type Verdict struct {
 	// only after the row commits.
 	Promote *Identity
 	// IdentityUntrusted marks an unsigned NodeInfo from a node with an
-	// authoritative key (firmware refusesUnsignedIdentity); KeyConflict
+	// authoritative key that does not announce that same key (firmware's
+	// NodeDB::updateUser drops it: "Public Key mismatch"); KeyConflict
 	// additionally means it announced a different key. Such rows are stored
-	// as traffic but never used for names/roles/keys.
+	// as traffic but never used for names/roles/keys (D-228).
 	IdentityUntrusted bool
 	KeyConflict       bool
 }
@@ -107,9 +112,10 @@ func HeaderOf(p *pb.MeshPacket) PacketHeader {
 
 // Evaluate applies firmware Router.cpp checkXeddsaReceivePolicy semantics to
 // a decoded packet. announcedKey is the NodeInfo payload's public key (nil
-// for other ports or keyless NodeInfo). An inbound xeddsa_signed flag is
-// never consulted.
-func Evaluate(h PacketHeader, d *pb.Data, announcedKey []byte, ids IdentityLookup, policy Policy) (Verdict, error) {
+// for other ports or keyless NodeInfo). aead is set when the packet came on
+// an AES-CCM channel, whose tag authenticates it: firmware then never applies
+// Strict. An inbound xeddsa_signed flag is never consulted.
+func Evaluate(h PacketHeader, d *pb.Data, announcedKey []byte, ids IdentityLookup, policy Policy, aead bool) (Verdict, error) {
 	isNodeInfo := d.GetPortnum() == pb.PortNum_NODEINFO_APP
 
 	// Every hop rewrites a traceroute, so a signature on one cannot verify
@@ -125,6 +131,9 @@ func Evaluate(h PacketHeader, d *pb.Data, announcedKey []byte, ids IdentityLooku
 	case len(sig) == SignatureSize:
 		if haveKey {
 			if !VerifyXEdDSAEd(known.Ed, h.From, h.ID, h.To, d, sig) {
+				if SignedBy280(known.Ed, h.From, h.ID, d, sig) {
+					return Verdict{}, ErrSig280
+				}
 				return Verdict{}, ErrSigInvalid
 			}
 			// A signed NodeInfo must claim the key that signed it, and that
@@ -137,7 +146,15 @@ func Evaluate(h PacketHeader, d *pb.Data, announcedKey []byte, ids IdentityLooku
 		}
 		if isNodeInfo {
 			// First contact: self-consistent key, binding and signature, or drop.
-			if !KeyBindsNode(announcedKey, h.From) || !VerifyXEdDSA(announcedKey, h.From, h.ID, h.To, d, sig) {
+			if !KeyBindsNode(announcedKey, h.From) {
+				return Verdict{}, ErrFirstContactInvalid
+			}
+			if !VerifyXEdDSA(announcedKey, h.From, h.ID, h.To, d, sig) {
+				// 2.8.0 already derived its node id from its key, so the
+				// binding holds; only the signing layout differs.
+				if ed, err := ConvertX25519PublicKey(announcedKey); err == nil && SignedBy280(ed, h.From, h.ID, d, sig) {
+					return Verdict{}, ErrSig280
+				}
 				return Verdict{}, ErrFirstContactInvalid
 			}
 			id, err := NewIdentity(h.From, announcedKey)
@@ -146,7 +163,7 @@ func Evaluate(h PacketHeader, d *pb.Data, announcedKey []byte, ids IdentityLooku
 			}
 			return Verdict{Status: SigVerified, Promote: &id}, nil
 		}
-		if policy == PolicyStrict {
+		if policy == PolicyStrict && !aead {
 			return Verdict{}, ErrStrictUnverifiable
 		}
 		return Verdict{Status: SigUnverifiable}, nil
@@ -155,12 +172,16 @@ func Evaluate(h PacketHeader, d *pb.Data, announcedKey []byte, ids IdentityLooku
 		return Verdict{}, ErrSigMalformed
 	}
 
-	// Unsigned. Accepted (old firmware, packets too large to sign), but an
-	// unsigned NodeInfo never overrides an authoritative signer's identity.
+	// Unsigned. Accepted (old firmware, packets too large to sign, signers on
+	// firmware's default Compatible policy, which stopped signing in 2.8.2,
+	// and signed packets relayed by firmware before 2.8, which strips the
+	// signature). A known signer's unsigned NodeInfo names it as long as it
+	// announces the signer's own key, as with firmware's default policy; one
+	// announcing no key or another key never overrides the identity (D-228).
 	v := Verdict{Status: SigUnsigned}
-	if isNodeInfo && haveKey {
+	if isNodeInfo && haveKey && !bytes.Equal(announcedKey, known.Curve) {
 		v.IdentityUntrusted = true
-		v.KeyConflict = len(announcedKey) == 32 && !bytes.Equal(announcedKey, known.Curve)
+		v.KeyConflict = len(announcedKey) == 32
 	}
 	return v, nil
 }

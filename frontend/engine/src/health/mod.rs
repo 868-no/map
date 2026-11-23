@@ -15,7 +15,8 @@
 //! utilisation), batteries (low, falling, D-099), chatty (frequent
 //! broadcasts), burst (many packets in a short time, D-209), restarts
 //! (D-099), identities (shared keys, D-142, and duplicate names),
-//! impersonation (D-108), silent (silent infrastructure, D-188),
+//! impersonation (D-108), signing (firmware 2.8.0's signatures, D-229),
+//! silent (silent infrastructure, D-188),
 //! router_roles (router role review, D-189), link_drop (router link drop,
 //! D-197) and airtime (the estimate, and who causes much of it).
 
@@ -36,6 +37,7 @@ mod positions;
 mod preset;
 mod restarts;
 mod router_roles;
+mod signing;
 mod silent;
 mod traceroute;
 
@@ -179,7 +181,8 @@ fn rank(severity: &str) -> u8 {
 /// rates use the span its rows cover when that is shorter. `rows`: the
 /// window's rows passing the filters. `window`: all of the window's rows,
 /// unfiltered: those that failed decoding or verification, which the
-/// filters always keep out of `rows` (D-093), for the impersonation rule,
+/// filters always keep out of `rows` (D-093), for the impersonation and
+/// signing rules,
 /// and the rest for whether routers and gateways went silent (D-188),
 /// which a type, channel or broker filter must not change. nodes, copies, presets: the build's (views::Built).
 /// `regions`: the regions' outlines for the topic-root rule (D-161); empty
@@ -219,6 +222,7 @@ pub fn health<'a>(rows: &'a [&'a Row], window: &[&'a Row], nodes: &'a [Node], ed
     restarts::check(&cx, &mut out);
     identities::check(&cx, &mut out);
     impersonation::check(&cx, &mut out);
+    signing::check(&cx, &mut out);
     silent::check(&cx, &mut out);
     router_roles::check(&cx, &mut out);
     link_drop::check(&cx, &mut out);
