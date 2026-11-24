@@ -15,7 +15,7 @@ export interface Filters {
   evidence: string[] // client-side edge filter
   minConfidence: Confidence
   positionedOnly: boolean
-  onlineOnly: boolean // only nodes heard within 3 h of the window's end (D-101)
+  onlineOnly: boolean // only nodes heard within their offline_after_ms of the window's end (D-101, D-230)
   roles: string[] // only nodes whose reported role is one of these; empty: every role (D-145)
 }
 

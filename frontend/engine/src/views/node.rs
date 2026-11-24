@@ -157,6 +157,16 @@ pub struct Node {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg_attr(test, ts(optional))]
     pub last_referenced: Option<String>,
+    /// Its median gap between NodeInfo and position packets (ms), when known (D-230).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub cadence_ms: Option<i64>,
+    /// Silent this long before the window's end, it counts as offline (ms):
+    /// twice its cadence, within online::ONLINE_MIN_MS and ONLINE_MAX_MS
+    /// (D-230). None for a node only named by others, which never is online.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    pub offline_after_ms: Option<i64>,
     pub packets: usize,
     pub receptions: usize,
     /// Of `receptions`, those it uplinked itself as a gateway (its own map
@@ -279,6 +289,12 @@ pub(super) struct SlimNode<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[cfg_attr(test, ts(optional))]
     last_referenced: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    cadence_ms: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(test, ts(optional))]
+    offline_after_ms: Option<i64>,
     packets: usize,
     receptions: usize,
     #[serde(skip_serializing_if = "is_zero")]
@@ -328,6 +344,8 @@ impl<'a> From<&'a Node> for SlimNode<'a> {
             position: n.position.as_ref().map(|p| SlimPosition { lat: p.lat, lon: p.lon, alt: p.alt, precision_bits: p.precision_bits, precision_known: p.precision_known, source: &p.source }),
             last_seen: n.last_seen.as_deref(),
             last_referenced: n.last_referenced.as_deref(),
+            cadence_ms: n.cadence_ms,
+            offline_after_ms: n.offline_after_ms,
             packets: n.packets,
             receptions: n.receptions,
             own_uplinks: n.own_uplinks,
@@ -371,7 +389,7 @@ impl Node {
 
     pub(crate) fn new(n: u32) -> Self {
         Node {
-            id: node_id(n), num: n, status: "observed", identity: None, position: None, stale_position: None, rejected_position: None, telemetry: None, first_seen: None, last_seen: None, last_referenced: None, own_uplinks: 0,
+            id: node_id(n), num: n, status: "observed", identity: None, position: None, stale_position: None, rejected_position: None, telemetry: None, first_seen: None, last_seen: None, last_referenced: None, cadence_ms: None, offline_after_ms: None, own_uplinks: 0,
             packets: 0, receptions: 0, gateway_receptions: 0, is_gateway: false, multi_uplink: false, signatures: Signatures::default(), brokers: None,
             mqtt_opt_out: false, estimate: None, estimate_note: None, mqtt_downlink: None, moved_at: None, track: None, airborne: false, refined: None, relaying: None, ch_util: None, first: i64::MAX, last: i64::MIN, pos: None,
         }

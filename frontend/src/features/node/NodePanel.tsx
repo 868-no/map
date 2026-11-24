@@ -6,7 +6,7 @@ import { ViewError, type SnapshotView } from '../../derive/views'
 import { useNodeDetail } from '../../state/data'
 import { nodeLink, useStore, type DetailTab } from '../../state/store'
 import { formatShort, relativeAge } from '../../lib/time'
-import { isOnline, namesOf } from '../../map/model'
+import { isOnline, namesOf, onlineRule } from '../../map/model'
 import { linkNeighbours } from './sort'
 import { OverviewTab } from './Overview'
 import { TelemetryTab } from './Telemetry'
@@ -39,8 +39,8 @@ export function NodePanel({ id, snapshot }: { id: string; snapshot: SnapshotView
       <p className="muted node-id">{d.id} · #{d.num}</p>
       <p className="node-tags">
         {isOnline(d, now)
-          ? <span className="tag online" title="Heard within the last 3 hours of the selected period">● online</span>
-          : <span className="tag offline" title="Not heard in the last 3 hours of the selected period">offline{d.last_seen ? ` · last heard ${relativeAge(d.last_seen, now)}` : ''}</span>}{' '}
+          ? <span className="tag online" title={onlineRule(d)}>● online</span>
+          : <span className="tag offline" title={onlineRule(d)}>offline{d.last_seen ? ` · last heard ${relativeAge(d.last_seen, now)}` : ''}</span>}{' '}
         {d.status === 'referenced' && <span className="tag">referenced only — not directly observed</span>}
         {d.is_gateway &&
           (d.multi_uplink ? (

@@ -62,12 +62,35 @@ export function edgeKeysOf(edges: readonly Edge[] | undefined): ReadonlySet<stri
   return s
 }
 
-/** A node heard within this long before the window's end is online (D-101). */
-export const ONLINE_MS = 3 * 3_600_000
+/**
+ * The fewest a node may be silent before it counts as offline, and the
+ * threshold of one whose cadence is unknown (the engine's online.rs, D-230).
+ */
+export const ONLINE_MIN_MS = 4 * 3_600_000
 
-/** Heard within ONLINE_MS of the window's end; nodes only named by others never are. */
-export function isOnline(n: Pick<MeshNode, 'last_seen'>, endMs: number): boolean {
-  return !!n.last_seen && endMs - Date.parse(n.last_seen) <= ONLINE_MS
+/**
+ * Heard within its offline_after_ms of the window's end: twice its NodeInfo
+ * and position cadence, within 4 to 24 hours (D-101, D-230). Nodes only
+ * named by others never are.
+ */
+export function isOnline(n: Pick<MeshNode, 'last_seen'> & Partial<Pick<MeshNode, 'offline_after_ms'>>, endMs: number): boolean {
+  return !!n.last_seen && endMs - Date.parse(n.last_seen) <= (n.offline_after_ms ?? ONLINE_MIN_MS)
+}
+
+/** A span in minutes, hours or days, for the online rule's wording. */
+function span(ms: number): string {
+  const h = ms / 3_600_000
+  if (h < 1) return `${Math.max(1, Math.round(h * 60))} min`
+  if (h < 48) return `${Number.isInteger(Math.round(h * 10) / 10) ? Math.round(h) : h.toFixed(1)} h`
+  return `${Math.round(h / 24)} days`
+}
+
+/** Why a node counts as online or offline: its own threshold and where it comes from (D-230). */
+export function onlineRule(n: Partial<Pick<MeshNode, 'offline_after_ms' | 'cadence_ms'>>): string {
+  const after = span(n.offline_after_ms ?? ONLINE_MIN_MS)
+  return n.cadence_ms
+    ? `Online while heard within ${after} of the end of the selected period: twice its usual NodeInfo and position interval (${span(n.cadence_ms)}), kept between 4 and 24 hours`
+    : `Online while heard within ${after} of the end of the selected period: too few NodeInfo and position packets to know its usual interval, so the shortest allowed`
 }
 
 /**

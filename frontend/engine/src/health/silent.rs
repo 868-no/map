@@ -21,7 +21,7 @@ pub const SILENT_MIN_EVENTS: usize = 4;
 pub const SILENT_BATTERY_LOW: f64 = 20.0;
 
 /// Copies and bursts closer together than this are one event of a node's rhythm.
-const EVENT_MS: i64 = 60_000;
+pub const EVENT_MS: i64 = 60_000;
 
 /// A role as a word for the start of a sentence.
 fn role_word(role: &str) -> &'static str {

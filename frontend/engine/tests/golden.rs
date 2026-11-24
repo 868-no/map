@@ -36,7 +36,9 @@ fn norm(v: &Value, server: bool) -> Value {
                     // Node panel parts no view showed, no longer built.
                     || k == "positions" || k == "heard" || k == "recent_packets"
                     // Router link quality (D-197) came after the server views.
-                    || k == "router_links") {
+                    || k == "router_links"
+                    // Per-node online thresholds (D-230) came after them too.
+                    || k == "cadence_ms" || k == "offline_after_ms") {
                     continue;
                 }
                 let mut x = norm(x, server);

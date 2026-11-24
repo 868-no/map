@@ -524,6 +524,11 @@ The link graph is directed and weighted; it is never stored.
   Without either, the node shows the last four hex digits of its id.
   NodeInfo rows marked with a key conflict are skipped.
 - **Gateway** (`is_gateway`): the node uplinked a reception in the window.
+- **Online (D-230):** a node is online while it was heard within `offline_after_ms` of the window's end: twice its cadence, never less than 4 h nor more than 24 h (`online.rs`).
+  Its cadence (`cadence_ms`) is the median gap between the NodeInfo and position packets it sent (first copy each, merged within a minute, as the silence rules do), from at least 4 of them; without that, 4 h.
+  It is worked out from every valid row of the window, unfiltered, so a filter never changes it.
+  A fixed 3 h (D-101) was firmware's default NodeInfo interval: a node sending nothing else showed offline for minutes of every cycle, and in 51 days of the community mesh 56 % of 3 h silences ended within the next 15 minutes.
+  Twice the cadence with no lower bound fared worse still: nodes sending positions every 15 minutes went offline after half an hour, from a few lost packets.
 - **Counts per node:** distinct packets it sent; receptions of them by other gateways and its own uplinks, kept apart (map reports, and copies of its own packets rebroadcast back to it (§6.6), count as own uplinks); signatures counted once per packet by its best copy's status (D-087).
 
 ### 6.2 Link evidence
@@ -1228,7 +1233,7 @@ On a rolling window, each RF transmission attributable to a placed node is one e
   Labels are the Regions panel's: hardware, roles and presets named readably, firmware lines as "2.7" and the inferred generations as "2.8 or later (inferred)" and so on, each explained on hover.
   The text says it covers everything the server keeps, each node with what it ran then, and per dimension how the values are found and where the server's rules differ from a node's Radio tab; per-region breakdowns over the selected period stay on the region pages (D-196).
 - **Period:** window length presets (1 h, 3 h, 6 h, 12 h, 24 h, 3 d, 7 d, 14 d), start and end inputs in local time with the time-zone shown, ◀ slider ▶ to slide the window through retention (by half its length per step; the slider starts at the oldest observation), and the window's traffic strip (one bar per bucket, packets bright and receptions dim, with a key) (D-067, D-087).
-- **Filters:** only nodes with reported positions; only online nodes, those heard within 3 h of the window's end (`ONLINE_MS`; nodes only named by others are offline), which Details marks as "● online" or "offline · last heard …" (D-101); only nodes whose latest reported role is one of those selected (D-145: the roles present in the window are offered as chips, with any still-selected role that has left the window; a node announcing no role is hidden while any role is chosen).
+- **Filters:** only nodes with reported positions; only online nodes, those heard within their own threshold of the window's end (§6.1 Online; nodes only named by others are offline), which Details marks as "● online" or "offline · last heard …", its tooltip giving the node's threshold and where it comes from (D-101, D-230); only nodes whose latest reported role is one of those selected (D-145: the roles present in the window are offered as chips, with any still-selected role that has left the window; a node announcing no role is hidden while any role is chosen).
   These three node filters are a single predicate (`passesNodeFilters`) applied to both the map and the Nodes list, so the two agree; the list shows an alert counting the nodes they hide, with a "Show all" that clears them (D-145).
   They do not change the header counts or a node's details.
   Also: link evidence types and minimum confidence (these change only what the map draws); packet types (including "map report", "direct message" and "encrypted" chips; `invalid` rows never pass), channel and broker (these restrict which observations count at all, for nodes, links, counts and details).

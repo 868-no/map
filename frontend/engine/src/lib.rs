@@ -10,6 +10,7 @@ pub mod geo;
 pub mod health;
 pub mod landsdel;
 pub mod movement;
+pub mod online;
 pub mod graph;
 pub mod packets;
 pub mod radio;
@@ -345,7 +346,13 @@ impl Engine {
         let version = self.store.version;
         self.filter(start, end, filters)?;
         if self.built.as_ref().is_none_or(|(k, _)| !k.is(start, end, filters, version)) {
-            let b = build_snapshot(&self.rows(), &self.i, &self.geo, self.rules);
+            let mut b = build_snapshot(&self.rows(), &self.i, &self.geo, self.rules);
+            // When each counts as offline, from every valid row of the window:
+            // filters must not change a node's cadence (D-230).
+            let invalid = self.i.get("invalid");
+            let (lo, hi) = self.store.range(start, end);
+            let window: Vec<&row::Row> = self.store.rows()[lo..hi].iter().filter(|r| Some(r.ty) != invalid).collect();
+            online::set_offline_after(b.snapshot.nodes.iter_mut().chain(b.beyond.iter_mut()), &window);
             self.built = Some((Key { start, end, filters: filters.to_string(), version }, b));
         }
         Ok(&self.built.as_ref().unwrap().1)

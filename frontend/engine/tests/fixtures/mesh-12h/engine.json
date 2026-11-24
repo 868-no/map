@@ -6027,6 +6027,7 @@
       "brokers": [
         "no868"
       ],
+      "cadence_ms": 10800140,
       "estimate_note": "no confirmed direct links to nodes reporting a position with at least 15-bit precision",
       "first_seen": "2026-10-31T03:17:50.159Z",
       "gateway_receptions": 526,
@@ -6065,6 +6066,7 @@
       "is_gateway": true,
       "last_seen": "2026-10-31T15:11:42.821Z",
       "num": 304365663,
+      "offline_after_ms": 21600280,
       "own_uplinks": 4,
       "packets": 5,
       "radio": {
@@ -6098,6 +6100,7 @@
       "brokers": [
         "no868"
       ],
+      "cadence_ms": 7114910,
       "first_seen": "2026-10-31T03:20:01.223Z",
       "gateway_receptions": 483,
       "heard_by": [
@@ -6132,6 +6135,7 @@
       "is_gateway": true,
       "last_seen": "2026-10-31T15:15:04.799Z",
       "num": 989509905,
+      "offline_after_ms": 14400000,
       "own_uplinks": 9,
       "packets": 9,
       "position": {
@@ -6175,6 +6179,7 @@
       "brokers": [
         "no868"
       ],
+      "cadence_ms": 1993064,
       "first_seen": "2026-10-31T03:21:08.293Z",
       "gateway_receptions": 348,
       "heard_by": [
@@ -6217,6 +6222,7 @@
       "is_gateway": true,
       "last_seen": "2026-10-31T15:11:52.020Z",
       "num": 1573545985,
+      "offline_after_ms": 14400000,
       "own_uplinks": 32,
       "packets": 64,
       "position": {
@@ -6260,6 +6266,7 @@
       "brokers": [
         "no868"
       ],
+      "cadence_ms": 2414149,
       "first_seen": "2026-10-31T03:20:01.442Z",
       "gateway_receptions": 533,
       "heard_by": [
@@ -6294,6 +6301,7 @@
       "is_gateway": true,
       "last_seen": "2026-10-31T15:15:05.057Z",
       "num": 2601470933,
+      "offline_after_ms": 14400000,
       "own_uplinks": 5,
       "packets": 5,
       "position": {
@@ -6337,6 +6345,7 @@
       "brokers": [
         "no868"
       ],
+      "cadence_ms": 10800015,
       "estimate_note": "only 1 positioned anchor with direct links (need 3)",
       "first_seen": "2026-10-31T03:18:06.865Z",
       "gateway_receptions": 433,
@@ -6380,6 +6389,7 @@
       "is_gateway": true,
       "last_seen": "2026-10-31T15:13:10.984Z",
       "num": 2715253400,
+      "offline_after_ms": 21600030,
       "own_uplinks": 150,
       "packets": 187,
       "radio": {
@@ -6413,6 +6423,7 @@
       "brokers": [
         "no868"
       ],
+      "cadence_ms": 6615089,
       "first_seen": "2026-10-31T03:19:46.349Z",
       "gateway_receptions": 534,
       "heard_by": [
@@ -6456,6 +6467,7 @@
       "is_gateway": true,
       "last_seen": "2026-10-31T15:15:04.768Z",
       "num": 2975927617,
+      "offline_after_ms": 14400000,
       "own_uplinks": 56,
       "packets": 57,
       "position": {
@@ -6941,6 +6953,7 @@
       "brokers": [
         "no868"
       ],
+      "cadence_ms": 3775075,
       "first_seen": "2026-10-31T03:17:09.937Z",
       "gateway_receptions": 832,
       "heard_by": [
@@ -6978,6 +6991,7 @@
       "is_gateway": true,
       "last_seen": "2026-10-31T15:11:46.373Z",
       "num": 3665143960,
+      "offline_after_ms": 14400000,
       "own_uplinks": 152,
       "packets": 153,
       "position": {
@@ -7021,6 +7035,7 @@
       "brokers": [
         "no868"
       ],
+      "cadence_ms": 3840024,
       "first_seen": "2026-10-31T03:20:01.875Z",
       "gateway_receptions": 536,
       "heard_by": [
@@ -7064,6 +7079,7 @@
       "is_gateway": true,
       "last_seen": "2026-10-31T15:15:04.815Z",
       "num": 4138138983,
+      "offline_after_ms": 14400000,
       "own_uplinks": 21,
       "packets": 21,
       "position": {
@@ -26403,6 +26419,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 3775075,
         "gateway_receptions": 832,
         "id": "!da75a898",
         "identity": {
@@ -26413,6 +26430,7 @@
         "is_gateway": true,
         "last_seen": "2026-10-31T15:11:46.373Z",
         "num": 3665143960,
+        "offline_after_ms": 14400000,
         "own_uplinks": 152,
         "packets": 153,
         "position": {
@@ -26430,6 +26448,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10800015,
         "gateway_receptions": 433,
         "id": "!a1d77a98",
         "identity": {
@@ -26440,6 +26459,7 @@
         "is_gateway": true,
         "last_seen": "2026-10-31T15:13:10.984Z",
         "num": 2715253400,
+        "offline_after_ms": 21600030,
         "own_uplinks": 150,
         "packets": 187,
         "receptions": 308,
@@ -26449,6 +26469,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 6615089,
         "gateway_receptions": 534,
         "id": "!b1610d41",
         "identity": {
@@ -26459,6 +26480,7 @@
         "is_gateway": true,
         "last_seen": "2026-10-31T15:15:04.768Z",
         "num": 2975927617,
+        "offline_after_ms": 14400000,
         "own_uplinks": 56,
         "packets": 57,
         "position": {
@@ -26481,6 +26503,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 3840024,
         "gateway_receptions": 536,
         "id": "!f6a6fd67",
         "identity": {
@@ -26491,6 +26514,7 @@
         "is_gateway": true,
         "last_seen": "2026-10-31T15:15:04.815Z",
         "num": 4138138983,
+        "offline_after_ms": 14400000,
         "own_uplinks": 21,
         "packets": 21,
         "position": {
@@ -26514,6 +26538,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 2414149,
         "gateway_receptions": 533,
         "id": "!9b0f4bd5",
         "identity": {
@@ -26524,6 +26549,7 @@
         "is_gateway": true,
         "last_seen": "2026-10-31T15:15:05.057Z",
         "num": 2601470933,
+        "offline_after_ms": 14400000,
         "own_uplinks": 5,
         "packets": 5,
         "position": {
@@ -26541,6 +26567,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10800140,
         "gateway_receptions": 526,
         "id": "!1224405f",
         "identity": {
@@ -26551,6 +26578,7 @@
         "is_gateway": true,
         "last_seen": "2026-10-31T15:11:42.821Z",
         "num": 304365663,
+        "offline_after_ms": 21600280,
         "own_uplinks": 4,
         "packets": 5,
         "receptions": 11,
@@ -26560,6 +26588,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 7114910,
         "gateway_receptions": 483,
         "id": "!3afab911",
         "identity": {
@@ -26570,6 +26599,7 @@
         "is_gateway": true,
         "last_seen": "2026-10-31T15:15:04.799Z",
         "num": 989509905,
+        "offline_after_ms": 14400000,
         "own_uplinks": 9,
         "packets": 9,
         "position": {
@@ -26586,6 +26616,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 1993064,
         "gateway_receptions": 348,
         "id": "!5dca6801",
         "identity": {
@@ -26596,6 +26627,7 @@
         "is_gateway": true,
         "last_seen": "2026-10-31T15:11:52.020Z",
         "num": 1573545985,
+        "offline_after_ms": 14400000,
         "own_uplinks": 32,
         "packets": 64,
         "position": {
@@ -26613,6 +26645,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 4833893,
         "gateway_receptions": 340,
         "id": "!699cb4a0",
         "identity": {
@@ -26623,6 +26656,7 @@
         "is_gateway": true,
         "last_seen": "2026-10-31T15:14:15.563Z",
         "num": 1771877536,
+        "offline_after_ms": 14400000,
         "own_uplinks": 55,
         "packets": 55,
         "position": {
@@ -26639,6 +26673,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 412645,
         "gateway_receptions": 339,
         "id": "!b2a114e3",
         "identity": {
@@ -26649,6 +26684,7 @@
         "is_gateway": true,
         "last_seen": "2026-10-31T15:13:15.998Z",
         "num": 2996901091,
+        "offline_after_ms": 14400000,
         "own_uplinks": 19,
         "packets": 41,
         "position": {
@@ -26666,6 +26702,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10800026,
         "estimate": {
           "anchor_count": 3,
           "lat": 64.04,
@@ -26689,6 +26726,7 @@
         "is_gateway": true,
         "last_seen": "2026-10-31T15:15:04.749Z",
         "num": 739556697,
+        "offline_after_ms": 21600052,
         "own_uplinks": 6,
         "packets": 6,
         "receptions": 14,
@@ -26698,6 +26736,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 9699998,
         "gateway_receptions": 203,
         "id": "!84965cf6",
         "identity": {
@@ -26712,6 +26751,7 @@
           "zero_snr": 7
         },
         "num": 2224446710,
+        "offline_after_ms": 19399996,
         "own_uplinks": 65,
         "packets": 65,
         "position": {
@@ -26729,6 +26769,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 540327,
         "gateway_receptions": 105,
         "id": "!9ee784a0",
         "identity": {
@@ -26739,6 +26780,7 @@
         "is_gateway": true,
         "last_seen": "2026-10-31T15:11:05.916Z",
         "num": 2665972896,
+        "offline_after_ms": 14400000,
         "own_uplinks": 105,
         "packets": 105,
         "position": {
@@ -26756,6 +26798,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10800327,
         "gateway_receptions": 156,
         "id": "!4c6575d4",
         "identity": {
@@ -26766,6 +26809,7 @@
         "is_gateway": true,
         "last_seen": "2026-10-31T15:15:53.878Z",
         "num": 1281717716,
+        "offline_after_ms": 21600654,
         "own_uplinks": 20,
         "packets": 22,
         "position": {
@@ -26783,6 +26827,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 632109,
         "gateway_receptions": 91,
         "id": "!e2e49980",
         "identity": {
@@ -26793,6 +26838,7 @@
         "is_gateway": true,
         "last_seen": "2026-10-31T15:07:45.948Z",
         "num": 3806632320,
+        "offline_after_ms": 14400000,
         "own_uplinks": 75,
         "packets": 75,
         "position": {
@@ -26812,6 +26858,7 @@
         "is_gateway": true,
         "last_seen": "2026-10-31T15:15:55.667Z",
         "num": 67542816,
+        "offline_after_ms": 14400000,
         "packets": 0,
         "receptions": 0,
         "status": "observed"
@@ -26820,6 +26867,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 9001578,
         "gateway_receptions": 98,
         "id": "!a206ab04",
         "identity": {
@@ -26830,6 +26878,7 @@
         "is_gateway": true,
         "last_seen": "2026-10-31T15:16:57.913Z",
         "num": 2718345988,
+        "offline_after_ms": 18003156,
         "own_uplinks": 9,
         "packets": 9,
         "position": {
@@ -26847,6 +26896,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10735861,
         "gateway_receptions": 92,
         "id": "!39b01fc6",
         "identity": {
@@ -26857,6 +26907,7 @@
         "is_gateway": true,
         "last_seen": "2026-10-31T15:16:57.785Z",
         "num": 967843782,
+        "offline_after_ms": 21471722,
         "own_uplinks": 13,
         "packets": 13,
         "position": {
@@ -26874,6 +26925,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10800012,
         "gateway_receptions": 49,
         "id": "!ea8eede8",
         "identity": {
@@ -26884,6 +26936,7 @@
         "is_gateway": true,
         "last_seen": "2026-10-31T15:15:11.303Z",
         "num": 3935235560,
+        "offline_after_ms": 21600024,
         "own_uplinks": 46,
         "packets": 46,
         "receptions": 89,
@@ -26893,6 +26946,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 7073870,
         "gateway_receptions": 73,
         "id": "!538621b2",
         "identity": {
@@ -26907,6 +26961,7 @@
           "zero_snr": 7
         },
         "num": 1401299378,
+        "offline_after_ms": 14400000,
         "own_uplinks": 15,
         "packets": 20,
         "position": {
@@ -26924,6 +26979,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10799906,
         "gateway_receptions": 53,
         "id": "!da75c38c",
         "identity": {
@@ -26934,6 +26990,7 @@
         "is_gateway": true,
         "last_seen": "2026-10-31T15:15:11.303Z",
         "num": 3665150860,
+        "offline_after_ms": 21599812,
         "own_uplinks": 10,
         "packets": 13,
         "receptions": 13,
@@ -26943,6 +27000,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 6333086,
         "gateway_receptions": 0,
         "id": "!699be574",
         "identity": {
@@ -26953,6 +27011,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:47:30.061Z",
         "num": 1771824500,
+        "offline_after_ms": 14400000,
         "packets": 62,
         "position": {
           "alt": 33,
@@ -26976,6 +27035,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 6471313,
         "gateway_receptions": 46,
         "id": "!83abf576",
         "identity": {
@@ -26986,6 +27046,7 @@
         "is_gateway": true,
         "last_seen": "2026-10-31T14:57:53.145Z",
         "num": 2209084790,
+        "offline_after_ms": 14400000,
         "own_uplinks": 14,
         "packets": 14,
         "position": {
@@ -27003,6 +27064,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10799458,
         "gateway_receptions": 0,
         "id": "!49ea4c9c",
         "identity": {
@@ -27013,6 +27075,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:55:58.562Z",
         "num": 1240091804,
+        "offline_after_ms": 21598916,
         "packets": 54,
         "position": {
           "alt": 33,
@@ -27029,6 +27092,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 2252853,
         "gateway_receptions": 0,
         "id": "!09a7ceb5",
         "identity": {
@@ -27039,6 +27103,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T15:07:23.733Z",
         "num": 161992373,
+        "offline_after_ms": 14400000,
         "packets": 49,
         "position": {
           "alt": 63,
@@ -27068,6 +27133,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 8639490,
         "gateway_receptions": 0,
         "id": "!d64b58ae",
         "identity": {
@@ -27078,6 +27144,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:42:32.324Z",
         "num": 3595262126,
+        "offline_after_ms": 17278980,
         "packets": 49,
         "position": {
           "alt": 49,
@@ -27094,6 +27161,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10800616,
         "gateway_receptions": 0,
         "id": "!b213e36d",
         "identity": {
@@ -27104,6 +27172,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:48:04.335Z",
         "num": 2987647853,
+        "offline_after_ms": 21601232,
         "packets": 46,
         "receptions": 115,
         "status": "observed"
@@ -27112,6 +27181,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 3600225,
         "gateway_receptions": 0,
         "id": "!bfa97d12",
         "identity": {
@@ -27122,6 +27192,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T15:01:59.219Z",
         "num": 3215555858,
+        "offline_after_ms": 14400000,
         "packets": 40,
         "position": {
           "alt": 348,
@@ -27144,6 +27215,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 3601400,
         "gateway_receptions": 0,
         "id": "!8f4c2cf0",
         "identity": {
@@ -27154,6 +27226,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:58:37.669Z",
         "num": 2404134128,
+        "offline_after_ms": 14400000,
         "packets": 39,
         "position": {
           "alt": 86,
@@ -27170,6 +27243,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 899638,
         "gateway_receptions": 0,
         "id": "!f2a7cde1",
         "identity": {
@@ -27180,6 +27254,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:48:15.980Z",
         "num": 4071083489,
+        "offline_after_ms": 14400000,
         "packets": 39,
         "position": {
           "alt": 346,
@@ -27196,6 +27271,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 3600063,
         "gateway_receptions": 0,
         "id": "!4e95f741",
         "identity": {
@@ -27206,6 +27282,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T15:06:26.797Z",
         "num": 1318451009,
+        "offline_after_ms": 14400000,
         "packets": 38,
         "position": {
           "lat": 63.379865599999995,
@@ -27221,6 +27298,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10800585,
         "estimate": {
           "anchor_count": 4,
           "lat": 63.397,
@@ -27244,6 +27322,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T15:11:35.522Z",
         "num": 1855921772,
+        "offline_after_ms": 21601170,
         "packets": 38,
         "receptions": 159,
         "status": "observed"
@@ -27252,6 +27331,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 7730136,
         "gateway_receptions": 24,
         "id": "!395c3591",
         "identity": {
@@ -27262,6 +27342,7 @@
         "is_gateway": true,
         "last_seen": "2026-10-31T15:03:44.125Z",
         "num": 962344337,
+        "offline_after_ms": 15460272,
         "own_uplinks": 8,
         "packets": 8,
         "position": {
@@ -27279,6 +27360,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 6557152,
         "gateway_receptions": 0,
         "id": "!5028b360",
         "identity": {
@@ -27289,6 +27371,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T15:12:56.974Z",
         "num": 1344844640,
+        "offline_after_ms": 14400000,
         "packets": 32,
         "position": {
           "alt": 414,
@@ -27311,6 +27394,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10800406,
         "gateway_receptions": 0,
         "id": "!a459bce7",
         "identity": {
@@ -27321,6 +27405,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T15:08:29.223Z",
         "num": 2757344487,
+        "offline_after_ms": 21600812,
         "packets": 31,
         "position": {
           "alt": 1214,
@@ -27337,6 +27422,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10800669,
         "gateway_receptions": 0,
         "id": "!a142e814",
         "identity": {
@@ -27347,6 +27433,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T15:08:34.084Z",
         "num": 2705516564,
+        "offline_after_ms": 21601338,
         "packets": 29,
         "receptions": 121,
         "status": "observed"
@@ -27355,6 +27442,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10583815,
         "gateway_receptions": 23,
         "id": "!fff434b6",
         "identity": {
@@ -27365,6 +27453,7 @@
         "is_gateway": true,
         "last_seen": "2026-10-31T14:36:59.528Z",
         "num": 4294194358,
+        "offline_after_ms": 21167630,
         "own_uplinks": 6,
         "packets": 6,
         "position": {
@@ -27382,6 +27471,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10651513,
         "gateway_receptions": 0,
         "id": "!04677cab",
         "identity": {
@@ -27392,6 +27482,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T15:11:52.020Z",
         "num": 73890987,
+        "offline_after_ms": 21303026,
         "packets": 28,
         "position": {
           "lat": 60.319334399999995,
@@ -27407,6 +27498,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10801333,
         "estimate": {
           "anchor_count": 5,
           "lat": 63.385,
@@ -27430,6 +27522,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T15:04:47.978Z",
         "num": 864405903,
+        "offline_after_ms": 21602666,
         "packets": 28,
         "receptions": 136,
         "status": "observed"
@@ -27438,6 +27531,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 6563923,
         "gateway_receptions": 0,
         "id": "!f669c568",
         "identity": {
@@ -27448,6 +27542,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:43:02.049Z",
         "num": 4134126952,
+        "offline_after_ms": 14400000,
         "packets": 28,
         "position": {
           "alt": 158,
@@ -27464,6 +27559,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 6464575,
         "gateway_receptions": 0,
         "id": "!64e26f73",
         "identity": {
@@ -27474,6 +27570,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T15:03:20.117Z",
         "num": 1692561267,
+        "offline_after_ms": 14400000,
         "packets": 26,
         "position": {
           "lat": 60.0571904,
@@ -27499,6 +27596,7 @@
         "is_gateway": true,
         "last_seen": "2026-10-31T15:13:33.345Z",
         "num": 1428871500,
+        "offline_after_ms": 14400000,
         "own_uplinks": 2,
         "packets": 23,
         "position": {
@@ -27516,6 +27614,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10800845,
         "gateway_receptions": 0,
         "id": "!94ed7591",
         "identity": {
@@ -27526,6 +27625,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:32:42.309Z",
         "num": 2498590097,
+        "offline_after_ms": 21601690,
         "packets": 25,
         "position": {
           "alt": 580,
@@ -27553,6 +27653,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T11:12:10.749Z",
         "num": 980503346,
+        "offline_after_ms": 14400000,
         "packets": 24,
         "receptions": 36,
         "status": "observed"
@@ -27561,6 +27662,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 1291366,
         "gateway_receptions": 0,
         "id": "!98f71d7d",
         "identity": {
@@ -27571,6 +27673,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T12:19:53.189Z",
         "num": 2566331773,
+        "offline_after_ms": 14400000,
         "packets": 24,
         "receptions": 78,
         "status": "observed"
@@ -27579,6 +27682,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 2878785,
         "gateway_receptions": 0,
         "id": "!d481460c",
         "identity": {
@@ -27589,6 +27693,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:30:16.716Z",
         "num": 3565241868,
+        "offline_after_ms": 14400000,
         "packets": 23,
         "position": {
           "alt": 78,
@@ -27605,6 +27710,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 5472036,
         "gateway_receptions": 0,
         "id": "!8a84e409",
         "identity": {
@@ -27615,6 +27721,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T13:54:51.808Z",
         "num": 2323964937,
+        "offline_after_ms": 14400000,
         "packets": 21,
         "position": {
           "lat": 63.9920166,
@@ -27636,6 +27743,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 7070437,
         "gateway_receptions": 13,
         "id": "!c67ce004",
         "identity": {
@@ -27646,6 +27754,7 @@
         "is_gateway": true,
         "last_seen": "2026-10-31T14:33:07.380Z",
         "num": 3330072580,
+        "offline_after_ms": 14400000,
         "own_uplinks": 7,
         "packets": 8,
         "receptions": 9,
@@ -27655,6 +27764,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10801152,
         "gateway_receptions": 0,
         "id": "!48bff5f5",
         "identity": {
@@ -27665,6 +27775,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:18:59.800Z",
         "num": 1220539893,
+        "offline_after_ms": 21602304,
         "packets": 20,
         "position": {
           "alt": 1614,
@@ -27681,6 +27792,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 6896819,
         "gateway_receptions": 11,
         "id": "!64e304bd",
         "identity": {
@@ -27691,6 +27803,7 @@
         "is_gateway": true,
         "last_seen": "2026-10-31T14:27:45.611Z",
         "num": 1692599485,
+        "offline_after_ms": 14400000,
         "own_uplinks": 9,
         "packets": 9,
         "receptions": 13,
@@ -27700,6 +27813,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10799209,
         "gateway_receptions": 0,
         "id": "!a9339946",
         "identity": {
@@ -27710,6 +27824,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T15:15:05.057Z",
         "num": 2838731078,
+        "offline_after_ms": 21598418,
         "packets": 20,
         "position": {
           "alt": 450,
@@ -27732,6 +27847,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10799390,
         "gateway_receptions": 10,
         "id": "!c5b9ba89",
         "identity": {
@@ -27742,6 +27858,7 @@
         "is_gateway": true,
         "last_seen": "2026-10-31T15:13:42.096Z",
         "num": 3317283465,
+        "offline_after_ms": 21598780,
         "own_uplinks": 10,
         "packets": 10,
         "receptions": 10,
@@ -27751,6 +27868,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10800368,
         "gateway_receptions": 0,
         "id": "!d38dd2ca",
         "identity": {
@@ -27761,6 +27879,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:42:36.296Z",
         "num": 3549287114,
+        "offline_after_ms": 21600736,
         "packets": 20,
         "position": {
           "lat": 61.0533376,
@@ -27776,6 +27895,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 3600907,
         "gateway_receptions": 0,
         "id": "!1ba5ae00",
         "identity": {
@@ -27786,6 +27906,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:22:06.030Z",
         "num": 463842816,
+        "offline_after_ms": 14400000,
         "packets": 19,
         "position": {
           "alt": 305,
@@ -27802,6 +27923,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 898346,
         "gateway_receptions": 0,
         "id": "!a349702d",
         "identity": {
@@ -27812,6 +27934,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:32:47.206Z",
         "num": 2739499053,
+        "offline_after_ms": 14400000,
         "packets": 19,
         "receptions": 45,
         "status": "observed"
@@ -27820,6 +27943,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 7041246,
         "gateway_receptions": 0,
         "id": "!f9ad38c8",
         "identity": {
@@ -27830,6 +27954,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:29:41.966Z",
         "num": 4188879048,
+        "offline_after_ms": 14400000,
         "packets": 19,
         "position": {
           "alt": 537,
@@ -27856,6 +27981,7 @@
         "is_gateway": true,
         "last_seen": "2026-10-31T13:31:04.301Z",
         "num": 36412110,
+        "offline_after_ms": 14400000,
         "own_uplinks": 6,
         "packets": 6,
         "receptions": 6,
@@ -27865,6 +27991,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10678569,
         "gateway_receptions": 0,
         "id": "!4c0c7f3d",
         "identity": {
@@ -27875,6 +28002,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:37:51.754Z",
         "num": 1275887421,
+        "offline_after_ms": 21357138,
         "packets": 18,
         "position": {
           "alt": 33,
@@ -27891,6 +28019,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 5987852,
         "gateway_receptions": 0,
         "id": "!672f1873",
         "identity": {
@@ -27901,6 +28030,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T13:26:40.428Z",
         "num": 1731139699,
+        "offline_after_ms": 14400000,
         "packets": 17,
         "position": {
           "alt": 540,
@@ -27923,6 +28053,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10800265,
         "gateway_receptions": 0,
         "id": "!157e44e9",
         "identity": {
@@ -27933,6 +28064,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:51:13.103Z",
         "num": 360596713,
+        "offline_after_ms": 21600530,
         "packets": 16,
         "receptions": 42,
         "status": "observed"
@@ -27941,6 +28073,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10800974,
         "estimate": {
           "anchor_count": 3,
           "lat": 61.193,
@@ -27964,6 +28097,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:37:38.236Z",
         "num": 375271159,
+        "offline_after_ms": 21601948,
         "packets": 16,
         "receptions": 42,
         "status": "observed"
@@ -27972,6 +28106,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 3600900,
         "gateway_receptions": 0,
         "id": "!3317a3bc",
         "identity": {
@@ -27982,6 +28117,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T15:03:44.125Z",
         "num": 857187260,
+        "offline_after_ms": 14400000,
         "packets": 16,
         "receptions": 16,
         "status": "observed"
@@ -27990,6 +28126,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10801417,
         "gateway_receptions": 0,
         "id": "!34bb8eaf",
         "identity": {
@@ -28000,6 +28137,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:19:42.888Z",
         "num": 884706991,
+        "offline_after_ms": 21602834,
         "packets": 16,
         "position": {
           "alt": 139,
@@ -28022,6 +28160,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10715458,
         "gateway_receptions": 8,
         "id": "!3b8a98be",
         "identity": {
@@ -28032,6 +28171,7 @@
         "is_gateway": true,
         "last_seen": "2026-10-31T14:39:33.867Z",
         "num": 998938814,
+        "offline_after_ms": 21430916,
         "own_uplinks": 8,
         "packets": 8,
         "position": {
@@ -28049,6 +28189,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 8455483,
         "gateway_receptions": 0,
         "id": "!8d52fe84",
         "identity": {
@@ -28059,6 +28200,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:38:19.998Z",
         "num": 2371026564,
+        "offline_after_ms": 16910966,
         "packets": 16,
         "position": {
           "alt": 335,
@@ -28075,6 +28217,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 3600571,
         "gateway_receptions": 0,
         "id": "!8f4b643c",
         "identity": {
@@ -28085,6 +28228,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:26:09.373Z",
         "num": 2404082748,
+        "offline_after_ms": 14400000,
         "packets": 16,
         "position": {
           "lat": 63.4191872,
@@ -28100,6 +28244,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 1919175,
         "gateway_receptions": 0,
         "id": "!d48145f8",
         "identity": {
@@ -28110,6 +28255,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:58:22.497Z",
         "num": 3565241848,
+        "offline_after_ms": 14400000,
         "packets": 16,
         "position": {
           "alt": 128,
@@ -28126,6 +28272,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 1723742,
         "gateway_receptions": 0,
         "id": "!2f349738",
         "identity": {
@@ -28136,6 +28283,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:42:18.906Z",
         "num": 791975736,
+        "offline_after_ms": 14400000,
         "packets": 15,
         "position": {
           "alt": 179,
@@ -28159,6 +28307,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 8825859,
         "gateway_receptions": 7,
         "id": "!4d064dbd",
         "identity": {
@@ -28169,6 +28318,7 @@
         "is_gateway": true,
         "last_seen": "2026-10-31T14:27:42.865Z",
         "num": 1292258749,
+        "offline_after_ms": 17651718,
         "own_uplinks": 7,
         "packets": 7,
         "position": {
@@ -28196,6 +28346,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:43:51.088Z",
         "num": 1662911518,
+        "offline_after_ms": 14400000,
         "packets": 14,
         "receptions": 26,
         "status": "observed"
@@ -28204,6 +28355,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10795925,
         "gateway_receptions": 0,
         "id": "!683eec4a",
         "identity": {
@@ -28214,6 +28366,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:54:24.429Z",
         "num": 1748954186,
+        "offline_after_ms": 21591850,
         "packets": 14,
         "position": {
           "alt": 617,
@@ -28230,6 +28383,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 5295059,
         "gateway_receptions": 0,
         "id": "!878b82c5",
         "identity": {
@@ -28240,6 +28394,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:18:32.451Z",
         "num": 2274067141,
+        "offline_after_ms": 14400000,
         "packets": 14,
         "position": {
           "alt": 164,
@@ -28256,6 +28411,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10801648,
         "gateway_receptions": 0,
         "id": "!997b0449",
         "identity": {
@@ -28266,6 +28422,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:00:32.185Z",
         "num": 2574976073,
+        "offline_after_ms": 21603296,
         "packets": 13,
         "position": {
           "alt": 708,
@@ -28288,6 +28445,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10771543,
         "gateway_receptions": 0,
         "id": "!f66adc9c",
         "identity": {
@@ -28298,6 +28456,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T15:15:55.667Z",
         "num": 4134198428,
+        "offline_after_ms": 21543086,
         "packets": 13,
         "position": {
           "alt": 550,
@@ -28314,6 +28473,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 2138089,
         "estimate": {
           "anchor_count": 3,
           "lat": 63.368,
@@ -28337,6 +28497,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T13:23:05.072Z",
         "num": 40079132,
+        "offline_after_ms": 14400000,
         "packets": 12,
         "receptions": 22,
         "status": "observed"
@@ -28345,6 +28506,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10800014,
         "gateway_receptions": 8,
         "id": "!27607492",
         "identity": {
@@ -28355,6 +28517,7 @@
         "is_gateway": true,
         "last_seen": "2026-10-31T12:28:10.632Z",
         "num": 660632722,
+        "offline_after_ms": 21600028,
         "own_uplinks": 4,
         "packets": 4,
         "receptions": 4,
@@ -28364,6 +28527,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 4667016,
         "gateway_receptions": 0,
         "id": "!301bf60c",
         "identity": {
@@ -28374,6 +28538,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T15:04:09.578Z",
         "num": 807138828,
+        "offline_after_ms": 14400000,
         "packets": 12,
         "position": {
           "lat": 59.9523328,
@@ -28389,6 +28554,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10800268,
         "gateway_receptions": 0,
         "id": "!268a1248",
         "identity": {
@@ -28399,6 +28565,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T13:24:26.276Z",
         "num": 646582856,
+        "offline_after_ms": 21600536,
         "packets": 11,
         "position": {
           "lat": 64.0024576,
@@ -28420,6 +28587,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 7868521,
         "gateway_receptions": 0,
         "id": "!a721aca8",
         "identity": {
@@ -28430,6 +28598,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T12:43:33.968Z",
         "num": 2804001960,
+        "offline_after_ms": 15737042,
         "packets": 11,
         "position": {
           "alt": 202,
@@ -28456,6 +28625,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:15:17.180Z",
         "num": 3502530854,
+        "offline_after_ms": 14400000,
         "packets": 11,
         "receptions": 62,
         "status": "observed"
@@ -28464,6 +28634,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 2127695,
         "gateway_receptions": 0,
         "id": "!683fabaa",
         "identity": {
@@ -28474,6 +28645,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T13:34:32.754Z",
         "num": 1749003178,
+        "offline_after_ms": 14400000,
         "packets": 10,
         "receptions": 15,
         "status": "observed"
@@ -28482,6 +28654,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 7614347,
         "gateway_receptions": 0,
         "id": "!a5721ff7",
         "identity": {
@@ -28492,6 +28665,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:12:00.108Z",
         "num": 2775719927,
+        "offline_after_ms": 15228694,
         "packets": 10,
         "position": {
           "alt": 11,
@@ -28508,6 +28682,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 2070489,
         "gateway_receptions": 0,
         "id": "!a5b6176a",
         "identity": {
@@ -28518,6 +28693,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:33:50.827Z",
         "num": 2780174186,
+        "offline_after_ms": 14400000,
         "packets": 10,
         "position": {
           "alt": 96,
@@ -28557,6 +28733,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:39:34.261Z",
         "num": 2951876259,
+        "offline_after_ms": 14400000,
         "packets": 10,
         "receptions": 15,
         "status": "observed"
@@ -28565,6 +28742,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10799945,
         "gateway_receptions": 5,
         "id": "!b6b5be28",
         "identity": {
@@ -28575,6 +28753,7 @@
         "is_gateway": true,
         "last_seen": "2026-10-31T14:15:53.437Z",
         "num": 3065364008,
+        "offline_after_ms": 21599890,
         "own_uplinks": 5,
         "packets": 5,
         "receptions": 5,
@@ -28584,6 +28763,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10799840,
         "gateway_receptions": 0,
         "id": "!1de92ebc",
         "identity": {
@@ -28594,6 +28774,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:27:29.758Z",
         "num": 501821116,
+        "offline_after_ms": 21599680,
         "packets": 9,
         "receptions": 21,
         "status": "observed"
@@ -28602,6 +28783,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10800872,
         "gateway_receptions": 0,
         "id": "!29e50b7f",
         "identity": {
@@ -28612,6 +28794,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T15:13:26.314Z",
         "num": 702876543,
+        "offline_after_ms": 21601744,
         "packets": 9,
         "receptions": 14,
         "status": "observed"
@@ -28620,6 +28803,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10798648,
         "gateway_receptions": 0,
         "id": "!514664dd",
         "identity": {
@@ -28630,6 +28814,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:42:42.294Z",
         "num": 1363567837,
+        "offline_after_ms": 21597296,
         "packets": 9,
         "position": {
           "alt": 27,
@@ -28646,6 +28831,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 1107580,
         "gateway_receptions": 0,
         "id": "!9365c6cd",
         "identity": {
@@ -28656,6 +28842,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T09:38:36.271Z",
         "num": 2472920781,
+        "offline_after_ms": 14400000,
         "packets": 9,
         "position": {
           "alt": 56,
@@ -28672,6 +28859,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10523953,
         "gateway_receptions": 0,
         "id": "!9574fff8",
         "identity": {
@@ -28682,6 +28870,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T12:50:27.340Z",
         "num": 2507472888,
+        "offline_after_ms": 21047906,
         "packets": 9,
         "position": {
           "alt": 13,
@@ -28703,6 +28892,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T13:25:47.245Z",
         "num": 2559641042,
+        "offline_after_ms": 14400000,
         "packets": 9,
         "receptions": 15,
         "status": "observed"
@@ -28721,6 +28911,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:28:13.946Z",
         "num": 3615839736,
+        "offline_after_ms": 14400000,
         "packets": 9,
         "position": {
           "alt": 0,
@@ -28737,6 +28928,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10804303,
         "gateway_receptions": 0,
         "id": "!02eb8e7c",
         "identity": {
@@ -28747,6 +28939,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T12:43:32.304Z",
         "num": 48991868,
+        "offline_after_ms": 21608606,
         "packets": 8,
         "position": {
           "alt": 185,
@@ -28763,6 +28956,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 9598401,
         "gateway_receptions": 0,
         "id": "!0423d27e",
         "identity": {
@@ -28773,6 +28967,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T13:02:24.156Z",
         "num": 69456510,
+        "offline_after_ms": 19196802,
         "packets": 8,
         "position": {
           "alt": 114,
@@ -28789,6 +28984,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10800236,
         "gateway_receptions": 4,
         "id": "!04414588",
         "identity": {
@@ -28799,6 +28995,7 @@
         "is_gateway": true,
         "last_seen": "2026-10-31T12:33:00.195Z",
         "num": 71386504,
+        "offline_after_ms": 21600472,
         "own_uplinks": 4,
         "packets": 4,
         "receptions": 4,
@@ -28808,6 +29005,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10800285,
         "gateway_receptions": 0,
         "id": "!0745f838",
         "identity": {
@@ -28818,6 +29016,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:31:28.356Z",
         "num": 122026040,
+        "offline_after_ms": 21600570,
         "packets": 8,
         "position": {
           "lat": 63.340543999999994,
@@ -28839,6 +29038,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10800426,
         "gateway_receptions": 0,
         "id": "!1454ed85",
         "identity": {
@@ -28849,6 +29049,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:43:40.016Z",
         "num": 341110149,
+        "offline_after_ms": 21600852,
         "packets": 8,
         "position": {
           "alt": 820,
@@ -28865,6 +29066,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10801292,
         "estimate": {
           "anchor_count": 5,
           "lat": 59.855,
@@ -28888,6 +29090,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T12:38:57.661Z",
         "num": 1299288895,
+        "offline_after_ms": 21602584,
         "packets": 8,
         "receptions": 21,
         "relaying": {
@@ -28907,6 +29110,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:39:26.786Z",
         "num": 2837183777,
+        "offline_after_ms": 14400000,
         "packets": 8,
         "position": {
           "alt": 354,
@@ -28923,6 +29127,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10799807,
         "gateway_receptions": 0,
         "id": "!c381830d",
         "identity": {
@@ -28933,6 +29138,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:52:56.183Z",
         "num": 3280044813,
+        "offline_after_ms": 21599614,
         "packets": 8,
         "position": {
           "alt": 78,
@@ -28949,6 +29155,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10802214,
         "estimate": {
           "anchor_count": 3,
           "lat": 63.367,
@@ -28972,6 +29179,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T13:40:26.776Z",
         "num": 1087068312,
+        "offline_after_ms": 21604428,
         "packets": 7,
         "receptions": 29,
         "status": "observed"
@@ -28980,6 +29188,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10800177,
         "gateway_receptions": 0,
         "id": "!90d4c521",
         "identity": {
@@ -28990,6 +29199,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T13:43:40.895Z",
         "num": 2429863201,
+        "offline_after_ms": 21600354,
         "packets": 7,
         "receptions": 18,
         "status": "observed"
@@ -29008,6 +29218,7 @@
         "is_gateway": true,
         "last_seen": "2026-10-31T15:01:45.232Z",
         "num": 2658562108,
+        "offline_after_ms": 14400000,
         "own_uplinks": 3,
         "packets": 4,
         "position": {
@@ -29025,6 +29236,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10734463,
         "gateway_receptions": 0,
         "id": "!df1b2869",
         "identity": {
@@ -29035,6 +29247,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T13:06:30.537Z",
         "num": 3743098985,
+        "offline_after_ms": 21468926,
         "packets": 7,
         "position": {
           "alt": 10,
@@ -29051,6 +29264,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10801346,
         "gateway_receptions": 0,
         "id": "!e9253b6a",
         "identity": {
@@ -29061,6 +29275,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:53:11.644Z",
         "num": 3911531370,
+        "offline_after_ms": 21602692,
         "packets": 7,
         "receptions": 19,
         "status": "observed"
@@ -29069,6 +29284,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 7742271,
         "gateway_receptions": 0,
         "id": "!ef2cfcde",
         "identity": {
@@ -29079,6 +29295,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:30:46.986Z",
         "num": 4012702942,
+        "offline_after_ms": 15484542,
         "packets": 7,
         "position": {
           "alt": 149,
@@ -29095,6 +29312,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10801419,
         "gateway_receptions": 0,
         "id": "!f1a3eb75",
         "identity": {
@@ -29105,6 +29323,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:36:59.528Z",
         "num": 4054051701,
+        "offline_after_ms": 21602838,
         "packets": 7,
         "position": {
           "alt": 100,
@@ -29126,6 +29345,7 @@
         "is_gateway": true,
         "last_seen": "2026-10-31T08:57:13.953Z",
         "num": 4054382143,
+        "offline_after_ms": 14400000,
         "own_uplinks": 3,
         "packets": 3,
         "position": {
@@ -29148,6 +29368,7 @@
         "is_gateway": true,
         "last_seen": "2026-10-31T14:52:14.602Z",
         "num": 67643832,
+        "offline_after_ms": 14400000,
         "own_uplinks": 3,
         "packets": 3,
         "position": {
@@ -29170,6 +29391,7 @@
         "is_gateway": true,
         "last_seen": "2026-10-31T14:50:04.448Z",
         "num": 67692596,
+        "offline_after_ms": 14400000,
         "own_uplinks": 3,
         "packets": 3,
         "position": {
@@ -29192,6 +29414,7 @@
         "is_gateway": true,
         "last_seen": "2026-10-31T14:46:57.180Z",
         "num": 135418260,
+        "offline_after_ms": 14400000,
         "own_uplinks": 3,
         "packets": 3,
         "position": {
@@ -29209,6 +29432,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 7203987,
         "gateway_receptions": 0,
         "id": "!0aca39a8",
         "identity": {
@@ -29219,6 +29443,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T12:22:52.934Z",
         "num": 181025192,
+        "offline_after_ms": 14407974,
         "packets": 6,
         "position": {
           "alt": 20,
@@ -29259,6 +29484,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T15:02:36.493Z",
         "num": 496056339,
+        "offline_after_ms": 14400000,
         "packets": 6,
         "receptions": 11,
         "relaying": {
@@ -29273,6 +29499,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10659849,
         "gateway_receptions": 0,
         "id": "!4bbe9dfc",
         "identity": {
@@ -29283,6 +29510,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:07:07.358Z",
         "num": 1270783484,
+        "offline_after_ms": 21319698,
         "packets": 6,
         "position": {
           "lat": 60.391424,
@@ -29298,6 +29526,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10800914,
         "gateway_receptions": 0,
         "id": "!6a734b91",
         "identity": {
@@ -29308,6 +29537,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T13:06:35.452Z",
         "num": 1785940881,
+        "offline_after_ms": 21601828,
         "packets": 6,
         "position": {
           "alt": 9,
@@ -29329,6 +29559,7 @@
         "is_gateway": true,
         "last_seen": "2026-10-31T15:07:55.217Z",
         "num": 2077379726,
+        "offline_after_ms": 14400000,
         "own_uplinks": 3,
         "packets": 3,
         "position": {
@@ -29346,6 +29577,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10800270,
         "gateway_receptions": 0,
         "id": "!7e6b4638",
         "identity": {
@@ -29356,6 +29588,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:41:14.182Z",
         "num": 2120959544,
+        "offline_after_ms": 21600540,
         "packets": 6,
         "receptions": 22,
         "status": "observed"
@@ -29364,6 +29597,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10800971,
         "gateway_receptions": 0,
         "id": "!85d2fa9e",
         "identity": {
@@ -29374,6 +29608,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T15:11:46.373Z",
         "num": 2245196446,
+        "offline_after_ms": 21601942,
         "packets": 6,
         "position": {
           "alt": 34,
@@ -29390,6 +29625,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10801488,
         "gateway_receptions": 0,
         "id": "!91642d2a",
         "identity": {
@@ -29400,6 +29636,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:19:31.441Z",
         "num": 2439261482,
+        "offline_after_ms": 21602976,
         "packets": 6,
         "receptions": 9,
         "status": "observed"
@@ -29418,6 +29655,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T12:07:42.804Z",
         "num": 2472195474,
+        "offline_after_ms": 14400000,
         "packets": 6,
         "position": {
           "lat": 63.327436799999994,
@@ -29433,6 +29671,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 14263352,
         "gateway_receptions": 0,
         "id": "!97151277",
         "identity": {
@@ -29443,6 +29682,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T15:04:43.338Z",
         "num": 2534740599,
+        "offline_after_ms": 28526704,
         "packets": 6,
         "position": {
           "lat": 59.899904,
@@ -29468,6 +29708,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T13:55:26.539Z",
         "num": 2556709633,
+        "offline_after_ms": 14400000,
         "packets": 6,
         "position": {
           "alt": 50,
@@ -29484,6 +29725,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 8452019,
         "gateway_receptions": 0,
         "id": "!cff4a297",
         "identity": {
@@ -29494,6 +29736,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T12:48:44.544Z",
         "num": 3488916119,
+        "offline_after_ms": 16904038,
         "packets": 6,
         "position": {
           "alt": 0,
@@ -29510,6 +29753,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10800657,
         "gateway_receptions": 0,
         "id": "!d63653b5",
         "identity": {
@@ -29520,6 +29764,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T12:28:18.655Z",
         "num": 3593884597,
+        "offline_after_ms": 21601314,
         "packets": 6,
         "position": {
           "alt": 425,
@@ -29536,6 +29781,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 7324229,
         "gateway_receptions": 0,
         "id": "!dc22655b",
         "identity": {
@@ -29546,6 +29792,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:32:58.460Z",
         "num": 3693241691,
+        "offline_after_ms": 14648458,
         "packets": 6,
         "position": {
           "alt": 217,
@@ -29562,6 +29809,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10800739,
         "gateway_receptions": 0,
         "id": "!ebcdd581",
         "identity": {
@@ -29572,6 +29820,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:49:08.025Z",
         "num": 3956135297,
+        "offline_after_ms": 21601478,
         "packets": 6,
         "receptions": 8,
         "status": "observed"
@@ -29590,6 +29839,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:52:28.181Z",
         "num": 4188892060,
+        "offline_after_ms": 14400000,
         "packets": 6,
         "position": {
           "alt": 13,
@@ -29606,6 +29856,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10798148,
         "gateway_receptions": 0,
         "id": "!fe79a4bf",
         "identity": {
@@ -29616,6 +29867,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:55:39.160Z",
         "num": 4269384895,
+        "offline_after_ms": 21596296,
         "packets": 6,
         "receptions": 9,
         "status": "observed"
@@ -29634,6 +29886,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:05:52.468Z",
         "num": 394643707,
+        "offline_after_ms": 14400000,
         "packets": 5,
         "receptions": 8,
         "status": "observed"
@@ -29642,6 +29895,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10798784,
         "gateway_receptions": 0,
         "id": "!344b8583",
         "identity": {
@@ -29652,6 +29906,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T15:16:57.913Z",
         "num": 877364611,
+        "offline_after_ms": 21597568,
         "packets": 5,
         "receptions": 11,
         "status": "observed"
@@ -29666,6 +29921,7 @@
         "last_seen": "2026-10-31T12:49:12.679Z",
         "moved_at": "2026-10-31T10:47:40.278Z",
         "num": 1454041685,
+        "offline_after_ms": 14400000,
         "packets": 5,
         "position": {
           "alt": -1,
@@ -29696,6 +29952,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10799648,
         "gateway_receptions": 0,
         "id": "!591372be",
         "identity": {
@@ -29706,6 +29963,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T12:38:54.569Z",
         "num": 1494446782,
+        "offline_after_ms": 21599296,
         "packets": 5,
         "receptions": 15,
         "status": "observed"
@@ -29714,6 +29972,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10799873,
         "estimate": {
           "anchor_count": 3,
           "lat": 59.493,
@@ -29737,6 +29996,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T13:46:25.345Z",
         "num": 2192885842,
+        "offline_after_ms": 21599746,
         "packets": 5,
         "receptions": 11,
         "status": "observed"
@@ -29764,6 +30024,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:50:44.748Z",
         "num": 2269261887,
+        "offline_after_ms": 14400000,
         "packets": 5,
         "receptions": 5,
         "status": "observed"
@@ -29772,6 +30033,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10800777,
         "gateway_receptions": 0,
         "id": "!a897f55a",
         "identity": {
@@ -29782,6 +30044,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T13:25:03.714Z",
         "num": 2828531034,
+        "offline_after_ms": 21601554,
         "packets": 5,
         "receptions": 15,
         "status": "observed"
@@ -29790,6 +30053,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10800012,
         "gateway_receptions": 0,
         "id": "!d788b85d",
         "identity": {
@@ -29800,6 +30064,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:21:25.748Z",
         "num": 3616061533,
+        "offline_after_ms": 21600024,
         "packets": 5,
         "receptions": 15,
         "status": "observed"
@@ -29818,6 +30083,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T10:23:21.758Z",
         "num": 3988427975,
+        "offline_after_ms": 14400000,
         "packets": 5,
         "position": {
           "alt": 467,
@@ -29834,6 +30100,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10800719,
         "gateway_receptions": 0,
         "id": "!f46cc74c",
         "identity": {
@@ -29844,6 +30111,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:51:35.382Z",
         "num": 4100769612,
+        "offline_after_ms": 21601438,
         "packets": 5,
         "position": {
           "alt": 99,
@@ -29865,6 +30133,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T12:41:41.420Z",
         "num": 24620546,
+        "offline_after_ms": 14400000,
         "packets": 4,
         "receptions": 4,
         "status": "observed"
@@ -29873,6 +30142,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10800283,
         "gateway_receptions": 0,
         "id": "!206f2414",
         "identity": {
@@ -29883,6 +30153,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:05:09.409Z",
         "num": 544154644,
+        "offline_after_ms": 21600566,
         "packets": 4,
         "receptions": 8,
         "status": "observed"
@@ -29891,6 +30162,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10800303,
         "gateway_receptions": 0,
         "id": "!296c6b21",
         "identity": {
@@ -29901,6 +30173,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T12:24:38.111Z",
         "num": 694971169,
+        "offline_after_ms": 21600606,
         "packets": 4,
         "receptions": 8,
         "status": "observed"
@@ -29914,6 +30187,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:58:21.817Z",
         "num": 1240983741,
+        "offline_after_ms": 14400000,
         "packets": 4,
         "receptions": 7,
         "status": "observed"
@@ -29922,6 +30196,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 3600798,
         "gateway_receptions": 0,
         "id": "!64db0a84",
         "identity": {
@@ -29932,6 +30207,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T11:41:23.621Z",
         "num": 1692076676,
+        "offline_after_ms": 14400000,
         "packets": 4,
         "receptions": 8,
         "status": "observed"
@@ -29950,6 +30226,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T08:32:56.980Z",
         "num": 1978491617,
+        "offline_after_ms": 14400000,
         "packets": 4,
         "receptions": 7,
         "status": "observed"
@@ -29958,6 +30235,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10800169,
         "gateway_receptions": 0,
         "id": "!7b71ed5a",
         "identity": {
@@ -29968,6 +30246,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T12:48:39.994Z",
         "num": 2071063898,
+        "offline_after_ms": 21600338,
         "packets": 4,
         "receptions": 8,
         "status": "observed"
@@ -29976,6 +30255,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10799950,
         "gateway_receptions": 0,
         "id": "!7f8eab77",
         "identity": {
@@ -29986,6 +30266,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:10:48.579Z",
         "num": 2140056439,
+        "offline_after_ms": 21599900,
         "packets": 4,
         "receptions": 8,
         "status": "observed"
@@ -30004,6 +30285,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T11:28:01.707Z",
         "num": 2235577949,
+        "offline_after_ms": 14400000,
         "packets": 4,
         "receptions": 7,
         "status": "observed"
@@ -30012,6 +30294,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10799720,
         "gateway_receptions": 0,
         "id": "!8e63f2bb",
         "identity": {
@@ -30022,6 +30305,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T12:21:05.204Z",
         "num": 2388914875,
+        "offline_after_ms": 21599440,
         "packets": 4,
         "receptions": 4,
         "status": "observed"
@@ -30053,6 +30337,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T09:28:02.687Z",
         "num": 2878262644,
+        "offline_after_ms": 14400000,
         "packets": 4,
         "receptions": 23,
         "status": "observed"
@@ -30061,6 +30346,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10800557,
         "estimate": {
           "anchor_count": 4,
           "lat": 63.356,
@@ -30084,6 +30370,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T13:01:38.732Z",
         "num": 3366800968,
+        "offline_after_ms": 21601114,
         "packets": 4,
         "receptions": 19,
         "status": "observed"
@@ -30092,6 +30379,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10800484,
         "gateway_receptions": 0,
         "id": "!dc689cf0",
         "identity": {
@@ -30102,6 +30390,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T12:49:32.759Z",
         "num": 3697843440,
+        "offline_after_ms": 21600968,
         "packets": 4,
         "receptions": 23,
         "status": "observed"
@@ -30110,6 +30399,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10800448,
         "gateway_receptions": 0,
         "id": "!df042dd3",
         "identity": {
@@ -30120,6 +30410,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T13:05:54.696Z",
         "num": 3741593043,
+        "offline_after_ms": 21600896,
         "packets": 4,
         "receptions": 8,
         "status": "observed"
@@ -30128,6 +30419,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10800622,
         "gateway_receptions": 0,
         "id": "!e2b8c585",
         "identity": {
@@ -30138,6 +30430,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T13:39:16.607Z",
         "num": 3803760005,
+        "offline_after_ms": 21601244,
         "packets": 4,
         "receptions": 7,
         "status": "observed"
@@ -30146,6 +30439,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10796180,
         "gateway_receptions": 0,
         "id": "!f25e6bab",
         "identity": {
@@ -30156,6 +30450,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T12:38:53.427Z",
         "num": 4066274219,
+        "offline_after_ms": 21592360,
         "packets": 4,
         "receptions": 11,
         "status": "observed"
@@ -30174,6 +30469,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T11:36:04.379Z",
         "num": 4125353677,
+        "offline_after_ms": 14400000,
         "packets": 4,
         "receptions": 7,
         "status": "observed"
@@ -30182,6 +30478,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10800319,
         "gateway_receptions": 0,
         "id": "!f79b22b5",
         "identity": {
@@ -30192,6 +30489,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T13:34:48.025Z",
         "num": 4154139317,
+        "offline_after_ms": 21600638,
         "packets": 4,
         "receptions": 7,
         "status": "observed"
@@ -30210,6 +30508,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T13:49:18.797Z",
         "num": 70455580,
+        "offline_after_ms": 14400000,
         "packets": 3,
         "receptions": 3,
         "status": "observed"
@@ -30220,6 +30519,7 @@
         "is_gateway": true,
         "last_seen": "2026-10-31T10:50:43.505Z",
         "num": 260696005,
+        "offline_after_ms": 14400000,
         "packets": 0,
         "receptions": 0,
         "status": "observed"
@@ -30233,6 +30533,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T08:33:47.095Z",
         "num": 2056205346,
+        "offline_after_ms": 14400000,
         "packets": 3,
         "position": {
           "alt": 400,
@@ -30259,6 +30560,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T11:44:56.723Z",
         "num": 2404090552,
+        "offline_after_ms": 14400000,
         "packets": 3,
         "position": {
           "alt": 60,
@@ -30285,6 +30587,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T10:50:43.505Z",
         "num": 2681085040,
+        "offline_after_ms": 14400000,
         "packets": 3,
         "position": {
           "alt": 20,
@@ -30311,6 +30614,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T09:50:42.083Z",
         "num": 110099040,
+        "offline_after_ms": 14400000,
         "packets": 2,
         "receptions": 4,
         "status": "observed"
@@ -30329,6 +30633,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T11:54:57.762Z",
         "num": 1400963998,
+        "offline_after_ms": 14400000,
         "packets": 2,
         "position": {
           "alt": 48,
@@ -30350,6 +30655,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T13:56:05.369Z",
         "num": 1801546467,
+        "offline_after_ms": 14400000,
         "packets": 2,
         "receptions": 2,
         "status": "observed"
@@ -30363,6 +30669,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T15:07:27.083Z",
         "num": 1950769514,
+        "offline_after_ms": 14400000,
         "packets": 2,
         "position": {
           "alt": 119,
@@ -30384,6 +30691,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T11:53:24.338Z",
         "num": 2406687255,
+        "offline_after_ms": 14400000,
         "packets": 2,
         "receptions": 4,
         "status": "observed"
@@ -30415,6 +30723,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:22:44.366Z",
         "num": 2471945786,
+        "offline_after_ms": 14400000,
         "packets": 2,
         "receptions": 10,
         "status": "observed"
@@ -30428,6 +30737,7 @@
         "is_gateway": true,
         "last_seen": "2026-10-31T14:38:42.240Z",
         "num": 2925563912,
+        "offline_after_ms": 14400000,
         "own_uplinks": 1,
         "packets": 1,
         "position": {
@@ -30450,6 +30760,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T13:31:04.301Z",
         "num": 3478777846,
+        "offline_after_ms": 14400000,
         "packets": 2,
         "receptions": 2,
         "status": "observed"
@@ -30463,6 +30774,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:37:25.538Z",
         "num": 3896501928,
+        "offline_after_ms": 14400000,
         "packets": 2,
         "receptions": 12,
         "status": "observed"
@@ -30481,6 +30793,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T12:22:32.002Z",
         "num": 4104318588,
+        "offline_after_ms": 14400000,
         "packets": 2,
         "receptions": 8,
         "status": "observed"
@@ -30499,6 +30812,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T12:56:14.708Z",
         "num": 233892411,
+        "offline_after_ms": 14400000,
         "packets": 1,
         "receptions": 4,
         "status": "observed"
@@ -30512,6 +30826,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:27:32.405Z",
         "num": 558351813,
+        "offline_after_ms": 14400000,
         "packets": 1,
         "receptions": 5,
         "status": "observed"
@@ -30525,6 +30840,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T08:50:31.480Z",
         "num": 843339698,
+        "offline_after_ms": 14400000,
         "packets": 1,
         "receptions": 4,
         "status": "observed"
@@ -30543,6 +30859,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T08:57:13.953Z",
         "num": 1128188940,
+        "offline_after_ms": 14400000,
         "packets": 1,
         "receptions": 1,
         "status": "observed"
@@ -30561,6 +30878,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T09:15:59.115Z",
         "num": 2119449540,
+        "offline_after_ms": 14400000,
         "packets": 1,
         "receptions": 1,
         "status": "observed"
@@ -30587,6 +30905,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T07:09:59.307Z",
         "num": 2737844288,
+        "offline_after_ms": 14400000,
         "packets": 1,
         "receptions": 2,
         "status": "observed"
@@ -30600,6 +30919,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T04:36:21.915Z",
         "num": 3670886881,
+        "offline_after_ms": 14400000,
         "packets": 1,
         "receptions": 1,
         "status": "observed"
@@ -30613,6 +30933,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T12:49:15.250Z",
         "num": 4097447658,
+        "offline_after_ms": 14400000,
         "packets": 1,
         "receptions": 6,
         "status": "observed"
@@ -34763,6 +35084,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10800140,
         "gateway_receptions": 260,
         "id": "!1224405f",
         "identity": {
@@ -34773,6 +35095,7 @@
         "is_gateway": true,
         "last_seen": "2026-10-31T15:11:42.821Z",
         "num": 304365663,
+        "offline_after_ms": 21600280,
         "own_uplinks": 4,
         "packets": 4,
         "receptions": 10,
@@ -34782,6 +35105,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 2414149,
         "gateway_receptions": 202,
         "id": "!9b0f4bd5",
         "identity": {
@@ -34792,6 +35116,7 @@
         "is_gateway": true,
         "last_seen": "2026-10-31T15:13:38.849Z",
         "num": 2601470933,
+        "offline_after_ms": 14400000,
         "own_uplinks": 5,
         "packets": 5,
         "position": {
@@ -34809,6 +35134,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 6615089,
         "gateway_receptions": 199,
         "id": "!b1610d41",
         "identity": {
@@ -34819,6 +35145,7 @@
         "is_gateway": true,
         "last_seen": "2026-10-31T15:13:37.817Z",
         "num": 2975927617,
+        "offline_after_ms": 14400000,
         "own_uplinks": 7,
         "packets": 8,
         "position": {
@@ -34841,6 +35168,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 3775075,
         "gateway_receptions": 186,
         "id": "!da75a898",
         "identity": {
@@ -34851,6 +35179,7 @@
         "is_gateway": true,
         "last_seen": "2026-10-31T15:11:46.373Z",
         "num": 3665143960,
+        "offline_after_ms": 14400000,
         "own_uplinks": 14,
         "packets": 15,
         "position": {
@@ -34868,6 +35197,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 3840024,
         "gateway_receptions": 195,
         "id": "!f6a6fd67",
         "identity": {
@@ -34878,6 +35208,7 @@
         "is_gateway": true,
         "last_seen": "2026-10-31T15:13:37.009Z",
         "num": 4138138983,
+        "offline_after_ms": 14400000,
         "own_uplinks": 6,
         "packets": 6,
         "position": {
@@ -34901,6 +35232,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 7114910,
         "gateway_receptions": 174,
         "id": "!3afab911",
         "identity": {
@@ -34911,6 +35243,7 @@
         "is_gateway": true,
         "last_seen": "2026-10-31T15:13:38.849Z",
         "num": 989509905,
+        "offline_after_ms": 14400000,
         "own_uplinks": 6,
         "packets": 6,
         "position": {
@@ -34927,6 +35260,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 540327,
         "gateway_receptions": 84,
         "id": "!9ee784a0",
         "identity": {
@@ -34937,6 +35271,7 @@
         "is_gateway": true,
         "last_seen": "2026-10-31T15:11:05.916Z",
         "num": 2665972896,
+        "offline_after_ms": 14400000,
         "own_uplinks": 84,
         "packets": 84,
         "position": {
@@ -34954,6 +35289,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 1993064,
         "gateway_receptions": 153,
         "id": "!5dca6801",
         "identity": {
@@ -34964,6 +35300,7 @@
         "is_gateway": true,
         "last_seen": "2026-10-31T15:04:43.338Z",
         "num": 1573545985,
+        "offline_after_ms": 14400000,
         "own_uplinks": 13,
         "packets": 13,
         "position": {
@@ -34981,6 +35318,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 632109,
         "gateway_receptions": 84,
         "id": "!e2e49980",
         "identity": {
@@ -34991,6 +35329,7 @@
         "is_gateway": true,
         "last_seen": "2026-10-31T15:07:45.948Z",
         "num": 3806632320,
+        "offline_after_ms": 14400000,
         "own_uplinks": 72,
         "packets": 72,
         "position": {
@@ -35008,6 +35347,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10800015,
         "gateway_receptions": 149,
         "id": "!a1d77a98",
         "identity": {
@@ -35018,6 +35358,7 @@
         "is_gateway": true,
         "last_seen": "2026-10-31T15:11:45.867Z",
         "num": 2715253400,
+        "offline_after_ms": 21600030,
         "own_uplinks": 5,
         "packets": 5,
         "receptions": 19,
@@ -35027,6 +35368,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 412645,
         "gateway_receptions": 94,
         "id": "!b2a114e3",
         "identity": {
@@ -35037,6 +35379,7 @@
         "is_gateway": true,
         "last_seen": "2026-10-31T15:13:15.998Z",
         "num": 2996901091,
+        "offline_after_ms": 14400000,
         "own_uplinks": 12,
         "packets": 33,
         "position": {
@@ -35054,6 +35397,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10800026,
         "gateway_receptions": 119,
         "id": "!2c14bd59",
         "identity": {
@@ -35064,6 +35408,7 @@
         "is_gateway": true,
         "last_seen": "2026-10-31T15:09:23.544Z",
         "num": 739556697,
+        "offline_after_ms": 21600052,
         "own_uplinks": 4,
         "packets": 4,
         "receptions": 8,
@@ -35073,6 +35418,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10800327,
         "gateway_receptions": 99,
         "id": "!4c6575d4",
         "identity": {
@@ -35083,6 +35429,7 @@
         "is_gateway": true,
         "last_seen": "2026-10-31T15:15:53.878Z",
         "num": 1281717716,
+        "offline_after_ms": 21600654,
         "own_uplinks": 6,
         "packets": 8,
         "position": {
@@ -35102,6 +35449,7 @@
         "is_gateway": true,
         "last_seen": "2026-10-31T15:15:55.667Z",
         "num": 67542816,
+        "offline_after_ms": 14400000,
         "packets": 0,
         "receptions": 0,
         "status": "observed"
@@ -35110,6 +35458,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 9001578,
         "gateway_receptions": 69,
         "id": "!a206ab04",
         "identity": {
@@ -35120,6 +35469,7 @@
         "is_gateway": true,
         "last_seen": "2026-10-31T15:16:57.913Z",
         "num": 2718345988,
+        "offline_after_ms": 18003156,
         "own_uplinks": 6,
         "packets": 6,
         "position": {
@@ -35137,6 +35487,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 4833893,
         "gateway_receptions": 66,
         "id": "!699cb4a0",
         "identity": {
@@ -35147,6 +35498,7 @@
         "is_gateway": true,
         "last_seen": "2026-10-31T15:13:15.998Z",
         "num": 1771877536,
+        "offline_after_ms": 14400000,
         "own_uplinks": 5,
         "packets": 5,
         "position": {
@@ -35163,6 +35515,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 9699998,
         "gateway_receptions": 59,
         "id": "!84965cf6",
         "identity": {
@@ -35173,6 +35526,7 @@
         "is_gateway": true,
         "last_seen": "2026-10-31T15:09:23.544Z",
         "num": 2224446710,
+        "offline_after_ms": 19399996,
         "own_uplinks": 6,
         "packets": 6,
         "position": {
@@ -35190,6 +35544,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10735861,
         "gateway_receptions": 58,
         "id": "!39b01fc6",
         "identity": {
@@ -35200,6 +35555,7 @@
         "is_gateway": true,
         "last_seen": "2026-10-31T15:16:57.785Z",
         "num": 967843782,
+        "offline_after_ms": 21471722,
         "own_uplinks": 6,
         "packets": 6,
         "position": {
@@ -35217,6 +35573,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 6471313,
         "gateway_receptions": 22,
         "id": "!83abf576",
         "identity": {
@@ -35227,6 +35584,7 @@
         "is_gateway": true,
         "last_seen": "2026-10-31T14:51:35.189Z",
         "num": 2209084790,
+        "offline_after_ms": 14400000,
         "own_uplinks": 6,
         "packets": 6,
         "position": {
@@ -35244,6 +35602,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10583815,
         "gateway_receptions": 20,
         "id": "!fff434b6",
         "identity": {
@@ -35254,6 +35613,7 @@
         "is_gateway": true,
         "last_seen": "2026-10-31T14:36:59.528Z",
         "num": 4294194358,
+        "offline_after_ms": 21167630,
         "own_uplinks": 6,
         "packets": 6,
         "position": {
@@ -35271,6 +35631,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 7730136,
         "gateway_receptions": 18,
         "id": "!395c3591",
         "identity": {
@@ -35281,6 +35642,7 @@
         "is_gateway": true,
         "last_seen": "2026-10-31T15:03:44.125Z",
         "num": 962344337,
+        "offline_after_ms": 15460272,
         "own_uplinks": 6,
         "packets": 6,
         "position": {
@@ -35298,6 +35660,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 7073870,
         "gateway_receptions": 17,
         "id": "!538621b2",
         "identity": {
@@ -35308,6 +35671,7 @@
         "is_gateway": true,
         "last_seen": "2026-10-31T15:09:22.930Z",
         "num": 1401299378,
+        "offline_after_ms": 14400000,
         "own_uplinks": 4,
         "packets": 7,
         "position": {
@@ -35325,6 +35689,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 2252853,
         "gateway_receptions": 0,
         "id": "!09a7ceb5",
         "identity": {
@@ -35335,6 +35700,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:44:20.103Z",
         "num": 161992373,
+        "offline_after_ms": 14400000,
         "packets": 21,
         "position": {
           "alt": 63,
@@ -35358,6 +35724,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 2878785,
         "gateway_receptions": 0,
         "id": "!d481460c",
         "identity": {
@@ -35368,6 +35735,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:30:16.716Z",
         "num": 3565241868,
+        "offline_after_ms": 14400000,
         "packets": 21,
         "position": {
           "alt": 78,
@@ -35384,6 +35752,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 3600907,
         "gateway_receptions": 0,
         "id": "!1ba5ae00",
         "identity": {
@@ -35394,6 +35763,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:22:06.030Z",
         "num": 463842816,
+        "offline_after_ms": 14400000,
         "packets": 16,
         "position": {
           "alt": 305,
@@ -35410,6 +35780,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 3601400,
         "gateway_receptions": 0,
         "id": "!8f4c2cf0",
         "identity": {
@@ -35420,6 +35791,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:30:22.102Z",
         "num": 2404134128,
+        "offline_after_ms": 14400000,
         "packets": 16,
         "position": {
           "alt": 86,
@@ -35436,6 +35808,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 898346,
         "gateway_receptions": 0,
         "id": "!a349702d",
         "identity": {
@@ -35446,6 +35819,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:32:47.206Z",
         "num": 2739499053,
+        "offline_after_ms": 14400000,
         "packets": 16,
         "receptions": 40,
         "status": "observed"
@@ -35454,6 +35828,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 1919175,
         "gateway_receptions": 0,
         "id": "!d48145f8",
         "identity": {
@@ -35464,6 +35839,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:58:22.497Z",
         "num": 3565241848,
+        "offline_after_ms": 14400000,
         "packets": 16,
         "position": {
           "alt": 128,
@@ -35480,6 +35856,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 1723742,
         "gateway_receptions": 0,
         "id": "!2f349738",
         "identity": {
@@ -35490,6 +35867,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:42:18.906Z",
         "num": 791975736,
+        "offline_after_ms": 14400000,
         "packets": 15,
         "position": {
           "alt": 179,
@@ -35513,6 +35891,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 3600571,
         "gateway_receptions": 0,
         "id": "!8f4b643c",
         "identity": {
@@ -35523,6 +35902,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:26:09.373Z",
         "num": 2404082748,
+        "offline_after_ms": 14400000,
         "packets": 15,
         "position": {
           "lat": 63.4191872,
@@ -35538,6 +35918,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 3600063,
         "gateway_receptions": 0,
         "id": "!4e95f741",
         "identity": {
@@ -35548,6 +35929,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T15:06:26.797Z",
         "num": 1318451009,
+        "offline_after_ms": 14400000,
         "packets": 14,
         "position": {
           "lat": 63.379865599999995,
@@ -35563,6 +35945,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 1291366,
         "gateway_receptions": 0,
         "id": "!98f71d7d",
         "identity": {
@@ -35573,6 +35956,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T12:19:53.189Z",
         "num": 2566331773,
+        "offline_after_ms": 14400000,
         "packets": 13,
         "receptions": 43,
         "status": "observed"
@@ -35581,6 +35965,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 3600225,
         "gateway_receptions": 0,
         "id": "!bfa97d12",
         "identity": {
@@ -35591,6 +35976,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:57:22.731Z",
         "num": 3215555858,
+        "offline_after_ms": 14400000,
         "packets": 13,
         "position": {
           "alt": 348,
@@ -35607,6 +35993,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10800014,
         "gateway_receptions": 8,
         "id": "!27607492",
         "identity": {
@@ -35617,6 +36004,7 @@
         "is_gateway": true,
         "last_seen": "2026-10-31T12:28:10.632Z",
         "num": 660632722,
+        "offline_after_ms": 21600028,
         "own_uplinks": 4,
         "packets": 4,
         "receptions": 4,
@@ -35626,6 +36014,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 3600900,
         "gateway_receptions": 0,
         "id": "!3317a3bc",
         "identity": {
@@ -35636,6 +36025,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T15:03:44.125Z",
         "num": 857187260,
+        "offline_after_ms": 14400000,
         "packets": 12,
         "receptions": 12,
         "status": "observed"
@@ -35644,6 +36034,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10715458,
         "gateway_receptions": 6,
         "id": "!3b8a98be",
         "identity": {
@@ -35654,6 +36045,7 @@
         "is_gateway": true,
         "last_seen": "2026-10-31T12:39:08.907Z",
         "num": 998938814,
+        "offline_after_ms": 21430916,
         "own_uplinks": 6,
         "packets": 6,
         "position": {
@@ -35671,6 +36063,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 8825859,
         "gateway_receptions": 6,
         "id": "!4d064dbd",
         "identity": {
@@ -35681,6 +36074,7 @@
         "is_gateway": true,
         "last_seen": "2026-10-31T14:27:42.865Z",
         "num": 1292258749,
+        "offline_after_ms": 17651718,
         "own_uplinks": 6,
         "packets": 6,
         "position": {
@@ -35698,6 +36092,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10799906,
         "gateway_receptions": 8,
         "id": "!da75c38c",
         "identity": {
@@ -35708,6 +36103,7 @@
         "is_gateway": true,
         "last_seen": "2026-10-31T13:39:40.428Z",
         "num": 3665150860,
+        "offline_after_ms": 21599812,
         "own_uplinks": 4,
         "packets": 4,
         "receptions": 4,
@@ -35717,6 +36113,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 5295059,
         "gateway_receptions": 0,
         "id": "!878b82c5",
         "identity": {
@@ -35727,6 +36124,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:18:32.451Z",
         "num": 2274067141,
+        "offline_after_ms": 14400000,
         "packets": 11,
         "position": {
           "alt": 164,
@@ -35743,6 +36141,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 7070437,
         "gateway_receptions": 7,
         "id": "!c67ce004",
         "identity": {
@@ -35753,6 +36152,7 @@
         "is_gateway": true,
         "last_seen": "2026-10-31T14:26:27.702Z",
         "num": 3330072580,
+        "offline_after_ms": 14400000,
         "own_uplinks": 3,
         "packets": 4,
         "receptions": 5,
@@ -35762,6 +36162,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 6896819,
         "gateway_receptions": 6,
         "id": "!64e304bd",
         "identity": {
@@ -35772,6 +36173,7 @@
         "is_gateway": true,
         "last_seen": "2026-10-31T14:26:27.702Z",
         "num": 1692599485,
+        "offline_after_ms": 14400000,
         "own_uplinks": 4,
         "packets": 4,
         "receptions": 7,
@@ -35781,6 +36183,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 6333086,
         "gateway_receptions": 0,
         "id": "!699be574",
         "identity": {
@@ -35791,6 +36194,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T13:29:02.255Z",
         "num": 1771824500,
+        "offline_after_ms": 14400000,
         "packets": 10,
         "position": {
           "alt": 33,
@@ -35814,6 +36218,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 2070489,
         "gateway_receptions": 0,
         "id": "!a5b6176a",
         "identity": {
@@ -35824,6 +36229,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:33:50.827Z",
         "num": 2780174186,
+        "offline_after_ms": 14400000,
         "packets": 10,
         "position": {
           "alt": 96,
@@ -35840,6 +36246,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10799945,
         "gateway_receptions": 5,
         "id": "!b6b5be28",
         "identity": {
@@ -35850,6 +36257,7 @@
         "is_gateway": true,
         "last_seen": "2026-10-31T14:15:53.437Z",
         "num": 3065364008,
+        "offline_after_ms": 21599890,
         "own_uplinks": 5,
         "packets": 5,
         "receptions": 5,
@@ -35859,6 +36267,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 6563923,
         "gateway_receptions": 0,
         "id": "!f669c568",
         "identity": {
@@ -35869,6 +36278,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T13:40:59.954Z",
         "num": 4134126952,
+        "offline_after_ms": 14400000,
         "packets": 9,
         "position": {
           "alt": 158,
@@ -35885,6 +36295,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 2138089,
         "gateway_receptions": 0,
         "id": "!02638f1c",
         "identity": {
@@ -35895,6 +36306,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T13:23:05.072Z",
         "num": 40079132,
+        "offline_after_ms": 14400000,
         "packets": 8,
         "receptions": 15,
         "status": "observed"
@@ -35903,6 +36315,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10800236,
         "gateway_receptions": 4,
         "id": "!04414588",
         "identity": {
@@ -35913,6 +36326,7 @@
         "is_gateway": true,
         "last_seen": "2026-10-31T12:33:00.195Z",
         "num": 71386504,
+        "offline_after_ms": 21600472,
         "own_uplinks": 4,
         "packets": 4,
         "receptions": 4,
@@ -35922,6 +36336,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10523953,
         "gateway_receptions": 0,
         "id": "!9574fff8",
         "identity": {
@@ -35932,6 +36347,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T12:50:27.340Z",
         "num": 2507472888,
+        "offline_after_ms": 21047906,
         "packets": 8,
         "position": {
           "alt": 13,
@@ -35948,6 +36364,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10799209,
         "gateway_receptions": 0,
         "id": "!a9339946",
         "identity": {
@@ -35958,6 +36375,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T15:04:17.378Z",
         "num": 2838731078,
+        "offline_after_ms": 21598418,
         "packets": 8,
         "position": {
           "alt": 450,
@@ -35974,6 +36392,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10799390,
         "gateway_receptions": 4,
         "id": "!c5b9ba89",
         "identity": {
@@ -35984,6 +36403,7 @@
         "is_gateway": true,
         "last_seen": "2026-10-31T15:07:17.042Z",
         "num": 3317283465,
+        "offline_after_ms": 21598780,
         "own_uplinks": 4,
         "packets": 4,
         "receptions": 4,
@@ -35993,6 +36413,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10800012,
         "gateway_receptions": 4,
         "id": "!ea8eede8",
         "identity": {
@@ -36003,6 +36424,7 @@
         "is_gateway": true,
         "last_seen": "2026-10-31T13:37:56.693Z",
         "num": 3935235560,
+        "offline_after_ms": 21600024,
         "own_uplinks": 4,
         "packets": 4,
         "receptions": 8,
@@ -36012,6 +36434,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 2127695,
         "gateway_receptions": 0,
         "id": "!683fabaa",
         "identity": {
@@ -36022,6 +36445,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T13:34:31.354Z",
         "num": 1749003178,
+        "offline_after_ms": 14400000,
         "packets": 7,
         "receptions": 11,
         "status": "observed"
@@ -36030,6 +36454,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 5472036,
         "gateway_receptions": 0,
         "id": "!8a84e409",
         "identity": {
@@ -36040,6 +36465,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T13:54:51.808Z",
         "num": 2323964937,
+        "offline_after_ms": 14400000,
         "packets": 7,
         "position": {
           "lat": 63.9920166,
@@ -36055,6 +36481,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 8455483,
         "gateway_receptions": 0,
         "id": "!8d52fe84",
         "identity": {
@@ -36065,6 +36492,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:08:27.476Z",
         "num": 2371026564,
+        "offline_after_ms": 16910966,
         "packets": 7,
         "position": {
           "alt": 335,
@@ -36081,6 +36509,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 1107580,
         "gateway_receptions": 0,
         "id": "!9365c6cd",
         "identity": {
@@ -36091,6 +36520,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T09:38:36.271Z",
         "num": 2472920781,
+        "offline_after_ms": 14400000,
         "packets": 7,
         "position": {
           "alt": 56,
@@ -36107,6 +36537,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10801419,
         "gateway_receptions": 0,
         "id": "!f1a3eb75",
         "identity": {
@@ -36117,6 +36548,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:36:59.528Z",
         "num": 4054051701,
+        "offline_after_ms": 21602838,
         "packets": 7,
         "position": {
           "alt": 100,
@@ -36138,6 +36570,7 @@
         "is_gateway": true,
         "last_seen": "2026-10-31T08:57:13.953Z",
         "num": 4054382143,
+        "offline_after_ms": 14400000,
         "own_uplinks": 3,
         "packets": 3,
         "position": {
@@ -36155,6 +36588,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 7041246,
         "gateway_receptions": 0,
         "id": "!f9ad38c8",
         "identity": {
@@ -36165,6 +36599,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:15:44.511Z",
         "num": 4188879048,
+        "offline_after_ms": 14400000,
         "packets": 7,
         "position": {
           "alt": 537,
@@ -36191,6 +36626,7 @@
         "is_gateway": true,
         "last_seen": "2026-10-31T11:43:10.120Z",
         "num": 36412110,
+        "offline_after_ms": 14400000,
         "own_uplinks": 2,
         "packets": 2,
         "receptions": 2,
@@ -36200,6 +36636,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 7203987,
         "gateway_receptions": 0,
         "id": "!0aca39a8",
         "identity": {
@@ -36210,6 +36647,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T12:22:52.934Z",
         "num": 181025192,
+        "offline_after_ms": 14407974,
         "packets": 6,
         "position": {
           "alt": 20,
@@ -36226,6 +36664,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10659849,
         "gateway_receptions": 0,
         "id": "!4bbe9dfc",
         "identity": {
@@ -36236,6 +36675,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:07:07.358Z",
         "num": 1270783484,
+        "offline_after_ms": 21319698,
         "packets": 6,
         "position": {
           "lat": 60.391424,
@@ -36251,6 +36691,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10678569,
         "gateway_receptions": 0,
         "id": "!4c0c7f3d",
         "identity": {
@@ -36261,6 +36702,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:37:51.754Z",
         "num": 1275887421,
+        "offline_after_ms": 21357138,
         "packets": 6,
         "position": {
           "alt": 33,
@@ -36277,6 +36719,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 6557152,
         "gateway_receptions": 0,
         "id": "!5028b360",
         "identity": {
@@ -36287,6 +36730,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T12:21:04.077Z",
         "num": 1344844640,
+        "offline_after_ms": 14400000,
         "packets": 6,
         "position": {
           "alt": 414,
@@ -36303,6 +36747,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 6464575,
         "gateway_receptions": 0,
         "id": "!64e26f73",
         "identity": {
@@ -36313,6 +36758,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:30:54.649Z",
         "num": 1692561267,
+        "offline_after_ms": 14400000,
         "packets": 6,
         "position": {
           "lat": 60.0571904,
@@ -36328,6 +36774,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 5987852,
         "gateway_receptions": 0,
         "id": "!672f1873",
         "identity": {
@@ -36338,6 +36785,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T13:25:10.771Z",
         "num": 1731139699,
+        "offline_after_ms": 14400000,
         "packets": 6,
         "position": {
           "alt": 540,
@@ -36354,6 +36802,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10800845,
         "gateway_receptions": 0,
         "id": "!94ed7591",
         "identity": {
@@ -36364,6 +36813,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:31:42.286Z",
         "num": 2498590097,
+        "offline_after_ms": 21601690,
         "packets": 6,
         "position": {
           "alt": 580,
@@ -36380,6 +36830,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 7614347,
         "gateway_receptions": 0,
         "id": "!a5721ff7",
         "identity": {
@@ -36390,6 +36841,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:12:00.108Z",
         "num": 2775719927,
+        "offline_after_ms": 15228694,
         "packets": 6,
         "position": {
           "alt": 11,
@@ -36406,6 +36858,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10799807,
         "gateway_receptions": 0,
         "id": "!c381830d",
         "identity": {
@@ -36416,6 +36869,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:52:56.183Z",
         "num": 3280044813,
+        "offline_after_ms": 21599614,
         "packets": 6,
         "position": {
           "alt": 78,
@@ -36432,6 +36886,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 8452019,
         "gateway_receptions": 0,
         "id": "!cff4a297",
         "identity": {
@@ -36442,6 +36897,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T12:48:44.544Z",
         "num": 3488916119,
+        "offline_after_ms": 16904038,
         "packets": 6,
         "position": {
           "alt": 0,
@@ -36458,6 +36914,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10800368,
         "gateway_receptions": 0,
         "id": "!d38dd2ca",
         "identity": {
@@ -36468,6 +36925,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T13:28:03.517Z",
         "num": 3549287114,
+        "offline_after_ms": 21600736,
         "packets": 6,
         "position": {
           "lat": 61.0533376,
@@ -36483,6 +36941,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 8639490,
         "gateway_receptions": 0,
         "id": "!d64b58ae",
         "identity": {
@@ -36493,6 +36952,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T12:48:34.699Z",
         "num": 3595262126,
+        "offline_after_ms": 17278980,
         "packets": 6,
         "position": {
           "alt": 49,
@@ -36509,6 +36969,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 7324229,
         "gateway_receptions": 0,
         "id": "!dc22655b",
         "identity": {
@@ -36519,6 +36980,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:32:58.460Z",
         "num": 3693241691,
+        "offline_after_ms": 14648458,
         "packets": 6,
         "position": {
           "alt": 217,
@@ -36535,6 +36997,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10734463,
         "gateway_receptions": 0,
         "id": "!df1b2869",
         "identity": {
@@ -36545,6 +37008,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T13:06:30.537Z",
         "num": 3743098985,
+        "offline_after_ms": 21468926,
         "packets": 6,
         "position": {
           "alt": 10,
@@ -36561,6 +37025,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 7742271,
         "gateway_receptions": 0,
         "id": "!ef2cfcde",
         "identity": {
@@ -36571,6 +37036,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:30:46.986Z",
         "num": 4012702942,
+        "offline_after_ms": 15484542,
         "packets": 6,
         "position": {
           "alt": 149,
@@ -36587,6 +37053,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10771543,
         "gateway_receptions": 0,
         "id": "!f66adc9c",
         "identity": {
@@ -36597,6 +37064,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T15:15:55.667Z",
         "num": 4134198428,
+        "offline_after_ms": 21543086,
         "packets": 6,
         "position": {
           "alt": 550,
@@ -36613,6 +37081,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10804303,
         "gateway_receptions": 0,
         "id": "!02eb8e7c",
         "identity": {
@@ -36623,6 +37092,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T12:35:50.675Z",
         "num": 48991868,
+        "offline_after_ms": 21608606,
         "packets": 5,
         "position": {
           "alt": 185,
@@ -36639,6 +37109,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 9598401,
         "gateway_receptions": 0,
         "id": "!0423d27e",
         "identity": {
@@ -36649,6 +37120,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T11:47:58.592Z",
         "num": 69456510,
+        "offline_after_ms": 19196802,
         "packets": 5,
         "position": {
           "alt": 114,
@@ -36665,6 +37137,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10651513,
         "gateway_receptions": 0,
         "id": "!04677cab",
         "identity": {
@@ -36675,6 +37148,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:46:28.018Z",
         "num": 73890987,
+        "offline_after_ms": 21303026,
         "packets": 5,
         "position": {
           "lat": 60.319334399999995,
@@ -36690,6 +37164,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10800285,
         "gateway_receptions": 0,
         "id": "!0745f838",
         "identity": {
@@ -36700,6 +37175,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:31:28.356Z",
         "num": 122026040,
+        "offline_after_ms": 21600570,
         "packets": 5,
         "position": {
           "lat": 63.340543999999994,
@@ -36715,6 +37191,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10800426,
         "gateway_receptions": 0,
         "id": "!1454ed85",
         "identity": {
@@ -36725,6 +37202,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:15:27.883Z",
         "num": 341110149,
+        "offline_after_ms": 21600852,
         "packets": 5,
         "position": {
           "alt": 820,
@@ -36741,6 +37219,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10800268,
         "gateway_receptions": 0,
         "id": "!268a1248",
         "identity": {
@@ -36751,6 +37230,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T13:21:18.620Z",
         "num": 646582856,
+        "offline_after_ms": 21600536,
         "packets": 5,
         "position": {
           "lat": 64.0024576,
@@ -36766,6 +37246,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10798784,
         "gateway_receptions": 0,
         "id": "!344b8583",
         "identity": {
@@ -36776,6 +37257,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T15:16:57.913Z",
         "num": 877364611,
+        "offline_after_ms": 21597568,
         "packets": 5,
         "receptions": 11,
         "status": "observed"
@@ -36784,6 +37266,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10801417,
         "gateway_receptions": 0,
         "id": "!34bb8eaf",
         "identity": {
@@ -36794,6 +37277,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:12:52.151Z",
         "num": 884706991,
+        "offline_after_ms": 21602834,
         "packets": 5,
         "position": {
           "alt": 139,
@@ -36810,6 +37294,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10801152,
         "gateway_receptions": 0,
         "id": "!48bff5f5",
         "identity": {
@@ -36820,6 +37305,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T13:22:28.406Z",
         "num": 1220539893,
+        "offline_after_ms": 21602304,
         "packets": 5,
         "position": {
           "alt": 1614,
@@ -36836,6 +37322,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10799458,
         "gateway_receptions": 0,
         "id": "!49ea4c9c",
         "identity": {
@@ -36846,6 +37333,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T13:22:22.516Z",
         "num": 1240091804,
+        "offline_after_ms": 21598916,
         "packets": 5,
         "position": {
           "alt": 33,
@@ -36862,6 +37350,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10798648,
         "gateway_receptions": 0,
         "id": "!514664dd",
         "identity": {
@@ -36872,6 +37361,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:02:30.781Z",
         "num": 1363567837,
+        "offline_after_ms": 21597296,
         "packets": 5,
         "position": {
           "alt": 27,
@@ -36888,6 +37378,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10800914,
         "gateway_receptions": 0,
         "id": "!6a734b91",
         "identity": {
@@ -36898,6 +37389,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T13:06:35.452Z",
         "num": 1785940881,
+        "offline_after_ms": 21601828,
         "packets": 5,
         "position": {
           "alt": 9,
@@ -36914,6 +37406,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10800971,
         "gateway_receptions": 0,
         "id": "!85d2fa9e",
         "identity": {
@@ -36924,6 +37417,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T15:11:46.373Z",
         "num": 2245196446,
+        "offline_after_ms": 21601942,
         "packets": 5,
         "position": {
           "alt": 34,
@@ -36940,6 +37434,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 14263352,
         "gateway_receptions": 0,
         "id": "!97151277",
         "identity": {
@@ -36950,6 +37445,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T15:04:43.338Z",
         "num": 2534740599,
+        "offline_after_ms": 28526704,
         "packets": 5,
         "position": {
           "lat": 59.899904,
@@ -36965,6 +37461,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10801648,
         "gateway_receptions": 0,
         "id": "!997b0449",
         "identity": {
@@ -36975,6 +37472,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:00:32.185Z",
         "num": 2574976073,
+        "offline_after_ms": 21603296,
         "packets": 5,
         "position": {
           "alt": 708,
@@ -36991,6 +37489,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10800406,
         "gateway_receptions": 0,
         "id": "!a459bce7",
         "identity": {
@@ -37001,6 +37500,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T12:45:16.448Z",
         "num": 2757344487,
+        "offline_after_ms": 21600812,
         "packets": 5,
         "position": {
           "alt": 1214,
@@ -37017,6 +37517,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 7868521,
         "gateway_receptions": 0,
         "id": "!a721aca8",
         "identity": {
@@ -37027,6 +37528,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T12:43:33.968Z",
         "num": 2804001960,
+        "offline_after_ms": 15737042,
         "packets": 5,
         "position": {
           "alt": 202,
@@ -37043,6 +37545,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10800657,
         "gateway_receptions": 0,
         "id": "!d63653b5",
         "identity": {
@@ -37053,6 +37556,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T12:28:18.655Z",
         "num": 3593884597,
+        "offline_after_ms": 21601314,
         "packets": 5,
         "position": {
           "alt": 425,
@@ -37069,6 +37573,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10800719,
         "gateway_receptions": 0,
         "id": "!f46cc74c",
         "identity": {
@@ -37079,6 +37584,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:51:35.382Z",
         "num": 4100769612,
+        "offline_after_ms": 21601438,
         "packets": 5,
         "position": {
           "alt": 99,
@@ -37095,6 +37601,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10800265,
         "gateway_receptions": 0,
         "id": "!157e44e9",
         "identity": {
@@ -37105,6 +37612,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T12:48:35.317Z",
         "num": 360596713,
+        "offline_after_ms": 21600530,
         "packets": 4,
         "receptions": 10,
         "status": "observed"
@@ -37113,6 +37621,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10800974,
         "gateway_receptions": 0,
         "id": "!165e2ef7",
         "identity": {
@@ -37123,6 +37632,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T13:37:13.321Z",
         "num": 375271159,
+        "offline_after_ms": 21601948,
         "packets": 4,
         "receptions": 10,
         "status": "observed"
@@ -37131,6 +37641,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10799840,
         "gateway_receptions": 0,
         "id": "!1de92ebc",
         "identity": {
@@ -37141,6 +37652,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:27:29.758Z",
         "num": 501821116,
+        "offline_after_ms": 21599680,
         "packets": 4,
         "receptions": 11,
         "status": "observed"
@@ -37149,6 +37661,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10800283,
         "gateway_receptions": 0,
         "id": "!206f2414",
         "identity": {
@@ -37159,6 +37672,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:05:09.409Z",
         "num": 544154644,
+        "offline_after_ms": 21600566,
         "packets": 4,
         "receptions": 8,
         "status": "observed"
@@ -37167,6 +37681,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10800303,
         "gateway_receptions": 0,
         "id": "!296c6b21",
         "identity": {
@@ -37177,6 +37692,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T12:24:38.111Z",
         "num": 694971169,
+        "offline_after_ms": 21600606,
         "packets": 4,
         "receptions": 8,
         "status": "observed"
@@ -37185,6 +37701,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10800872,
         "gateway_receptions": 0,
         "id": "!29e50b7f",
         "identity": {
@@ -37195,6 +37712,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T13:25:56.802Z",
         "num": 702876543,
+        "offline_after_ms": 21601744,
         "packets": 4,
         "receptions": 8,
         "status": "observed"
@@ -37203,6 +37721,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 4667016,
         "gateway_receptions": 0,
         "id": "!301bf60c",
         "identity": {
@@ -37213,6 +37732,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T15:04:09.578Z",
         "num": 807138828,
+        "offline_after_ms": 14400000,
         "packets": 4,
         "position": {
           "lat": 59.9523328,
@@ -37228,6 +37748,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10801333,
         "gateway_receptions": 0,
         "id": "!3385c98f",
         "identity": {
@@ -37238,6 +37759,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:15:59.154Z",
         "num": 864405903,
+        "offline_after_ms": 21602666,
         "packets": 4,
         "receptions": 18,
         "status": "observed"
@@ -37246,6 +37768,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10802214,
         "gateway_receptions": 0,
         "id": "!40cb5898",
         "identity": {
@@ -37256,6 +37779,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T13:40:26.776Z",
         "num": 1087068312,
+        "offline_after_ms": 21604428,
         "packets": 4,
         "receptions": 17,
         "status": "observed"
@@ -37264,6 +37788,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10801292,
         "gateway_receptions": 0,
         "id": "!4d71933f",
         "identity": {
@@ -37274,6 +37799,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T12:38:57.661Z",
         "num": 1299288895,
+        "offline_after_ms": 21602584,
         "packets": 4,
         "receptions": 12,
         "status": "observed"
@@ -37282,6 +37808,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10799648,
         "gateway_receptions": 0,
         "id": "!591372be",
         "identity": {
@@ -37292,6 +37819,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T12:38:54.569Z",
         "num": 1494446782,
+        "offline_after_ms": 21599296,
         "packets": 4,
         "receptions": 13,
         "status": "observed"
@@ -37300,6 +37828,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 3600798,
         "gateway_receptions": 0,
         "id": "!64db0a84",
         "identity": {
@@ -37310,6 +37839,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T11:41:23.621Z",
         "num": 1692076676,
+        "offline_after_ms": 14400000,
         "packets": 4,
         "receptions": 8,
         "status": "observed"
@@ -37318,6 +37848,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10795925,
         "gateway_receptions": 0,
         "id": "!683eec4a",
         "identity": {
@@ -37328,6 +37859,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:54:24.429Z",
         "num": 1748954186,
+        "offline_after_ms": 21591850,
         "packets": 4,
         "position": {
           "alt": 617,
@@ -37344,6 +37876,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10800585,
         "gateway_receptions": 0,
         "id": "!6e9f1e6c",
         "identity": {
@@ -37354,6 +37887,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T13:18:31.780Z",
         "num": 1855921772,
+        "offline_after_ms": 21601170,
         "packets": 4,
         "receptions": 16,
         "status": "observed"
@@ -37362,6 +37896,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10800169,
         "gateway_receptions": 0,
         "id": "!7b71ed5a",
         "identity": {
@@ -37372,6 +37907,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T12:48:39.994Z",
         "num": 2071063898,
+        "offline_after_ms": 21600338,
         "packets": 4,
         "receptions": 8,
         "status": "observed"
@@ -37380,6 +37916,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10800270,
         "gateway_receptions": 0,
         "id": "!7e6b4638",
         "identity": {
@@ -37390,6 +37927,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T12:23:16.152Z",
         "num": 2120959544,
+        "offline_after_ms": 21600540,
         "packets": 4,
         "receptions": 16,
         "status": "observed"
@@ -37398,6 +37936,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10799950,
         "gateway_receptions": 0,
         "id": "!7f8eab77",
         "identity": {
@@ -37408,6 +37947,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:10:48.579Z",
         "num": 2140056439,
+        "offline_after_ms": 21599900,
         "packets": 4,
         "receptions": 8,
         "status": "observed"
@@ -37416,6 +37956,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10799873,
         "gateway_receptions": 0,
         "id": "!82b4c852",
         "identity": {
@@ -37426,6 +37967,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T13:46:25.345Z",
         "num": 2192885842,
+        "offline_after_ms": 21599746,
         "packets": 4,
         "receptions": 9,
         "status": "observed"
@@ -37434,6 +37976,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10799720,
         "gateway_receptions": 0,
         "id": "!8e63f2bb",
         "identity": {
@@ -37444,6 +37987,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T12:21:05.204Z",
         "num": 2388914875,
+        "offline_after_ms": 21599440,
         "packets": 4,
         "receptions": 4,
         "status": "observed"
@@ -37452,6 +37996,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10800177,
         "gateway_receptions": 0,
         "id": "!90d4c521",
         "identity": {
@@ -37462,6 +38007,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T13:43:40.895Z",
         "num": 2429863201,
+        "offline_after_ms": 21600354,
         "packets": 4,
         "receptions": 9,
         "status": "observed"
@@ -37470,6 +38016,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10801488,
         "gateway_receptions": 0,
         "id": "!91642d2a",
         "identity": {
@@ -37480,6 +38027,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:19:31.441Z",
         "num": 2439261482,
+        "offline_after_ms": 21602976,
         "packets": 4,
         "receptions": 6,
         "status": "observed"
@@ -37498,6 +38046,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T13:55:26.539Z",
         "num": 2556709633,
+        "offline_after_ms": 14400000,
         "packets": 4,
         "position": {
           "alt": 50,
@@ -37514,6 +38063,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10800669,
         "gateway_receptions": 0,
         "id": "!a142e814",
         "identity": {
@@ -37524,6 +38074,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T13:41:10.085Z",
         "num": 2705516564,
+        "offline_after_ms": 21601338,
         "packets": 4,
         "receptions": 13,
         "status": "observed"
@@ -37532,6 +38083,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10800777,
         "gateway_receptions": 0,
         "id": "!a897f55a",
         "identity": {
@@ -37542,6 +38094,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T13:25:03.714Z",
         "num": 2828531034,
+        "offline_after_ms": 21601554,
         "packets": 4,
         "receptions": 12,
         "status": "observed"
@@ -37550,6 +38103,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10800616,
         "gateway_receptions": 0,
         "id": "!b213e36d",
         "identity": {
@@ -37560,6 +38114,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T13:36:08.292Z",
         "num": 2987647853,
+        "offline_after_ms": 21601232,
         "packets": 4,
         "receptions": 8,
         "status": "observed"
@@ -37568,6 +38123,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10800557,
         "gateway_receptions": 0,
         "id": "!c8ad4e48",
         "identity": {
@@ -37578,6 +38134,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T13:01:38.732Z",
         "num": 3366800968,
+        "offline_after_ms": 21601114,
         "packets": 4,
         "receptions": 19,
         "status": "observed"
@@ -37596,6 +38153,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:28:13.946Z",
         "num": 3615839736,
+        "offline_after_ms": 14400000,
         "packets": 4,
         "position": {
           "alt": 0,
@@ -37612,6 +38170,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10800012,
         "gateway_receptions": 0,
         "id": "!d788b85d",
         "identity": {
@@ -37622,6 +38181,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:21:25.748Z",
         "num": 3616061533,
+        "offline_after_ms": 21600024,
         "packets": 4,
         "receptions": 14,
         "status": "observed"
@@ -37630,6 +38190,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10800484,
         "gateway_receptions": 0,
         "id": "!dc689cf0",
         "identity": {
@@ -37640,6 +38201,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T12:49:32.759Z",
         "num": 3697843440,
+        "offline_after_ms": 21600968,
         "packets": 4,
         "receptions": 23,
         "status": "observed"
@@ -37648,6 +38210,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10800448,
         "gateway_receptions": 0,
         "id": "!df042dd3",
         "identity": {
@@ -37658,6 +38221,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T13:05:54.696Z",
         "num": 3741593043,
+        "offline_after_ms": 21600896,
         "packets": 4,
         "receptions": 8,
         "status": "observed"
@@ -37666,6 +38230,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10800622,
         "gateway_receptions": 0,
         "id": "!e2b8c585",
         "identity": {
@@ -37676,6 +38241,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T13:39:16.607Z",
         "num": 3803760005,
+        "offline_after_ms": 21601244,
         "packets": 4,
         "receptions": 7,
         "status": "observed"
@@ -37684,6 +38250,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10801346,
         "gateway_receptions": 0,
         "id": "!e9253b6a",
         "identity": {
@@ -37694,6 +38261,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T12:24:34.811Z",
         "num": 3911531370,
+        "offline_after_ms": 21602692,
         "packets": 4,
         "receptions": 13,
         "status": "observed"
@@ -37702,6 +38270,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10800739,
         "gateway_receptions": 0,
         "id": "!ebcdd581",
         "identity": {
@@ -37712,6 +38281,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:49:08.025Z",
         "num": 3956135297,
+        "offline_after_ms": 21601478,
         "packets": 4,
         "receptions": 6,
         "status": "observed"
@@ -37720,6 +38290,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10796180,
         "gateway_receptions": 0,
         "id": "!f25e6bab",
         "identity": {
@@ -37730,6 +38301,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T12:38:53.427Z",
         "num": 4066274219,
+        "offline_after_ms": 21592360,
         "packets": 4,
         "receptions": 11,
         "status": "observed"
@@ -37738,6 +38310,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 899638,
         "gateway_receptions": 0,
         "id": "!f2a7cde1",
         "identity": {
@@ -37748,6 +38321,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T13:41:17.694Z",
         "num": 4071083489,
+        "offline_after_ms": 14400000,
         "packets": 4,
         "position": {
           "alt": 346,
@@ -37764,6 +38338,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10800319,
         "gateway_receptions": 0,
         "id": "!f79b22b5",
         "identity": {
@@ -37774,6 +38349,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T13:34:48.025Z",
         "num": 4154139317,
+        "offline_after_ms": 21600638,
         "packets": 4,
         "receptions": 7,
         "status": "observed"
@@ -37782,6 +38358,7 @@
         "brokers": [
           "no868"
         ],
+        "cadence_ms": 10798148,
         "gateway_receptions": 0,
         "id": "!fe79a4bf",
         "identity": {
@@ -37792,6 +38369,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:55:39.160Z",
         "num": 4269384895,
+        "offline_after_ms": 21596296,
         "packets": 4,
         "receptions": 7,
         "status": "observed"
@@ -37810,6 +38388,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T13:49:18.797Z",
         "num": 70455580,
+        "offline_after_ms": 14400000,
         "packets": 3,
         "receptions": 3,
         "status": "observed"
@@ -37828,6 +38407,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:43:51.088Z",
         "num": 1662911518,
+        "offline_after_ms": 14400000,
         "packets": 3,
         "receptions": 7,
         "status": "observed"
@@ -37846,6 +38426,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T12:07:42.804Z",
         "num": 2472195474,
+        "offline_after_ms": 14400000,
         "packets": 3,
         "position": {
           "lat": 63.327436799999994,
@@ -37866,6 +38447,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T13:39:16.260Z",
         "num": 2837183777,
+        "offline_after_ms": 14400000,
         "packets": 3,
         "position": {
           "alt": 354,
@@ -37892,6 +38474,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T13:37:58.331Z",
         "num": 2951876259,
+        "offline_after_ms": 14400000,
         "packets": 3,
         "receptions": 5,
         "status": "observed"
@@ -37910,6 +38493,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T10:23:21.758Z",
         "num": 3988427975,
+        "offline_after_ms": 14400000,
         "packets": 3,
         "position": {
           "alt": 467,
@@ -37936,6 +38520,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T11:02:44.933Z",
         "num": 4125353677,
+        "offline_after_ms": 14400000,
         "packets": 3,
         "receptions": 6,
         "status": "observed"
@@ -37954,6 +38539,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:52:28.181Z",
         "num": 4188892060,
+        "offline_after_ms": 14400000,
         "packets": 3,
         "position": {
           "alt": 13,
@@ -37972,6 +38558,7 @@
         "is_gateway": true,
         "last_seen": "2026-10-31T10:50:43.505Z",
         "num": 260696005,
+        "offline_after_ms": 14400000,
         "packets": 0,
         "receptions": 0,
         "status": "observed"
@@ -37990,6 +38577,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:05:52.468Z",
         "num": 394643707,
+        "offline_after_ms": 14400000,
         "packets": 2,
         "receptions": 3,
         "status": "observed"
@@ -38008,6 +38596,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T15:02:36.493Z",
         "num": 496056339,
+        "offline_after_ms": 14400000,
         "packets": 2,
         "receptions": 4,
         "status": "observed"
@@ -38026,6 +38615,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T11:54:57.762Z",
         "num": 1400963998,
+        "offline_after_ms": 14400000,
         "packets": 2,
         "position": {
           "alt": 48,
@@ -38052,6 +38642,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T13:54:52.301Z",
         "num": 1428871500,
+        "offline_after_ms": 14400000,
         "packets": 2,
         "receptions": 6,
         "status": "observed"
@@ -38066,6 +38657,7 @@
         "last_seen": "2026-10-31T10:47:41.200Z",
         "moved_at": "2026-10-31T10:47:40.278Z",
         "num": 1454041685,
+        "offline_after_ms": 14400000,
         "packets": 2,
         "position": {
           "alt": -1,
@@ -38106,6 +38698,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T08:32:56.980Z",
         "num": 1978491617,
+        "offline_after_ms": 14400000,
         "packets": 2,
         "receptions": 5,
         "status": "observed"
@@ -38124,6 +38717,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T11:42:36.122Z",
         "num": 2404090552,
+        "offline_after_ms": 14400000,
         "packets": 2,
         "position": {
           "alt": 60,
@@ -38150,6 +38744,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:22:44.366Z",
         "num": 2471945786,
+        "offline_after_ms": 14400000,
         "packets": 2,
         "receptions": 10,
         "status": "observed"
@@ -38168,6 +38763,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T10:50:43.505Z",
         "num": 2681085040,
+        "offline_after_ms": 14400000,
         "packets": 2,
         "position": {
           "alt": 20,
@@ -38194,6 +38790,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T06:52:30.963Z",
         "num": 2878262644,
+        "offline_after_ms": 14400000,
         "packets": 2,
         "receptions": 12,
         "status": "observed"
@@ -38212,6 +38809,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T14:15:17.180Z",
         "num": 3502530854,
+        "offline_after_ms": 14400000,
         "packets": 2,
         "receptions": 8,
         "status": "observed"
@@ -38230,6 +38828,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T12:22:32.002Z",
         "num": 4104318588,
+        "offline_after_ms": 14400000,
         "packets": 2,
         "receptions": 8,
         "status": "observed"
@@ -38248,6 +38847,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T09:50:42.083Z",
         "num": 110099040,
+        "offline_after_ms": 14400000,
         "packets": 1,
         "receptions": 3,
         "status": "observed"
@@ -38266,6 +38866,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T12:56:14.708Z",
         "num": 233892411,
+        "offline_after_ms": 14400000,
         "packets": 1,
         "receptions": 4,
         "status": "observed"
@@ -38284,6 +38885,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T08:57:13.953Z",
         "num": 1128188940,
+        "offline_after_ms": 14400000,
         "packets": 1,
         "receptions": 1,
         "status": "observed"
@@ -38297,6 +38899,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T15:07:27.083Z",
         "num": 1950769514,
+        "offline_after_ms": 14400000,
         "packets": 1,
         "position": {
           "alt": 119,
@@ -38318,6 +38921,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T08:31:53.354Z",
         "num": 2056205346,
+        "offline_after_ms": 14400000,
         "packets": 1,
         "position": {
           "alt": 400,
@@ -38344,6 +38948,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T09:15:59.115Z",
         "num": 2119449540,
+        "offline_after_ms": 14400000,
         "packets": 1,
         "receptions": 1,
         "status": "observed"
@@ -38362,6 +38967,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T11:07:09.510Z",
         "num": 2235577949,
+        "offline_after_ms": 14400000,
         "packets": 1,
         "receptions": 1,
         "status": "observed"
@@ -38380,6 +38986,7 @@
         "is_gateway": false,
         "last_seen": "2026-10-31T12:14:18.257Z",
         "num": 2658562108,
+        "offline_after_ms": 14400000,
         "packets": 1,
         "receptions": 4,
         "status": "observed"

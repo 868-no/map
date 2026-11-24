@@ -57,7 +57,7 @@ pub use link_drop::{
 };
 pub use restarts::RESTARTS_WARN;
 pub use router_roles::{FEW_LINKS, FEW_LINKS_MIN_PACKETS, OVERLAP_MIN_NEIGHBOURS, OVERLAP_SHARE, SITE_M, SITE_MIN_BITS};
-pub use silent::{gone_quiet, heard_times, usual_gap, SILENT_BATTERY_LOW, SILENT_GAP_FACTOR, SILENT_MIN_EVENTS, SILENT_MIN_MS};
+pub use silent::{gone_quiet, heard_times, usual_gap, EVENT_MS, SILENT_BATTERY_LOW, SILENT_GAP_FACTOR, SILENT_MIN_EVENTS, SILENT_MIN_MS};
 pub use traceroute::{TRACEROUTE_MIN, TRACEROUTE_PROBLEM_PER_H, TRACEROUTE_WARN_PER_H};
 
 use serde::Serialize;

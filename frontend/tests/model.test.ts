@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ageColor, AGE_STOPS, isOnline, ONLINE_MS, bridgeRoute, filterEdges, glyphInk, relativeLuminance, isInfraRole, mqttDownlink, mqttUplink, LOW_ZOOM_LINKS, passesNodeFilters, precisionErrorM, visibleLinks, withSelectedLink, lastHeardAge, ageMs, linkGeometry, placeNodes, roleRank } from '../src/map/model'
+import { ageColor, AGE_STOPS, isOnline, ONLINE_MIN_MS, onlineRule, bridgeRoute, filterEdges, glyphInk, relativeLuminance, isInfraRole, mqttDownlink, mqttUplink, LOW_ZOOM_LINKS, passesNodeFilters, precisionErrorM, visibleLinks, withSelectedLink, lastHeardAge, ageMs, linkGeometry, placeNodes, roleRank } from '../src/map/model'
 import { roleIcon } from '../src/map/roleIcons'
 
 // WCAG contrast ratio.
@@ -171,13 +171,25 @@ describe('packet routes across nodes without a position', () => {
 
 describe('online', () => {
   const end = Date.parse('2026-11-02T12:00:00Z')
-  it('is heard within 3 hours of the window end', () => {
-    expect(isOnline({ last_seen: new Date(end - ONLINE_MS).toISOString() }, end)).toBe(true)
-    expect(isOnline({ last_seen: new Date(end - ONLINE_MS - 1000).toISOString() }, end)).toBe(false)
+  const ago = (ms: number) => new Date(end - ms).toISOString()
+  const H = 3_600_000
+  it('is heard within its own threshold of the window end (D-230)', () => {
+    // A NodeInfo-only node (every 3 h): offline after 6 h.
+    expect(isOnline({ last_seen: ago(6 * H), offline_after_ms: 6 * H }, end)).toBe(true)
+    expect(isOnline({ last_seen: ago(6 * H + 1000), offline_after_ms: 6 * H }, end)).toBe(false)
+    // Without a threshold, the shortest one.
+    expect(isOnline({ last_seen: ago(ONLINE_MIN_MS) }, end)).toBe(true)
+    expect(isOnline({ last_seen: ago(ONLINE_MIN_MS + 1000) }, end)).toBe(false)
     expect(isOnline({}, end)).toBe(false) // only named by others
   })
+  it('explains the threshold', () => {
+    expect(onlineRule({ offline_after_ms: 6 * H, cadence_ms: 3 * H })).toContain('within 6 h of the end of the selected period: twice its usual NodeInfo and position interval (3 h)')
+    expect(onlineRule({ offline_after_ms: 4 * H, cadence_ms: 15 * 60_000 })).toContain('(15 min), kept between 4 and 24 hours')
+    expect(onlineRule({ offline_after_ms: 4 * H })).toContain('within 4 h of the end of the selected period: too few')
+    expect(onlineRule({ offline_after_ms: 4.5 * H, cadence_ms: 2.25 * H })).toContain('within 4.5 h')
+  })
   it('passesNodeFilters hides by position, online and role (D-145)', () => {
-    const online = new Date(end - 1000).toISOString(), offline = new Date(end - ONLINE_MS - 1000).toISOString()
+    const online = new Date(end - 1000).toISOString(), offline = new Date(end - ONLINE_MIN_MS - 1000).toISOString()
     const pos = { lat: 63, lon: 10, precision_bits: 32, precision_known: true, signature: 'unsigned', observed_at: '' }
     const router = node('!1', { last_seen: online, identity: { role: 'ROUTER' }, position: pos })
     const clientNoPos = node('!2', { last_seen: online, identity: { role: 'CLIENT' } })

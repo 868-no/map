@@ -82,7 +82,7 @@ export function FilterPanel({ snapshot }: { snapshot: SnapshotView | undefined }
       </p>
       <h3>Nodes</h3>
       <label><input type="checkbox" checked={f.positionedOnly} onChange={(e) => set({ positionedOnly: e.target.checked })} /> Only nodes with reported positions</label>
-      <label title="Online: heard within the last 3 hours of the selected period (now, when live). Nodes only named by others are offline."><input type="checkbox" checked={f.onlineOnly} onChange={(e) => set({ onlineOnly: e.target.checked })} /> Only online nodes (heard in the last 3 h)</label>
+      <label title="Online: heard before the end of the selected period (now, when live) within twice its usual NodeInfo and position interval, and never less than 4 nor more than 24 hours; 4 hours when that interval is not known. Nodes only named by others are offline."><input type="checkbox" checked={f.onlineOnly} onChange={(e) => set({ onlineOnly: e.target.checked })} /> Only online nodes (heard within twice their usual interval)</label>
       {roles.length > 0 && (
         <>
           <p className="muted small" title="Show only nodes whose latest reported role in the window is one of those selected. Nodes that announce no role are hidden while any role is chosen. Roles come from NodeInfo or a node's own map report.">Only these roles:</p>

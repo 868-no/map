@@ -738,14 +738,14 @@ test('the Telemetry tab charts every metric over the whole selected period, with
 test('only online nodes: offline ones leave the map, and Details says which a node is', async ({ page }) => {
   await ready(page)
   // Marker counts move with live traffic (estimates come and go between rebuilds), so the
-  // test checks what is drawn: with the filter on, only nodes heard in the last 3 h.
+  // test checks what is drawn: with the filter on, only nodes heard within their own threshold (D-230).
   const drawn = () => page.evaluate(() => {
     const mm = window as unknown as { __meshmap: Hook }
     // 'nodes' holds every marker drawn on its own once; 'node-clusters' the rest, below zoom 10 (D-204).
-    type P = { node: { last_seen?: string } }
+    type P = { node: { last_seen?: string; offline_after_ms?: number } }
     const ls = mm.__meshmap.layers()
     const ps = [...((ls.find((l) => l.id === 'nodes')?.data ?? []) as P[]), ...((ls.find((l) => l.id === 'node-clusters')?.data ?? []) as { members: P[] }[]).flatMap((k) => k.members)]
-    const offline = ps.filter((p) => !p.node.last_seen || Date.now() - Date.parse(p.node.last_seen) > 3 * 3_600_000).length
+    const offline = ps.filter((p) => !p.node.last_seen || Date.now() - Date.parse(p.node.last_seen) > (p.node.offline_after_ms ?? 4 * 3_600_000)).length
     return { all: ps.length, offline }
   })
   await expect.poll(async () => (await drawn()).all, { timeout: 30_000 }).toBeGreaterThan(0)

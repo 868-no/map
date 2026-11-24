@@ -196,7 +196,7 @@ export type MapIdentity = { long_name?: string, short_name?: string, role?: stri
 
 export type MapPosition = { lat: number, lon: number, alt?: number, precision_bits: number, precision_known: boolean, source: 'position' | 'mapreport', };
 
-export type MeshNode = { id: string, num: number, status: 'observed' | 'referenced', identity?: MapIdentity, position?: MapPosition, last_seen?: string, last_referenced?: string, packets: number, receptions: number, own_uplinks?: number, gateway_receptions: number, is_gateway: boolean, multi_uplink?: boolean, brokers?: Array<string>, mqtt_opt_out?: boolean, estimate?: Estimate, mqtt_downlink?: Downlink, moved_at?: string, track?: Array<TrackPoint>, airborne?: boolean, refined?: Anchor, relaying?: Relaying, };
+export type MeshNode = { id: string, num: number, status: 'observed' | 'referenced', identity?: MapIdentity, position?: MapPosition, last_seen?: string, last_referenced?: string, cadence_ms?: number, offline_after_ms?: number, packets: number, receptions: number, own_uplinks?: number, gateway_receptions: number, is_gateway: boolean, multi_uplink?: boolean, brokers?: Array<string>, mqtt_opt_out?: boolean, estimate?: Estimate, mqtt_downlink?: Downlink, moved_at?: string, track?: Array<TrackPoint>, airborne?: boolean, refined?: Anchor, relaying?: Relaying, };
 
 /**
  * One node's share of the window's estimated airtime.
@@ -268,7 +268,17 @@ rejected_position?: RejectedPosition, telemetry?: Telemetry, first_seen?: string
 /**
  * For a node only named by others (status "referenced"): when it was last named.
  */
-last_referenced?: string, packets: number, receptions: number,
+last_referenced?: string,
+/**
+ * Its median gap between NodeInfo and position packets (ms), when known (D-230).
+ */
+cadence_ms?: number,
+/**
+ * Silent this long before the window's end, it counts as offline (ms):
+ * twice its cadence, within online::ONLINE_MIN_MS and ONLINE_MAX_MS
+ * (D-230). None for a node only named by others, which never is online.
+ */
+offline_after_ms?: number, packets: number, receptions: number,
 /**
  * Of `receptions`, those it uplinked itself as a gateway (its own map
  * reports among them): not heard over the air by anyone else.
